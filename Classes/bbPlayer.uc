@@ -8488,26 +8488,6 @@ exec function ForceModels(bool b)
 	}
 }
 
-exec function ForceAllowWeaponShake(bool b)
-{
-
-	/**
-	 * @Author: spect
-	 * @Date: 2020-02-21 02:28:03
-	 * @Desc: Console command to force models client side
-	 */
-
-	Settings.bAllowWeaponShake = b;
-	xxServerSetAllowWeaponShake(b);
-	IGPlus_SaveSettings();
-	ClientMessage("ForceWeaponShake :"@b);
-	if (!b) {
-		ClientMessage("You will be reconnected in 3 seconds...");
-		SetTimer(5, false);
-		bReason = 1;
-	}
-}
-
 simulated function reconnectClient() {
 	ConsoleCommand("disconnect");
 	ConsoleCommand("reconnect");
