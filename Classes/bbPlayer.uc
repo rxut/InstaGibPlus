@@ -19,6 +19,7 @@ var int		zzMaximumNetspeed;	// Default 25000, it's the maximum netspeed a client
 var float	zzWaitTime;		// Used for diverse waiting.
 var int		zzForceSettingsLevel;	// The Anti-Default/Ini check force.
 var bool	zzbForceModels;		// Allow/Enable/Force Models for clients.
+var bool	zzbForceAllowWeaponShake; // Allow/Enable/Force Allow Weapon Shake for clients.
 var bool	zzbForceDemo;		// Set true by server to force client to do demo.
 var bool	zzbGameStarted;	// Set to true when Pawn spawns first time (ModifyPlayer)
 var byte	HUDInfo;		// 0 = Off, 1 = boots/timer, 2 = Team Info too.
@@ -387,6 +388,7 @@ replication
 		zzbForceDemo,
 		zzbGameStarted,
 		zzbForceModels,
+		zzbForceAllowWeaponShake,
 		zzbIsWarmingUp,
 		zzCVDelay,
 		zzCVDeny,
@@ -497,6 +499,7 @@ replication
 		xxServerAckScreenshot,
 		xxServerDemoReply,
 		xxServerSetForceModels,
+		xxServerSetAllowWeaponShake,
 		xxServerSetReadyToPlay,
 		xxServerSetTeamInfo,
 		xxSetNetUpdateRate;
@@ -1037,6 +1040,7 @@ event Possess()
 		Log("Possessed PlayerPawn (bbPlayer) by InstaGib Plus");
 		SetNetUpdateRate(Settings.DesiredNetUpdateRate);
 		xxServerSetForceModels(Settings.bForceModels);
+		xxServerSetAllowWeaponShake(Settings.bAllowWeaponShake);
 		xxServerSetTeamInfo(Settings.bTeamInfo);
 		ServerSetDodgeSettings(DodgeClickTime, Settings.MinDodgeClickTime);
 		if (class'UTPlayerClientWindow'.default.PlayerSetupClass != class'UTPureSetupScrollClient')
@@ -8484,6 +8488,26 @@ exec function ForceModels(bool b)
 	}
 }
 
+exec function ForceAllowWeaponShake(bool b)
+{
+
+	/**
+	 * @Author: spect
+	 * @Date: 2020-02-21 02:28:03
+	 * @Desc: Console command to force models client side
+	 */
+
+	Settings.bAllowWeaponShake = b;
+	xxServerSetAllowWeaponShake(b);
+	IGPlus_SaveSettings();
+	ClientMessage("ForceWeaponShake :"@b);
+	if (!b) {
+		ClientMessage("You will be reconnected in 3 seconds...");
+		SetTimer(5, false);
+		bReason = 1;
+	}
+}
+
 simulated function reconnectClient() {
 	ConsoleCommand("disconnect");
 	ConsoleCommand("reconnect");
@@ -8526,10 +8550,25 @@ function xxServerSetForceModels(bool b)
 
 	if (zzPureSetting == 2)			// Server Forces all clients
 		zzbForceModels = True;
-	else if (zzPureSetting == 1)		// Server allows client to select
+	else if (zzPureSetting == 1)	// Server allows client to select
 		zzbForceModels = b;
-	else					// Server always disallows
+	else							// Server always disallows
 		zzbForceModels = False;
+}
+
+function xxServerSetAllowWeaponShake(bool b)
+{
+    local int zzPureSetting;
+
+    if (zzUTPure != None)
+        zzPureSetting = zzUTPure.Settings.ForceAllowWeaponShake;
+
+    if (zzPureSetting == 2)         // Server Forces all clients
+    	zzbForceAllowWeaponShake = True;
+    else if (zzPureSetting == 1)    // Server allows client to select
+    	zzbForceAllowWeaponShake = b;
+    else                            // Server always disallows
+     	zzbForceAllowWeaponShake = False;
 }
 
 function xxServerSetTeamInfo(bool b)
@@ -9408,8 +9447,16 @@ exec function ShowOwnBeam() {
 }
 
 function ClientShake(vector shake) {
-	if (Settings.bAllowWeaponShake)
-		super.ClientShake(shake);
+    if (zzbForceAllowWeaponShake == True) {
+            super.ClientShake(shake);
+    }
+	else if (zzbForceAllowWeaponShake == False)
+	{
+		if (Settings.bAllowWeaponShake)
+		{
+        	super.ClientShake(shake);
+		}
+    }
 }
 
 function string GetReadyMessage() {
