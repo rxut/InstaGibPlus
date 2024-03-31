@@ -36,7 +36,7 @@ var config int PauseTotalTime;	// Total amount of Seconds a team may pause a gam
 var config int PauseTime;		// Amount of seconds a team may pause pr pause/timeout.
 var config int Timeouts;		// Max amount of times a team may take timeouts. (for Coaches)
 var config byte ForceModels;		// 0 = Disallow, 1 = Client Selectable, 2 = Forced
-var config byte ForceAllowWeaponShake;		// 0 = Disallow, 1 = Client Selectable, 2 = Forced
+var config byte ForceWeaponShake;	// 0 = Client Selectable, 1 = Forced
 var config byte ImprovedHUD;		// 0 = Disabled, 1 = Boots/Clock, 2 = Enhanced Team Info
 var config bool bDelayedPickupSpawn;	// Enable or disable delayed first pickup spawn.
 var config bool bUseFastWeaponSwitch;
@@ -157,7 +157,7 @@ defaultproperties
 	ForceSettingsLevel=2
 	bWarmup=True
 	ForceModels=1
-	ForceAllowWeaponShake=1
+	ForceWeaponShake=0
 	ImprovedHUD=1
 	bDelayedPickupSpawn=False
 	bUseFastWeaponSwitch=False
