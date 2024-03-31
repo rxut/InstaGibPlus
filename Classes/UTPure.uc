@@ -1,4 +1,5 @@
 class UTPure extends Mutator config(InstaGibPlus);
+// Description="Main IG+ mutator needed for everything else"
 
 var ModifyLoginHandler NextMLH;			// Link list of handlers
 
@@ -237,6 +238,7 @@ function PostBeginPlay()
 	Spawn(class'NN_SpawnNotify');
 	Spawn(class'IGPlus_UnlagPause');
 	Spawn(class'IGPlus_CarcassSpawnNotify').bEnableCarcassCollision = Settings.bEnableCarcassCollision;
+	Spawn(class'IGPlus_HitFeedback');
 
 	if (Settings.NNAnnouncer)
 		Spawn(class'NNAnnouncerSA');

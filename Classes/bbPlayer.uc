@@ -1384,21 +1384,6 @@ event ReceiveLocalizedMessage( class<LocalMessage> Message, optional int Sw, opt
 	if (Message == class'CTFMessage2' && PureFlag(PlayerReplicationInfo.HasFlag) != None)
 		return;
 
-	// Handle hitsounds properly here before huds get it. Remove damage except if demoplayback :P
-	if (Message == class'PureHitSound')
-	{
-		if (RelatedPRI_1 == None)
-			return;
-
-		if (Settings.HitMarkerSource == 0 && RelatedPRI_2 != none)
-			class'bbPlayerStatics'.static.PlayHitMarker(self, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
-
-		if (Settings.HitSoundSource == 0 && RelatedPRI_2 != none)
-			class'bbPlayerStatics'.static.PlayHitSound(self, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
-
-		return;
-	}
-
 	if (Message == class'DecapitationMessage')
 	{
 		xxSendHeadshotToSpecs(Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
@@ -5099,9 +5084,7 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 {
 	local int actualDamage;
 	local bool bAlreadyDead;
-	local int ModifiedDamage1, ModifiedDamage2, RecentDamage;
-	local Pawn P;
-	local Inventory Inv;
+	local int ModifiedDamage1, ModifiedDamage2;
 
 	if ( Role < ROLE_Authority )
 	{
@@ -5147,26 +5130,6 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 	if (InstigatedBy != none)
 		IGPlus_DamageEvent_Add(InstigatedBy.PlayerReplicationInfo, ModifiedDamage1, DamageType);
 
-	if (InstigatedBy != Self && PlayerPawn(InstigatedBy) != None)
-	{	// Send the hitsound local message.
-
-		RecentDamage = 1;
-		for ( Inv = InstigatedBy.Inventory; Inv != None; Inv = Inv.Inventory )
-			if (Inv.IsA('UDamage'))
-			{
-				RecentDamage = 3;
-				break;
-			}
-		RecentDamage = RecentDamage * 1.5 * Damage;
-
-		PlayerPawn(InstigatedBy).ReceiveLocalizedMessage(Class'PureHitSound', RecentDamage, PlayerReplicationInfo, InstigatedBy.PlayerReplicationInfo);
-		for (P = Level.PawnList; P != None; P = P.NextPawn)
-		{
-			if (P.IsA('bbCHSpectator') && bbCHSpectator(P).ViewTarget == InstigatedBy)
-				bbCHSpectator(P).ReceiveLocalizedMessage(Class'PureHitSound', RecentDamage, PlayerReplicationInfo, InstigatedBy.PlayerReplicationInfo);
-		}
-	}
-
 	ServerAddMomentum(momentum);
 	Health -= actualDamage;
 
@@ -5210,10 +5173,8 @@ function GiveHealth( int Damage, bbPlayer InstigatedBy, Vector HitLocation,
 {
 	local int actualDamage;
 	local bool bAlreadyDead;
-	local int ModifiedDamage1, ModifiedDamage2, RecentDamage;
+	local int ModifiedDamage1, ModifiedDamage2;
 	local bool bPreventLockdown;		// Avoid the lockdown effect.
-	local Pawn P;
-	local Inventory Inv;
 
 	if ( Role < ROLE_Authority )
 	{
@@ -5254,25 +5215,6 @@ function GiveHealth( int Damage, bbPlayer InstigatedBy, Vector HitLocation,
 
 	if ( Level.Game.DamageMutator != None )
 		Level.Game.DamageMutator.MutatorTakeDamage( ActualDamage, Self, InstigatedBy, HitLocation, Momentum, DamageType );
-
-	if (InstigatedBy != Self)
-	{	// Send the hitsound local message.
-		RecentDamage = 1;
-		for ( Inv = InstigatedBy.Inventory; Inv != None; Inv = Inv.Inventory )
-			if (Inv.IsA('UDamage'))
-			{
-				RecentDamage = 3;
-				break;
-			}
-		RecentDamage = RecentDamage * 1.5 * Damage;
-
-		InstigatedBy.ReceiveLocalizedMessage(Class'PureHitSound', RecentDamage, PlayerReplicationInfo, InstigatedBy.PlayerReplicationInfo);
-		for (P = Level.PawnList; P != None; P = P.NextPawn)
-		{
-			if (P.IsA('bbCHSpectator') && bbCHSpectator(P).ViewTarget == InstigatedBy)
-				bbCHSpectator(P).ReceiveLocalizedMessage(Class'PureHitSound', RecentDamage, PlayerReplicationInfo, InstigatedBy.PlayerReplicationInfo);
-		}
-	}
 
 	if (!bPreventLockdown && InstigatedBy != self && (momentum dot momentum) > 0)	// FIX BY LordHypnos, http://forums.prounreal.com/viewtopic.php?t=34676&postdays=0&postorder=asc&start=0
 	{
@@ -5317,10 +5259,8 @@ function StealHealth( int Damage, bbPlayer InstigatedBy, Vector HitLocation,
 {
 	local int actualDamage;
 	local bool bAlreadyDead;
-	local int ModifiedDamage1, ModifiedDamage2, RecentDamage;
+	local int ModifiedDamage1, ModifiedDamage2;
 	local bool bPreventLockdown;		// Avoid the lockdown effect.
-	local Pawn P;
-	local Inventory Inv;
 
 	if ( Role < ROLE_Authority )
 	{
@@ -5368,25 +5308,6 @@ function StealHealth( int Damage, bbPlayer InstigatedBy, Vector HitLocation,
 
 	if ( Level.Game.DamageMutator != None )
 		Level.Game.DamageMutator.MutatorTakeDamage( ActualDamage, Self, InstigatedBy, HitLocation, Momentum, DamageType );
-
-	if (InstigatedBy != Self)
-	{	// Send the hitsound local message.
-		RecentDamage = 1;
-		for ( Inv = InstigatedBy.Inventory; Inv != None; Inv = Inv.Inventory )
-			if (Inv.IsA('UDamage'))
-			{
-				RecentDamage = 3;
-				break;
-			}
-		RecentDamage = RecentDamage * 1.5 * Damage;
-
-		InstigatedBy.ReceiveLocalizedMessage(Class'PureHitSound', RecentDamage, PlayerReplicationInfo, InstigatedBy.PlayerReplicationInfo);
-		for (P = Level.PawnList; P != None; P = P.NextPawn)
-		{
-			if (P.IsA('bbCHSpectator') && bbCHSpectator(P).ViewTarget == InstigatedBy)
-				bbCHSpectator(P).ReceiveLocalizedMessage(Class'PureHitSound', RecentDamage, PlayerReplicationInfo, InstigatedBy.PlayerReplicationInfo);
-		}
-	}
 
 	if (!bPreventLockdown && InstigatedBy != self && (momentum dot momentum) > 0)	// FIX BY LordHypnos, http://forums.prounreal.com/viewtopic.php?t=34676&postdays=0&postorder=asc&start=0
 	{
