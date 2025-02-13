@@ -267,7 +267,11 @@ simulated function NN_TraceFire(optional float Accuracy)
 	StartTrace = Owner.Location + bbP.EyeHeight * vect(0,0,1);
 	EndTrace = StartTrace + (100000 * X) + Accuracy * (FRand() - 0.5)* Y * 1000 + Accuracy * (FRand() - 0.5) * Z * 1000;
 
-	Other = bbP.NN_TraceShot(HitLocation,HitNormal,EndTrace,StartTrace,bbP);
+	if (GetWeaponSettings().SniperUseReducedHitbox)
+		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, bbP);
+	else
+		Other = bbP.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace);
+
 	if (Other.IsA('Pawn'))
 		HitDiff = HitLocation - Other.Location;
 
@@ -300,10 +304,8 @@ simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vect
 }
 
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
-	if (GetWeaponSettings().SniperUseReducedHitbox == false) {
-		HitLocation += (BulletDir * (P.CollisionRadius * 0.5));
+	if (GetWeaponSettings().SniperUseReducedHitbox == false)
 		return (HitLocation.Z - P.Location.Z > GetMinHeadshotZ(P));
-	}
 
 	return WImp.CheckHeadShot(P, HitLocation, BulletDir);
 }
@@ -323,23 +325,20 @@ simulated function float GetMinHeadshotZ(Pawn Other) {
 	return BodyHeight * Other.CollisionHeight;
 }
 
-function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
-{
+function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z) {
 	local vector realLoc;
 	local Pawn PawnOwner, POther;
 	local PlayerPawn PPOther;
 	local bbPlayer bbP;
 	local vector Momentum;
 
-	if (Owner.IsA('Bot'))
-	{
+	if (Owner.IsA('Bot')) {
 		Super.ProcessTraceHit(Other, HitLocation, HitNormal, X, Y, Z);
 		return;
 	}
 
 	bbP = bbPlayer(Owner);
-	if (bbP == None || !bNewNet)
-	{
+	if (bbP == None || !bNewNet) {
 		Super.ProcessTraceHit(Other, HitLocation, HitNormal, X,Y,Z);
 		return;
 	}
@@ -351,31 +350,23 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	realLoc = Owner.Location + CalcDrawOffset();
 	DoShellCase(PlayerPawn(Owner), realLoc + 20 * X + FireOffset.Y * Y + Z, X,Y,Z);
 
-	if (Other == Level)
-	{
+	if (Other == Level) {
 		if (bNewNet)
 			Spawn(class'NN_UT_HeavyWallHitEffectOwnerHidden',Owner,, HitLocation+HitNormal, Rotator(HitNormal));
 		else
 			Spawn(class'UT_HeavyWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
-	}
-	else if ( (Other != self) && (Other != Owner) && (Other != None) )
-	{
-		if ( Other.bIsPawn )
+	} else if ((Other != self) && (Other != Owner) && (Other != None)) {
+		if (Other.bIsPawn)
 			Other.PlaySound(Sound 'ChunkHit',, 4.0,,100);
 
-		if ((bbP.zzbNN_Special || !bNewNet &&
-			Other.bIsPawn && (HitLocation.Z - Other.Location.Z > BodyHeight * Other.CollisionHeight)
-			&& (instigator.IsA('PlayerPawn') || (instigator.IsA('Bot') && !Bot(Instigator).bNovice))))
-		{
+		if (bbP.zzbNN_Special) {
 			Other.TakeDamage(
 				GetWeaponSettings().SniperHeadshotDamage,
 				PawnOwner,
 				HitLocation,
 				GetWeaponSettings().SniperHeadshotMomentum * 35000 * X,
 				AltDamageType);
-		}
-		else
-		{
+		} else {
 			if (Other.bIsPawn)
 				Momentum = GetWeaponSettings().SniperMomentum * 30000 * X;
 			else
@@ -388,8 +379,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 				Momentum,
 				MyDamageType);
 		}
-		if ( !Other.bIsPawn && !Other.IsA('Carcass') )
-		{
+		if (!Other.bIsPawn && !Other.IsA('Carcass')) {
 			if (bNewNet)
 				spawn(class'NN_UT_SpriteSmokePuffOwnerHidden',Owner,,HitLocation+HitNormal*9);
 			else

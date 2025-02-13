@@ -278,7 +278,7 @@ simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Directi
 	return Result;
 }
 
-function Actor TraceShot(
+simulated function Actor TraceShot(
 	out vector HitLocation,
 	out vector HitNormal,
 	vector EndTrace,
@@ -291,7 +291,7 @@ function Actor TraceShot(
 	local bool bWeaponShock;
 	local vector Dir;
 
-	bSProjBlocks = WeaponSettings.ShockProjectileBlockBullets;
+	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	Dir = Normal(EndTrace - StartTrace);
 	

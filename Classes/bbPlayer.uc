@@ -84,6 +84,7 @@ var Weapon zzPendingWeapon;
 var float LastCAPTime; // ServerTime when last CAP was sent
 var float NextRealCAPTime;
 var decoration carriedFlag;
+var WeaponSettingsRepl WSettings;
 
 // HUD stuff
 var Mutator	zzHudMutes[50];		// Accepted Hud Mutators
@@ -719,6 +720,23 @@ simulated function bool xxNewSetLocation(vector NewLoc, vector NewVel)
 simulated function bool xxNewMoveSmooth(vector NewLoc)
 {
 	return MoveSmooth(NewLoc - Location);
+}
+
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
 }
 
 simulated function xxClientKicker(
@@ -3496,17 +3514,17 @@ simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNorm
 function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
 {
 	local Actor A, Other;
-	local IGPlus_WeaponImplementation WImp;
 	local bool bSProjBlocks;
 	local bool bWeaponShock;
+	local WeaponSettingsRepl WS;
 
-	WImp = zzUTPure.GetWeaponImpl();
+	WS = GetWeaponSettings();
 	bSProjBlocks = true;
-	if (WImp != none)
-		bSProjBlocks = WImp.WeaponSettings.ShockProjectileBlockBullets;
+	if (WS != none)
+		bSProjBlocks = GetWeaponSettings().ShockProjectileBlockBullets;
 	bWeaponShock = (Weapon != none && Weapon.IsA('ShockRifle'));
 	
-	foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 		if (Pawn(A) != none) {
 			if ((A != self) && Pawn(A).AdjustHitLocation(HitLocation, EndTrace - StartTrace))
 				Other = A;
@@ -4864,6 +4882,13 @@ function ServerTaunt(name Sequence )
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir)
 {
 	local float adjZ, maxZ;
+
+	// This rejects shots where theres geometry going through the collision
+	// cylinder. This is possible in networked play where Location is rounded to
+	// the nearest Integer for each axis, if rubbing up against really thin
+	// walls.
+	if (FastTrace(Location, HitLocation) == false)
+		return false;
 
 	TraceDir = Normal(TraceDir);
 	HitLocation = HitLocation + 0.5 * CollisionRadius * TraceDir;
