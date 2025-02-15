@@ -30,6 +30,7 @@ jobs:
           $ref = "${{ github.ref }}"
           $repoName = "${{ github.event.repository.name }}"
           $sha = "${{ github.sha }}"
+          $prever = (Get-Date -UFormat "%Y%m%d%H%M%S")
           if ("${{ github.ref_type }}" -eq "tag") {
             echo ("PKG_NAME="+$repoName+"_"+$ref.SubString(10)) >> $env:GITHUB_ENV
             echo ("PKG_VER="+$ref.SubString(10)) >> $env:GITHUB_ENV
@@ -39,6 +40,7 @@ jobs:
           } else {
             echo ("PKG_NAME="+$repoName+"_"+$ref.SubString(11)+"-"+$sha.SubString(0,8)) >> $env:GITHUB_ENV
             echo ("PKG_VER="+$ref.SubString(11)+"-"+$sha.SubString(0,8)) >> $env:GITHUB_ENV
+            echo ("PREVIEW_VER="+$ref.SubString(11)+"-"+$prever) >> $env:GITHUB_ENV
           }
 
       - name: Save Package Name In File
@@ -161,7 +163,7 @@ jobs:
         if: success() && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ env.PKG_NAME }}
+          name: IG+ Preview ${{ env.PREVIEW_VER }}
           prerelease: true
           files: Release/${{ env.PKG_NAME }}.zip
-          tag_name: ${{ env.PKG_VER }}
+          tag_name: ${{ env.PREVIEW_VER }}
