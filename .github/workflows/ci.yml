@@ -6,7 +6,7 @@ on:
   pull_request:
 
   release:
-    types: [published]
+    types: [released]
 
   workflow_dispatch:
 
@@ -144,35 +144,23 @@ jobs:
             Release/*
             !Release/**/*.uz
 
-  release:
-    runs-on: windows-latest
-    needs: build
-    if: ${{ github.event_name == 'release' }}
-
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: PackageName
-
-      - name: Restore Package Name
-        run: |
-          echo ("PKG_NAME=" + (Get-Content -Path "PackageName")) >> $env:GITHUB_ENV
-          Remove-Item -Path "PackageName"
-
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.PKG_NAME }}
-
       - name: Create Release Asset
         run: >
-          7z a -tzip -- "${{ env.PKG_NAME }}.zip" *
+          7z a -tzip "${{ env.PKG_NAME }}.zip" Release/* -x!*.uz
 
       - name: Attach Asset To Release
+        if: ${{ github.event_name == 'release' }}
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ${{ env.PKG_NAME }}.zip
           overwrite: true
 
+      - name: Create Pre-Release
+        if: ${{ github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ env.PKG_NAME }}
+          prerelease: true
+          files: ${{ env.PKG_NAME }}.zip
+          tag_name: ${{ env.PKG_VER }}
