@@ -146,7 +146,7 @@ jobs:
 
       - name: Create Release Asset
         run: >
-          7z a -tzip "${{ env.PKG_NAME }}.zip" Release/* -x!*.uz
+          7z a -tzip -x!*.uz "${{ env.PKG_NAME }}.zip" Release\*
 
       - name: Attach Asset To Release
         if: ${{ github.event_name == 'release' }}
