@@ -146,10 +146,10 @@ jobs:
 
       - name: Create Release Asset
         run: >
-          7z a -tzip -x!*.uz "${{ env.PKG_NAME }}.zip" Release\*
+          7z a -tzip "${{ env.PKG_NAME }}.zip" -ir!Release\* -xr!Release\*.uz
 
       - name: Attach Asset To Release
-        if: ${{ github.event_name == 'release' }}
+        if: success() && github.event_name == 'release'
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -157,7 +157,7 @@ jobs:
           overwrite: true
 
       - name: Create Pre-Release
-        if: ${{ github.event_name == 'push' }}
+        if: success() && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.PKG_NAME }}
