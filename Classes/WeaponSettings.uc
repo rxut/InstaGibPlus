@@ -159,6 +159,8 @@ var config string DefaultWeaponClass;
 
 var config int   InvisibilityDuration;
 
+var config bool  bEnablePingCompensation;
+
 defaultproperties
 {
 	bReplaceImpactHammer=True
@@ -318,4 +320,6 @@ defaultproperties
 	DefaultWeaponClass=""
 
 	InvisibilityDuration=45
+
+	bEnablePingCompensation=False
 }

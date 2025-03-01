@@ -133,6 +133,8 @@ var float TranslocatorHealth;
 
 var int   InvisibilityDuration;
 
+var bool  bEnablePingCompensation;
+
 replication {
 	reliable if (Role == ROLE_Authority)
 		HeadHalfHeight,
@@ -265,7 +267,9 @@ replication {
 		TranslocatorDownTime,
 		TranslocatorHealth,
 
-		InvisibilityDuration;
+		InvisibilityDuration,
+
+		bEnablePingCompensation;
 }
 
 simulated final function float WarheadSelectAnimSpeed() {
@@ -600,6 +604,8 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	TranslocatorHealth = S.TranslocatorHealth;
 
 	InvisibilityDuration = S.InvisibilityDuration;
+
+	bEnablePingCompensation = S.bEnablePingCompensation;
 }
 
 defaultproperties
@@ -741,4 +747,6 @@ defaultproperties
 	TranslocatorHealth=65.0
 
 	InvisibilityDuration=45
+
+	bEnablePingCompensation=False
 }

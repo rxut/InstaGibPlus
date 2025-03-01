@@ -278,43 +278,63 @@ simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Directi
 	return Result;
 }
 
-simulated function Actor TraceShot(
-	out vector HitLocation,
-	out vector HitNormal,
-	vector EndTrace,
-	vector StartTrace,
-	Pawn PawnOwner
-) {
+simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
+{
 	local Actor A, Other;
 	local Pawn P;
 	local bool bSProjBlocks;
 	local bool bWeaponShock;
 	local vector Dir;
+	local UTPlusDummy D;
 
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	Dir = Normal(EndTrace - StartTrace);
-	
-	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
-		P = Pawn(A);
-		if (P != none) {
-			if (P == PawnOwner)
-				continue;
-			if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false)
-				continue;
-			if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false)
-				continue;
 
-			Other = A;
-		} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-			if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock)
+	if (WSettingsRepl.bEnablePingCompensation)
+	{
+
+		bbPlayer(PawnOwner).zzUTPure.CompensateFor(bbPlayer(PawnOwner).PingAverage);
+
+		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+			if (A.IsA('UTPlusDummy')) {
+				D = UTPlusDummy(A);
+				if ((D.Actual != PawnOwner) && D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+					Other = D.Actual;
+					break;
+				}
+			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock)
 				Other = A;
-		}
-
-		if (Other != none)
-			break;
+			}
+				if (Other != none)
+				break;
+			}
+		bbPlayer(PawnOwner).zzUTPure.EndCompensation();
+		return Other;
 	}
-	return Other;
+	else{
+		foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+			P = Pawn(A);
+			if (P != none) {
+				if (P == PawnOwner)
+					continue;
+				if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false)
+					continue;
+				if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false)
+					continue;
+
+				Other = A;
+			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock)
+					Other = A;
+			}
+
+			if (Other != none)
+				break;
+		}
+		return Other;
+	}
 }
 
 defaultproperties {
