@@ -41,9 +41,9 @@ function FillData(out DummyData D) {
 event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
 
-	if (Actual.bDeleteMe) {
-		Destroy();
-	}
+	if (Actual == none || Actual.bDeleteMe) {
+        Disable('Tick');
+    }
 
 	if (Actual.IsA('PlayerPawn') == false || PlayerPawn(Actual).CurrentTimeStamp > LatestClientTimeStamp) {
 		if (Actual.IsA('PlayerPawn'))
@@ -63,6 +63,9 @@ function CompStart(int Ping) {
     local float Alpha;
     local float TimeDelta;
     local float Distance;
+
+	if (Actual == none || Actual.bDeleteMe)
+    	return;
 
     TargetTimeStamp = Level.TimeSeconds - 0.0005 * Ping;
 
