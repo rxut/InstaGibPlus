@@ -286,53 +286,70 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local bool bWeaponShock;
 	local vector Dir;
 	local UTPlusDummy D;
-
+	local bbPlayer bbP;
+	
+	bbP = bbPlayer(PawnOwner);
+	
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	Dir = Normal(EndTrace - StartTrace);
 
 	if (WSettingsRepl.bEnablePingCompensation)
 	{
-
-		bbPlayer(PawnOwner).zzUTPure.CompensateFor(bbPlayer(PawnOwner).PingAverage);
+		bbP.zzUTPure.CompensateFor(bbP.PingAverage);
 
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			if (A.IsA('UTPlusDummy')) {
 				D = UTPlusDummy(A);
-				if ((D.Actual != PawnOwner) && D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
-					Other = D.Actual;
-					break;
+				
+				if (D.Actual != PawnOwner) {
+					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+						if (CheckBodyShot(D.Actual, HitLocation, Dir) == false && CheckHeadShot(D.Actual, HitLocation, Dir) == false) {
+							continue;
+						}
+						
+						Other = D.Actual;
+						break;
+					}
 				}
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock)
-				Other = A;
+				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
+					Other = A;
+					break;
+				}
 			}
-				if (Other != none)
-				break;
-			}
-		bbPlayer(PawnOwner).zzUTPure.EndCompensation();
+		}
+		
+		bbP.zzUTPure.EndCompensation();
+		
 		return Other;
 	}
-	else{
+	else {
 		foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			P = Pawn(A);
 			if (P != none) {
-				if (P == PawnOwner)
+				if (P == PawnOwner) {
 					continue;
-				if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false)
+				}
+				
+				if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false) {
 					continue;
-				if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false)
+				}
+				
+				if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false) {
 					continue;
+				}
 
 				Other = A;
-			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock)
-					Other = A;
-			}
-
-			if (Other != none)
 				break;
+			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
+					Other = A;
+					break;
+				}
+			}
 		}
+		
 		return Other;
 	}
 }
