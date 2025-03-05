@@ -14,6 +14,7 @@ var float SniperMomentum;
 var float SniperHeadshotMomentum;
 var float SniperReloadTime;
 var bool  SniperUseReducedHitbox;
+var bool  SniperUseClientSideAnimations;
 
 var float EightballSelectTime;
 var float EightballDownTime;
@@ -75,6 +76,7 @@ var float ShockDownTime;
 var float ShockBeamDamage;
 var float ShockBeamMomentum;
 var bool  ShockBeamUseReducedHitbox;
+var bool  ShockBeamUseClientSideAnimations;
 var float ShockProjectileDamage;
 var float ShockProjectileHurtRadius;
 var float ShockProjectileMomentum;
@@ -106,6 +108,7 @@ var float EnforcerReloadTime;
 var float EnforcerReloadTimeAlt;
 var float EnforcerReloadTimeRepeat;
 var bool  EnforcerUseReducedHitbox;
+var bool  EnforcerUseClientSideAnimations;
 
 var bool  EnforcerAllowDouble;
 var float EnforcerDamageDouble;
@@ -151,6 +154,7 @@ replication {
 		SniperHeadshotMomentum,
 		SniperReloadTime,
 		SniperUseReducedHitbox,
+		SniperUseClientSideAnimations,
 
 		EightballSelectTime,
 		EightballDownTime,
@@ -211,6 +215,7 @@ replication {
 		ShockBeamDamage,
 		ShockBeamMomentum,
 		ShockBeamUseReducedHitbox,
+		ShockBeamUseClientSideAnimations,
 		ShockProjectileDamage,
 		ShockProjectileHurtRadius,
 		ShockProjectileMomentum,
@@ -242,6 +247,7 @@ replication {
 		EnforcerReloadTimeAlt,
 		EnforcerReloadTimeRepeat,
 		EnforcerUseReducedHitbox,
+		EnforcerUseClientSideAnimations,
 
 		EnforcerAllowDouble,
 		EnforcerDamageDouble,
@@ -485,6 +491,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	SniperHeadshotMomentum = S.SniperHeadshotMomentum;
 	SniperReloadTime = S.SniperReloadTime;
 	SniperUseReducedHitbox = S.SniperUseReducedHitbox;
+	SniperUseClientSideAnimations = S.SniperUseClientSideAnimations;
 
 	EightballSelectTime = S.EightballSelectTime;
 	EightballDownTime = S.EightballDownTime;
@@ -546,6 +553,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	ShockBeamDamage = S.ShockBeamDamage;
 	ShockBeamMomentum = S.ShockBeamMomentum;
 	ShockBeamUseReducedHitbox = S.ShockBeamUseReducedHitbox;
+	ShockBeamUseClientSideAnimations = S.ShockBeamUseClientSideAnimations;
 	ShockProjectileDamage = S.ShockProjectileDamage;
 	ShockProjectileHurtRadius = S.ShockProjectileHurtRadius;
 	ShockProjectileMomentum = S.ShockProjectileMomentum;
@@ -578,6 +586,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	EnforcerReloadTimeAlt = S.EnforcerReloadTimeAlt;
 	EnforcerReloadTimeRepeat = S.EnforcerReloadTimeRepeat;
 	EnforcerUseReducedHitbox = S.EnforcerUseReducedHitbox;
+	EnforcerUseClientSideAnimations = S.EnforcerUseClientSideAnimations;
 
 	EnforcerAllowDouble = S.EnforcerAllowDouble;
 	EnforcerDamageDouble = S.EnforcerDamageDouble;
@@ -586,7 +595,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	EnforcerReloadTimeDouble = S.EnforcerReloadTimeDouble;
 	EnforcerReloadTimeAltDouble = S.EnforcerReloadTimeAltDouble;
 	EnforcerReloadTimeRepeatDouble = S.EnforcerReloadTimeRepeatDouble;
-
+	
 	HammerSelectTime = S.HammerSelectTime;
 	HammerDownTime = S.HammerDownTime;
 	HammerDamage = S.HammerDamage;
@@ -629,6 +638,7 @@ defaultproperties
 	SniperHeadshotMomentum=1.0
 	SniperReloadTime=0.6666666666
 	SniperUseReducedHitbox=False
+	SniperUseClientSideAnimations=False
 
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
@@ -690,6 +700,7 @@ defaultproperties
 	ShockBeamDamage=40
 	ShockBeamMomentum=1.0
 	ShockBeamUseReducedHitbox=False
+	ShockBeamUseClientSideAnimations=False
 	ShockProjectileDamage=55
 	ShockProjectileHurtRadius=70
 	ShockProjectileMomentum=1.0
@@ -721,6 +732,7 @@ defaultproperties
 	EnforcerReloadTimeAlt=0.26
 	EnforcerReloadTimeRepeat=0.266667
 	EnforcerUseReducedHitbox=False
+	EnforcerUseClientSideAnimations=False
 
 	EnforcerAllowDouble=True
 	EnforcerDamageDouble=17

@@ -38,6 +38,7 @@ var config float SniperMomentum;
 var config float SniperHeadshotMomentum;
 var config float SniperReloadTime;
 var config bool  SniperUseReducedHitbox;
+var config bool  SniperUseClientSideAnimations;
 
 var config float EightballSelectTime;
 var config float EightballDownTime;
@@ -99,6 +100,7 @@ var config float ShockDownTime;
 var config float ShockBeamDamage;
 var config float ShockBeamMomentum;
 var config bool  ShockBeamUseReducedHitbox;
+var config bool  ShockBeamUseClientSideAnimations;
 var config float ShockProjectileDamage;
 var config float ShockProjectileHurtRadius;
 var config float ShockProjectileMomentum;
@@ -130,6 +132,7 @@ var config float EnforcerReloadTime;
 var config float EnforcerReloadTimeAlt;
 var config float EnforcerReloadTimeRepeat;
 var config bool  EnforcerUseReducedHitbox;
+var config bool  EnforcerUseClientSideAnimations;
 
 var config bool  EnforcerAllowDouble;
 var config float EnforcerDamageDouble;
@@ -200,6 +203,7 @@ defaultproperties
 	SniperHeadshotMomentum=1.0
 	SniperReloadTime=0.6666666666
 	SniperUseReducedHitbox=False
+	SniperUseClientSideAnimations=False
 
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
@@ -261,6 +265,7 @@ defaultproperties
 	ShockBeamDamage=40
 	ShockBeamMomentum=1.0
 	ShockBeamUseReducedHitbox=False
+	ShockBeamUseClientSideAnimations=False
 	ShockProjectileDamage=55
 	ShockProjectileHurtRadius=70
 	ShockProjectileMomentum=1.0
@@ -292,6 +297,7 @@ defaultproperties
 	EnforcerReloadTimeAlt=0.26
 	EnforcerReloadTimeRepeat=0.266667
 	EnforcerUseReducedHitbox=False
+	EnforcerUseClientSideAnimations=False
 
 	EnforcerAllowDouble=True
 	EnforcerDamageDouble=17

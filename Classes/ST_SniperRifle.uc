@@ -111,7 +111,9 @@ simulated function bool ClientFire(float Value)
 				Pawn(Owner).PlayRecoil(FiringSpeed);
 				
 			// ALWAYS play client effects in ClientFire for immediate feedback regardless of compensation setting
-			ClientPlayEffects();
+			if (WImp.WSettingsRepl.SniperUseClientSideAnimations) {
+				ClientPlayEffects();
+			}
 		}
 	}
 	
@@ -135,8 +137,8 @@ simulated function ClientPlayEffects()
 	// Spawn shell case for visual effect only (client-side)
 	DoClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
 	
-	// Play firing animation and sound
-	PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*3.0);
+	
+	// Play firing animation
 	PlayAnim(FireAnims[Rand(5)], GetWeaponSettings().SniperReloadAnimSpeed(), 0.05);
 	
 	// Add muzzle flash if not zoomed
@@ -185,7 +187,14 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	PawnOwner = Pawn(Owner);
 	
 	// Only spawn shell case on server if compensation is disabled
-	if (!WImp.WSettingsRepl.bEnablePingCompensation) {
+	if (WImp.WSettingsRepl.SniperUseClientSideAnimations) {
+		s = Spawn(class'ST_UT_ShellCaseOwnerHidden',, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
+		if (s != None) {
+			s.DrawScale = 2.0;
+			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+		}
+	}
+	else {
 		s = Spawn(class'UT_ShellCase',, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
 		if (s != None) {
 			s.DrawScale = 2.0;
@@ -195,12 +204,9 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 
 	// Wall hit effects - always spawn on server for Level and Mover hits
 	if (Other == Level) {
-		// ALWAYS spawn wall hit effects on server regardless of compensation
 		Spawn(class'UT_HeavyWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
 	} else if ((Other != self) && (Other != Owner) && (Other != None)) {
-		// Mover effects (walls and static geometry)
 		if (Other.IsA('Mover')) {
-			// ALWAYS spawn mover hit effects on server regardless of compensation
 			Spawn(class'UT_HeavyWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
 		}
 
@@ -289,7 +295,7 @@ simulated function PlayFiring() {
 		(PlayerPawn(Owner).DesiredFOV == PlayerPawn(Owner).DefaultFOV)) {
 		// If compensation is enabled, only show muzzle flash on client side
 		// Otherwise use the old server-side logic
-		if (!WImp.WSettingsRepl.bEnablePingCompensation || 
+		if (!WImp.WSettingsRepl.SniperUseClientSideAnimations || 
 			(Level.NetMode == NM_Standalone) || 
 			(PlayerPawn(Owner).RemoteRole != ROLE_AutonomousProxy)) {
 			bMuzzleFlash++;

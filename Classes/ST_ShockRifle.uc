@@ -71,7 +71,7 @@ simulated function bool ClientFire(float Value) {
 	}
 
 	// Do client-side effects if we're on the client AND compensation is enabled
-	if (bIsClient && WImp.WSettingsRepl.bEnablePingCompensation) {
+	if (bIsClient && WImp.WSettingsRepl.ShockBeamUseClientSideAnimations) {
 		if (Level.TimeSeconds - LastFiredTime < 0.4) 
 			return false;
 
@@ -202,7 +202,7 @@ function TraceFire(float Accuracy) {
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
 		
-	if (WImp.WSettingsRepl.bEnablePingCompensation)
+	if (WImp.WSettingsRepl.ShockBeamUseClientSideAnimations)
 		ProcessTraceHitCompensated(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
 	else
 		ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
@@ -309,7 +309,7 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 	PlayerOwner = PlayerPawn(Owner);
 	
 	// If compensation is active and this is the owner's client, use the hidden beam
-	if (WImp.WSettingsRepl.bEnablePingCompensation && PlayerOwner != None && PlayerOwner == Owner) {
+	if (WImp.WSettingsRepl.ShockBeamUseClientSideAnimations && PlayerOwner != None && PlayerOwner == Owner) {
 		// Use a beam that's hidden from the owner (will only be seen by other players)
 		Smoke = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
 	} else {

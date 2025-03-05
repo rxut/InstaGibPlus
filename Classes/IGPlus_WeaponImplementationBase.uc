@@ -286,17 +286,14 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local bool bWeaponShock;
 	local vector Dir;
 	local UTPlusDummy D;
-	local bbPlayer bbP;
-	
-	bbP = bbPlayer(PawnOwner);
-	
+
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	Dir = Normal(EndTrace - StartTrace);
 
 	if (WSettingsRepl.bEnablePingCompensation)
 	{
-		bbP.zzUTPure.CompensateFor(bbP.PingAverage);
+		bbPlayer(PawnOwner).zzUTPure.CompensateFor(bbPlayer(PawnOwner).PingAverage);
 
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			if (A.IsA('UTPlusDummy')) {
@@ -304,10 +301,6 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 				
 				if (D.Actual != PawnOwner) {
 					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
-						if (CheckBodyShot(D.Actual, HitLocation, Dir) == false && CheckHeadShot(D.Actual, HitLocation, Dir) == false) {
-							continue;
-						}
-						
 						Other = D.Actual;
 						break;
 					}
@@ -315,13 +308,14 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
 					Other = A;
-					break;
 				}
 			}
+			
+			if (Other != none)
+				break;
 		}
 		
-		bbP.zzUTPure.EndCompensation();
-		
+		bbPlayer(PawnOwner).zzUTPure.EndCompensation();
 		return Other;
 	}
 	else {
@@ -336,18 +330,19 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 					continue;
 				}
 				
-				if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false) {
-					continue;
+				if (CheckBodyShot(P, HitLocation, Dir)) {
+					Other = A;
+				} else if (CheckHeadShot(P, HitLocation, Dir)) {
+					Other = A;
 				}
-
-				Other = A;
-				break;
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
 					Other = A;
-					break;
 				}
 			}
+
+			if (Other != none)
+				break;
 		}
 		
 		return Other;
