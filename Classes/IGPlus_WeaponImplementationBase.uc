@@ -181,101 +181,113 @@ final simulated function float GetPawnBodyOffsetZ(Pawn P, float DuckFrac) {
 }
 
 
-simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction) {
-	local float DuckFrac;
-	local float BodyOffsetZ;
-	local float BodyHalfHeight, HeadHalfHeight;
+simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride) {
+    local float DuckFrac;
+    local float BodyOffsetZ;
+    local float BodyHalfHeight, HeadHalfHeight;
+    local vector BasePosition;
+    local ST_HitTestHelper HitActor;
+    local vector HitLoc, HitNorm;
+    local bool Result;
 
-	local ST_HitTestHelper HitActor;
-	local vector HitLoc, HitNorm;
-	local bool Result;
+    if (P == none)
+        return false;
 
-	if (P == none)
-		return false;
+    if (HitLocation.Z - P.Location.Z <= 0.3 * P.CollisionHeight)
+        return false;
 
-	if (HitLocation.Z - P.Location.Z <= 0.3 * P.CollisionHeight)
-		return false;
+    if (CollChecker == none || CollChecker.bDeleteMe) {
+        CollChecker = Spawn(class'ST_HitTestHelper',self, , P.Location);
+    }
 
-	if (CollChecker == none || CollChecker.bDeleteMe) {
-		CollChecker = Spawn(class'ST_HitTestHelper',self, , P.Location);
-	}
+    DuckFrac = GetPawnDuckFraction(P);
+    BodyOffsetZ = GetPawnBodyOffsetZ(P, DuckFrac);
+    BodyHalfHeight = GetPawnBodyHalfHeight(P, DuckFrac);
+    HeadHalfHeight = Lerp(DuckFrac,
+        WSettingsRepl.HeadHalfHeight,
+        0
+    );
 
-	DuckFrac = GetPawnDuckFraction(P);
-	BodyOffsetZ = GetPawnBodyOffsetZ(P, DuckFrac);
-	BodyHalfHeight = GetPawnBodyHalfHeight(P, DuckFrac);
-	HeadHalfHeight = Lerp(DuckFrac,
-		WSettingsRepl.HeadHalfHeight,
-		0
-	);
+    if (HeadHalfHeight <= 0.0)
+        return false;
 
-	if (HeadHalfHeight <= 0.0)
-		return false;
+    // Use the override position if provided, otherwise use the pawn's current position
+    if (PositionOverride != vect(0,0,0))
+        BasePosition = PositionOverride;
+    else
+        BasePosition = P.Location;
 
-	CollChecker.SetCollision(true, false, false);
-	CollChecker.SetCollisionSize(WSettingsRepl.HeadRadius, WSettingsRepl.HeadHalfHeight);
-	CollChecker.SetLocation(P.Location + vect(0,0,1)*(BodyOffsetZ + BodyHalfHeight + HeadHalfHeight));
+    CollChecker.SetCollision(true, false, false);
+    CollChecker.SetCollisionSize(WSettingsRepl.HeadRadius, WSettingsRepl.HeadHalfHeight);
+    CollChecker.SetLocation(BasePosition + vect(0,0,1)*(BodyOffsetZ + BodyHalfHeight + HeadHalfHeight));
 
-	Result = false;
+    Result = false;
 
-	foreach TraceActors(
-		class'ST_HitTestHelper',
-		HitActor, HitLoc, HitNorm,
-		HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight),
-		HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight)
-	) {
-		if (HitActor == CollChecker) {
-			Result = true;
-			break;
-		}
-	}
+    foreach TraceActors(
+        class'ST_HitTestHelper',
+        HitActor, HitLoc, HitNorm,
+        HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight),
+        HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight)
+    ) {
+        if (HitActor == CollChecker) {
+            Result = true;
+            break;
+        }
+    }
 
-	CollChecker.SetCollision(false, false, false);
+    CollChecker.SetCollision(false, false, false);
 
-	return Result;
+    return Result;
 }
 
-simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction) {
-	local float DuckFrac;
-	local float HalfHeight;
-	local float OffsetZ;
+simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride) {
+    local float DuckFrac;
+    local float HalfHeight;
+    local float OffsetZ;
+    local vector BasePosition;
+    local ST_HitTestHelper HitActor;
+    local vector HitLoc, HitNorm;
+    local bool Result;
 
-	local ST_HitTestHelper HitActor;
-	local vector HitLoc, HitNorm;
-	local bool Result;
+    if (P == none)
+        return false;
 
-	if (P == none)
-		return false;
+    if (CollChecker == none || CollChecker.bDeleteMe) {
+        CollChecker = Spawn(class'ST_HitTestHelper',self, , P.Location);
+        CollChecker.bCollideWorld = false;
+    }
 
-	if (CollChecker == none || CollChecker.bDeleteMe) {
-		CollChecker = Spawn(class'ST_HitTestHelper',self, , P.Location);
-		CollChecker.bCollideWorld = false;
-	}
+    DuckFrac = GetPawnDuckFraction(P);
+    HalfHeight = GetPawnBodyHalfHeight(P, DuckFrac);
+    OffsetZ = GetPawnBodyOffsetZ(P, DuckFrac);
 
-	DuckFrac = GetPawnDuckFraction(P);
-	HalfHeight = GetPawnBodyHalfHeight(P, DuckFrac);
-	OffsetZ = GetPawnBodyOffsetZ(P, DuckFrac);
+    // Use the override position if provided, otherwise use the pawn's current position
+    if (PositionOverride != vect(0,0,0))
+        BasePosition = PositionOverride;
+    else
+        BasePosition = P.Location;
 
-	CollChecker.SetCollision(true, false, false);
-	CollChecker.SetCollisionSize(P.CollisionRadius, HalfHeight);
-	CollChecker.SetLocation(P.Location + vect(0,0,1)*OffsetZ);
+    CollChecker.SetCollision(true, false, false);
+    CollChecker.SetCollisionSize(P.CollisionRadius, HalfHeight);
+    CollChecker.SetLocation(BasePosition + vect(0,0,1)*OffsetZ);
 
-	Result = false;
+    Result = false;
 
-	foreach TraceActors(
-		class'ST_HitTestHelper',
-		HitActor, HitLoc, HitNorm,
-		HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight),
-		HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight)
-	) {
-		if (HitActor == CollChecker) {
-			Result = true;
-			break;
-		}
-	}
+    foreach TraceActors(
+        class'ST_HitTestHelper',
+        HitActor, HitLoc, HitNorm,
+        HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight),
+        HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight)
+    ) {
+        if (HitActor == CollChecker) {
+            Result = true;
+            break;
+        }
+    }
 
-	CollChecker.SetCollision(false, false, false);
+    CollChecker.SetCollision(false, false, false);
 
-	return Result;
+    return Result;
 }
 
 simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
@@ -286,14 +298,17 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local bool bWeaponShock;
 	local vector Dir;
 	local UTPlusDummy D;
-
+	local bbPlayer bbP;
+	
+	bbP = bbPlayer(PawnOwner);
+	
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	Dir = Normal(EndTrace - StartTrace);
 
 	if (WSettingsRepl.bEnablePingCompensation)
 	{
-		bbPlayer(PawnOwner).zzUTPure.CompensateFor(bbPlayer(PawnOwner).PingAverage);
+		bbP.zzUTPure.CompensateFor(bbP.PingAverage);
 
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			if (A.IsA('UTPlusDummy')) {
@@ -301,6 +316,10 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 				
 				if (D.Actual != PawnOwner) {
 					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+						if (CheckBodyShot(D.Actual, HitLocation, Dir, D.Location) == false && CheckHeadShot(D.Actual, HitLocation, Dir, D.Location) == false) {
+							continue;
+						}
+						
 						Other = D.Actual;
 						break;
 					}
@@ -308,14 +327,13 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
 					Other = A;
+					break;
 				}
 			}
-			
-			if (Other != none)
-				break;
 		}
 		
-		bbPlayer(PawnOwner).zzUTPure.EndCompensation();
+		bbP.zzUTPure.EndCompensation();
+		
 		return Other;
 	}
 	else {
@@ -330,19 +348,18 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 					continue;
 				}
 				
-				if (CheckBodyShot(P, HitLocation, Dir)) {
-					Other = A;
-				} else if (CheckHeadShot(P, HitLocation, Dir)) {
-					Other = A;
+				if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false) {
+					continue;
 				}
+
+				Other = A;
+				break;
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
 					Other = A;
+					break;
 				}
 			}
-
-			if (Other != none)
-				break;
 		}
 		
 		return Other;
