@@ -7,8 +7,11 @@
 class ST_enforcer extends enforcer;
 
 var IGPlus_WeaponImplementation WImp;
-
 var WeaponSettingsRepl WSettings;
+var vector CDO;       // Client draw offset
+var float yMod;       // Handedness modifier
+var float LastFiredTime;
+var bool bInitAnim;   // Flag to track first animation in AltFiring
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -33,6 +36,181 @@ function PostBeginPlay()
 
 	ForEach AllActors(class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
+}
+
+// Initialize client-side variables
+simulated function InitClientVars() {
+	if (PlayerPawn(Owner) == None)
+		return;
+
+	yMod = PlayerPawn(Owner).Handedness;
+	if (yMod != 2.0)
+		yMod *= Default.FireOffset.Y;
+	else
+		yMod = 0;
+
+	// For SlaveEnforcer, we need to negate the Y offset
+	if (bIsSlave && yMod != 0)
+		yMod = -yMod;
+
+	CDO = CalcDrawOffsetClient();
+
+	if (!bIsSlave && SlaveEnforcer != None && ST_enforcer(SlaveEnforcer) != None) {
+		ST_enforcer(SlaveEnforcer).InitClientVars();
+	}
+}
+
+simulated function bool ClientFire(float Value) {
+	local Pawn PawnOwner;
+	local bool Result;
+	local bool bIsClient;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return false;
+
+	bIsClient = (Role < ROLE_Authority);
+	
+	// If WImp is null, try to find it
+	if (WImp == None) {
+		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp) {
+			break;
+		}
+	}
+
+	// Do client-side animations if we're on the client AND compensation is enabled
+	if (bIsClient && WImp.WSettingsRepl.EnforcerUseClientSideAnimations) {
+		if (Level.TimeSeconds - LastFiredTime < 0.2)
+			return false;
+
+		if ((AmmoType == None) && (AmmoName != None)) {
+			GiveAmmo(PawnOwner);
+		}
+		
+		if (AmmoType.AmmoAmount > 0) {
+			Instigator = PawnOwner;
+			GotoState('ClientFiring');
+			bPointing = True;
+			bCanClientFire = true;
+			if (bRapidFire || (FiringSpeed > 0))
+				PawnOwner.PlayRecoil(FiringSpeed);
+				
+			InitClientVars();
+			PlayFiring();
+			
+			// Only spawn shell case on client for visual feedback
+			SpawnShellCaseClient();
+			
+			LastFiredTime = Level.TimeSeconds;
+			return true;
+		}
+		return false;
+	}
+	
+	// If we're on the server OR compensation is disabled, use standard behavior
+	Result = Super.ClientFire(Value);
+	return Result;
+}
+
+simulated function bool ClientAltFire(float Value) {
+	local Pawn PawnOwner;
+	local bool Result;
+	local bool bIsClient;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return false;
+
+	bIsClient = (Role < ROLE_Authority);
+	
+	// If WImp is null, try to find it
+	if (WImp == None) {
+		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp) {
+			break;
+		}
+	}
+
+	// Do client-side animations if we're on the client AND compensation is enabled
+	if (bIsClient && WImp.WSettingsRepl.EnforcerUseClientSideAnimations) {
+		if ((AmmoType == None) && (AmmoName != None)) {
+			GiveAmmo(PawnOwner);
+		}
+		
+		if (AmmoType.AmmoAmount > 0) {
+			AltAccuracy = 0.4;
+			Instigator = PawnOwner;
+			GotoState('ClientAltFiring');
+			bPointing = True;
+			bCanClientFire = true;
+			if (bRapidFire || (FiringSpeed > 0))
+				PawnOwner.PlayRecoil(FiringSpeed);
+				
+			InitClientVars();
+			PlayAltFiring();
+			
+			// No need to spawn shell case here, this will be handled in state ClientAltFiring
+			return true;
+		}
+		return false;
+	}
+	
+	// If we're on the server OR compensation is disabled, use standard behavior
+	Result = Super.ClientAltFire(Value);
+	return Result;
+}
+
+// New function for client-side shell case spawning only
+simulated function SpawnShellCaseClient() {
+	local UT_Shellcase s;
+	local vector realLoc;
+	local vector X, Y, Z;
+	local Pawn PawnOwner;
+	local bool bMainEnforcer;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return;
+		
+	// Determine if this is the main enforcer or slave
+	bMainEnforcer = !bIsSlave;
+	
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	realLoc = Owner.Location + CDO;
+	
+	// Spawn shell case at the proper location - visible to the owner!
+	s = Spawn(class'UT_ShellCase', Owner, '', realLoc + 20 * X + yMod * Y + Z);
+	if (s != None) {
+		// Make sure it's visible to the owner
+		s.bOwnerNoSee = false;
+		s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+	}
+	
+	// If we have a SlaveEnforcer, it should also spawn a shell case but only if this is the main enforcer
+	if (bMainEnforcer && SlaveEnforcer != None && ST_enforcer(SlaveEnforcer) != None) {
+		ST_enforcer(SlaveEnforcer).SpawnShellCaseSlaveClient();
+	}
+}
+
+simulated function SpawnShellCaseSlaveClient() {
+	local UT_Shellcase s;
+	local vector realLoc;
+	local vector X, Y, Z;
+	local Pawn PawnOwner;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return;
+	
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	realLoc = Owner.Location + CDO;
+	
+	// Spawn shell case at the proper location - visible to the owner!
+	s = Spawn(class'UT_ShellCase', Owner, '', realLoc + 20 * X + yMod * Y + Z);
+	if (s != None) {
+		// Make sure it's visible to the owner
+		s.bOwnerNoSee = false;
+		s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+	}
 }
 
 function TraceFire(float Accuracy) {
@@ -62,7 +240,9 @@ function TraceFire(float Accuracy) {
 		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
 	else
 		Other = PawnOwner.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace);
-	ProcessTraceHit(Other, HitLocation, HitNormal, X,Y,Z);
+	
+	// Always use ProcessTraceHit with flag for shell case handling
+	ProcessTraceHit(Other, HitLocation, HitNormal, X, Y, Z);
 
 	FireOffset = RealOffset;
 
@@ -76,6 +256,7 @@ function TraceFire(float Accuracy) {
 	}
 }
 
+// Simplified ProcessTraceHit that handles both compensation and standard modes
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
 {
 	local UT_Shellcase s;
@@ -83,23 +264,39 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	local Pawn PawnOwner;
 	local vector Momentum;
 	local float Damage;
+	local PlayerPawn PlayerOwner;
+	local bool bUseClientSideAnimations;
 
 	PawnOwner = Pawn(Owner);
+	PlayerOwner = PlayerPawn(Owner);
+	
+	// Check if we're using client-side animations
+	bUseClientSideAnimations = (PlayerOwner != None && WImp.WSettingsRepl.EnforcerUseClientSideAnimations);
 
+	// Spawn shell case on server, hidden from owner if client-side animations are used
 	realLoc = Owner.Location + CalcDrawOffset();
-	s = Spawn(class'UT_ShellCase',, '', realLoc + 20 * X + FireOffset.Y * Y + Z);
-	if ( s != None )
-		s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
-	if (Other == Level)
-	{
-		if ( bIsSlave || (SlaveEnforcer != None) )
-			Spawn(class'UT_LightWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
-		else
-			Spawn(class'UT_WallHit',,, HitLocation+HitNormal, Rotator(HitNormal));
+	if (bUseClientSideAnimations) {
+		// Use the special shell case class that's designed to hide from owner
+		s = Spawn(class'ST_UT_ShellCaseOwnerHidden', PlayerOwner, '', realLoc + 20 * X + FireOffset.Y * Y + Z);
+		if (s != None) {
+			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+		}
+	} else {
+		s = Spawn(class'UT_ShellCase',, '', realLoc + 20 * X + FireOffset.Y * Y + Z);
+		if (s != None)
+			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
 	}
-	else if ((Other != self) && (Other != Owner) && (Other != None) )
-	{
-		if ( FRand() < 0.2 )
+	
+	// Wall hit effects
+	if (Other == Level) {
+		if (bIsSlave || (SlaveEnforcer != None)) {
+			Spawn(class'UT_LightWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
+		} else {
+			Spawn(class'UT_WallHit',,, HitLocation+HitNormal, Rotator(HitNormal));
+		}
+	}
+	else if ((Other != self) && (Other != Owner) && (Other != None)) {
+		if (FRand() < 0.2)
 			X *= 5;
 
 		Momentum = 3000.0 * X;
@@ -122,11 +319,159 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 			Momentum,
 			MyDamageType
 		);
-		if ( !Other.bIsPawn && !Other.IsA('Carcass') )
-			spawn(class'UT_SpriteSmokePuff',,,HitLocation+HitNormal*9);
-		else
+		
+		if (!Other.bIsPawn && !Other.IsA('Carcass')) {
+			Spawn(class'UT_SpriteSmokePuff',,, HitLocation+HitNormal*9);
+		} else {
 			Other.PlaySound(Sound 'ChunkHit',, 4.0,,100);
+		}
 	}
+}
+
+// ProcessTraceHitCompensated - removed, no longer needed
+
+state ClientFiring {
+	simulated function BeginState() {
+		Super(TournamentWeapon).BeginState();
+		if (SlaveEnforcer != None)
+			SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
+		else 
+			SetTimer(0.5, false);
+	}
+	
+	simulated function bool ClientFire(float Value) {
+		return false;
+	}
+
+	simulated function bool ClientAltFire(float Value) {
+		return false;
+	}
+}
+
+state ClientAltFiring {
+	simulated function BeginState() {
+		Super(TournamentWeapon).BeginState();
+		if (SlaveEnforcer != None)
+			SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
+		else 
+			SetTimer(0.5, false);
+		
+		if (WImp.WSettingsRepl.EnforcerUseClientSideAnimations) {
+			AltAccuracy = 0.4;
+			bInitAnim = true;
+		}
+	}
+	
+	simulated function AnimEnd() {
+		if (WImp.WSettingsRepl.EnforcerUseClientSideAnimations && Role < ROLE_Authority) {
+			if (bInitAnim) {
+				bInitAnim = false;
+				PlayRepeatFiring();
+				SpawnShellCaseClient(); // Only spawn shell case, no hit tracing
+				if (AltAccuracy < 3)
+					AltAccuracy += 0.5;
+				return;
+			}
+			
+			if ((Pawn(Owner).bAltFire != 0) && AmmoType.AmmoAmount > 0) {
+				PlayRepeatFiring();
+				SpawnShellCaseClient(); // Only spawn shell case, no hit tracing
+				if (AltAccuracy < 3)
+					AltAccuracy += 0.5;
+			} else {
+				PlayAnim('T2', 0.9, 0.05);
+				GotoState('');
+			}
+		} else {
+			Super.AnimEnd();
+		}
+	}
+	
+	simulated function bool ClientFire(float Value) {
+		return false;
+	}
+
+	simulated function bool ClientAltFire(float Value) {
+		return false;
+	}
+}
+
+state NormalFire {
+ignores Fire, AltFire, AnimEnd;
+
+Begin:
+	FlashCount++;
+	if (SlaveEnforcer != none)
+		SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
+	FinishAnim();
+	if (bIsSlave)
+		GotoState('Idle');
+	else 
+		Finish();
+}
+
+state AltFiring {
+ignores Fire, AltFire, AnimEnd;
+
+Begin:
+	if (SlaveEnforcer != none)
+		SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
+	FinishAnim();
+Repeater:	
+	if (AmmoType.UseAmmo(1)) {
+		FlashCount++;
+		if (SlaveEnforcer != None)
+			Pawn(Owner).PlayRecoil(3 * FiringSpeed);
+		else if (!bIsSlave)
+			Pawn(Owner).PlayRecoil(1.5 * FiringSpeed);
+		TraceFire(AltAccuracy);
+		PlayRepeatFiring();
+		FinishAnim();
+	}
+
+	if (AltAccuracy < 3)
+		AltAccuracy += 0.5;
+	if (bIsSlave) {
+		if ((Pawn(Owner).bAltFire!=0) && AmmoType.AmmoAmount>0)
+			Goto('Repeater');
+	}
+	else if (bChangeWeapon)
+		GotoState('DownWeapon');
+	else if ((Pawn(Owner).bAltFire!=0) && AmmoType.AmmoAmount>0) {
+		if (PlayerPawn(Owner) == None)
+			Pawn(Owner).bAltFire = int(FRand() < AltReFireRate);
+		Goto('Repeater');
+	}
+	PlayAnim('T2', 0.9, 0.05);
+	FinishAnim();
+	Finish();
+}
+
+// Compatibility between client and server logic
+simulated function vector CalcDrawOffsetClient() {
+	local vector DrawOffset;
+	local Pawn PawnOwner;
+	local vector WeaponBob;
+	
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return vect(0,0,0);
+
+	DrawOffset = CalcDrawOffset();
+	
+	// On client, make adjustments to match server
+	if (Level.NetMode == NM_Client) {
+		// Correct for EyeHeight differences
+		DrawOffset -= (PawnOwner.EyeHeight * vect(0,0,1));
+		DrawOffset += (PawnOwner.BaseEyeHeight * vect(0,0,1));
+	
+		// Remove WeaponBob, not applied on server
+		WeaponBob = BobDamping * PawnOwner.WalkBob;
+		WeaponBob.Z = (0.45 + 0.55 * BobDamping) * PawnOwner.WalkBob.Z;
+		DrawOffset -= WeaponBob;
+	}
+	
+	return DrawOffset;
 }
 
 function bool HandlePickupQuery( inventory Item )
@@ -176,8 +521,6 @@ function SetSwitchPriority(pawn Other)
 				carried = temp;
 			}
 		}
-
-
 	}
 }
 
@@ -245,77 +588,6 @@ simulated function TweenDown() {
 		TweenAnim( AnimSequence, AnimFrame * GetWeaponSettings().EnforcerDownTime );
 	else
 		PlayAnim('Down', GetWeaponSettings().EnforcerDownAnimSpeed(), TweenTime);
-}
-
-state NormalFire {
-ignores Fire, AltFire, AnimEnd;
-
-Begin:
-	FlashCount++;
-	if (SlaveEnforcer != none)
-		SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
-	FinishAnim();
-	if (bIsSlave)
-		GotoState('Idle');
-	else 
-		Finish();
-}
-
-state ClientFiring {
-	simulated function BeginState() {
-		Super(TournamentWeapon).BeginState();
-		if (SlaveEnforcer != None)
-			SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
-		else 
-			SetTimer(0.5, false);
-	}
-}
-
-state AltFiring {
-ignores Fire, AltFire, AnimEnd;
-
-Begin:
-	if (SlaveEnforcer != none)
-		SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
-	FinishAnim();
-Repeater:	
-	if (AmmoType.UseAmmo(1)) {
-		FlashCount++;
-		if ( SlaveEnforcer != None )
-			Pawn(Owner).PlayRecoil(3 * FiringSpeed);
-		else if (!bIsSlave)
-			Pawn(Owner).PlayRecoil(1.5 * FiringSpeed);
-		TraceFire(AltAccuracy);
-		PlayRepeatFiring();
-		FinishAnim();
-	}
-
-	if (AltAccuracy < 3)
-		AltAccuracy += 0.5;
-	if (bIsSlave) {
-		if ((Pawn(Owner).bAltFire!=0) && AmmoType.AmmoAmount>0)
-			Goto('Repeater');
-	}
-	else if (bChangeWeapon)
-		GotoState('DownWeapon');
-	else if ((Pawn(Owner).bAltFire!=0) && AmmoType.AmmoAmount>0) {
-		if (PlayerPawn(Owner) == None)
-			Pawn(Owner).bAltFire = int(FRand() < AltReFireRate);
-		Goto('Repeater');
-	}
-	PlayAnim('T2', 0.9, 0.05);
-	FinishAnim();
-	Finish();
-}
-
-state ClientAltFiring {
-	simulated function BeginState() {
-		Super(TournamentWeapon).BeginState();
-		if ( SlaveEnforcer != None )
-			SetTimer(GetWeaponSettings().EnforcerShotOffsetDouble, false);
-		else 
-			SetTimer(0.5, false);
-	}
 }
 
 defaultproperties {
