@@ -246,10 +246,23 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 }
 
 function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
-	if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
-		return (HitLocation.Z - P.Location.Z > 0.62 * P.CollisionHeight);
+    local UTPlusDummy Dummy;
+    local bbPlayer bbP;
+    local vector Loc;
 
-	return WImp.CheckHeadShot(P, HitLocation, BulletDir);
+    Loc = P.Location;
+    if (WImp.WeaponSettings.bEnablePingCompensation) {
+        bbP = bbPlayer(Owner);
+        if (bbP != none)
+            Dummy = bbP.zzUTPure.FindDummy(P);
+        if (Dummy != none)
+            Loc = Dummy.Location;
+    }
+
+    if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
+        return (HitLocation.Z - Loc.Z > 0.62 * P.CollisionHeight);
+
+    return WImp.CheckHeadShot(P, HitLocation, BulletDir, Loc);
 }
 
 function SetSwitchPriority(pawn Other)
