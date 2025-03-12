@@ -75,7 +75,7 @@ simulated function DoClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, 
 		{
 			s.DrawScale = 2.0;
 			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
-			s.RemoteRole = ROLE_None; // Make sure it stays client-side only
+			s.RemoteRole = ROLE_None;
 		}
 	}
 }
@@ -109,9 +109,9 @@ simulated function bool ClientFire(float Value)
 			bCanClientFire = true;
 			if (bRapidFire || (FiringSpeed > 0))
 				Pawn(Owner).PlayRecoil(FiringSpeed);
-				
+			
 			// ALWAYS play client effects in ClientFire for immediate feedback regardless of compensation setting
-			if (WImp.WSettingsRepl.SniperUseClientSideAnimations) {
+			if (GetWeaponSettings().SniperUseClientSideAnimations) {
 				ClientPlayEffects();
 			}
 		}
@@ -136,7 +136,6 @@ simulated function ClientPlayEffects()
 	
 	// Spawn shell case for visual effect only (client-side)
 	DoClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
-	
 	
 	// Play firing animation
 	PlayAnim(FireAnims[Rand(5)], GetWeaponSettings().SniperReloadAnimSpeed(), 0.05);
@@ -188,7 +187,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	
 	// Only spawn shell case on server if compensation is disabled
 	if (WImp.WSettingsRepl.SniperUseClientSideAnimations) {
-		s = Spawn(class'ST_UT_ShellCaseOwnerHidden',, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
+		s = Spawn(class'ST_UT_ShellCaseOwnerHidden',Owner, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
 		if (s != None) {
 			s.DrawScale = 2.0;
 			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
@@ -308,7 +307,7 @@ simulated function PlayFiring() {
 		(PlayerPawn(Owner).DesiredFOV == PlayerPawn(Owner).DefaultFOV)) {
 		// If compensation is enabled, only show muzzle flash on client side
 		// Otherwise use the old server-side logic
-		if (!WImp.WSettingsRepl.SniperUseClientSideAnimations || 
+		if (!GetWeaponSettings().SniperUseClientSideAnimations || 
 			(Level.NetMode == NM_Standalone) || 
 			(PlayerPawn(Owner).RemoteRole != ROLE_AutonomousProxy)) {
 			bMuzzleFlash++;
