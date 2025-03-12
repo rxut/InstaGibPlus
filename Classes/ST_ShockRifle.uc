@@ -62,16 +62,9 @@ simulated function bool ClientFire(float Value) {
 		return false;
 
 	bIsClient = (Role < ROLE_Authority);
-	
-	// If WImp is null, try to find it
-	if (WImp == None) {
-		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp) {
-			break;
-		}
-	}
 
 	// Do client-side effects if we're on the client AND compensation is enabled
-	if (bIsClient && WImp.WSettingsRepl.ShockBeamUseClientSideAnimations) {
+	if (bIsClient && GetWeaponSettings().ShockBeamUseClientSideAnimations) {
 		if (Level.TimeSeconds - LastFiredTime < 0.4) 
 			return false;
 
@@ -105,44 +98,56 @@ simulated function bool ClientFire(float Value) {
 	return Result;
 }
 
-// Client-side tracing and effect spawning
+// Client-side shock beam tracing and effect spawning
 simulated function TraceFire_Client() {
-	local vector HitLocation, HitNormal, StartTrace, EndTrace, X, Y, Z;
-	local actor Other;
-	local Pawn PawnOwner;
-	local vector SmokeLocation;
-	
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == None)
-		return;
-	
-	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
-	
-	StartTrace = Owner.Location + CDO + yMod * Y + FireOffset.Z * Z;
-	EndTrace = StartTrace + (10000 * vector(PawnOwner.ViewRotation));
-	
-	SmokeLocation = Owner.Location + CDO + (FireOffset.X + 20) * X + yMod * Y + FireOffset.Z * Z;
-	
-	// Match the trace method used on the server for consistency
-	if (WImp.WSettingsRepl.ShockBeamUseReducedHitbox) {
-		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
-	} else {
-		Other = PawnOwner.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace);
-	}
-	
-	// Safety check - make sure we're not hitting ourselves
-	if (Other == PawnOwner) {
-		Other = None;
-		HitLocation = EndTrace;
-	}
-	
-	if (Other == None) {
-		HitNormal = -X;
-		HitLocation = EndTrace;
-	}
-	
-	// Spawn client-side beam effect
-	ClientSpawnEffect(HitLocation, SmokeLocation, HitNormal);
+    local vector HitLocation, HitNormal, StartTrace, EndTrace, X, Y, Z;
+    local actor Other;
+    local Pawn PawnOwner;
+    local vector SmokeLocation;
+    
+    PawnOwner = Pawn(Owner);
+    if (PawnOwner == None)
+        return;
+    
+    GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+    
+    StartTrace = Owner.Location + CDO + yMod * Y + FireOffset.Z * Z;
+    EndTrace = StartTrace + (10000 * vector(PawnOwner.ViewRotation));
+    
+    SmokeLocation = Owner.Location + CDO + (FireOffset.X + 20) * X + yMod * Y + FireOffset.Z * Z;
+    
+    // IMPROVED: Add an initial trace against world geometry to ensure we hit walls correctly
+    if (Trace(HitLocation, HitNormal, EndTrace, StartTrace, true) != None) {
+        // Hit world geometry (wall, floor, etc.)
+        Other = Level; // Set to Level to indicate world hit
+        
+        // Update EndTrace to the hit location for the more detailed trace below
+        EndTrace = HitLocation;
+    }
+    
+    // Only perform actor trace if we didn't hit world geometry
+    if (Other == None) {
+        // Use the exact same method as server for actor traces
+        if (WImp.WSettingsRepl.ShockBeamUseReducedHitbox) {
+            Other = WImp.TraceShotClient(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
+        } else {
+            Other = bbPlayer(PawnOwner).TraceShotClient(HitLocation, HitNormal, EndTrace, StartTrace);
+        }
+    }
+    
+    // Safety checks
+    if (Other == PawnOwner) {
+        Other = None;
+        HitLocation = EndTrace;
+    }
+    
+    if (Other == None) {
+        HitNormal = -X;
+        HitLocation = EndTrace;
+    }
+    
+    // Spawn client-side beam effect to the correct hit point
+    ClientSpawnEffect(HitLocation, SmokeLocation, HitNormal);
 }
 
 // Spawn client-side beam effect
@@ -202,10 +207,7 @@ function TraceFire(float Accuracy) {
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
 		
-	if (WImp.WSettingsRepl.ShockBeamUseClientSideAnimations)
-		ProcessTraceHitCompensated(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
-	else
-		ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
 }
 
 // Original function signature for compatibility
@@ -227,45 +229,6 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 		PlayerOwner.ClientInstantFlash(-0.4, vect(450, 190, 650));
 		
 	// Normal beam case - visible to all
-	SpawnEffect(HitLocation, Owner.Location + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z);
-	
-	if (ST_ShockProj(Other)!=None)
-	{ 
-		AmmoType.UseAmmo(2);
-		ST_ShockProj(Other).SuperExplosion();
-		return;
-	}
-	else
-		Spawn(class'ut_RingExplosion5',,, HitLocation+HitNormal*8,rotator(HitNormal));
-
-	if ((Other != self) && (Other != Owner) && (Other != None)) 
-	{
-		Other.TakeDamage(
-			WImp.WeaponSettings.ShockBeamDamage,
-			PawnOwner,
-			HitLocation,
-			WImp.WeaponSettings.ShockBeamMomentum*60000.0*X,
-			MyDamageType);
-	}
-}
-
-// Compensated version with client hiding
-function ProcessTraceHitCompensated(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
-{
-	local PlayerPawn PlayerOwner;
-	local Pawn PawnOwner;
-
-	PawnOwner = Pawn(Owner);
-
-	if (Other==None)
-	{
-		HitNormal = -X;
-		HitLocation = Owner.Location + X*10000.0;
-	}
-
-	PlayerOwner = PlayerPawn(Owner);
-	
-	// Spawn the beam that will be shown to OTHER players but hidden from owner
 	SpawnEffect(HitLocation, Owner.Location + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z);
 	
 	if (ST_ShockProj(Other)!=None)

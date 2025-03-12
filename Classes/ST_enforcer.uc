@@ -70,16 +70,9 @@ simulated function bool ClientFire(float Value) {
 		return false;
 
 	bIsClient = (Role < ROLE_Authority);
-	
-	// If WImp is null, try to find it
-	if (WImp == None) {
-		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp) {
-			break;
-		}
-	}
 
 	// Do client-side animations if we're on the client AND compensation is enabled
-	if (bIsClient && WImp.WSettingsRepl.EnforcerUseClientSideAnimations) {
+	if (bIsClient && GetWeaponSettings().EnforcerUseClientSideAnimations) {
 		if (Level.TimeSeconds - LastFiredTime < 0.2)
 			return false;
 
@@ -122,16 +115,9 @@ simulated function bool ClientAltFire(float Value) {
 		return false;
 
 	bIsClient = (Role < ROLE_Authority);
-	
-	// If WImp is null, try to find it
-	if (WImp == None) {
-		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp) {
-			break;
-		}
-	}
 
 	// Do client-side animations if we're on the client AND compensation is enabled
-	if (bIsClient && WImp.WSettingsRepl.EnforcerUseClientSideAnimations) {
+	if (bIsClient && GetWeaponSettings().EnforcerUseClientSideAnimations) {
 		if ((AmmoType == None) && (AmmoName != None)) {
 			GiveAmmo(PawnOwner);
 		}
@@ -159,7 +145,7 @@ simulated function bool ClientAltFire(float Value) {
 	return Result;
 }
 
-// New function for client-side shell case spawning only
+// Client-side shell case spawning
 simulated function SpawnShellCaseClient() {
 	local UT_Shellcase s;
 	local vector realLoc;
@@ -177,40 +163,11 @@ simulated function SpawnShellCaseClient() {
 	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
 	realLoc = Owner.Location + CDO;
 	
-	// Spawn shell case at the proper location - visible to the owner!
 	s = Spawn(class'UT_ShellCase', Owner, '', realLoc + 20 * X + yMod * Y + Z);
 	if (s != None) {
-		// Make sure it's visible to the owner
-		s.bOwnerNoSee = false;
 		s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
-	}
-	
-	// If we have a SlaveEnforcer, it should also spawn a shell case but only if this is the main enforcer
-	if (bMainEnforcer && SlaveEnforcer != None && ST_enforcer(SlaveEnforcer) != None) {
-		ST_enforcer(SlaveEnforcer).SpawnShellCaseSlaveClient();
-	}
-}
+	}	
 
-simulated function SpawnShellCaseSlaveClient() {
-	local UT_Shellcase s;
-	local vector realLoc;
-	local vector X, Y, Z;
-	local Pawn PawnOwner;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == None)
-		return;
-	
-	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
-	realLoc = Owner.Location + CDO;
-	
-	// Spawn shell case at the proper location - visible to the owner!
-	s = Spawn(class'UT_ShellCase', Owner, '', realLoc + 20 * X + yMod * Y + Z);
-	if (s != None) {
-		// Make sure it's visible to the owner
-		s.bOwnerNoSee = false;
-		s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
-	}
 }
 
 function TraceFire(float Accuracy) {
@@ -328,8 +285,6 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	}
 }
 
-// ProcessTraceHitCompensated - removed, no longer needed
-
 state ClientFiring {
 	simulated function BeginState() {
 		Super(TournamentWeapon).BeginState();
@@ -356,43 +311,66 @@ state ClientAltFiring {
 		else 
 			SetTimer(0.5, false);
 		
-		if (WImp.WSettingsRepl.EnforcerUseClientSideAnimations) {
-			AltAccuracy = 0.4;
-			bInitAnim = true;
-		}
 	}
-	
-	simulated function AnimEnd() {
-		if (WImp.WSettingsRepl.EnforcerUseClientSideAnimations && Role < ROLE_Authority) {
-			if (bInitAnim) {
-				bInitAnim = false;
-				PlayRepeatFiring();
-				SpawnShellCaseClient(); // Only spawn shell case, no hit tracing
-				if (AltAccuracy < 3)
-					AltAccuracy += 0.5;
-				return;
-			}
-			
-			if ((Pawn(Owner).bAltFire != 0) && AmmoType.AmmoAmount > 0) {
-				PlayRepeatFiring();
-				SpawnShellCaseClient(); // Only spawn shell case, no hit tracing
-				if (AltAccuracy < 3)
-					AltAccuracy += 0.5;
-			} else {
-				PlayAnim('T2', 0.9, 0.05);
-				GotoState('');
-			}
-		} else {
-			Super.AnimEnd();
-		}
-	}
-	
-	simulated function bool ClientFire(float Value) {
+
+	simulated function bool ClientFire(float Value)
+	{
+		if ( bIsSlave )
+			Global.ClientFire(Value);
 		return false;
 	}
 
-	simulated function bool ClientAltFire(float Value) {
-		return false;
+	simulated function Timer()
+	{
+		if ( (SlaveEnforcer != none) && SlaveEnforcer.ClientAltFire(0) )
+			return;
+		SetTimer(0.5, false);
+	}
+
+	simulated function AnimEnd()
+	{
+		if ( Pawn(Owner) == None )
+			GotoState('');
+		else if ( Ammotype.AmmoAmount <= 0 )
+		{
+			PlayAnim('T2', 0.9, 0.05);	
+			GotoState('');
+		}
+		else if ( !bIsSlave && !bCanClientFire )
+			GotoState('');
+		else if ( bFirstFire || (Pawn(Owner).bAltFire != 0) )
+		{
+			if ( AnimSequence == 'T2' )
+				PlayAltFiring();
+			else
+			{
+				PlayRepeatFiring();
+				if (GetWeaponSettings().EnforcerUseClientSideAnimations) 
+					SpawnShellCaseClient();
+				bFirstFire = false;
+			}
+		}
+		else if ( Pawn(Owner).bFire != 0 )
+		{
+			if ( HasAnim('T2') && (AnimSequence != 'T2') )
+				PlayAnim('T2', 0.9, 0.05);	
+			else
+				Global.ClientFire(0);
+		}
+		else
+		{
+			if ( HasAnim('T2') && (AnimSequence != 'T2') )
+				PlayAnim('T2', 0.9, 0.05);	
+			else
+				GotoState('');
+		}
+	}
+
+	simulated function EndState()
+	{
+		Super.EndState();
+		if ( SlaveEnforcer != None )
+			SlaveEnforcer.GotoState('');
 	}
 }
 
