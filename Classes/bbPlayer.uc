@@ -3565,6 +3565,35 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 	}
 }
 
+function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
+{
+	local Actor A, Other;
+	local bool bSProjBlocks;
+	local bool bWeaponShock;
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	bSProjBlocks = true;
+	if (WS != none)
+		bSProjBlocks = GetWeaponSettings().ShockProjectileBlockBullets;
+	bWeaponShock = (Weapon != none && Weapon.IsA('ShockRifle'));
+
+	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+		if (Pawn(A) != none) {
+			if ((A != self) && Pawn(A).AdjustHitLocation(HitLocation, EndTrace - StartTrace))
+				Other = A;
+		} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+			if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock)
+				Other = A;
+		}
+
+		if (Other != none)
+			break;
+	}
+	return Other;
+}
+
+
 simulated function xxEnableCarcasses()
 {
 	local Carcass C;
