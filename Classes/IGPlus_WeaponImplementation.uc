@@ -60,6 +60,9 @@ function Actor TraceShot(
 	Pawn PawnOwner
 );
 
+simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner);
+
+
 defaultproperties {
 	RemoteRole=ROLE_SimulatedProxy
 	bAlwaysRelevant=True
