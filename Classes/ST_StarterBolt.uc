@@ -188,7 +188,7 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	BeamLen = BeamLength();
 
 	// check to see if hits something
-	if (WImp.WeaponSettings.PulseCompensatePing && bbPlayer(Owner) != none) {
+	if (WImp != None && WImp.WeaponSettings.PulseCompensatePing && bbPlayer(Owner) != none) {
 		HitActor = WImp.TraceShot(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, Instigator);
 	} else {
 		HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
