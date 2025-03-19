@@ -362,6 +362,9 @@ struct ReplBuffer {
 
 var string IGPlus_LogoVersionText;
 
+var float FRandValues[47]; // rX Added
+var int FRandValuesIndex; // rX Added
+var int FRandValuesLength; // rX Added
 replication
 {
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -443,7 +446,9 @@ replication
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
 		xxSetTeleRadius,
-		xxSetTimes;
+		xxSetTimes,
+		FRandValues,
+		FRandValuesIndex;
 
 	reliable if ( RemoteRole == ROLE_AutonomousProxy && !bDemoRecording )
 		xxCheatFound,
@@ -924,6 +929,11 @@ function ReplicateSwJumpPad(Teleporter T) {
 	);
 }
 
+function float GetFRandValues(int Index)
+{
+	return FRandValues[Index];
+}
+
 simulated function InitSettings() {
 	local bbPlayer P;
 	local bbCHSpectator S;
@@ -954,6 +964,9 @@ event PostBeginPlay()
 {
 	local int TickRate;
 	local class<Info> VersionInfoClass;
+	local int i;
+	for (i = 0; i < FRandValuesLength; i++)
+		FRandValues[i] = FRand();
 
 	Super.PostBeginPlay();
 
@@ -9635,6 +9648,8 @@ defaultproperties
 	RespawnDelay=1.0
 	NetUpdateFrequency=200
 	PlayerReplicationInfoClass=Class'bbPlayerReplicationInfo'
+
+	FRandValuesLength=47
 
 	IGPlus_ZoomToggle_SensitivityFactorX=1.0
 	IGPlus_ZoomToggle_SensitivityFactorY=1.0

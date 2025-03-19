@@ -3,6 +3,15 @@ class ST_FlakSlug extends flakslug;
 var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
+var bool bClientVisualOnly;
+var int SlugID;
+
+replication
+{
+    reliable if ( Role == ROLE_Authority )
+        SlugID;
+}
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
     local WeaponSettingsRepl S;
 
@@ -20,6 +29,32 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
     return WSettings;
 }
 
+simulated function PostNetBeginPlay()
+{
+    local ST_FlakSlug OtherSlug;
+
+	super.PostNetBeginPlay();
+
+	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+
+    foreach AllActors(class'ST_FlakSlug', OtherSlug)
+    {
+        if (OtherSlug != self && OtherSlug.SlugID == SlugID && OtherSlug.bClientVisualOnly)
+        {
+                OtherSlug.bHidden = true;
+				
+                if (OtherSlug.Trail != None)
+                {
+                    OtherSlug.Trail.Destroy();
+                    OtherSlug.Trail = None;
+                }
+
+                SetTimer(0.0, false);
+                return;
+        }
+    }
+}
+
 function ProcessTouch (Actor Other, vector HitLocation)
 {
 
@@ -29,13 +64,58 @@ function ProcessTouch (Actor Other, vector HitLocation)
     if (Other.IsA('ShockProj') && GetWeaponSettings().ShockProjectileBlockFlakSlug == false)
         return; // If ShockProjectileBlockFlakSlug is False, we do nothing and the flak slug passes through
 
+	if (bClientVisualOnly)
+		bHidden = true;
+
     NewExplode(HitLocation, Normal(HitLocation-Other.Location));
+}
+
+simulated function Landed( vector HitNormal )
+{
+	local DirectionalBlast D;
+
+	if (bClientVisualOnly)
+		{
+			bHidden = true;
+			return;
+		}
+
+	if ( Level.NetMode != NM_DedicatedServer )
+	{
+		D = Spawn(class'Botpack.DirectionalBlast',self);
+		if ( D != None )
+			D.DirectionalAttach(initialDir, HitNormal);
+	}
+	Explode(Location,HitNormal);
+}
+
+
+simulated function HitWall (vector HitNormal, actor Wall)
+{
+	local DirectionalBlast D;
+
+	if (bClientVisualOnly)
+		{
+			bHidden = true;
+			return;
+		}
+
+	if ( Level.NetMode != NM_DedicatedServer )
+	{
+		D = Spawn(class'Botpack.DirectionalBlast',self);
+		if ( D != None )
+			D.DirectionalAttach(initialDir, HitNormal);
+	}
+	Super.HitWall(HitNormal, Wall);
 }
 
 function NewExplode(vector HitLocation, vector HitNormal)
 {
 	local vector start;
 	local ST_UTChunkInfo CI;
+
+	if (bClientVisualOnly)
+		return;
 
 	if (WImp.WeaponSettings.bEnableEnhancedSplashFlakSlug) {
 		WImp.EnhancedHurtRadius(

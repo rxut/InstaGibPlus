@@ -60,20 +60,20 @@ simulated function PostNetBeginPlay() {
 }
 
 simulated event Tick(float Delta) {
-	local vector NewXPolDelta;
-	super.Tick(Delta);
+    local vector NewXPolDelta;
+    super.Tick(Delta);
 
-	if (InstigatingPlayer == none)
-		return;
+    if (InstigatingPlayer == none)
+        return;
 
-	// Catch up to server
-	if (OldLocation == Location)
-		MoveSmooth(Velocity * (0.0005 * InstigatingPlayer.PlayerReplicationInfo.Ping));
+    // Catch up to server
+    if (OldLocation == Location)
+        MoveSmooth(Velocity * (0.0005 * bbPlayer(Instigator).PingAverage * Level.TimeDilation));
 
-	// Extrapolate locally to compensate for ping
-	NewXPolDelta = (Velocity * (0.0005 * InstigatingPlayer.PlayerReplicationInfo.Ping));
-	MoveSmooth(NewXPolDelta - ExtrapolationDelta);
-	ExtrapolationDelta = NewXPolDelta;
+    // Extrapolate locally to compensate for ping
+    NewXPolDelta = (Velocity * (0.0005 * bbPlayer(Instigator).PingAverage * Level.TimeDilation));
+    MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+    ExtrapolationDelta = NewXPolDelta;
 }
 
 function SuperExplosion() {

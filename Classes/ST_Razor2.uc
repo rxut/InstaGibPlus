@@ -2,6 +2,15 @@ class ST_Razor2 extends Razor2;
 
 var IGPlus_WeaponImplementation WImp;
 
+var bool bClientVisualOnly;
+var int Razor2ID;
+
+replication
+{
+    reliable if ( Role == ROLE_Authority )
+        Razor2ID;
+}
+
 simulated function PostBeginPlay()
 {
 	if (Role == ROLE_Authority) {
@@ -12,10 +21,39 @@ simulated function PostBeginPlay()
 	Super.PostBeginPlay();
 }
 
+simulated function PostNetBeginPlay()
+{
+	local bbPlayer bbP;
+	local ST_Razor2 OtherRazor2;
+
+	super.PostNetBeginPlay();
+
+	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+
+	bbP = bbPlayer(Owner);
+
+    foreach AllActors(class'ST_Razor2', OtherRazor2)
+    {
+        if (OtherRazor2 != self && OtherRazor2.Razor2ID == Razor2ID && OtherRazor2.bClientVisualOnly)
+        {
+			OtherRazor2.bHidden = true;
+            SetTimer(0.0, false);
+            return;
+        }
+    }
+}
+
 auto state Flying
 {
 	simulated function ProcessTouch (Actor Other, Vector HitLocation) {
 		local vector Dir;
+
+		if (Other != Instigator && bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
 
 		Dir = Normal(Velocity);
 		if (bCanHitInstigator || (Other != Instigator)) {
@@ -53,6 +91,13 @@ auto state Flying
 
 	simulated function HitWall (vector HitNormal, actor Wall) {
 		local vector Vel2D, Norm2D;
+
+		if (bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
 
 		bCanHitInstigator = true;
 		PlaySound(ImpactSound, SLOT_Misc, 2.0);

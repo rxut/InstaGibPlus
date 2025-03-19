@@ -50,6 +50,7 @@ var config float GrenadeDamage;
 var config float GrenadeHurtRadius;
 var config float GrenadeMomentum;
 var config bool  RocketCompensatePing;
+var config bool  RocketUseClientSideAnimations;
 
 var config float FlakSelectTime;
 var config float FlakPostSelectTime;
@@ -65,6 +66,7 @@ var config float FlakSlugDamage;
 var config float FlakSlugHurtRadius;
 var config float FlakSlugMomentum;
 var config bool  FlakCompensatePing;
+var config bool  FlakUseClientSideAnimations;
 
 var config float RipperSelectTime;
 var config float RipperDownTime;
@@ -76,6 +78,7 @@ var config float RipperSecondaryHurtRadius;
 var config float RipperSecondaryDamage;
 var config float RipperSecondaryMomentum;
 var config bool  RipperCompensatePing;
+var config bool  RipperUseClientSideAnimations;
 
 var config float MinigunSelectTime;
 var config float MinigunDownTime;
@@ -90,7 +93,6 @@ var config float PulseSelectTime;
 var config float PulseDownTime;
 var config float PulseSphereDamage;
 var config float PulseSphereMomentum;
-var config float PulseSphereSpeed;
 var config float PulseSphereFireRate;
 var config float PulseBoltDPS;
 var config float PulseBoltMomentum;
@@ -98,6 +100,7 @@ var config float PulseBoltMaxAccumulate;
 var config float PulseBoltGrowthDelay;
 var config int   PulseBoltMaxSegments;
 var config bool  PulseCompensatePing;
+var config bool  PulseUseClientSideAnimations;
 
 var config float ShockSelectTime;
 var config float ShockDownTime;
@@ -128,6 +131,7 @@ var config float BioAltMomentum;
 var config float BioHurtRadiusBase;
 var config float BioHurtRadiusMax;
 var config bool  BioCompensatePing;
+var config bool  BioUseClientSideAnimations;
 
 var config float EnforcerSelectTime;
 var config float EnforcerDownTime;
@@ -221,6 +225,7 @@ defaultproperties
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
 	RocketCompensatePing=False
+	RocketUseClientSideAnimations=False
 
 	FlakSelectTime=0.625
 	FlakPostSelectTime=0.384615
@@ -236,6 +241,7 @@ defaultproperties
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
 	FlakCompensatePing=False
+	FlakUseClientSideAnimations=False
 
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
@@ -247,6 +253,7 @@ defaultproperties
 	RipperSecondaryDamage=34
 	RipperSecondaryMomentum=1.0
 	RipperCompensatePing=False
+	RipperUseClientSideAnimations=False
 
 	MinigunSelectTime=0.555556
 	MinigunDownTime=0.333333
@@ -261,7 +268,6 @@ defaultproperties
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
-	PulseSphereSpeed=1450.000000
 	PulseSphereFireRate=0.18
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
@@ -269,6 +275,7 @@ defaultproperties
 	PulseBoltGrowthDelay=0.05
 	PulseBoltMaxSegments=10
 	PulseCompensatePing=False
+	PulseUseClientSideAnimations=False
 
 	ShockSelectTime=0.5
 	ShockDownTime=0.259259
@@ -299,6 +306,7 @@ defaultproperties
 	BioHurtRadiusBase=75
 	BioHurtRadiusMax=250
 	BioCompensatePing=False
+	BioUseClientSideAnimations=False
 
 	EnforcerSelectTime=0.777778
 	EnforcerDownTime=0.266667

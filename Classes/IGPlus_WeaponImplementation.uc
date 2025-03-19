@@ -7,6 +7,9 @@ var WeaponSettingsRepl WSettingsRepl;
 replication {
 	reliable if (Role == ROLE_Authority)
 		WSettingsRepl;
+
+	reliable if ( Role == ROLE_Authority )
+		NextFRV;
 }
 
 final function InitWeaponSettings(string DefaultSectionName) {
@@ -46,11 +49,19 @@ function EnhancedHurtRadius(
 	optional bool bIsRazor2Alt
 );
 
+simulated function float NextFRV();
+
+
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride);
 simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride);
 
 function float GetAverageTickRate();
 function SimulateProjectile(Projectile P, int Ping);
+
+simulated function int SyncedRand(int Max);
+simulated function float SyncedFRand();
+simulated function vector SyncedVRand();
+simulated function rotator SyncedRRand();
 
 function Actor TraceShot(
 	out vector HitLocation,

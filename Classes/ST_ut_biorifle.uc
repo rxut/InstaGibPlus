@@ -10,6 +10,19 @@ var IGPlus_WeaponImplementation WImp;
 
 var WeaponSettingsRepl WSettings;
 
+var int BioGelIDCounter;
+var bool bClientAllowedToFire;
+
+replication
+{
+    reliable if ( Role == ROLE_Authority )
+        BioGelIDCounter, bClientAllowedToFire;
+}
+
+var Rotator GV;
+var Vector CDO;
+var float yMod;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -33,6 +46,44 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
+
+	// Initialize BioGelIDCounter
+	BioGelIDCounter = 0;
+}
+
+simulated function RenderOverlays(Canvas Canvas)
+{
+	local bbPlayer bbP;
+	
+	Super.RenderOverlays(Canvas);
+	yModInit();
+	
+	bbP = bbPlayer(Owner);
+	if (Role < ROLE_Authority && bbP != None)
+	{
+		if (bbP.bFire != 0 && !IsInState('ClientFiring'))
+			ClientFire(1);
+		else if (bbP.bAltFire != 0 && !IsInState('ClientAltFiring'))
+			ClientAltFire(1);
+	}
+}
+
+
+simulated function yModInit()
+{
+	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
+		GV = bbPlayer(Owner).ViewRotation;
+	
+	if (PlayerPawn(Owner) == None)
+		return;
+		
+	yMod = PlayerPawn(Owner).Handedness;
+	if (yMod != 2.0)
+		yMod *= Default.FireOffset.Y;
+	else
+		yMod = 0;
+
+	CDO = CalcDrawOffset();
 }
 
 function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
@@ -40,19 +91,68 @@ function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed,
     local Projectile P;
     local bbPlayer bbP;
 
-    // Call original ProjectileFire to spawn the projectile
     P = Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
+
+	if (ST_UT_BioGel(P) != None)
+        {
+            ST_UT_BioGel(P).BioGelID = BioGelIDCounter;
+        }
     
-    // Check if we should apply ping compensation
     if (P != None && GetWeaponSettings().BioCompensatePing) {
         bbP = bbPlayer(Owner);
         if (bbP != None && bbP.PingAverage > 0 && WImp != None) {
-            // Simulate projectile forward by player's ping time
             WImp.SimulateProjectile(P, bbP.PingAverage);
         }
     }
+
+	bClientAllowedToFire = true;
     
     return P;
+}
+
+simulated function bool ClientFire(float Value)
+{
+	local Vector Start, X,Y,Z;
+	local ST_UT_BioGel BioGelProj;
+	local bbPlayer bbP;
+	
+	if (Owner.IsA('Bot'))
+		return Super.ClientFire(Value);
+	
+	bbP = bbPlayer(Owner);
+	if (bClientAllowedToFire && Role < ROLE_Authority && bbP != None && GetWeaponSettings().BioUseClientSideAnimations && Mover(bbP.Base) == None)
+	{
+		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
+			return false;
+
+		if ( (AmmoType == None) && (AmmoName != None) )
+		{
+			// ammocheck
+			GiveAmmo(Pawn(Owner));
+		}
+		if ( AmmoType.AmmoAmount > 0 )
+		{
+			yModInit();
+			
+			Instigator = Pawn(Owner);
+			GotoState('ClientFiring');
+			bPointing=True;
+			bCanClientFire = true;
+			if ( bRapidFire || (FiringSpeed > 0) )
+				Pawn(Owner).PlayRecoil(FiringSpeed);
+
+			GetAxes(GV,X,Y,Z);
+			Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+			AdjustedAim = pawn(owner).AdjustToss(ProjectileSpeed, Start, 0, True, bWarnTarget);	
+			
+			BioGelProj = Spawn(class'ST_UT_BioGel',Owner,, Start, AdjustedAim);
+			BioGelProj.BioGelID = BioGelIDCounter;
+			BioGelProj.bClientVisualOnly = true;
+			BioGelProj.WImp = WImp;
+		}
+	}
+		
+	return Super.ClientFire(Value);
 }
 
 // Override the ShootLoad state to add ping compensation for alt-fire
