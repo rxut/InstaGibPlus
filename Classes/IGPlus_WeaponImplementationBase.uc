@@ -322,7 +322,6 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local bool bWeaponShock;
 	local vector Dir;
 	local UTPlusDummy D;
-	local ST_ProjectileDummy PD;
 	local bbPlayer bbP;
 	
 	bbP = bbPlayer(PawnOwner);
@@ -335,7 +334,8 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	{
 		bbP.zzUTPure.CompensateFor(bbP.PingAverage);
 
-		foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+
+		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			if (A.IsA('UTPlusDummy')) {
 				D = UTPlusDummy(A);
 				
@@ -348,14 +348,6 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 						Other = D.Actual;
 						break;
 					}
-				}
-			} else if (A.IsA('ST_ProjectileDummy')) {
-				// Check if this is a ShockProj dummy
-				PD = ST_ProjectileDummy(A);
-				if (PD.Actual != None && PD.Actual.IsA('ShockProj')) {
-					// Use the actual ShockProj as the hit target
-					Other = PD.Actual;
-					break;
 				}
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
@@ -397,58 +389,6 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 		
 		return Other;
 	}
-}
-
-simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
-{
-	local Actor A, Other;
-	local Pawn P;
-	local bool bSProjBlocks;
-	local bool bWeaponShock;
-	local vector Dir;
-	local bbPlayer bbP;
-	local ST_ProjectileDummy PD;
-	
-	bbP = bbPlayer(PawnOwner);
-	
-	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
-	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
-	Dir = Normal(EndTrace - StartTrace);
-
-	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
-		P = Pawn(A);
-		if (P != none) {
-			if (P == PawnOwner) {
-				continue;
-			}
-			
-			if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false) {
-				continue;
-			}
-			
-			if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false) {
-				continue;
-			}
-
-			Other = A;
-			break;
-		} else if (A.IsA('ST_ProjectileDummy')) {
-			// Check if this is a ShockProj dummy
-			PD = ST_ProjectileDummy(A);
-			if (PD.Actual != None && PD.Actual.IsA('ShockProj')) {
-				// Use the actual ShockProj as the hit target
-				Other = PD.Actual;
-				break;
-			}
-		} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-			if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
-				Other = A;
-				break;
-			}
-		}
-	}
-		
-	return Other;
 }
 
 defaultproperties {
