@@ -214,7 +214,8 @@ var bool bPressedDodge;
 var transient float LastTimeForward, LastTimeBack, LastTimeLeft, LastTimeRight;
 var transient float TurnFractionalPart, LookUpFractionalPart;
 var float DuckFraction; // 0 = Not Ducking, 1 = Ducking
-var float DuckTransitionTime; // Time to go from ducking to not-ducking
+const DuckStartTransitionTime = 0.25;// Time to go from non-ducking to ducking
+const DuckEndTransitionTime = 0.1; // Time to go from ducking to not-ducking
 var byte DuckFractionRepl; // Replicated to all players
 
 var float AverageServerDeltaTime;
@@ -5502,9 +5503,9 @@ event ServerTick(float DeltaTime) {
 	}
 
 	if (bIsCrouching) {
-		DuckFraction = FClamp(DuckFraction + DeltaTime/DuckTransitionTime, 0.0, 1.0);
+		DuckFraction = FClamp(DuckFraction + DeltaTime/DuckStartTransitionTime, 0.0, 1.0);
 	} else {
-		DuckFraction = FClamp(DuckFraction - DeltaTime/DuckTransitionTime, 0.0, 1.0);
+		DuckFraction = FClamp(DuckFraction - DeltaTime/DuckEndTransitionTime, 0.0, 1.0);
 	}
 	DuckFractionRepl = byte(DuckFraction * 255.0);
 
@@ -9575,7 +9576,6 @@ defaultproperties
 	SecondaryDodgeSpeedZ=180
 	DodgeEndVelocity=0.1
 	JumpEndVelocity=1.0
-	DuckTransitionTime=0.25
 	LastWeaponEffectCreated=-1
 	RespawnDelay=1.0
 	NetUpdateFrequency=200
