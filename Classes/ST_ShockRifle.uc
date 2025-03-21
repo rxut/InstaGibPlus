@@ -196,7 +196,7 @@ state ClientAltFiring {
 			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 		LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start,PawnOwner.ViewRotation));
 		LocalDummy.RemoteRole = ROLE_None;
-		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125;
+		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 		LocalDummy.bCollideWorld = false;
 		LocalDummy.SetCollision(false, false, false);
 	}
