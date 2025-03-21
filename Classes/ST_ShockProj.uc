@@ -68,10 +68,10 @@ simulated event Tick(float Delta) {
 
     // Catch up to server
     if (OldLocation == Location)
-        MoveSmooth(Velocity * (0.0005 * bbPlayer(Instigator).PingAverage * Level.TimeDilation));
+        MoveSmooth(Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 
     // Extrapolate locally to compensate for ping
-    NewXPolDelta = (Velocity * (0.0005 * bbPlayer(Instigator).PingAverage * Level.TimeDilation));
+    NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
     MoveSmooth(NewXPolDelta - ExtrapolationDelta);
     ExtrapolationDelta = NewXPolDelta;
 }

@@ -309,6 +309,13 @@ simulated function vector CalcDrawOffsetClient() {
 	return DrawOffset;
 }
 
+function bool PutDown()
+{
+    bClientAllowedToFire = false;	
+	bClientAllowedToAltFire = false;
+    return Super.PutDown();
+}
+
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;

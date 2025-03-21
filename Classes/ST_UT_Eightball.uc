@@ -258,6 +258,36 @@ function SetSwitchPriority(pawn Other)
 	}		
 }
 
+state NormalFire
+{
+	function Tick(float DeltaTime)
+	{
+		Super.Tick(DeltaTime);
+
+		if (bChangeWeapon)
+		{
+			RocketsLoaded = 0;
+			bRotated = false;
+			GotoState('DownWeapon');
+		}
+	}
+}
+
+state AltFiring
+{
+	function Tick( float DeltaTime )
+	{
+		Super.Tick(DeltaTime);
+		
+		if (bChangeWeapon)
+		{
+			RocketsLoaded = 0;
+			bRotated = false;
+			GotoState('DownWeapon');
+		}
+	}
+}
+
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;

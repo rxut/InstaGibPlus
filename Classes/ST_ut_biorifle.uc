@@ -230,6 +230,12 @@ function SetSwitchPriority(pawn Other)
 	}		
 }
 
+function bool PutDown()
+{
+    bClientAllowedToFire = false;
+    return Super.PutDown();
+}
+
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;

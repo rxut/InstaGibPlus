@@ -338,6 +338,12 @@ simulated function TweenDown() {
 		TweenAnim('Down', GetWeaponSettings().PulseDownTime);
 }
 
+function bool PutDown()
+{
+    bClientAllowedToFire = false;	
+    return Super.PutDown();
+}
+
 State ClientActive
 {
 	simulated function bool ClientFire(float Value)
@@ -391,4 +397,5 @@ State ClientActive
 defaultproperties {
 	ProjectileClass=Class'ST_PlasmaSphere'
 	AltProjectileClass=Class'ST_StarterBolt'
+	CollisionRadius=50
 }

@@ -52,6 +52,8 @@ function PostBeginPlay()
         break;      // Find master :D
     
     SlugIDCounter = 0; // Initialize slug ID counter
+	bClientAllowedToFire = true;
+	bClientAllowedToAltFire = true;
 }
 
 simulated function yModInit()
@@ -417,6 +419,13 @@ State ClientActive
 			bWeaponUp = true;
 		}
 	}
+}
+
+function bool PutDown()
+{
+    bClientAllowedToFire = false;	
+	bClientAllowedToAltFire = false;
+    return Super.PutDown();
 }
 
 simulated function TweenDown() {
