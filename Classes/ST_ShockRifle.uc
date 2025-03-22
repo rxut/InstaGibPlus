@@ -9,8 +9,9 @@ var WeaponSettingsRepl WSettings;
 
 var ST_ShockProj LocalDummy;
 var vector CDO;       // Client draw offset
-var float LastFiredTime;
 var float yMod;       // Handedness modifier
+
+var float LastFiredTime; // Last time the weapon was fired for Client-side Beam
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -38,7 +39,6 @@ function PostBeginPlay()
 	}
 }
 
-// Initialize client-side variables
 simulated function InitClientVars() {
 	if (PlayerPawn(Owner) == None)
 		return;
@@ -55,16 +55,12 @@ simulated function InitClientVars() {
 simulated function bool ClientFire(float Value) {
 	local Pawn PawnOwner;
 	local bool Result;
-	local bool bIsClient;
-
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None) 
 		return false;
 
-	bIsClient = (Role < ROLE_Authority);
-
 	// Do client-side effects if we're on the client AND compensation is enabled
-	if (bIsClient && GetWeaponSettings().ShockBeamUseClientSideAnimations) {
+	if (Role < ROLE_Authority && GetWeaponSettings().ShockBeamUseClientSideAnimations) {
 		if (Level.TimeSeconds - LastFiredTime < 0.4) 
 			return false;
 
@@ -169,8 +165,6 @@ simulated function ClientSpawnEffect(vector HitLocation, vector SmokeLocation, v
 	Smoke = Spawn(class'ShockBeam', Owner,, SmokeLocation, SmokeRotation);
 	if (Smoke != None) {
 		Smoke.RemoteRole = ROLE_None; // Not replicated to server
-		Smoke.bOwnerNoSee = false; // Maybe not needed?
-		
 		Smoke.MoveAmount = DVector/NumPoints;
 		Smoke.NumPuffs = NumPoints - 1;
 	}
@@ -316,6 +310,12 @@ function SetSwitchPriority(pawn Other)
 	}		
 }
 
+function bool PutDown()
+{
+	bCanClientFire = false;
+	return Super.PutDown();
+}
+
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
@@ -372,7 +372,7 @@ state ClientAltFiring {
 			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 		LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start,PawnOwner.ViewRotation));
 		LocalDummy.RemoteRole = ROLE_None;
-		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125;
+		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 		LocalDummy.bCollideWorld = false;
 		LocalDummy.SetCollision(false, false, false);
 	}
