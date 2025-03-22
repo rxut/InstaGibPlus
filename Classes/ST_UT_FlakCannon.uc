@@ -116,27 +116,35 @@ simulated function bool ClientFire( float Value )
 			Start = Start + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
 
 			ClientChunk = Spawn( class 'ST_UTChunk1',Owner, '', Start, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk2',Owner, '', Start - Z, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk3',Owner, '', Start + 2 * Y + Z, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk4',Owner, '', Start - Y, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk1',Owner, '', Start + 2 * Y - Z, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk2',Owner, '', Start, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			ClientChunk = Spawn( class 'ST_UTChunk4',Owner, '', Start + 2 * Y + Z, GV);
+			ClientChunk.RemoteRole = ROLE_None;
 			ClientChunk.bClientVisualOnly = true;
 			ClientChunk.bIsOnMover = bIsOnMover;
 			
@@ -187,6 +195,7 @@ simulated function bool ClientAltFire(float Value)
             AdjustedAim = PawnOwner.AdjustToss(AltProjectileSpeed, Start, AimError, True, bAltWarnTarget);
             
             ClientSlug = Spawn(class'ST_FlakSlug', Owner,, Start, AdjustedAim);
+			ClientSlug.RemoteRole = ROLE_None;
             ClientSlug.WImp = WImp;
             ClientSlug.bClientVisualOnly = true;
             ClientSlug.SlugID = SlugIDCounter;

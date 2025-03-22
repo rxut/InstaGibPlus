@@ -110,7 +110,7 @@ simulated function bool ClientFire(float Value)
 			AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
 			
 			ClientRazor2 = Spawn(Class'ST_Razor2', Owner,, Start, AdjustedAim);
-
+			ClientRazor2.RemoteRole = ROLE_None;
 			ClientRazor2.bClientVisualOnly = true;
 
 			ClientRazor2.Razor2ID = Razor2Counter;
@@ -154,7 +154,7 @@ simulated function bool ClientAltFire(float Value)
 			AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
 			
 			ClientRazor2Alt = Spawn(Class'ST_Razor2Alt', Owner,, Start, AdjustedAim);
-
+			ClientRazor2Alt.RemoteRole = ROLE_None;
 			ClientRazor2Alt.bClientVisualOnly = true;
 
 			ClientRazor2Alt.Razor2AltID = Razor2AltCounter;

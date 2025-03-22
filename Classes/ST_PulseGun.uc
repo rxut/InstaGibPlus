@@ -150,6 +150,7 @@ simulated function bool ClientFire(float Value)
 			Start = Start - Sin(Angle)*Y*4 + (Cos(Angle)*4 - 10.78)*Z;
 
 			ClientPlasma = Spawn(Class'ST_PlasmaSphere', Owner,, Start, AdjustedAim);
+			ClientPlasma.RemoteRole = ROLE_None;
 			ClientPlasma.Velocity = Vector(AdjustedAim) * ProjectileSpeed;
 			
 			ClientPlasma.bClientVisualOnly = true;
@@ -342,6 +343,19 @@ function bool PutDown()
 {
     bClientAllowedToFire = false;	
     return Super.PutDown();
+}
+
+state AltFiring
+{
+	function Tick( float DeltaTime )
+	{
+		Super.Tick(DeltaTime);
+		
+		if (bChangeWeapon)
+		{
+			GotoState('DownWeapon');
+		}
+	}
 }
 
 State ClientActive

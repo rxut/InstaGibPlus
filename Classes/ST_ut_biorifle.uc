@@ -146,6 +146,7 @@ simulated function bool ClientFire(float Value)
 			AdjustedAim = pawn(owner).AdjustToss(ProjectileSpeed, Start, 0, True, bWarnTarget);	
 			
 			BioGelProj = Spawn(class'ST_UT_BioGel',Owner,, Start, AdjustedAim);
+			BioGelProj.RemoteRole = ROLE_None;
 			BioGelProj.BioGelID = BioGelIDCounter;
 			BioGelProj.bClientVisualOnly = true;
 			BioGelProj.WImp = WImp;
@@ -234,6 +235,19 @@ function bool PutDown()
 {
     bClientAllowedToFire = false;
     return Super.PutDown();
+}
+
+state AltFiring
+{
+	function Tick( float DeltaTime )
+	{
+		Super.Tick(DeltaTime);
+		
+		if (bChangeWeapon)
+		{
+			GotoState('DownWeapon');
+		}
+	}
 }
 
 simulated function PlaySelect() {

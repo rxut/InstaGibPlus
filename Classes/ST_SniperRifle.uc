@@ -188,6 +188,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	// Only spawn shell case on server if compensation is disabled
 	if (WImp.WSettingsRepl.SniperUseClientSideAnimations) {
 		s = Spawn(class'ST_UT_ShellCaseOwnerHidden',Owner, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
+		s.RemoteRole = ROLE_None;
 		if (s != None) {
 			s.DrawScale = 2.0;
 			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
