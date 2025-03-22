@@ -174,6 +174,8 @@ var config int   InvisibilityDuration;
 
 var config bool  bEnablePingCompensation;
 
+var config int   PingCompensationMax;
+
 defaultproperties
 {
 	bReplaceImpactHammer=True
@@ -347,4 +349,6 @@ defaultproperties
 	InvisibilityDuration=45
 
 	bEnablePingCompensation=False
+
+	PingCompensationMax=150
 }

@@ -23,6 +23,20 @@ var bool bCompActive;
 
 var UTPlusDummy Next;
 
+var IGPlus_WeaponImplementation WImp;
+
+simulated function PostBeginPlay()
+{
+
+	if (ROLE == ROLE_Authority)
+	{
+		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
+			break;
+	}
+
+	Super.PostBeginPlay();
+}
+
 function FillData(out DummyData D) {
 	D.Loc = Actual.Location;
 	D.Vel = Actual.Velocity;
@@ -69,6 +83,10 @@ function CompStart(int Ping) {
 
 	if (Actual == none || Actual.bDeleteMe)
     	return;
+
+   // Cap ping compensation
+   if (Ping > WImp.WeaponSettings.PingCompensationMax)
+        Ping = WImp.WeaponSettings.PingCompensationMax;
 
     TargetTimeStamp = Level.TimeSeconds - 0.001*Ping*Level.TimeDilation;
 

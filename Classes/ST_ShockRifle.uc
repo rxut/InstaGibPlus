@@ -55,8 +55,6 @@ simulated function InitClientVars() {
 simulated function bool ClientFire(float Value) {
 	local Pawn PawnOwner;
 	local bool Result;
-	local bool bIsClient;
-
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None) 
 		return false;

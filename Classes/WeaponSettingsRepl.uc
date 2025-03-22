@@ -148,6 +148,8 @@ var int   InvisibilityDuration;
 
 var bool  bEnablePingCompensation;
 
+var int   PingCompensationMax;
+
 replication {
 	reliable if (Role == ROLE_Authority)
 		HeadHalfHeight,
@@ -293,7 +295,8 @@ replication {
 		TranslocatorCompensatePing,
 		InvisibilityDuration,
 
-		bEnablePingCompensation;
+		bEnablePingCompensation,
+		PingCompensationMax;
 }
 
 simulated final function float WarheadSelectAnimSpeed() {
@@ -640,6 +643,8 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	InvisibilityDuration = S.InvisibilityDuration;
 
 	bEnablePingCompensation = S.bEnablePingCompensation;
+
+	PingCompensationMax = S.PingCompensationMax;
 }
 
 defaultproperties
@@ -796,4 +801,6 @@ defaultproperties
 	InvisibilityDuration=45
 
 	bEnablePingCompensation=False
+	
+	PingCompensationMax=150
 }

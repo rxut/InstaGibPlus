@@ -253,6 +253,10 @@ function SimulateProjectile(Projectile P, int Ping) {
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
+  // Cap ping compensation
+  if (Ping > WeaponSettings.PingCompensationMax)
+        Ping = WeaponSettings.PingCompensationMax;
+
   DeltaTime = 0.001*Ping*Level.TimeDilation;
   DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
   SimPing = Ping;
@@ -323,6 +327,7 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local vector Dir;
 	local UTPlusDummy D;
 	local bbPlayer bbP;
+	local int Ping;
 	
 	bbP = bbPlayer(PawnOwner);
 	
@@ -330,10 +335,15 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	Dir = Normal(EndTrace - StartTrace);
 
+	Ping = bbP.PingAverage;
+
+	// Cap hitscan ping compensation
+	if (Ping > WeaponSettings.PingCompensationMax)
+		Ping = WeaponSettings.PingCompensationMax;
+
 	if (WSettingsRepl.bEnablePingCompensation && bbP != none)
 	{
-		bbP.zzUTPure.CompensateFor(bbP.PingAverage);
-
+		bbP.zzUTPure.CompensateFor(Ping);
 
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			if (A.IsA('UTPlusDummy')) {
