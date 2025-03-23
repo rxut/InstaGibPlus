@@ -214,7 +214,8 @@ var bool bPressedDodge;
 var transient float LastTimeForward, LastTimeBack, LastTimeLeft, LastTimeRight;
 var transient float TurnFractionalPart, LookUpFractionalPart;
 var float DuckFraction; // 0 = Not Ducking, 1 = Ducking
-var float DuckTransitionTime; // Time to go from ducking to not-ducking
+const DuckStartTransitionTime = 0.25;// Time to go from non-ducking to ducking
+const DuckEndTransitionTime = 0.1; // Time to go from ducking to not-ducking
 var byte DuckFractionRepl; // Replicated to all players
 
 var float AverageServerDeltaTime;
@@ -362,6 +363,9 @@ struct ReplBuffer {
 
 var string IGPlus_LogoVersionText;
 
+var float FRandValues[47]; // rX Added
+var int FRandValuesIndex; // rX Added
+var int FRandValuesLength; // rX Added
 replication
 {
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -443,7 +447,9 @@ replication
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
 		xxSetTeleRadius,
-		xxSetTimes;
+		xxSetTimes,
+		FRandValues,
+		FRandValuesIndex;
 
 	reliable if ( RemoteRole == ROLE_AutonomousProxy && !bDemoRecording )
 		xxCheatFound,
@@ -924,6 +930,11 @@ function ReplicateSwJumpPad(Teleporter T) {
 	);
 }
 
+function float GetFRandValues(int Index)
+{
+	return FRandValues[Index];
+}
+
 simulated function InitSettings() {
 	local bbPlayer P;
 	local bbCHSpectator S;
@@ -954,6 +965,9 @@ event PostBeginPlay()
 {
 	local int TickRate;
 	local class<Info> VersionInfoClass;
+	local int i;
+	for (i = 0; i < FRandValuesLength; i++)
+		FRandValues[i] = FRand();
 
 	Super.PostBeginPlay();
 
@@ -5557,9 +5571,9 @@ event ServerTick(float DeltaTime) {
 	}
 
 	if (bIsCrouching) {
-		DuckFraction = FClamp(DuckFraction + DeltaTime/DuckTransitionTime, 0.0, 1.0);
+		DuckFraction = FClamp(DuckFraction + DeltaTime/DuckStartTransitionTime, 0.0, 1.0);
 	} else {
-		DuckFraction = FClamp(DuckFraction - DeltaTime/DuckTransitionTime, 0.0, 1.0);
+		DuckFraction = FClamp(DuckFraction - DeltaTime/DuckEndTransitionTime, 0.0, 1.0);
 	}
 	DuckFractionRepl = byte(DuckFraction * 255.0);
 
@@ -9078,26 +9092,31 @@ simulated function xxGetDemoPlaybackSpec()
 
 }
 
-simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional Vector V, optional vector A, optional Rotator R, optional float DS, optional Actor S)
+simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional Vector V, optional vector A, optional Rotator R, optional float DS, optional Actor S, optional Vector MoveAmount, optional int NumPuffs)
 {
-	xxGetDemoPlaybackSpec();
-	if (zzDemoPlaybackSpec == none)
-		return;
+    xxGetDemoPlaybackSpec();
+    if (zzDemoPlaybackSpec == none)
+        return;
 
-	if (zzA == None)
-	{
-		zzDemoPlaybackSN.xxFixActor(C, L, V, A, R, DS, S);
-		return;
-	}
+    if (zzA == None)
+    {
+        zzDemoPlaybackSN.xxFixActor(C, L, V, A, R, DS, S, MoveAmount, NumPuffs);
+        return;
+    }
 
-	zzA.Velocity = V;
-	zzA.Acceleration = A;
-	zzA.SetRotation(R);
-	if(DS != 0)
-		zzA.DrawScale = DS;
-	if((S != none) && UT_SeekingRocket(zzA) != none)
-		UT_SeekingRocket(zzA).Seeking = S;
-
+    zzA.Velocity = V;
+    zzA.Acceleration = A;
+    zzA.SetRotation(R);
+    if(DS != 0)
+        zzA.DrawScale = DS;
+    if((S != none) && UT_SeekingRocket(zzA) != none)
+        UT_SeekingRocket(zzA).Seeking = S;
+    if(ShockBeam(zzA) != none && MoveAmount != vect(0,0,0))
+    {
+        ShockBeam(zzA).MoveAmount = MoveAmount;
+        if(NumPuffs > 0)
+            ShockBeam(zzA).NumPuffs = NumPuffs;
+    }
 }
 
 function string xxFindClanTags() {
@@ -9630,11 +9649,12 @@ defaultproperties
 	SecondaryDodgeSpeedZ=180
 	DodgeEndVelocity=0.1
 	JumpEndVelocity=1.0
-	DuckTransitionTime=0.25
 	LastWeaponEffectCreated=-1
 	RespawnDelay=1.0
 	NetUpdateFrequency=200
 	PlayerReplicationInfoClass=Class'bbPlayerReplicationInfo'
+
+	FRandValuesLength=47
 
 	IGPlus_ZoomToggle_SensitivityFactorX=1.0
 	IGPlus_ZoomToggle_SensitivityFactorY=1.0
