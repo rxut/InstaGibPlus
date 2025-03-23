@@ -163,13 +163,11 @@ simulated function ClientSpawnEffect(vector HitLocation, vector SmokeLocation, v
 	SmokeRotation.roll = Rand(65535);
 	
 	Smoke = Spawn(class'ShockBeam', Owner,, SmokeLocation, SmokeRotation);
-	if (Smoke != None) {
-		Smoke.RemoteRole = ROLE_None; // Not replicated to server
-		Smoke.bOwnerNoSee = false; // Maybe not needed?
-		
-		Smoke.MoveAmount = DVector/NumPoints;
-		Smoke.NumPuffs = NumPoints - 1;
-	}
+	Smoke.MoveAmount = DVector/NumPoints;
+	Smoke.NumPuffs = NumPoints - 1;
+
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).xxClientDemoFix(None, class'ShockBeam', SmokeLocation, , , SmokeRotation, , , DVector/NumPoints, NumPoints-1);
 }
 
 function TraceFire(float Accuracy) {
@@ -250,7 +248,8 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 // Server-side beam spawning
 function SpawnEffect(vector HitLocation, vector SmokeLocation)
 {
-	local ShockBeam Smoke;
+	local ST_ShockBeamOwnerHidden ServerBeamHidden;
+	local ShockBeam ServerBeamVisible;
 	local Vector DVector;
 	local int NumPoints;
 	local rotator SmokeRotation;
@@ -269,15 +268,20 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 	
 	// If compensation is active and this is the owner's client, use the hidden beam
 	if (WImp.WSettingsRepl.ShockBeamUseClientSideAnimations && PlayerOwner != None && PlayerOwner == Owner) {
-		// Use a beam that's hidden from the owner (will only be seen by other players)
-		Smoke = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
+
+		ServerBeamHidden = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
+		ServerBeamHidden.bOwnerNoSee = true;
+		ServerBeamHidden.bAlreadyHidden = false;
+
+		ServerBeamHidden.MoveAmount = DVector/NumPoints;
+		ServerBeamHidden.NumPuffs = NumPoints - 1;
+
 	} else {
-		// Standard beam visible to everyone
-		Smoke = Spawn(class'ShockBeam',, , SmokeLocation, SmokeRotation);
-	}
 		
-	Smoke.MoveAmount = DVector/NumPoints;
-	Smoke.NumPuffs = NumPoints - 1;
+		ServerBeamVisible = Spawn(class'ShockBeam',, , SmokeLocation, SmokeRotation);
+		ServerBeamVisible.MoveAmount = DVector/NumPoints;
+		ServerBeamVisible.NumPuffs = NumPoints - 1;
+	}
 }
 
 function SetSwitchPriority(pawn Other)

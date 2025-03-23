@@ -9092,26 +9092,31 @@ simulated function xxGetDemoPlaybackSpec()
 
 }
 
-simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional Vector V, optional vector A, optional Rotator R, optional float DS, optional Actor S)
+simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional Vector V, optional vector A, optional Rotator R, optional float DS, optional Actor S, optional Vector MoveAmount, optional int NumPuffs)
 {
-	xxGetDemoPlaybackSpec();
-	if (zzDemoPlaybackSpec == none)
-		return;
+    xxGetDemoPlaybackSpec();
+    if (zzDemoPlaybackSpec == none)
+        return;
 
-	if (zzA == None)
-	{
-		zzDemoPlaybackSN.xxFixActor(C, L, V, A, R, DS, S);
-		return;
-	}
+    if (zzA == None)
+    {
+        zzDemoPlaybackSN.xxFixActor(C, L, V, A, R, DS, S, MoveAmount, NumPuffs);
+        return;
+    }
 
-	zzA.Velocity = V;
-	zzA.Acceleration = A;
-	zzA.SetRotation(R);
-	if(DS != 0)
-		zzA.DrawScale = DS;
-	if((S != none) && UT_SeekingRocket(zzA) != none)
-		UT_SeekingRocket(zzA).Seeking = S;
-
+    zzA.Velocity = V;
+    zzA.Acceleration = A;
+    zzA.SetRotation(R);
+    if(DS != 0)
+        zzA.DrawScale = DS;
+    if((S != none) && UT_SeekingRocket(zzA) != none)
+        UT_SeekingRocket(zzA).Seeking = S;
+    if(ShockBeam(zzA) != none && MoveAmount != vect(0,0,0))
+    {
+        ShockBeam(zzA).MoveAmount = MoveAmount;
+        if(NumPuffs > 0)
+            ShockBeam(zzA).NumPuffs = NumPuffs;
+    }
 }
 
 function string xxFindClanTags() {

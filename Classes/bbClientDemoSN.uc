@@ -10,6 +10,8 @@ struct zzActorInfo
 	var rotator zzActorR;
 	var float zzActorDS;
 	var Actor zzActorS;
+	var Vector zzActorMoveAmount;
+	var int zzActorNumPuffs;
 };
 var zzActorInfo zzActors[20];
 var int zzActorIndex;
@@ -73,6 +75,15 @@ simulated event Actor SpawnNotification(Actor A)
 			if((zzActors[zzClosestActorIndex].zzActorS != none) && UT_SeekingRocket(A) != none)
 				UT_SeekingRocket(A).Seeking = zzActors[zzClosestActorIndex].zzActorS;
 			
+			if(ShockBeam(A) != none)
+       		 {
+            if(VSize(zzActors[zzClosestActorIndex].zzActorMoveAmount) > 0)
+                ShockBeam(A).MoveAmount = zzActors[zzClosestActorIndex].zzActorMoveAmount;
+                
+            if(zzActors[zzClosestActorIndex].zzActorNumPuffs > 0)
+                ShockBeam(A).NumPuffs = zzActors[zzClosestActorIndex].zzActorNumPuffs;
+      	 	 }
+			
 			zzActorCount--;
 			
 		}
@@ -80,20 +91,22 @@ simulated event Actor SpawnNotification(Actor A)
 	return A;
 }
 
-simulated function xxFixActor(class<Actor> C, Vector L, Vector V, Vector A, Rotator R, optional float DS, optional Actor S)
+simulated function xxFixActor(class<Actor> C, Vector L, Vector V, Vector A, Rotator R, optional float DS, optional Actor S, optional Vector MoveAmount, optional int NumPuffs)
 {
-	zzActors[zzActorIndex].zzbActive = true;
-	zzActors[zzActorIndex].zzActorC = C;
-	zzActors[zzActorIndex].zzActorL = L;
-	zzActors[zzActorIndex].zzActorV = V;
-	zzActors[zzActorIndex].zzActorA = A;
-	zzActors[zzActorIndex].zzActorR = R;
-	zzActors[zzActorIndex].zzActorDS = DS;
-	zzActors[zzActorIndex].zzActorS = S;
-	zzActorIndex++;
-	if (zzActorIndex == 20)
-		zzActorIndex = 0;
-	zzActorCount++;
+    zzActors[zzActorIndex].zzbActive = true;
+    zzActors[zzActorIndex].zzActorC = C;
+    zzActors[zzActorIndex].zzActorL = L;
+    zzActors[zzActorIndex].zzActorV = V;
+    zzActors[zzActorIndex].zzActorA = A;
+    zzActors[zzActorIndex].zzActorR = R;
+    zzActors[zzActorIndex].zzActorDS = DS;
+    zzActors[zzActorIndex].zzActorS = S;
+    zzActors[zzActorIndex].zzActorMoveAmount = MoveAmount;
+    zzActors[zzActorIndex].zzActorNumPuffs = NumPuffs;
+    zzActorIndex++;
+    if (zzActorIndex == 20)
+        zzActorIndex = 0;
+    zzActorCount++;
 }
 
 defaultproperties
