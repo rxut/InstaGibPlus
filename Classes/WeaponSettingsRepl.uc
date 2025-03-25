@@ -41,6 +41,7 @@ var float FlakSlugDamage;
 var float FlakSlugHurtRadius;
 var float FlakSlugMomentum;
 var bool  FlakCompensatePing;
+var bool  FlakUseClientSideAnimations;
 
 var float RipperSelectTime;
 var float RipperDownTime;
@@ -52,6 +53,7 @@ var float RipperSecondaryHurtRadius;
 var float RipperSecondaryDamage;
 var float RipperSecondaryMomentum;
 var bool  RipperCompensatePing;
+var bool  RipperUseClientSideAnimations;
 
 var float MinigunSelectTime;
 var float MinigunDownTime;
@@ -66,7 +68,6 @@ var float PulseSelectTime;
 var float PulseDownTime;
 var float PulseSphereDamage;
 var float PulseSphereMomentum;
-var float PulseSphereSpeed;
 var float PulseSphereFireRate;
 var float PulseBoltDPS;
 var float PulseBoltMomentum;
@@ -74,6 +75,7 @@ var float PulseBoltMaxAccumulate;
 var float PulseBoltGrowthDelay;
 var int   PulseBoltMaxSegments;
 var bool  PulseCompensatePing;
+var bool  PulseUseClientSideAnimations;
 
 var float ShockSelectTime;
 var float ShockDownTime;
@@ -105,7 +107,7 @@ var float BioAltMomentum;
 var float BioHurtRadiusBase;
 var float BioHurtRadiusMax;
 var bool  BioCompensatePing;
-
+var bool  BioUseClientSideAnimations;
 var float EnforcerSelectTime;
 var float EnforcerDownTime;
 var float EnforcerDamage;
@@ -145,6 +147,8 @@ var int   InvisibilityDuration;
 
 var bool  bEnablePingCompensation;
 
+var int   PingCompensationMax;
+
 replication {
 	reliable if (Role == ROLE_Authority)
 		HeadHalfHeight,
@@ -172,7 +176,6 @@ replication {
 		GrenadeHurtRadius,
 		GrenadeMomentum,
 		RocketCompensatePing,
-
 		FlakSelectTime,
 		FlakPostSelectTime,
 		FlakDownTime,
@@ -187,6 +190,7 @@ replication {
 		FlakSlugHurtRadius,
 		FlakSlugMomentum,
 		FlakCompensatePing,
+		FlakUseClientSideAnimations,
 
 		RipperSelectTime,
 		RipperDownTime,
@@ -198,6 +202,7 @@ replication {
 		RipperSecondaryDamage,
 		RipperSecondaryMomentum,
 		RipperCompensatePing,
+		RipperUseClientSideAnimations,
 
 		MinigunSelectTime,
 		MinigunDownTime,
@@ -212,7 +217,6 @@ replication {
 		PulseDownTime,
 		PulseSphereDamage,
 		PulseSphereMomentum,
-		PulseSphereSpeed,
 		PulseSphereFireRate,
 		PulseBoltDPS,
 		PulseBoltMomentum,
@@ -220,6 +224,7 @@ replication {
 		PulseBoltGrowthDelay,
 		PulseBoltMaxSegments,
 		PulseCompensatePing,
+		PulseUseClientSideAnimations,
 
 		ShockSelectTime,
 		ShockDownTime,
@@ -250,6 +255,7 @@ replication {
 		BioHurtRadiusBase,
 		BioHurtRadiusMax,
 		BioCompensatePing,
+		BioUseClientSideAnimations,
 
 		EnforcerSelectTime,
 		EnforcerDownTime,
@@ -287,7 +293,8 @@ replication {
 		TranslocatorCompensatePing,
 		InvisibilityDuration,
 
-		bEnablePingCompensation;
+		bEnablePingCompensation,
+		PingCompensationMax;
 }
 
 simulated final function float WarheadSelectAnimSpeed() {
@@ -530,6 +537,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	FlakSlugHurtRadius = S.FlakSlugHurtRadius;
 	FlakSlugMomentum = S.FlakSlugMomentum;
 	FlakCompensatePing = S.FlakCompensatePing;
+	FlakUseClientSideAnimations = S.FlakUseClientSideAnimations;
 
 	RipperSelectTime = S.RipperSelectTime;
 	RipperDownTime = S.RipperDownTime;
@@ -541,6 +549,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	RipperSecondaryDamage = S.RipperSecondaryDamage;
 	RipperSecondaryMomentum = S.RipperSecondaryMomentum;
 	RipperCompensatePing = S.RipperCompensatePing;
+	RipperUseClientSideAnimations = S.RipperUseClientSideAnimations;
 
 	MinigunSelectTime = S.MinigunSelectTime;
 	MinigunDownTime = S.MinigunDownTime;
@@ -555,7 +564,6 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	PulseDownTime = S.PulseDownTime;
 	PulseSphereDamage = S.PulseSphereDamage;
 	PulseSphereMomentum = S.PulseSphereMomentum;
-	PulseSphereSpeed = S.PulseSphereSpeed;
 	PulseSphereFireRate = S.PulseSphereFireRate;
 	PulseBoltDPS = S.PulseBoltDPS;
 	PulseBoltMomentum = S.PulseBoltMomentum;
@@ -563,6 +571,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	PulseBoltGrowthDelay = S.PulseBoltGrowthDelay;
 	PulseBoltMaxSegments = S.PulseBoltMaxSegments;
 	PulseCompensatePing = S.PulseCompensatePing;
+	PulseUseClientSideAnimations = S.PulseUseClientSideAnimations;
 
 	ShockSelectTime = S.ShockSelectTime;
 	ShockDownTime = S.ShockDownTime;
@@ -576,7 +585,6 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	ShockProjectileBlockBullets = S.ShockProjectileBlockBullets;
 	ShockProjectileBlockFlakChunk = S.ShockProjectileBlockFlakChunk;
 	ShockProjectileBlockFlakSlug = S.ShockProjectileBlockFlakSlug;
-	
 	ShockProjectileTakeDamage = S.ShockProjectileTakeDamage;
 	ShockProjectileCompensatePing = S.ShockProjectileCompensatePing;
 	ShockProjectileHealth = S.ShockProjectileHealth;
@@ -594,6 +602,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	BioHurtRadiusBase = S.BioHurtRadiusBase;
 	BioHurtRadiusMax = S.BioHurtRadiusMax;
 	BioCompensatePing = S.BioCompensatePing;
+	BioUseClientSideAnimations = S.BioUseClientSideAnimations;
 
 	EnforcerSelectTime = S.EnforcerSelectTime;
 	EnforcerDownTime = S.EnforcerDownTime;
@@ -632,6 +641,8 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	InvisibilityDuration = S.InvisibilityDuration;
 
 	bEnablePingCompensation = S.bEnablePingCompensation;
+
+	PingCompensationMax = S.PingCompensationMax;
 }
 
 defaultproperties
@@ -682,6 +693,7 @@ defaultproperties
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
 	FlakCompensatePing=False
+	FlakUseClientSideAnimations=False
 
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
@@ -693,6 +705,7 @@ defaultproperties
 	RipperSecondaryDamage=34
 	RipperSecondaryMomentum=1.0
 	RipperCompensatePing=False
+	RipperUseClientSideAnimations=False
 
 	MinigunSelectTime=0.555556
 	MinigunDownTime=0.333333
@@ -707,7 +720,6 @@ defaultproperties
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
-	PulseSphereSpeed=1450.000000
 	PulseSphereFireRate=0.18
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
@@ -715,6 +727,7 @@ defaultproperties
 	PulseBoltGrowthDelay=0.05
 	PulseBoltMaxSegments=10
 	PulseCompensatePing=False
+	PulseUseClientSideAnimations=False
 
 	ShockSelectTime=0.5
 	ShockDownTime=0.259259
@@ -745,6 +758,7 @@ defaultproperties
 	BioHurtRadiusBase=75
 	BioHurtRadiusMax=250
 	BioCompensatePing=False
+	BioUseClientSideAnimations=False
 
 	EnforcerSelectTime=0.777778
 	EnforcerDownTime=0.266667
@@ -784,4 +798,6 @@ defaultproperties
 	InvisibilityDuration=45
 
 	bEnablePingCompensation=False
+	
+	PingCompensationMax=150
 }

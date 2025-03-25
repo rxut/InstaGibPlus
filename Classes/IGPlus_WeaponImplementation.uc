@@ -47,9 +47,11 @@ function EnhancedHurtRadius(
 );
 
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride);
+
 simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride);
 
 function float GetAverageTickRate();
+
 function SimulateProjectile(Projectile P, int Ping);
 
 function Actor TraceShot(
@@ -61,7 +63,6 @@ function Actor TraceShot(
 );
 
 simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner);
-
 
 defaultproperties {
 	RemoteRole=ROLE_SimulatedProxy

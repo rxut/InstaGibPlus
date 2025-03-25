@@ -124,7 +124,7 @@ simulated function TraceFire_Client() {
     // Only perform actor trace if we didn't hit world geometry
     if (Other == None) {
         // Use the exact same method as server for actor traces
-        if (WImp.WSettingsRepl.ShockBeamUseReducedHitbox) {
+        if (GetWeaponSettings().ShockBeamUseReducedHitbox) {
             Other = WImp.TraceShotClient(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
         } else {
             Other = bbPlayer(PawnOwner).TraceShotClient(HitLocation, HitNormal, EndTrace, StartTrace);

@@ -2,6 +2,15 @@ class ST_Razor2Alt extends Razor2Alt;
 
 var IGPlus_WeaponImplementation WImp;
 
+var bool bClientVisualOnly;
+var int Razor2AltID;
+
+replication
+{
+    reliable if ( Role == ROLE_Authority )
+        Razor2AltID;
+}
+
 simulated function PostBeginPlay()
 {
 	if (ROLE == ROLE_Authority)
@@ -13,10 +22,38 @@ simulated function PostBeginPlay()
 	Super.PostBeginPlay();
 }
 
+simulated function PostNetBeginPlay()
+{
+    local ST_Razor2Alt OtherRazor2Alt;
+	local bbPlayer bbP;
+
+	super.PostNetBeginPlay();
+
+	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+
+	bbP = bbPlayer(Owner);
+
+    foreach AllActors(class'ST_Razor2Alt', OtherRazor2Alt)
+    {
+        if (OtherRazor2Alt != self && OtherRazor2Alt.Razor2AltID == Razor2AltID && OtherRazor2Alt.bClientVisualOnly)
+        {
+            OtherRazor2Alt.bHidden = true;
+            SetTimer(0.0, false);
+            return;
+        }
+    }
+}
 auto state Flying
 {
 	function ProcessTouch (Actor Other, Vector HitLocation)
 	{
+		if (Other != Instigator && bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
+
 		if ( Other != Instigator ) 
 		{
 			Other.TakeDamage(
@@ -34,6 +71,13 @@ auto state Flying
 
 	function Explode(vector HitLocation, vector HitNormal)
 	{
+		if (bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
+
 		Spawn(class'RipperPulse',,,HitLocation + HitNormal*16);
 
 		BlowUp(HitLocation);
@@ -46,6 +90,13 @@ auto state Flying
 		local actor Victims;
 		local float damageScale, dist;
 		local vector dir;
+
+		if (bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
 
 		if (WImp.WeaponSettings.bEnableEnhancedSplashRipperSecondary) {
 			WImp.EnhancedHurtRadius(

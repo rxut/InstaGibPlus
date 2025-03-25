@@ -10,8 +10,21 @@ var IGPlus_WeaponImplementation WImp;
 
 var WeaponSettingsRepl WSettings;
 
-// For the PulseSphereFireRate setting
-var float RateOfFire;
+var Rotator GV;
+var Vector CDO;
+var float yMod;
+
+var int PlasmaSphereCounter;
+var int LastFiredPlasmaSphereID;
+
+var float RateOfFire; // For the PulseSphereFireRate IG+ setting
+var bool bClientAllowedToFire;
+
+replication
+{
+    reliable if (Role == ROLE_Authority)
+        PlasmaSphereCounter, bClientAllowedToFire;
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -37,7 +50,24 @@ function PostBeginPlay()
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
 	
-	ProjectileSpeed = WImp.WeaponSettings.PulseSphereSpeed;
+	PlasmaSphereCounter = 0;
+}
+
+simulated function yModInit()
+{
+	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
+		GV = bbPlayer(Owner).ViewRotation;
+	
+	if (PlayerPawn(Owner) == None)
+		return;
+		
+	yMod = PlayerPawn(Owner).Handedness;
+	if (yMod != 2.0)
+		yMod *= Default.FireOffset.Y;
+	else
+		yMod = 0;
+
+	CDO = CalcDrawOffset();
 }
 
 function SetSwitchPriority(pawn Other)
@@ -48,7 +78,7 @@ function SetSwitchPriority(pawn Other)
 	if ( PlayerPawn(Other) != None )
 	{
 		for ( i=0; i<ArrayCount(PlayerPawn(Other).WeaponPriority); i++)
-			if ( IsA(PlayerPawn(Other).WeaponPriority[i]) )		// <- The fix...
+			if ( IsA(PlayerPawn(Other).WeaponPriority[i]) )
 			{
 				AutoSwitchPriority = i;
 				return;
@@ -81,6 +111,58 @@ simulated function PlayFiring()
 	bWarnTarget = (FRand() < 0.2);
 }
 
+simulated function bool ClientFire(float Value)
+{
+	local Vector Start, X, Y, Z;
+	local ST_PlasmaSphere ClientPlasma;
+	local bbPlayer bbP;
+	
+	if (Owner.IsA('Bot'))
+		return Super.ClientFire(Value);
+	
+	bbP = bbPlayer(Owner);
+
+	if (bClientAllowedToFire && Role < ROLE_Authority && bbP != None && GetWeaponSettings().PulseUseClientSideAnimations && Mover(bbP.Base) == None)
+	{
+		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
+			return false;
+
+		yModInit();
+
+		if ( (AmmoType == None) && (AmmoName != None) )
+		{
+			GiveAmmo(Pawn(Owner));
+		}
+		if ( AmmoType.AmmoAmount > 0 )
+		{
+			Instigator = Pawn(Owner);
+			GotoState('ClientFiring');
+			bPointing = True;
+			bCanClientFire = true;
+
+			if ( bRapidFire || (FiringSpeed > 0) )
+				Pawn(Owner).PlayRecoil(FiringSpeed);
+			
+			GetAxes(GV, X, Y, Z);
+			Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+			AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
+			Angle += 1.8;
+
+			Start = Start - Sin(Angle)*Y*4 + (Cos(Angle)*4 - 10.78)*Z;
+
+			ClientPlasma = Spawn(Class'ST_PlasmaSphere', Owner,, Start, AdjustedAim);
+			ClientPlasma.RemoteRole = ROLE_None;
+			ClientPlasma.Velocity = Vector(AdjustedAim) * ProjectileSpeed;
+			ClientPlasma.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			ClientPlasma.bCollideWorld = false;
+			ClientPlasma.bClientVisualOnly = true;
+			ClientPlasma.PlasmaSphereID = PlasmaSphereCounter;
+			
+		}
+	}
+	return Super.ClientFire(Value);
+}
+
 state NormalFire
 {
     ignores AnimEnd;
@@ -90,22 +172,29 @@ state NormalFire
         local Projectile P;
         local bbPlayer bbP;
         
-        // Call the parent ProjectileFire to spawn the projectile
         P = Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
+		bClientAllowedToFire = true;
+
+		if (P != None && ST_PlasmaSphere(P) != None)
+        {
+            ST_PlasmaSphere(P).PlasmaSphereID = PlasmaSphereCounter;
+        }
         
-        // Check if we should apply ping compensation
         if (P != None && GetWeaponSettings().PulseCompensatePing) {
             bbP = bbPlayer(Owner);
             if (bbP != None) {
-                // Simulate projectile forward by player's ping time
                 WImp.SimulateProjectile(P, bbP.PingAverage);
             }
         }
         
+        if (Role == ROLE_Authority)
+   	 	{
+			PlasmaSphereCounter++;
+		}
+        
         return P;
     }
 
-    // Include the rest of the original NormalFire state
     function Tick(float DeltaTime)
     {
         if (Owner == None) 
@@ -135,6 +224,28 @@ Begin:
 
 simulated state ClientFiring
 {
+	simulated function AnimEnd()
+	{
+		if (Owner.IsA('Bot'))
+		{
+			Super.AnimEnd();
+			return;
+		}
+		
+		if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
+		{
+			PlaySpinDown();
+			GotoState('');
+		}
+		else if ( !bCanClientFire )
+			GotoState('');
+		else if ( Pawn(Owner) == None )
+		{
+			PlaySpinDown();
+			GotoState('');
+		}
+	}
+
 	simulated function BeginState() {
 		super.BeginState();
 
@@ -153,8 +264,63 @@ simulated state ClientFiring
 				RateOfFire += GetWeaponSettings().PulseSphereFireRate;
 			}
 		}
+
+		if (Owner.IsA('Bot'))
+		{
+			Super.Tick(DeltaTime);
+			return;
+		}
+		
+		if (Owner==None) 
+			GotoState('Pickup');
+			
+		if ( (Pawn(Owner) != None) && (Pawn(Owner).bFire != 0) )
+			AmbientSound = FireSound;
+		else
+			AmbientSound = None;
 	}
 Begin:
+	if (!Owner.IsA('Bot'))
+	{
+		Sleep(0.18);
+		ClientFinish();
+	}
+}
+
+simulated function ClientFinish()
+{
+	local Pawn PawnOwner;
+	local bool bForce, bForceAlt;
+	local bbPlayer bbP;
+	
+	if (Owner.IsA('Bot'))
+		return;
+	
+	bbP = bbPlayer(Owner);
+	bForce = bForceFire;
+	bForceAlt = bForceAltFire;
+	bForceFire = false;
+	bForceAltFire = false;
+
+	if ( bChangeWeapon )
+	{
+		GotoState('DownWeapon');
+		return;
+	}
+
+	PawnOwner = Pawn(Owner);
+	if ( PawnOwner == None )
+		return;
+		
+	AnimEnd();
+	if ( ((AmmoType != None) && (AmmoType.AmmoAmount<=0)) || (PawnOwner.Weapon != self) )
+		GotoState('Idle');
+	else if ( (PawnOwner.bFire!=0) || bForce )
+		Global.ClientFire(0);
+	else if ( (PawnOwner.bAltFire!=0) || bForceAlt )
+		Global.ClientAltFire(0);
+	else 
+		GotoState('Idle');
 }
 
 simulated function PlaySelect() {
@@ -175,7 +341,77 @@ simulated function TweenDown() {
 		TweenAnim('Down', GetWeaponSettings().PulseDownTime);
 }
 
+function bool PutDown()
+{
+    bClientAllowedToFire = false;	
+    return Super.PutDown();
+}
+
+state AltFiring
+{
+	function Tick( float DeltaTime )
+	{
+		Super.Tick(DeltaTime);
+		
+		if (bChangeWeapon)
+		{
+			GotoState('DownWeapon');
+		}
+	}
+}
+
+State ClientActive
+{
+	simulated function bool ClientFire(float Value)
+	{
+		if (Owner.IsA('Bot'))
+			return Super.ClientFire(Value);
+		bForceFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
+		return bForceFire;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		if (Owner.IsA('Bot'))
+			return Super.ClientAltFire(Value);
+		bForceAltFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
+		return bForceAltFire;
+	}
+	
+	simulated function AnimEnd()
+	{
+		if ( Owner == None )
+		{
+			Global.AnimEnd();
+			GotoState('');
+		}
+		else if ( Owner.IsA('TournamentPlayer') 
+			&& (TournamentPlayer(Owner).PendingWeapon != None || TournamentPlayer(Owner).ClientPending != None) )
+			GotoState('ClientDown');
+		else if ( bWeaponUp )
+		{
+			if ( (bForceFire || (PlayerPawn(Owner).bFire != 0)) && Global.ClientFire(1) )
+				return;
+			else if ( (bForceAltFire || (PlayerPawn(Owner).bAltFire != 0)) && Global.ClientAltFire(1) )
+				return;
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else
+		{
+			PlayPostSelect();
+			bWeaponUp = true;
+
+			if ((bForceFire || (PlayerPawn(Owner).bFire != 0)) && Global.ClientFire(1))
+				return;
+			else if ((bForceAltFire || (PlayerPawn(Owner).bAltFire != 0)) && Global.ClientAltFire(1))
+				return;
+		}
+	}
+}
+
 defaultproperties {
 	ProjectileClass=Class'ST_PlasmaSphere'
 	AltProjectileClass=Class'ST_StarterBolt'
+	CollisionRadius=50
 }
