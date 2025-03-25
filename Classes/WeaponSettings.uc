@@ -50,7 +50,6 @@ var config float GrenadeDamage;
 var config float GrenadeHurtRadius;
 var config float GrenadeMomentum;
 var config bool  RocketCompensatePing;
-var config bool  RocketUseClientSideAnimations;
 
 var config float FlakSelectTime;
 var config float FlakPostSelectTime;
@@ -227,7 +226,6 @@ defaultproperties
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
 	RocketCompensatePing=False
-	RocketUseClientSideAnimations=False
 
 	FlakSelectTime=0.625
 	FlakPostSelectTime=0.384615

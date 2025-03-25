@@ -121,6 +121,7 @@ simulated function bool ClientFire(float Value)
 		return Super.ClientFire(Value);
 	
 	bbP = bbPlayer(Owner);
+
 	if (bClientAllowedToFire && Role < ROLE_Authority && bbP != None && GetWeaponSettings().PulseUseClientSideAnimations && Mover(bbP.Base) == None)
 	{
 		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
@@ -152,7 +153,8 @@ simulated function bool ClientFire(float Value)
 			ClientPlasma = Spawn(Class'ST_PlasmaSphere', Owner,, Start, AdjustedAim);
 			ClientPlasma.RemoteRole = ROLE_None;
 			ClientPlasma.Velocity = Vector(AdjustedAim) * ProjectileSpeed;
-			
+			ClientPlasma.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			ClientPlasma.bCollideWorld = false;
 			ClientPlasma.bClientVisualOnly = true;
 			ClientPlasma.PlasmaSphereID = PlasmaSphereCounter;
 			

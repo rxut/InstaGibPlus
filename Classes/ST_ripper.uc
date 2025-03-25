@@ -112,6 +112,8 @@ simulated function bool ClientFire(float Value)
 			ClientRazor2 = Spawn(Class'ST_Razor2', Owner,, Start, AdjustedAim);
 			ClientRazor2.RemoteRole = ROLE_None;
 			ClientRazor2.bClientVisualOnly = true;
+			ClientRazor2.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+            ClientRazor2.bCollideWorld = false;
 
 			ClientRazor2.Razor2ID = Razor2Counter;
 			LastFiredRazor2ID = Razor2Counter;
@@ -156,6 +158,8 @@ simulated function bool ClientAltFire(float Value)
 			ClientRazor2Alt = Spawn(Class'ST_Razor2Alt', Owner,, Start, AdjustedAim);
 			ClientRazor2Alt.RemoteRole = ROLE_None;
 			ClientRazor2Alt.bClientVisualOnly = true;
+			ClientRazor2Alt.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+            ClientRazor2Alt.bCollideWorld = false;
 
 			ClientRazor2Alt.Razor2AltID = Razor2AltCounter;
 			LastFiredRazor2AltID = Razor2AltCounter;

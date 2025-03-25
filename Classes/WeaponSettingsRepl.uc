@@ -26,7 +26,6 @@ var float GrenadeDamage;
 var float GrenadeHurtRadius;
 var float GrenadeMomentum;
 var bool  RocketCompensatePing;
-var bool  RocketUseClientSideAnimations;
 
 var float FlakSelectTime;
 var float FlakPostSelectTime;
@@ -177,7 +176,6 @@ replication {
 		GrenadeHurtRadius,
 		GrenadeMomentum,
 		RocketCompensatePing,
-		RocketUseClientSideAnimations,
 		FlakSelectTime,
 		FlakPostSelectTime,
 		FlakDownTime,
@@ -524,7 +522,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	GrenadeHurtRadius = S.GrenadeHurtRadius;
 	GrenadeMomentum = S.GrenadeMomentum;
 	RocketCompensatePing = S.RocketCompensatePing;
-	RocketUseClientSideAnimations = S.RocketUseClientSideAnimations;
+
 	FlakSelectTime = S.FlakSelectTime;
 	FlakPostSelectTime = S.FlakPostSelectTime;
 	FlakDownTime = S.FlakDownTime;
@@ -680,7 +678,6 @@ defaultproperties
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
 	RocketCompensatePing=False
-	RocketUseClientSideAnimations=False
 
 	FlakSelectTime=0.625
 	FlakPostSelectTime=0.384615

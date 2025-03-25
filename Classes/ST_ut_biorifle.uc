@@ -147,6 +147,8 @@ simulated function bool ClientFire(float Value)
 			
 			BioGelProj = Spawn(class'ST_UT_BioGel',Owner,, Start, AdjustedAim);
 			BioGelProj.RemoteRole = ROLE_None;
+			BioGelProj.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			BioGelProj.bCollideWorld = false;
 			BioGelProj.BioGelID = BioGelIDCounter;
 			BioGelProj.bClientVisualOnly = true;
 			BioGelProj.WImp = WImp;

@@ -52,8 +52,6 @@ function PostBeginPlay()
         break;      // Find master :D
     
     SlugIDCounter = 0; // Initialize slug ID counter
-	bClientAllowedToFire = true;
-	bClientAllowedToAltFire = true;
 }
 
 simulated function yModInit()
@@ -199,6 +197,7 @@ simulated function bool ClientAltFire(float Value)
             ClientSlug.WImp = WImp;
             ClientSlug.bClientVisualOnly = true;
             ClientSlug.SlugID = SlugIDCounter;
+			ClientSlug.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 
 			LastFiredSlugID = SlugIDCounter;
         }
