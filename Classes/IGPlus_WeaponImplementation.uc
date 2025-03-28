@@ -50,6 +50,10 @@ simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Directi
 
 simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride);
 
+simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction);
+
+simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction);
+
 function float GetAverageTickRate();
 
 function SimulateProjectile(Projectile P, int Ping);

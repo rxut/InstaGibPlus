@@ -180,6 +180,11 @@ final simulated function float GetPawnBodyOffsetZ(Pawn P, float DuckFrac) {
 	);
 }
 
+final simulated function float GetDummyDuckFraction(UTPlusDummy D) {
+        if (D.BaseEyeHeight <= 0)
+            return 0.0;
+        return FClamp(1.0 - (D.EyeHeight / D.BaseEyeHeight), 0.0, 1.0);
+    }
 
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride) {
     local float DuckFrac;
@@ -240,11 +245,130 @@ simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Directi
     return Result;
 }
 
+simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction) {
+        local float DuckFrac;
+        local float BodyOffsetZ;
+        local float BodyHalfHeight, HeadHalfHeight;
+        local vector BasePosition;
+        local ST_HitTestHelper HitActor;
+        local vector HitLoc, HitNorm;
+        local bool Result;
+
+        if (D == none || D.Actual == none)
+            return false;
+
+        if (HitLocation.Z - D.Location.Z <= 0.3 * D.CollisionHeight)
+            return false;
+
+        if (CollChecker == none || CollChecker.bDeleteMe) {
+            CollChecker = Spawn(class'ST_HitTestHelper', self, , D.Location);
+            CollChecker.bCollideWorld = false;
+        }
+
+        DuckFrac = GetDummyDuckFraction(D);
+        BodyOffsetZ = Lerp(DuckFrac,
+            -WSettingsRepl.HeadHalfHeight,
+            -(0.7 * 0.5) * D.CollisionHeight
+        );
+        BodyHalfHeight = Lerp(DuckFrac,
+            D.CollisionHeight - WSettingsRepl.HeadHalfHeight,
+            (1.3 * 0.5) * D.CollisionHeight
+        );
+
+        HeadHalfHeight = Lerp(DuckFrac,
+            WSettingsRepl.HeadHalfHeight,
+            0
+        );
+
+        if (HeadHalfHeight <= 0.0)
+            return false;
+
+        BasePosition = D.Location;
+
+        CollChecker.SetCollision(true, false, false);
+        CollChecker.SetCollisionSize(WSettingsRepl.HeadRadius, HeadHalfHeight);
+        CollChecker.SetLocation(BasePosition + vect(0,0,1)*(BodyOffsetZ + BodyHalfHeight + HeadHalfHeight));
+
+        Result = false;
+
+        foreach TraceActors(
+            class'ST_HitTestHelper',
+            HitActor, HitLoc, HitNorm,
+            HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight),
+            HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight)
+        ) {
+            if (HitActor == CollChecker) {
+                Result = true;
+                break;
+            }
+        }
+
+        CollChecker.SetCollision(false, false, false);
+
+        return Result;
+    }
+
+
+simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction) {
+        local float DuckFrac;
+        local float HalfHeight;
+        local float OffsetZ;
+        local vector BasePosition;
+        local ST_HitTestHelper HitActor;
+        local vector HitLoc, HitNorm;
+        local bool Result;
+
+        if (D == none || D.Actual == none)
+            return false;
+
+        if (CollChecker == none || CollChecker.bDeleteMe) {
+            CollChecker = Spawn(class'ST_HitTestHelper', self, , D.Location);
+            CollChecker.bCollideWorld = false;
+        }
+
+        DuckFrac = GetDummyDuckFraction(D);
+        HalfHeight = Lerp(DuckFrac,
+            D.CollisionHeight - WSettingsRepl.HeadHalfHeight,
+            (1.3 * 0.5) * D.CollisionHeight
+        );
+        OffsetZ = Lerp(DuckFrac,
+            -WSettingsRepl.HeadHalfHeight,
+            -(0.7 * 0.5) * D.CollisionHeight
+        );
+
+        BasePosition = D.Location;
+
+        CollChecker.SetCollision(true, false, false);
+        CollChecker.SetCollisionSize(D.CollisionRadius, HalfHeight);
+        CollChecker.SetLocation(BasePosition + vect(0,0,1)*OffsetZ);
+
+        Result = false;
+
+        foreach TraceActors(
+            class'ST_HitTestHelper',
+            HitActor, HitLoc, HitNorm,
+            HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight),
+            HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight)
+        ) {
+            if (HitActor == CollChecker) {
+                Result = true;
+                break;
+            }
+        }
+
+        CollChecker.SetCollision(false, false, false);
+
+        return Result;
+    }
+
+
 function float GetAverageTickRate() {
   if (Level.NetMode == NM_DedicatedServer)
     return int(ConsoleCommand("get ini:Engine.Engine.NetworkDevice NetServerMaxTickRate"));
   return 120.0;
 }
+
+
 
 function SimulateProjectile(Projectile P, int Ping) {
   local float DeltaTime;
@@ -357,9 +481,9 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 				
 				if (D.Actual != PawnOwner) {
 					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
-						if (CheckBodyShot(D.Actual, HitLocation, Dir, D.Location) == false && CheckHeadShot(D.Actual, HitLocation, Dir, D.Location) == false) {
-							continue;
-						}
+						if (CheckBodyShotCompensated(D, HitLocation, Dir) == false && CheckHeadShotCompensated(D, HitLocation, Dir) == false) {
+    							continue;
+    						}
 						
 						Other = D.Actual;
 						break;
