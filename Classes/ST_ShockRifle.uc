@@ -55,7 +55,9 @@ simulated function InitClientVars() {
 simulated function bool ClientFire(float Value) {
 	local Pawn PawnOwner;
 	local bool Result;
+
 	PawnOwner = Pawn(Owner);
+	
 	if (PawnOwner == None) 
 		return false;
 
@@ -78,6 +80,10 @@ simulated function bool ClientFire(float Value) {
 				
 			InitClientVars();
 			PlayFiring();
+
+			if ( Affector != None )
+				Affector.FireEffect();
+
 			if (PlayerPawn(Owner) != None)
 				PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
 				
