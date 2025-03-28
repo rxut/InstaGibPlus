@@ -4,6 +4,7 @@ var Pawn Actual;
 var float LatestClientTimeStamp;
 var float EyeHeight;
 var float BaseEyeHeight;
+var bool bHistoryCleared;
 
 struct DummyData {
 	var vector Loc, Vel, Acc;
@@ -16,7 +17,7 @@ struct DummyData {
 	var float ClientTimeStamp;
 };
 
-var DummyData Data[32];
+var DummyData Data[48];
 var int DataIndex;
 
 var bool bCompActive;
@@ -53,10 +54,28 @@ function FillData(out DummyData D) {
 }
 
 event Tick(float DeltaTime) {
+    local int i;
 	super.Tick(DeltaTime);
 
 	if (Actual == none || Actual.bDeleteMe) {
         Disable('Tick');
+    }
+
+    if (Actual.IsA('PlayerPawn')) {
+        if (Actual.GetStateName() == 'Dying') {
+            if (PlayerPawn(Actual).Player != None && !bHistoryCleared) {
+                for (i = 0; i < arraycount(Data); i++) {
+                    Data[i].ServerTimeStamp = 0;
+                }
+                DataIndex = 0;
+
+                CompEnd();
+                bHistoryCleared = true;
+                return;
+            }
+        } else {
+            bHistoryCleared = false;
+        }
     }
 
 	if (Actual.IsA('PlayerPawn') == false || PlayerPawn(Actual).CurrentTimeStamp > LatestClientTimeStamp) {
@@ -69,6 +88,7 @@ event Tick(float DeltaTime) {
 			DataIndex = 0;
 	}
 }
+
 function vector LerpVector(float Alpha, vector A, vector B) {
     return A + (B - A) * Alpha;
 }
