@@ -91,6 +91,9 @@ simulated function bool ClientFire(float Value) {
 			InitClientVars();
 			PlayFiring();
 			
+			if ( Affector != None )
+				Affector.FireEffect();
+				
 			// Only spawn shell case on client for visual feedback
 			SpawnShellCaseClient();
 			
