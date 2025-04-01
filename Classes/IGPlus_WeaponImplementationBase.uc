@@ -368,12 +368,14 @@ function float GetAverageTickRate() {
   return 120.0;
 }
 
-
-
 function SimulateProjectile(Projectile P, int Ping) {
   local float DeltaTime;
   local float SimPing;
   local UTPure PureRef;
+
+  // Early exit if the projectile is already destroyed
+  if (P == None || P.bDeleteMe)
+    return;
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
@@ -385,7 +387,11 @@ function SimulateProjectile(Projectile P, int Ping) {
   DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
   SimPing = Ping;
   while (SimPing > 0.0) {
-    PureRef.CompensateFor(int(SimPing), bbPlayer(P.Instigator));
+    if (P == None || P.bDeleteMe) {
+        break;
+      }
+
+    PureRef.CompensateFor(int(SimPing), P.Instigator);
     P.AutonomousPhysics(DeltaTime);
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();

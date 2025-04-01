@@ -488,7 +488,7 @@ event Tick(float zzDelta)
 	}
 }
 
-function CompensateFor(int Ping, optional bbPlayer Instigator) {
+function CompensateFor(int Ping, optional Pawn Instigator) {
 	local UTPlusDummy D;
 
 	for (D = CompDummies; D != none; D = D.Next) {

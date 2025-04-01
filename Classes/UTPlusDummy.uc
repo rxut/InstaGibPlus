@@ -6,6 +6,11 @@ var float EyeHeight;
 var float BaseEyeHeight;
 var bool bHistoryCleared;
 
+var bool WasColliding;
+var bool WasBlockingActors;
+var bool WasBlockingPlayers;
+var bool WasProjTarget;
+
 struct DummyData {
 	var vector Loc, Vel, Acc;
 	var rotator Rot, VR;
@@ -175,30 +180,46 @@ function TakeDamage(
     Vector Momentum,
     name DamageType
 ) {
-    if (Actual != none)
+    if (bCompActive && Actual != none)
         Actual.TakeDamage(Damage, InstigatedBy, HitLocation, Momentum, DamageType);
 }
 
 function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
-	Actual.SetCollision(false, false, false);
-	SetLocation(Loc);
-	EyeHeight = EH;
-	BaseEyeHeight = BEH;
-	SetCollisionSize(CR, CH);
-	SetCollision(true, false, false);
-	bProjTarget=true;
-	bCompActive = true;
+    // Store the original collision state
+    WasColliding = Actual.bCollideActors;
+    WasBlockingActors = Actual.bBlockActors;
+    WasBlockingPlayers = Actual.bBlockPlayers;
+    WasProjTarget = Actual.bProjTarget;
+    
+    // Disable collision on the actual pawn
+    Actual.SetCollision(false, false, false);
+    Actual.bProjTarget = false;
+    
+    // Setup the dummy with the proper location and dimensions
+    SetLocation(Loc);
+    EyeHeight = EH;
+    BaseEyeHeight = BEH;
+    SetCollisionSize(CR, CH);
+    
+    // Apply the original collision properties to the dummy
+    SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
+    bProjTarget = WasProjTarget;
+    
+    bCompActive = true;
 }
 
 function CompEnd() {
-	if (bCompActive) {
-		bCompActive = false;
-		SetCollision(false, false, false);
-		bProjTarget=false;
-		Actual.SetCollision(true, true, true);
-	}
+    if (bCompActive) {
+        bCompActive = false;
+        
+        SetCollision(false, false, false);
+        bProjTarget = false;
+        
+        // Restore the actual pawn's original collision state
+        Actual.SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
+        Actual.bProjTarget = WasProjTarget;
+    }
 }
-
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir) {
 	local float adjZ, maxZ;
 
