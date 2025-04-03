@@ -198,6 +198,7 @@ function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
     Actual.SetCollision(false, false, false);
     Actual.bProjTarget = false;
     
+    SetLocation(Loc);
     EyeHeight = EH;
     BaseEyeHeight = BEH;
     
@@ -208,8 +209,6 @@ function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
     // Only set collision if it's different from current state
     if (bCollideActors != WasColliding || bBlockActors != WasBlockingActors || bBlockPlayers != WasBlockingPlayers)
         SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
-    
-    SetLocation(Loc);
 
     if (bProjTarget != WasProjTarget)
         bProjTarget = WasProjTarget;
