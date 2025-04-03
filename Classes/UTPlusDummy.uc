@@ -230,19 +230,6 @@ function CompEnd() {
     }
 }
 
-function CompEnd() {
-    if (bCompActive) {
-        bCompActive = false;
-        
-        SetCollision(false, false, false);
-        bProjTarget = false;
-        
-        // Restore the actual pawn's original collision state
-        Actual.SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
-        Actual.bProjTarget = WasProjTarget;
-    }
-}
-
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir) {
 	local float adjZ, maxZ;
 
