@@ -767,6 +767,7 @@ function ModifyPlayer(Pawn Other)
 	D = FindDummy(Other);
 	if (D == none) {
 		D = Spawn(class'UTPlusDummy');
+		Log("Created new UTPlusDummy for "$Other.PlayerReplicationInfo.PlayerName);
 		D.Actual = Other;
 		D.Next = CompDummies;
 		CompDummies = D;
