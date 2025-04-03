@@ -186,18 +186,18 @@ function TakeDamage(
 }
 
 function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
+
+    if (bCompActive)
+        return;
     
-    if (!bCompActive) {
-        WasColliding = Actual.bCollideActors;
-        WasBlockingActors = Actual.bBlockActors;
-        WasBlockingPlayers = Actual.bBlockPlayers;
-        WasProjTarget = Actual.bProjTarget;
+    WasColliding = Actual.bCollideActors;
+    WasBlockingActors = Actual.bBlockActors;
+    WasBlockingPlayers = Actual.bBlockPlayers;
+    WasProjTarget = Actual.bProjTarget;
         
-        Actual.SetCollision(false, false, false);
-        Actual.bProjTarget = false;
-    }
+    Actual.SetCollision(false, false, false);
+    Actual.bProjTarget = false;
     
-    SetLocation(Loc);
     EyeHeight = EH;
     BaseEyeHeight = BEH;
     
@@ -209,10 +209,25 @@ function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
     if (bCollideActors != WasColliding || bBlockActors != WasBlockingActors || bBlockPlayers != WasBlockingPlayers)
         SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
     
+    SetLocation(Loc);
+
     if (bProjTarget != WasProjTarget)
         bProjTarget = WasProjTarget;
     
     bCompActive = true;
+}
+
+function CompEnd() {
+    if (bCompActive) {
+        bCompActive = false;
+        
+        SetCollision(false, false, false);
+        bProjTarget = false;
+        
+        // Restore the actual pawn's original collision state
+        Actual.SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
+        Actual.bProjTarget = WasProjTarget;
+    }
 }
 
 function CompEnd() {
