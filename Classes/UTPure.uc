@@ -489,20 +489,30 @@ event Tick(float zzDelta)
 }
 
 function CompensateFor(int Ping, optional Pawn Instigator) {
-	local UTPlusDummy D;
+    local UTPlusDummy D;
+    local Pawn DActual;
 
-	for (D = CompDummies; D != none; D = D.Next) {
-		if (D.Actual != none &&
-			D.Actual.Health > 0 &&
-			D.Actual.PlayerReplicationInfo != none &&
-			D.Actual.PlayerReplicationInfo.bIsSpectator == false &&
-			D.Actual.bHidden == false &&
-			D.Actual.bCollideActors == true &&
-			D.Actual != Instigator
-		) {
-			D.CompStart(Ping);
-		}
-	}
+    for (D = CompDummies; D != none; D = D.Next) {
+        DActual = D.Actual;
+        
+        if (DActual == none || 
+            DActual == Instigator ||
+            DActual.bDeleteMe ||
+            DActual.bHidden ||
+            !DActual.bCollideActors ||
+            DActual.Health <= 0)
+        {
+            continue;
+        }
+            
+        if (DActual.PlayerReplicationInfo == none ||
+            DActual.PlayerReplicationInfo.bIsSpectator)
+        {
+            continue;
+        }
+
+        D.CompStart(Ping);
+    }
 }
 
 function EndCompensation() {

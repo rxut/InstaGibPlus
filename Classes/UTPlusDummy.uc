@@ -22,7 +22,7 @@ struct DummyData {
 	var float ClientTimeStamp;
 };
 
-var DummyData Data[48];
+var DummyData Data[32];
 var int DataIndex;
 
 var bool bCompActive;
@@ -54,26 +54,28 @@ function FillData(out DummyData D) {
 	D.CollisionRadius = Actual.CollisionRadius;
 	D.CollisionHeight = Actual.CollisionHeight;
 	D.ServerTimeStamp = Level.TimeSeconds;
-	if (Actual.IsA('PlayerPawn'))
+	if (bCompActive && Actual.IsA('PlayerPawn'))
 		D.ClientTimeStamp = PlayerPawn(Actual).CurrentTimeStamp;
 }
 
 event Tick(float DeltaTime) {
     local int i;
-	super.Tick(DeltaTime);
+    local PlayerPawn PP;
+    super.Tick(DeltaTime);
 
-	if (Actual == none || Actual.bDeleteMe) {
+    if (Actual == none || Actual.bDeleteMe) {
         Disable('Tick');
     }
 
-    if (Actual.IsA('PlayerPawn')) {
-        if (Actual.GetStateName() == 'Dying') {
-            if (PlayerPawn(Actual).Player != None && !bHistoryCleared) {
+    PP = PlayerPawn(Actual);
+
+    if (PP != None) {
+        if (PP.GetStateName() == 'Dying') {
+            if (PP.Player != None && !bHistoryCleared) {
                 for (i = 0; i < arraycount(Data); i++) {
                     Data[i].ServerTimeStamp = 0;
                 }
                 DataIndex = 0;
-
                 CompEnd();
                 bHistoryCleared = true;
                 return;
@@ -81,17 +83,16 @@ event Tick(float DeltaTime) {
         } else {
             bHistoryCleared = false;
         }
+        
+        if (PP.CurrentTimeStamp > LatestClientTimeStamp) {
+            LatestClientTimeStamp = PP.CurrentTimeStamp;
+            FillData(Data[DataIndex]);
+            DataIndex = (DataIndex + 1) % arraycount(Data);
+        }
+    } else {
+        FillData(Data[DataIndex]);
+        DataIndex = (DataIndex + 1) % arraycount(Data);
     }
-
-	if (Actual.IsA('PlayerPawn') == false || PlayerPawn(Actual).CurrentTimeStamp > LatestClientTimeStamp) {
-		if (Actual.IsA('PlayerPawn'))
-			LatestClientTimeStamp = PlayerPawn(Actual).CurrentTimeStamp;
-
-		FillData(Data[DataIndex]);
-		DataIndex += 1;
-		if (DataIndex == arraycount(Data))
-			DataIndex = 0;
-	}
 }
 
 function vector LerpVector(float Alpha, vector A, vector B) {
@@ -185,25 +186,31 @@ function TakeDamage(
 }
 
 function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
-    // Store the original collision state
-    WasColliding = Actual.bCollideActors;
-    WasBlockingActors = Actual.bBlockActors;
-    WasBlockingPlayers = Actual.bBlockPlayers;
-    WasProjTarget = Actual.bProjTarget;
     
-    // Disable collision on the actual pawn
-    Actual.SetCollision(false, false, false);
-    Actual.bProjTarget = false;
+    if (!bCompActive) {
+        WasColliding = Actual.bCollideActors;
+        WasBlockingActors = Actual.bBlockActors;
+        WasBlockingPlayers = Actual.bBlockPlayers;
+        WasProjTarget = Actual.bProjTarget;
+        
+        Actual.SetCollision(false, false, false);
+        Actual.bProjTarget = false;
+    }
     
-    // Setup the dummy with the proper location and dimensions
     SetLocation(Loc);
     EyeHeight = EH;
     BaseEyeHeight = BEH;
-    SetCollisionSize(CR, CH);
     
-    // Apply the original collision properties to the dummy
-    SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
-    bProjTarget = WasProjTarget;
+    // Only change collision size if needed
+    if (CollisionRadius != CR || CollisionHeight != CH)
+        SetCollisionSize(CR, CH);
+    
+    // Only set collision if it's different from current state
+    if (bCollideActors != WasColliding || bBlockActors != WasBlockingActors || bBlockPlayers != WasBlockingPlayers)
+        SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
+    
+    if (bProjTarget != WasProjTarget)
+        bProjTarget = WasProjTarget;
     
     bCompActive = true;
 }
@@ -220,6 +227,7 @@ function CompEnd() {
         Actual.bProjTarget = WasProjTarget;
     }
 }
+
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir) {
 	local float adjZ, maxZ;
 
