@@ -17,8 +17,4 @@ var float ClientTimeStamp;
 
 defaultproperties
 {
-    bSnapCollideActors=true;
-    bSnapBlockActors=true;
-    bSnapBlockPlayers=true;
-    bSnapProjTarget=true;
 }
