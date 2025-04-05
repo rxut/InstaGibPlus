@@ -39,6 +39,8 @@ var UTPlusDummy CompDummies;
 var IGPlus_WeaponImplementation WImp;
 var bool bWImpSearched;
 
+var bool bCompensationIsActive;
+
 replication
 {
 	unreliable if (Role == ROLE_Authority)
@@ -492,6 +494,8 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
     local UTPlusDummy D;
     local Pawn DActual;
 
+	bCompensationIsActive = true;
+
     for (D = CompDummies; D != none; D = D.Next) {
         DActual = D.Actual;
         
@@ -521,6 +525,8 @@ function EndCompensation() {
 	for (D = CompDummies; D != none; D = D.Next) {
 		D.CompEnd();
 	}
+
+	bCompensationIsActive = false;
 }
 
 function xxHideFlags()
