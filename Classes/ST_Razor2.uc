@@ -58,7 +58,7 @@ auto state Flying
 		Dir = Normal(Velocity);
 		if (bCanHitInstigator || (Other != Instigator)) {
 			if (Role == ROLE_Authority) {
-				if ((Other.bIsPawn) &&
+				if ((Other.bIsPawn || Other.IsA('UTPlusDummy')) &&
 					(HitLocation.Z - Other.Location.Z > 0.62 * Other.CollisionHeight) &&
 					(!Instigator.IsA('Bot') || !Bot(Instigator).bNovice)
 				) {
@@ -79,7 +79,7 @@ auto state Flying
 					);
 				}
 			}
-			if (Other.bIsPawn)
+			if (Other.bIsPawn || Other.IsA('UTPlusDummy'))
 				PlaySound(MiscSound, SLOT_Misc, 2.0);
 			else
 				PlaySound(ImpactSound, SLOT_Misc, 2.0);

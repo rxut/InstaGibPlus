@@ -102,11 +102,12 @@ simulated function ProcessTouch (Actor Other, vector HitLocation)
 	
 	If (PlasmaSphere(Other) == None)
 	{
-		if (Other.bIsPawn)
+		if (Other.bIsPawn || Other.IsA('UTPlusDummy'))
 		{
 			bHitPawn = true;
 			bExploded = !Level.bHighDetailMode || Level.bDropDetail;
 		}
+		
 		if (Role == ROLE_Authority)
 		{
 			Other.TakeDamage(
