@@ -6,26 +6,15 @@ var float EyeHeight;
 var float BaseEyeHeight;
 var bool bHistoryCleared;
 
-var bool WasColliding;
-var bool WasBlockingActors;
-var bool WasBlockingPlayers;
-var bool WasProjTarget;
-
-struct DummyData {
-	var vector Loc, Vel, Acc;
-	var rotator Rot, VR;
-	var float BaseEyeHeight;
-	var float EyeHeight;
-	var float CollisionRadius;
-	var float CollisionHeight;
-	var float ServerTimeStamp;
-	var float ClientTimeStamp;
-};
-
-var DummyData Data[32];
+var UTPlusSnapshot Data[32];
 var int DataIndex;
 
 var bool bCompActive;
+
+var bool ActualWasColliding;
+var bool ActualWasBlockingActors;
+var bool ActualWasBlockingPlayers;
+var bool ActualWasProjTarget;
 
 var UTPlusDummy Next;
 
@@ -43,7 +32,7 @@ simulated function PostBeginPlay()
 	Super.PostBeginPlay();
 }
 
-function FillData(out DummyData D) {
+function FillData(UTPlusSnapshot D) {
 	D.Loc = Actual.Location;
 	D.Vel = Actual.Velocity;
 	D.Acc = Actual.Acceleration;
@@ -53,9 +42,15 @@ function FillData(out DummyData D) {
 	D.EyeHeight = Actual.EyeHeight;
 	D.CollisionRadius = Actual.CollisionRadius;
 	D.CollisionHeight = Actual.CollisionHeight;
+    D.bSnapCollideActors = Actual.bCollideActors;
+	D.bSnapBlockActors = Actual.bBlockActors;
+	D.bSnapBlockPlayers = Actual.bBlockPlayers;
+	D.bSnapProjTarget = Actual.bProjTarget;
 	D.ServerTimeStamp = Level.TimeSeconds;
-	if (bCompActive && Actual.IsA('PlayerPawn'))
+	if (Actual.IsA('PlayerPawn'))
 		D.ClientTimeStamp = PlayerPawn(Actual).CurrentTimeStamp;
+	else
+		D.ClientTimeStamp = 0;
 }
 
 event Tick(float DeltaTime) {
@@ -64,35 +59,52 @@ event Tick(float DeltaTime) {
     super.Tick(DeltaTime);
 
     if (Actual == none || Actual.bDeleteMe) {
-        Disable('Tick');
-    }
+		Disable('Tick');
+		if (!bHistoryCleared) {
+			for (i = 0; i < arraycount(Data); i++) {
+				Data[i] = None;
+			}
+			DataIndex = 0;
+			bHistoryCleared = true;
+		}
+		return;
+	}
 
     PP = PlayerPawn(Actual);
 
     if (PP != None) {
-        if (PP.GetStateName() == 'Dying') {
-            if (PP.Player != None && !bHistoryCleared) {
-                for (i = 0; i < arraycount(Data); i++) {
-                    Data[i].ServerTimeStamp = 0;
-                }
-                DataIndex = 0;
-                CompEnd();
-                bHistoryCleared = true;
-                return;
+		if (PP.GetStateName() == 'Dying') {
+			if (PP.Player != None && !bHistoryCleared) {
+				for (i = 0; i < arraycount(Data); i++) {
+					Data[i] = None;
+				}
+				DataIndex = 0;
+				if (bCompActive)
+					CompEnd();
+				bHistoryCleared = true;
+				return;
+			}
+            else if (bHistoryCleared) {
+                 return;
             }
-        } else {
-            bHistoryCleared = false;
-        }
-        
-        if (PP.CurrentTimeStamp > LatestClientTimeStamp) {
-            LatestClientTimeStamp = PP.CurrentTimeStamp;
-            FillData(Data[DataIndex]);
-            DataIndex = (DataIndex + 1) % arraycount(Data);
-        }
-    } else {
-        FillData(Data[DataIndex]);
-        DataIndex = (DataIndex + 1) % arraycount(Data);
-    }
+
+		} else {
+			bHistoryCleared = false;
+		}
+
+		if (PP.CurrentTimeStamp > LatestClientTimeStamp) {
+			LatestClientTimeStamp = PP.CurrentTimeStamp;
+			if (Data[DataIndex] == None)
+				Data[DataIndex] = new class'UTPlusSnapshot';
+			FillData(Data[DataIndex]);
+			DataIndex = (DataIndex + 1) % arraycount(Data);
+		}
+	} else { // Handle non-PlayerPawn Actual
+		if (Data[DataIndex] == None)
+			Data[DataIndex] = new class'UTPlusSnapshot';
+		FillData(Data[DataIndex]);
+		DataIndex = (DataIndex + 1) % arraycount(Data);
+	}
 }
 
 function vector LerpVector(float Alpha, vector A, vector B) {
@@ -100,101 +112,89 @@ function vector LerpVector(float Alpha, vector A, vector B) {
 }
 
 function CompStart(int Ping) {
-    local float TargetTimeStamp;
-    local int I;
-    local int Next;
-    local float Alpha;
-    local float TimeDelta;
-    local float Distance;
-    local bool bSubTickCompensation;
+	local float TargetTimeStamp;
+	local int I;
+	local int Next;
+	local float TimeDelta;
+	local float Distance;
+	local bool bSubTickCompensation;
+	local float TargetAlpha;
+	local UTPlusSnapshot SnapI, SnapNext;
 
-    if (Actual == none || Actual.bDeleteMe)
-        return;
+	if (Actual == none || Actual.bDeleteMe || WImp == None)
+		return;
 
-   // Cap ping compensation
-   if (Ping > WImp.WeaponSettings.PingCompensationMax)
-        Ping = WImp.WeaponSettings.PingCompensationMax;
+	// Cap ping compensation
+	if (Ping > WImp.WeaponSettings.PingCompensationMax)
+		Ping = WImp.WeaponSettings.PingCompensationMax;
+	if (Ping < 0)
+		Ping = 0;
 
-    bSubTickCompensation = WImp.WeaponSettings.bEnableSubTickCompensation;
+	bSubTickCompensation = WImp.WeaponSettings.bEnableSubTickCompensation;
 
-    TargetTimeStamp = Level.TimeSeconds - 0.001*Ping*Level.TimeDilation;
+	TargetTimeStamp = Level.TimeSeconds - 0.001 * Ping * Level.TimeDilation;
 
-    I = DataIndex - 1;
-    if (I < 0)
-        I += arraycount(Data);
+	I = DataIndex - 1;
+	if (I < 0)
+		I += arraycount(Data);
 
-    do {
-        Next = I - 1;
-        if (Next < 0)
-            Next += arraycount(Data);
+	do {
+		Next = I - 1;
+		if (Next < 0)
+			Next += arraycount(Data);
 
-        if (bSubTickCompensation)
-        {
-            // Interpolation logic
-            if (Data[I].ServerTimeStamp > 0 && Data[I].ServerTimeStamp <= TargetTimeStamp) {          
-                CompSwap(
-                    Data[I].Loc + Data[I].Vel * (TargetTimeStamp - Data[I].ServerTimeStamp),
-                    Data[I].EyeHeight,
-                    Data[I].BaseEyeHeight,
-                    Data[I].CollisionRadius,
-                    Data[I].CollisionHeight
-                );
-                return;
-            } else if (Data[Next].ServerTimeStamp > 0 && Data[Next].ServerTimeStamp <= TargetTimeStamp) {
-    
-                TimeDelta = Data[I].ServerTimeStamp - Data[Next].ServerTimeStamp;
-                Distance = VSize(Data[I].Loc - Data[Next].Loc);
+		SnapI = Data[I];
+		SnapNext = Data[Next];
 
-                // Continuity check
-                if (TimeDelta > 0.001 && Distance / TimeDelta <= 2500) { // Threshold for continuous motion
-                    Alpha = (TargetTimeStamp - Data[Next].ServerTimeStamp) / TimeDelta;
-                    CompSwap(
-                        LerpVector(Alpha, Data[Next].Loc, Data[I].Loc),
-                        Data[Next].EyeHeight,
-                        Data[Next].BaseEyeHeight,
-                        Data[Next].CollisionRadius,
-                        Data[Next].CollisionHeight
-                    );
+		// Ensure the primary snapshot for this iteration is valid
+		if (SnapI == None || SnapI.ServerTimeStamp <= 0) {
+			I = Next;
+			continue; // Try the next older snapshot
+		}
+
+		if (bSubTickCompensation) {
+			if (SnapI.ServerTimeStamp <= TargetTimeStamp) {
+				CompSwap(SnapI, None, -1.0, TargetTimeStamp); // Alpha -1.0 signifies extrapolation
+				return;
+			}
+			else if (SnapNext != None && SnapNext.ServerTimeStamp > 0 && SnapNext.ServerTimeStamp <= TargetTimeStamp) {
+				TimeDelta = SnapI.ServerTimeStamp - SnapNext.ServerTimeStamp;
+                // Check for valid TimeDelta to avoid division by zero or huge velocities
+				if (TimeDelta > 0.001) {
+                    Distance = VSize(SnapI.Loc - SnapNext.Loc);
+                    if (Distance / TimeDelta <= 2500) {
+                        TargetAlpha = (TargetTimeStamp - SnapNext.ServerTimeStamp) / TimeDelta;
+                        TargetAlpha = FClamp(TargetAlpha, 0.0, 1.0);
+                        CompSwap(SnapNext, SnapI, TargetAlpha, TargetTimeStamp);
+                    } else {
+                        CompSwap(SnapNext, None, -1.0, TargetTimeStamp);
+                    }
                 } else {
-                    // Fallback to velocity extrapolation if motion is discontinuous or TimeDelta is too small
-                    CompSwap(
-                        Data[Next].Loc + Data[Next].Vel * (TargetTimeStamp - Data[Next].ServerTimeStamp),
-                        Data[Next].EyeHeight,
-                        Data[Next].BaseEyeHeight,
-                        Data[Next].CollisionRadius,
-                        Data[Next].CollisionHeight
-                    );
+                    CompSwap(SnapNext, None, -1.0, TargetTimeStamp);
                 }
-                return;
-            }
-        }
-        else // No interpolation
+				return;
+			}
+		}
+        else // No sub-tick compensation
         {
-            if (Data[I].ServerTimeStamp > 0 && Data[I].ServerTimeStamp <= TargetTimeStamp) {
-                CompSwap(
-                    Data[I].Loc,
-                    Data[I].EyeHeight,
-                    Data[I].BaseEyeHeight,
-                    Data[I].CollisionRadius,
-                    Data[I].CollisionHeight
-                );
-                return;
-            }
-        }
+			if (SnapI.ServerTimeStamp <= TargetTimeStamp) {
+				CompSwap(SnapI, None, 1.0, TargetTimeStamp);
+				return;
+			}
+		}
 
-        I = Next;
+		I = Next;
 
-    } until(I == DataIndex);
+	} until (I == DataIndex);
 
-    if (Data[I].ServerTimeStamp > 0) {
-        CompSwap(
-            Data[I].Loc,
-            Data[I].EyeHeight,
-            Data[I].BaseEyeHeight,
-            Data[I].CollisionRadius,
-            Data[I].CollisionHeight
-        );
-    }
+	I = DataIndex;
+	do {
+		if (Data[I] != None && Data[I].ServerTimeStamp > 0) {
+			CompSwap(Data[I], None, 1.0, TargetTimeStamp);
+			return;
+		}
+		I = (I + 1) % arraycount(Data);
+	} until (I == DataIndex);
 }
 
 function TakeDamage(
@@ -208,48 +208,102 @@ function TakeDamage(
         Actual.TakeDamage(Damage, InstigatedBy, HitLocation, Momentum, DamageType);
 }
 
-function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
+function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float TargetTimeStamp) {
+	local vector TargetLoc;
+	local float TargetEH;
+	local float TargetBEH;
+	local float TargetCR;
+	local float TargetCH;
 
-    if (bCompActive)
-        return;
+    local bool TargetCollideActors;
+	local bool TargetBlockActors;
+	local bool TargetBlockPlayers;
+	local bool TargetProjTarget;
+
+	if (Actual == None || Actual.bDeleteMe) {
+		return;
+	}
+	if (SnapA == None) {
+		return;
+	}
+	if (bCompActive) {
+		return;
+	}
+
+	if (Alpha == -1.0) { // Extrapolation from SnapA
+		TargetLoc = SnapA.Loc + SnapA.Vel * (TargetTimeStamp - SnapA.ServerTimeStamp);
+		TargetEH = SnapA.EyeHeight;
+		TargetBEH = SnapA.BaseEyeHeight;
+		TargetCR = SnapA.CollisionRadius;
+		TargetCH = SnapA.CollisionHeight;
+		TargetCollideActors = SnapA.bSnapCollideActors;
+		TargetBlockActors = SnapA.bSnapBlockActors;
+		TargetBlockPlayers = SnapA.bSnapBlockPlayers;
+		TargetProjTarget = SnapA.bSnapProjTarget;
+	}
+	else if (Alpha >= 0.0 && Alpha <= 1.0 && SnapB != None) { // Interpolation between SnapA and SnapB
+		TargetLoc = LerpVector(Alpha, SnapA.Loc, SnapB.Loc);
+		TargetEH = SnapA.EyeHeight;
+		TargetBEH = SnapA.BaseEyeHeight;
+		TargetCR = SnapA.CollisionRadius;
+		TargetCH = SnapA.CollisionHeight;
+		TargetCollideActors = SnapA.bSnapCollideActors;
+		TargetBlockActors = SnapA.bSnapBlockActors;
+		TargetBlockPlayers = SnapA.bSnapBlockPlayers;
+		TargetProjTarget = SnapA.bSnapProjTarget;
+	}
+	else if (Alpha == 1.0 && SnapB == None) { // Direct use of SnapA (no interpolation)
+		TargetLoc = SnapA.Loc;
+		TargetEH = SnapA.EyeHeight;
+		TargetBEH = SnapA.BaseEyeHeight;
+		TargetCR = SnapA.CollisionRadius;
+		TargetCH = SnapA.CollisionHeight;
+		TargetCollideActors = SnapA.bSnapCollideActors;
+		TargetBlockActors = SnapA.bSnapBlockActors;
+		TargetBlockPlayers = SnapA.bSnapBlockPlayers;
+		TargetProjTarget = SnapA.bSnapProjTarget;
+	}
+	else {
+		return; // Invalid state
+	}
     
-    WasColliding = Actual.bCollideActors;
-    WasBlockingActors = Actual.bBlockActors;
-    WasBlockingPlayers = Actual.bBlockPlayers;
-    WasProjTarget = Actual.bProjTarget;
-        
-    Actual.SetCollision(false, false, false);
-    Actual.bProjTarget = false;
-    
-    SetLocation(Loc);
-    EyeHeight = EH;
-    BaseEyeHeight = BEH;
-    
-    // Only change collision size if needed
-    if (CollisionRadius != CR || CollisionHeight != CH)
-        SetCollisionSize(CR, CH);
-    
-    // Only set collision if it's different from current state
-    if (bCollideActors != WasColliding || bBlockActors != WasBlockingActors || bBlockPlayers != WasBlockingPlayers)
-        SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
-    
-    if (bProjTarget != WasProjTarget)
-        bProjTarget = WasProjTarget;
-    
-    bCompActive = true;
+	// Store for CompEnd
+	ActualWasColliding = Actual.bCollideActors;
+	ActualWasBlockingActors = Actual.bBlockActors;
+	ActualWasBlockingPlayers = Actual.bBlockPlayers;
+	ActualWasProjTarget = Actual.bProjTarget;
+
+	// Move the Actual pawn out of the way temporarily
+	Actual.SetCollision(false, false, false);
+	Actual.bProjTarget = false;
+
+	SetLocation(TargetLoc);
+	EyeHeight = TargetEH;
+	BaseEyeHeight = TargetBEH;
+
+    if (CollisionRadius != TargetCR || CollisionHeight != TargetCH)
+	    SetCollisionSize(TargetCR, TargetCH);
+
+	SetCollision(TargetCollideActors, TargetBlockActors, TargetBlockPlayers);
+	bProjTarget = TargetProjTarget;
+
+	bCompActive = true;
 }
 
 function CompEnd() {
-    if (bCompActive) {
+	if (bCompActive) {
         bCompActive = false;
-        
-        SetCollision(false, false, false);
-        bProjTarget = false;
-        
-        // Restore the actual pawn's original collision state
-        Actual.SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
-        Actual.bProjTarget = WasProjTarget;
-    }
+
+        // Hide the dummy again
+		SetCollision(false, false, false);
+		bProjTarget = false;
+
+		if (Actual != None && !Actual.bDeleteMe)
+		{
+            Actual.SetCollision(ActualWasColliding, ActualWasBlockingActors, ActualWasBlockingPlayers);
+			Actual.bProjTarget = ActualWasProjTarget;
+		}
+	}
 }
 
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir) {
