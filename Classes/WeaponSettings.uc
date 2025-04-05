@@ -173,6 +173,8 @@ var config int   InvisibilityDuration;
 
 var config bool  bEnablePingCompensation;
 
+var config bool  bEnableSubTickCompensation;
+
 var config int   PingCompensationMax;
 
 defaultproperties
@@ -348,5 +350,8 @@ defaultproperties
 
 	bEnablePingCompensation=False
 
+	bEnableSubTickCompensation=False
+	
 	PingCompensationMax=150
+	
 }

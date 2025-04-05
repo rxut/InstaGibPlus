@@ -106,72 +106,95 @@ function CompStart(int Ping) {
     local float Alpha;
     local float TimeDelta;
     local float Distance;
+    local bool bSubTickCompensation;
 
-	if (Actual == none || Actual.bDeleteMe)
-    	return;
+    if (Actual == none || Actual.bDeleteMe)
+        return;
 
    // Cap ping compensation
    if (Ping > WImp.WeaponSettings.PingCompensationMax)
         Ping = WImp.WeaponSettings.PingCompensationMax;
+
+    bSubTickCompensation = WImp.WeaponSettings.bEnableSubTickCompensation;
 
     TargetTimeStamp = Level.TimeSeconds - 0.001*Ping*Level.TimeDilation;
 
     I = DataIndex - 1;
     if (I < 0)
         I += arraycount(Data);
+
     do {
         Next = I - 1;
         if (Next < 0)
             Next += arraycount(Data);
 
-        if (Data[I].ServerTimeStamp <= TargetTimeStamp) {
-            CompSwap(
-                Data[I].Loc + Data[I].Vel * (TargetTimeStamp - Data[I].ServerTimeStamp),
-                Data[I].EyeHeight,
-                Data[I].BaseEyeHeight,
-                Data[I].CollisionRadius,
-                Data[I].CollisionHeight
-            );
-            return;
-        } else if (Data[Next].ServerTimeStamp <= TargetTimeStamp) {
-            // Calculate time and distance for continuity check
-            TimeDelta = Data[I].ServerTimeStamp - Data[Next].ServerTimeStamp;
-            Distance = VSize(Data[I].Loc - Data[Next].Loc);
+        if (bSubTickCompensation)
+        {
+            // Interpolation logic
+            if (Data[I].ServerTimeStamp > 0 && Data[I].ServerTimeStamp <= TargetTimeStamp) {          
+                CompSwap(
+                    Data[I].Loc + Data[I].Vel * (TargetTimeStamp - Data[I].ServerTimeStamp),
+                    Data[I].EyeHeight,
+                    Data[I].BaseEyeHeight,
+                    Data[I].CollisionRadius,
+                    Data[I].CollisionHeight
+                );
+                return;
+            } else if (Data[Next].ServerTimeStamp > 0 && Data[Next].ServerTimeStamp <= TargetTimeStamp) {
+    
+                TimeDelta = Data[I].ServerTimeStamp - Data[Next].ServerTimeStamp;
+                Distance = VSize(Data[I].Loc - Data[Next].Loc);
 
-            // Continuity check
-            if (TimeDelta > 0 && Distance / TimeDelta <= 2500) { // Threshold for continuous motion
-                Alpha = (TargetTimeStamp - Data[Next].ServerTimeStamp) / TimeDelta;
-                CompSwap(
-                    LerpVector(Alpha, Data[Next].Loc, Data[I].Loc),
-                    Data[Next].EyeHeight,
-                    Data[Next].BaseEyeHeight,
-                    Data[Next].CollisionRadius,
-                    Data[Next].CollisionHeight
-                );
-            } else {
-                // Use original velocity extrapolation
-                CompSwap(
-                    Data[Next].Loc + Data[Next].Vel * (TargetTimeStamp - Data[Next].ServerTimeStamp),
-                    Data[Next].EyeHeight,
-                    Data[Next].BaseEyeHeight,
-                    Data[Next].CollisionRadius,
-                    Data[Next].CollisionHeight
-                );
+                // Continuity check
+                if (TimeDelta > 0.001 && Distance / TimeDelta <= 2500) { // Threshold for continuous motion
+                    Alpha = (TargetTimeStamp - Data[Next].ServerTimeStamp) / TimeDelta;
+                    CompSwap(
+                        LerpVector(Alpha, Data[Next].Loc, Data[I].Loc),
+                        Data[Next].EyeHeight,
+                        Data[Next].BaseEyeHeight,
+                        Data[Next].CollisionRadius,
+                        Data[Next].CollisionHeight
+                    );
+                } else {
+                    // Fallback to velocity extrapolation if motion is discontinuous or TimeDelta is too small
+                    CompSwap(
+                        Data[Next].Loc + Data[Next].Vel * (TargetTimeStamp - Data[Next].ServerTimeStamp),
+                        Data[Next].EyeHeight,
+                        Data[Next].BaseEyeHeight,
+                        Data[Next].CollisionRadius,
+                        Data[Next].CollisionHeight
+                    );
+                }
+                return;
             }
-            return;
+        }
+        else // No interpolation
+        {
+            if (Data[I].ServerTimeStamp > 0 && Data[I].ServerTimeStamp <= TargetTimeStamp) {
+                CompSwap(
+                    Data[I].Loc,
+                    Data[I].EyeHeight,
+                    Data[I].BaseEyeHeight,
+                    Data[I].CollisionRadius,
+                    Data[I].CollisionHeight
+                );
+                return;
+            }
         }
 
         I = Next;
+
     } until(I == DataIndex);
 
-    // Fallback to last known info
-    CompSwap(
-        Data[I].Loc,
-        Data[I].EyeHeight,
-        Data[I].BaseEyeHeight,
-        Data[I].CollisionRadius,
-        Data[I].CollisionHeight
-    );
+    if (Data[I].ServerTimeStamp > 0) {
+        CompSwap(
+            Data[I].Loc,
+            Data[I].EyeHeight,
+            Data[I].BaseEyeHeight,
+            Data[I].CollisionRadius,
+            Data[I].CollisionHeight
+        );
+    }
 }
 
 function TakeDamage(
@@ -209,7 +232,7 @@ function CompSwap(vector Loc, float EH, float BEH, float CR, float CH) {
     // Only set collision if it's different from current state
     if (bCollideActors != WasColliding || bBlockActors != WasBlockingActors || bBlockPlayers != WasBlockingPlayers)
         SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
-
+    
     if (bProjTarget != WasProjTarget)
         bProjTarget = WasProjTarget;
     

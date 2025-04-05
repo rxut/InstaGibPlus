@@ -147,6 +147,8 @@ var int   InvisibilityDuration;
 
 var bool  bEnablePingCompensation;
 
+var bool  bEnableSubTickCompensation;
+
 var int   PingCompensationMax;
 
 replication {
@@ -294,6 +296,7 @@ replication {
 		InvisibilityDuration,
 
 		bEnablePingCompensation,
+		bEnableSubTickCompensation,
 		PingCompensationMax;
 }
 
@@ -642,6 +645,8 @@ function InitFromWeaponSettings(WeaponSettings S) {
 
 	bEnablePingCompensation = S.bEnablePingCompensation;
 
+	bEnableSubTickCompensation = S.bEnableSubTickCompensation;
+
 	PingCompensationMax = S.PingCompensationMax;
 }
 
@@ -798,6 +803,8 @@ defaultproperties
 	InvisibilityDuration=45
 
 	bEnablePingCompensation=False
+	
+	bEnableSubTickCompensation=False
 	
 	PingCompensationMax=150
 }
