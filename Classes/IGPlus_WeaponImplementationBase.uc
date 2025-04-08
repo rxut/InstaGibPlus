@@ -470,13 +470,18 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local bool bWeaponShock;
 	local vector Dir;
 	local UTPlusDummy D;
+	local ST_ProjectileDummy PD;
 	local bbPlayer bbP;
 	local int Ping;
+	local UTPure PureRef;
 	
 	Ping = 0;
 	
 	if (PawnOwner != None) {
+
 		bbP = bbPlayer(PawnOwner);
+		PureRef = bbP.zzUTPure;
+
 		bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 		
 		if (bbP != None) {
@@ -493,7 +498,7 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 
 	if (WSettingsRepl.bEnablePingCompensation && bbP != none)
 	{
-		bbP.zzUTPure.CompensateFor(Ping);
+		PureRef.CompensateFor(Ping);
 
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 			if (A.IsA('UTPlusDummy')) {
@@ -509,7 +514,15 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 						break;
 					}
 				}
-			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+			}
+			else if (A.IsA('ST_ProjectileDummy')) {
+				PD = ST_ProjectileDummy(A);
+				if (PD.Actual != None && PD.Actual.IsA('ST_TranslocatorTarget')) {
+					Other = PD.Actual;
+					break;
+				}
+			}
+			else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
 					Other = A;
 					break;
@@ -517,7 +530,7 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 			}
 		}
 		
-		bbP.zzUTPure.EndCompensation();
+		PureRef.EndCompensation();
 		
 		return Other;
 	}

@@ -41,6 +41,8 @@ var bool bWImpSearched;
 
 var bool bCompensationIsActive;
 
+var ST_ProjectileDummy ProjDummies;
+
 replication
 {
 	unreliable if (Role == ROLE_Authority)
@@ -490,10 +492,32 @@ event Tick(float zzDelta)
 	}
 }
 
+function RegisterProjectile(Projectile P) {
+    local ST_ProjectileDummy NewDummy;
+    local bool AlreadyRegistered;
+    local ST_ProjectileDummy Dummy;
+    
+    for (Dummy = ProjDummies; Dummy != none; Dummy = Dummy.Next) {
+        if (Dummy.Actual == P) {
+            AlreadyRegistered = true;
+            break;
+        }
+    }
+    
+    if (!AlreadyRegistered) {
+        NewDummy = Spawn(class'ST_ProjectileDummy');
+        NewDummy.Actual = P;
+        
+        NewDummy.Next = ProjDummies;
+        ProjDummies = NewDummy;
+    }
+}
+
 function CompensateFor(int Ping, optional Pawn Instigator) {
     local UTPlusDummy D;
+	local ST_ProjectileDummy PD;
     local Pawn DActual;
-
+	
 	bCompensationIsActive = true;
 
     for (D = CompDummies; D != none; D = D.Next) {
@@ -517,13 +541,24 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
 
         D.CompStart(Ping);
     }
+
+	for (PD = ProjDummies; PD != none; PD = PD.Next) {
+		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
+			PD.CompStart(Ping);
+		}
+	}
 }
 
 function EndCompensation() {
 	local UTPlusDummy D;
-
+	local ST_ProjectileDummy PD;
+	
 	for (D = CompDummies; D != none; D = D.Next) {
 		D.CompEnd();
+	}
+
+	for (PD = ProjDummies; PD != none; PD = PD.Next) {
+		PD.CompEnd();
 	}
 
 	bCompensationIsActive = false;
@@ -711,6 +746,16 @@ function UTPlusDummy FindDummy(Pawn P) {
 	local UTPlusDummy D;
 
 	for (D = CompDummies; D != none; D = D.Next)
+		if (D.Actual == P)
+			return D;
+
+	return none;
+}
+
+function ST_ProjectileDummy FindProjectileDummy(Projectile P) {
+	local ST_ProjectileDummy D;
+
+	for (D = ProjDummies; D != none; D = D.Next)
 		if (D.Actual == P)
 			return D;
 
