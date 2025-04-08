@@ -307,5 +307,133 @@ simulated function TweenDown() {
 		PlayAnim('Down', GetWeaponSettings().HammerDownAnimSpeed(), TweenTime);
 }
 
+state Firing
+{
+	function AltFire(float F) 
+	{
+	}
+
+	function Tick( float DeltaTime )
+	{
+		local Pawn P;
+		local Rotator EnemyRot;
+		local vector HitLocation, HitNormal, StartTrace, EndTrace, X, Y, Z;
+		local actor HitActor;
+		local ST_ProjectileDummy ProjDummy;
+		local Actor ActualTarget;
+
+		if ( bChangeWeapon )
+			GotoState('DownWeapon');
+
+		if (  Bot(Owner) != None )
+		{
+			if ( Bot(Owner).Enemy == None )
+				Bot(Owner).bFire = 0;
+			else
+				Bot(Owner).bFire = 1;
+		}
+		P = Pawn(Owner);
+		if ( P == None ) 
+		{
+			AmbientSound = None;
+			GotoState('');
+			return;
+		}
+		else if( P.bFire==0 ) 
+		{
+			TraceFire(0);
+			PlayFiring();
+			GoToState('FireBlast');
+			return;
+		}
+
+		ChargeSize += 0.75 * DeltaTime;
+
+		Count += DeltaTime;
+		if ( Count > 0.2 )
+		{
+			Count = 0;
+			Owner.MakeNoise(1.0);
+		}
+		if (ChargeSize > 1) 
+		{
+			if ( !P.IsA('PlayerPawn') && (P.Enemy != None) )
+			{
+				EnemyRot = Rotator(P.Enemy.Location - P.Location);
+				EnemyRot.Yaw = EnemyRot.Yaw & 65535;
+				if ( (abs(EnemyRot.Yaw - (P.Rotation.Yaw & 65535)) > 8000)
+					&& (abs(EnemyRot.Yaw - (P.Rotation.Yaw & 65535)) < 57535) )
+					return;
+				GetAxes(EnemyRot,X,Y,Z);
+			}
+			else
+				GetAxes(P.ViewRotation, X, Y, Z);
+			StartTrace = P.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
+			if ( (Level.NetMode == NM_Standalone) && P.IsA('PlayerPawn') )
+				EndTrace = StartTrace + 25 * X; 
+			else
+				EndTrace = StartTrace + 60 * X; 
+
+			if (GetWeaponSettings().bEnablePingCompensation) { // Ping compensation logic
+
+				HitActor = P.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace);
+				
+				if ( (HitActor != None) && (HitActor != P) ) // Basic valid hit check
+				{
+					// Is it a Pawn
+					if ( HitActor.bIsPawn )
+					{
+						ProcessTraceHit(HitActor, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+						PlayFiring();
+						GoToState('FireBlast');
+					}
+					// Is it the ST_ProjectileDummy
+					else if ( HitActor.IsA('ST_ProjectileDummy') )
+					{
+						ProjDummy = ST_ProjectileDummy(HitActor);
+						ActualTarget = ProjDummy.Actual;
+
+						if ( ActualTarget != None && ActualTarget.IsA('TranslocatorTarget') )
+						{
+							ProcessTraceHit(ActualTarget, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+							PlayFiring();
+							GoToState('FireBlast');
+						}
+					}
+				}
+			}
+			else { // Regular base game trace
+				
+				HitActor = Trace(HitLocation, HitNormal, EndTrace, StartTrace, true);
+
+				if ( (HitActor != None) && (HitActor.DrawType == DT_Mesh) )
+				{
+					ProcessTraceHit(HitActor, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+						PlayFiring();
+					GoToState('FireBlast');
+				}
+			}
+		}
+	}
+
+	function BeginState()
+	{
+		ChargeSize = 0.0;
+		Count = 0.0;
+	}
+
+	function EndState()
+	{
+		Super.EndState();
+		AmbientSound = None;
+	}
+
+Begin:
+	FinishAnim();
+	AmbientSound = TensionSound;
+	SoundVolume = 255*Pawn(Owner).SoundDampening;		
+	LoopAnim('Shake', 0.9);
+}
+
 defaultproperties {
 }
