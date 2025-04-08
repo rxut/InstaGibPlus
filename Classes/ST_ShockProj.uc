@@ -66,6 +66,9 @@ simulated event Tick(float Delta) {
     if (InstigatingPlayer == none)
         return;
 
+	if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+        return;
+
     // Catch up to server
     if (OldLocation == Location)
         MoveSmooth(Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
