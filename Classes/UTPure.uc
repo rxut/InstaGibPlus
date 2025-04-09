@@ -738,6 +738,7 @@ function ModifyPlayer(Pawn Other)
 				zzP.zzbForceDemo = Settings.bForceDemo;
 				zzP.zzbGameStarted = True;
 			}
+			zzP.SetLocation(zzP.Location);
 			if (zzP.RemoteRole == ROLE_AutonomousProxy && Settings.bEnablePingCompensatedSpawn) {
 				zzP.bHidden = true;
 				zzP.SetCollision(false, false, false);
