@@ -33,8 +33,12 @@ function EnhancedHurtRadius(
 	local vector VictimGeoLocation, VictimGeoNormal;
 
 	local UTPure PureRef;
+	local bbPlayer bbP;
 
-	PureRef = bbPlayer(Source.Instigator).zzUTPure;
+	bbP = bbPlayer(Source.Instigator);
+	
+	if (bbP != None)
+		PureRef = bbP.zzUTPure;
 
 	if (Source.bHurtEntry)
 		return;
@@ -203,6 +207,10 @@ simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Directi
     local ST_HitTestHelper HitActor;
     local vector HitLoc, HitNorm;
     local bool Result;
+	local vector EndTrace;
+	local vector StartTrace;
+	local vector BackwardHitLoc, BackwardHitNorm;
+	local vector HitboxTraceStart;
 
     if (P == none)
         return false;
@@ -237,11 +245,21 @@ simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Directi
 
     Result = false;
 
+	EndTrace = HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight);
+	StartTrace = HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight);
+
+	// Trace backwards from HitLocation against world geometry only
+	if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
+        HitboxTraceStart = StartTrace;
+    } else {
+        HitboxTraceStart = BackwardHitLoc;
+    }
+
     foreach TraceActors(
         class'ST_HitTestHelper',
         HitActor, HitLoc, HitNorm,
-        HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight),
-        HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight)
+        EndTrace,
+        HitboxTraceStart
     ) {
         if (HitActor == CollChecker) {
             Result = true;
@@ -262,6 +280,10 @@ simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Directi
     local ST_HitTestHelper HitActor;
     local vector HitLoc, HitNorm;
     local bool Result;
+	local vector EndTrace;
+	local vector StartTrace;
+	local vector BackwardHitLoc, BackwardHitNorm;
+	local vector HitboxTraceStart;
 
     if (P == none)
         return false;
@@ -287,11 +309,21 @@ simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Directi
 
     Result = false;
 
+	EndTrace = HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight);
+	StartTrace = HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight);
+
+	// Trace backwards from HitLocation against world geometry only
+	if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
+        HitboxTraceStart = StartTrace;
+    } else {
+        HitboxTraceStart = BackwardHitLoc;
+    }
+
     foreach TraceActors(
         class'ST_HitTestHelper',
         HitActor, HitLoc, HitNorm,
-        HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight),
-        HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight)
+        EndTrace,
+        HitboxTraceStart
     ) {
         if (HitActor == CollChecker) {
             Result = true;
@@ -318,6 +350,10 @@ simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocati
         local ST_HitTestHelper HitActor;
         local vector HitLoc, HitNorm;
         local bool Result;
+		local vector EndTrace;
+		local vector StartTrace;
+		local vector BackwardHitLoc, BackwardHitNorm;
+		local vector HitboxTraceStart;
 
         if (D == none || D.Actual == none)
             return false;
@@ -356,11 +392,21 @@ simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocati
 
         Result = false;
 
+		EndTrace = HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight);
+		StartTrace = HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight);
+
+		// Trace backwards from HitLocation against world geometry only
+		if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
+			HitboxTraceStart = StartTrace;
+		} else {
+			HitboxTraceStart = BackwardHitLoc;
+		}
+
         foreach TraceActors(
             class'ST_HitTestHelper',
             HitActor, HitLoc, HitNorm,
-            HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight),
-            HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight)
+            EndTrace,
+            HitboxTraceStart
         ) {
             if (HitActor == CollChecker) {
                 Result = true;
@@ -382,6 +428,10 @@ simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocati
         local ST_HitTestHelper HitActor;
         local vector HitLoc, HitNorm;
         local bool Result;
+		local vector EndTrace;
+		local vector StartTrace;
+		local vector BackwardHitLoc, BackwardHitNorm;
+		local vector HitboxTraceStart;
 
         if (D == none || D.Actual == none)
             return false;
@@ -409,11 +459,21 @@ simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocati
 
         Result = false;
 
+		EndTrace = HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight);
+		StartTrace = HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight);
+
+		// Trace backwards from HitLocation against world geometry only
+		if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
+			HitboxTraceStart = StartTrace;
+		} else {
+			HitboxTraceStart = BackwardHitLoc;
+		}
+
         foreach TraceActors(
             class'ST_HitTestHelper',
             HitActor, HitLoc, HitNorm,
-            HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight),
-            HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight)
+            EndTrace,
+            HitboxTraceStart
         ) {
             if (HitActor == CollChecker) {
                 Result = true;
@@ -480,17 +540,17 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	if (PawnOwner != None) {
 
 		bbP = bbPlayer(PawnOwner);
-		PureRef = bbP.zzUTPure;
-
-		bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
-		
+	
 		if (bbP != None) {
+			PureRef = bbP.zzUTPure;
 			Ping = bbP.PingAverage;
-			
+
 			// Cap hitscan ping compensation
 			if (Ping > WeaponSettings.PingCompensationMax)
 				Ping = WeaponSettings.PingCompensationMax;
 		}
+
+		bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 	}
 	
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
@@ -605,8 +665,6 @@ simulated function Actor TraceShotClient(out vector HitLocation, out vector HitN
 		
 	return Other;
 }
-
-
 
 defaultproperties {
 
