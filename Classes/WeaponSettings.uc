@@ -38,7 +38,6 @@ var config float SniperMomentum;
 var config float SniperHeadshotMomentum;
 var config float SniperReloadTime;
 var config bool  SniperUseReducedHitbox;
-var config bool  SniperUseClientSideAnimations;
 
 var config float EightballSelectTime;
 var config float EightballDownTime;
@@ -65,7 +64,6 @@ var config float FlakSlugDamage;
 var config float FlakSlugHurtRadius;
 var config float FlakSlugMomentum;
 var config bool  FlakCompensatePing;
-var config bool  FlakUseClientSideAnimations;
 
 var config float RipperSelectTime;
 var config float RipperDownTime;
@@ -77,7 +75,6 @@ var config float RipperSecondaryHurtRadius;
 var config float RipperSecondaryDamage;
 var config float RipperSecondaryMomentum;
 var config bool  RipperCompensatePing;
-var config bool  RipperUseClientSideAnimations;
 
 var config float MinigunSelectTime;
 var config float MinigunDownTime;
@@ -99,14 +96,12 @@ var config float PulseBoltMaxAccumulate;
 var config float PulseBoltGrowthDelay;
 var config int   PulseBoltMaxSegments;
 var config bool  PulseCompensatePing;
-var config bool  PulseUseClientSideAnimations;
 
 var config float ShockSelectTime;
 var config float ShockDownTime;
 var config float ShockBeamDamage;
 var config float ShockBeamMomentum;
 var config bool  ShockBeamUseReducedHitbox;
-var config bool  ShockBeamUseClientSideAnimations;
 var config float ShockProjectileDamage;
 var config float ShockProjectileHurtRadius;
 var config float ShockProjectileMomentum;
