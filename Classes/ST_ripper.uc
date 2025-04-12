@@ -83,40 +83,45 @@ simulated function bool ClientFire(float Value)
 		return Super.ClientFire(Value);
 	
 	bbP = bbPlayer(Owner);
-	if (bClientAllowedToFire && Role < ROLE_Authority && bbP != None && 
-          GetWeaponSettings().RipperUseClientSideAnimations && 
-          Mover(bbP.Base) == None &&
-          Razor2Counter != LastFiredRazor2ID)
+
+	if (bbP != None && GetWeaponSettings().RipperCompensatePing)
 	{
-		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-			return false;
-		
-		yModInit();
-
-		if ( (AmmoType == None) && (AmmoName != None) )
+		if (Role < ROLE_Authority &&
+			bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations &&
+			Mover(bbP.Base) == None &&
+			bClientAllowedToFire &&
+			Razor2Counter != LastFiredRazor2ID)
 		{
-			GiveAmmo(Pawn(Owner));
-		}
-		if ( AmmoType.AmmoAmount > 0 )
-		{
-
-			Instigator = Pawn(Owner);
-			GotoState('ClientFiring');
-			bPointing=True;
-			bCanClientFire = true;
+			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
+				return false;
 			
-			GetAxes(GV,X,Y,Z);
-			Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
-			AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
-			
-			ClientRazor2 = Spawn(Class'ST_Razor2', Owner,, Start, AdjustedAim);
-			ClientRazor2.RemoteRole = ROLE_None;
-			ClientRazor2.bClientVisualOnly = true;
-			ClientRazor2.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-            ClientRazor2.bCollideWorld = false;
+			yModInit();
 
-			ClientRazor2.Razor2ID = Razor2Counter;
-			LastFiredRazor2ID = Razor2Counter;
+			if ( (AmmoType == None) && (AmmoName != None) )
+			{
+				GiveAmmo(Pawn(Owner));
+			}
+			if ( AmmoType.AmmoAmount > 0 )
+			{
+
+				Instigator = Pawn(Owner);
+				GotoState('ClientFiring');
+				bPointing=True;
+				bCanClientFire = true;
+				
+				GetAxes(GV,X,Y,Z);
+				Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+				AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
+				
+				ClientRazor2 = Spawn(Class'ST_Razor2', Owner,, Start, AdjustedAim);
+				ClientRazor2.RemoteRole = ROLE_None;
+				ClientRazor2.bClientVisualOnly = true;
+				ClientRazor2.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+				ClientRazor2.bCollideWorld = false;
+
+				ClientRazor2.Razor2ID = Razor2Counter;
+				LastFiredRazor2ID = Razor2Counter;
+			}
 		}
 	}
 	return Super.ClientFire(Value);
@@ -132,39 +137,49 @@ simulated function bool ClientAltFire(float Value)
 		return Super.ClientAltFire(Value);
 	
 	bbP = bbPlayer(Owner);
-	if (bClientAllowedToAltFire && Role < ROLE_Authority && bbP != None && GetWeaponSettings().RipperUseClientSideAnimations && Mover(bbP.Base) == None)
+
+	if (bbP != None && GetWeaponSettings().RipperCompensatePing)
 	{
-		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-			return false;
-
-		yModInit();
-
-		if ( (AmmoType == None) && (AmmoName != None) )
+		if (Role < ROLE_Authority &&
+			bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations &&
+			Mover(bbP.Base) == None && // Lifts cause client projectiles to have a different origin
+			bClientAllowedToAltFire &&
+			Razor2AltCounter != LastFiredRazor2AltID)
 		{
-			GiveAmmo(Pawn(Owner));
-		}
-		if ( AmmoType.AmmoAmount > 0 )
-		{
+			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
+				return false;
 
-			Instigator = Pawn(Owner);
-			GotoState('ClientFiring');
-			bPointing=True;
-			bCanClientFire = true;
-			
-			GetAxes(GV,X,Y,Z);
-			Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
-			AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
-			
-			ClientRazor2Alt = Spawn(Class'ST_Razor2Alt', Owner,, Start, AdjustedAim);
-			ClientRazor2Alt.RemoteRole = ROLE_None;
-			ClientRazor2Alt.bClientVisualOnly = true;
-			ClientRazor2Alt.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-            ClientRazor2Alt.bCollideWorld = false;
+			if ( (AmmoType == None) && (AmmoName != None) )
+			{
+				// ammocheck
+				GiveAmmo(Pawn(Owner));
+			}
 
-			ClientRazor2Alt.Razor2AltID = Razor2AltCounter;
-			LastFiredRazor2AltID = Razor2AltCounter;
+			if ( AmmoType.AmmoAmount > 0 )
+			{
+				yModInit();
+
+				Instigator = Pawn(Owner);
+				GotoState('ClientFiring');
+				bPointing=True;
+				bCanClientFire = true;
+				
+				GetAxes(GV,X,Y,Z);
+				Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+				AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
+				
+				ClientRazor2Alt = Spawn(Class'ST_Razor2Alt', Owner,, Start, AdjustedAim);
+				ClientRazor2Alt.RemoteRole = ROLE_None;
+				ClientRazor2Alt.bClientVisualOnly = true;
+				ClientRazor2Alt.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+				ClientRazor2Alt.bCollideWorld = false;
+
+				ClientRazor2Alt.Razor2AltID = Razor2AltCounter;
+				LastFiredRazor2AltID = Razor2AltCounter;
+			}
 		}
 	}
+	
 	return Super.ClientAltFire(Value);
 }
 

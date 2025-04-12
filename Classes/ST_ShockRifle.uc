@@ -55,6 +55,7 @@ simulated function InitClientVars() {
 simulated function bool ClientFire(float Value) {
 	local Pawn PawnOwner;
 	local bool Result;
+	local bbPlayer bbP;
 
 	PawnOwner = Pawn(Owner);
 	
@@ -62,37 +63,43 @@ simulated function bool ClientFire(float Value) {
 		return false;
 
 	// Do client-side effects if we're on the client AND compensation is enabled
-	if (Role < ROLE_Authority && GetWeaponSettings().ShockBeamUseClientSideAnimations) {
-		if (Level.TimeSeconds - LastFiredTime < 0.4) 
+	if (GetWeaponSettings().bEnablePingCompensation) {
+
+		bbP = bbPlayer(PawnOwner);
+
+		if (Role < ROLE_Authority && bbP.ClientWeaponSettingsData.bShockUseClientSideAnimations) {
+
+			if (Level.TimeSeconds - LastFiredTime < 0.4) 
+				return false;
+
+			if ((AmmoType == None) && (AmmoName != None)) {
+				GiveAmmo(PawnOwner);
+			}
+			
+			if (AmmoType.AmmoAmount > 0) {
+				Instigator = PawnOwner;
+				GotoState('ClientFiring');
+				bPointing = True;
+				bCanClientFire = true;
+				if (bRapidFire || (FiringSpeed > 0))
+					PawnOwner.PlayRecoil(FiringSpeed);
+					
+				InitClientVars();
+				PlayFiring();
+
+				if ( Affector != None )
+					Affector.FireEffect();
+
+				if (PlayerPawn(Owner) != None)
+					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
+					
+				// Perform client-side trace and spawn effects
+				TraceFire_Client();
+				LastFiredTime = Level.TimeSeconds;
+				return true;
+			}
 			return false;
-
-		if ((AmmoType == None) && (AmmoName != None)) {
-			GiveAmmo(PawnOwner);
 		}
-		
-		if (AmmoType.AmmoAmount > 0) {
-			Instigator = PawnOwner;
-			GotoState('ClientFiring');
-			bPointing = True;
-			bCanClientFire = true;
-			if (bRapidFire || (FiringSpeed > 0))
-				PawnOwner.PlayRecoil(FiringSpeed);
-				
-			InitClientVars();
-			PlayFiring();
-
-			if ( Affector != None )
-				Affector.FireEffect();
-
-			if (PlayerPawn(Owner) != None)
-				PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
-				
-			// Perform client-side trace and spawn effects
-			TraceFire_Client();
-			LastFiredTime = Level.TimeSeconds;
-			return true;
-		}
-		return false;
 	}
 	
 	// If we're on the server OR compensation is disabled, use standard behavior
@@ -271,9 +278,9 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 	SmokeRotation.roll = Rand(65535);
 	
 	PlayerOwner = PlayerPawn(Owner);
-	
+
 	// If compensation is active and this is the owner's client, use the hidden beam
-	if (WImp.WSettingsRepl.ShockBeamUseClientSideAnimations && PlayerOwner != None && PlayerOwner == Owner) {
+	if (GetWeaponSettings().bEnablePingCompensation && PlayerOwner == Owner && bbPlayer(PlayerOwner).ClientWeaponSettingsData.bShockUseClientSideAnimations) {
 
 		ServerBeamHidden = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
 		ServerBeamHidden.bOwnerNoSee = true;

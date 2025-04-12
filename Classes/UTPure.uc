@@ -845,6 +845,7 @@ function ModifyPlayer(Pawn Other)
 				zzP.zzbForceDemo = Settings.bForceDemo;
 				zzP.zzbGameStarted = True;
 			}
+			zzP.SetLocation(zzP.Location);
 			if (zzP.RemoteRole == ROLE_AutonomousProxy && Settings.bEnablePingCompensatedSpawn) {
 				zzP.bHidden = true;
 				zzP.SetCollision(false, false, false);
@@ -1010,6 +1011,17 @@ function Mutate(string MutateString, PlayerPawn Sender)
 		}
 		if (CHSpectator(Sender) != None)
 			Sender.ClientMessage("As spectator, you may need to add 'mutate pure' + command (mutate pureshowtickrate)");
+	}
+	else if (MutateString ~= "PingCompSettings")
+	{
+		Sender.ClientMessage("- EnableClientSideAnimations (Enables all client-side weapon animations)");
+		Sender.ClientMessage("- DisableClientSideAnimations (Disables all client-side weapon animations)");
+		Sender.ClientMessage("- BioClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- ShockClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- PulseClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- RipperClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- FlakClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- SniperClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 	}
 	else if (MutateString ~= "ready")
 	{

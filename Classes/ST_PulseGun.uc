@@ -15,7 +15,6 @@ var Vector CDO;
 var float yMod;
 
 var int PlasmaSphereCounter;
-var int LastFiredPlasmaSphereID;
 
 var float RateOfFire; // For the PulseSphereFireRate IG+ setting
 var bool bClientAllowedToFire;
@@ -122,44 +121,52 @@ simulated function bool ClientFire(float Value)
 	
 	bbP = bbPlayer(Owner);
 
-	if (bClientAllowedToFire && Role < ROLE_Authority && bbP != None && GetWeaponSettings().PulseUseClientSideAnimations && Mover(bbP.Base) == None)
+	if (bbP != None && GetWeaponSettings().PulseCompensatePing)
 	{
-		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-			return false;
-
-		yModInit();
-
-		if ( (AmmoType == None) && (AmmoName != None) )
+		if (Role < ROLE_Authority &&
+			bbP.ClientWeaponSettingsData.bPulseUseClientSideAnimations &&
+			Mover(bbP.Base) == None && // Skip because lifts cause client projectiles to have a different origin
+			bClientAllowedToFire)
 		{
-			GiveAmmo(Pawn(Owner));
-		}
-		if ( AmmoType.AmmoAmount > 0 )
-		{
-			Instigator = Pawn(Owner);
-			GotoState('ClientFiring');
-			bPointing = True;
-			bCanClientFire = true;
+			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
+				return false;
 
-			if ( bRapidFire || (FiringSpeed > 0) )
-				Pawn(Owner).PlayRecoil(FiringSpeed);
+			if ( (AmmoType == None) && (AmmoName != None) )
+			{
+				GiveAmmo(Pawn(Owner));
+			}
+
+			if ( AmmoType.AmmoAmount > 0 )
+			{
+				yModInit();
+
+				Instigator = Pawn(Owner);
+				GotoState('ClientFiring');
+				bPointing = True;
+				bCanClientFire = true;
+
+				if ( bRapidFire || (FiringSpeed > 0) )
+					Pawn(Owner).PlayRecoil(FiringSpeed);
+				
+				GetAxes(GV, X, Y, Z);
+				Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+				AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
+				Angle += 1.8;
+
+				Start = Start - Sin(Angle)*Y*4 + (Cos(Angle)*4 - 10.78)*Z;
+
+				ClientPlasma = Spawn(Class'ST_PlasmaSphere', Owner,, Start, AdjustedAim);
+				ClientPlasma.RemoteRole = ROLE_None;
+				ClientPlasma.Velocity = Vector(AdjustedAim) * ProjectileSpeed;
+				ClientPlasma.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+				ClientPlasma.bCollideWorld = false;
+				ClientPlasma.bClientVisualOnly = true;
+				ClientPlasma.PlasmaSphereID = PlasmaSphereCounter;
 			
-			GetAxes(GV, X, Y, Z);
-			Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
-			AdjustedAim = Pawn(owner).AdjustAim(ProjectileSpeed, Start, AimError, True, bWarnTarget);	
-			Angle += 1.8;
-
-			Start = Start - Sin(Angle)*Y*4 + (Cos(Angle)*4 - 10.78)*Z;
-
-			ClientPlasma = Spawn(Class'ST_PlasmaSphere', Owner,, Start, AdjustedAim);
-			ClientPlasma.RemoteRole = ROLE_None;
-			ClientPlasma.Velocity = Vector(AdjustedAim) * ProjectileSpeed;
-			ClientPlasma.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-			ClientPlasma.bCollideWorld = false;
-			ClientPlasma.bClientVisualOnly = true;
-			ClientPlasma.PlasmaSphereID = PlasmaSphereCounter;
-			
+			}
 		}
 	}
+
 	return Super.ClientFire(Value);
 }
 
@@ -195,19 +202,31 @@ state NormalFire
         return P;
     }
 
-    function Tick(float DeltaTime)
-    {
-        if (Owner == None) 
+    function Tick(float DeltaTime) {
+		Super.Tick(DeltaTime); 
+
+        if (Owner == None) { 
             GotoState('Pickup');
-    }
+			return; 
+		}
+
+		RateOfFire -= DeltaTime;
+		if (RateOfFire < 0) {
+			Finish();
+			if (IsInState('NormalFire')) { 
+                RateOfFire += GetWeaponSettings().PulseSphereFireRate;
+			}
+		}
+	}
 
     function BeginState()
     {
         Super.BeginState();
         Angle = 0;
         AmbientGlow = 200;
+        RateOfFire = GetWeaponSettings().PulseSphereFireRate;
     }
-
+	
     function EndState()
     {
         PlaySpinDown();
@@ -218,8 +237,6 @@ state NormalFire
     }
 
 Begin:
-    Sleep(0.18);
-    Finish();
 }
 
 simulated state ClientFiring
@@ -247,80 +264,46 @@ simulated state ClientFiring
 	}
 
 	simulated function BeginState() {
-		super.BeginState();
-
-		RateOfFire = GetWeaponSettings().PulseSphereFireRate;
+		Super.BeginState();
+        RateOfFire = GetWeaponSettings().PulseSphereFireRate;
 	}
 
 	simulated event Tick(float DeltaTime) {
-		super.Tick(DeltaTime);
+		Super.Tick(DeltaTime);
+
+		if (Owner==None) {
+			GotoState('Pickup');
+            return;
+        }
+
+        if (GetWeaponSettings() == None) {
+            GotoState('');
+            return;
+        }
 
 		RateOfFire -= DeltaTime;
 		if (RateOfFire < 0) {
-			if ((Pawn(Owner) == none) || (Pawn(Owner).bFire == 0)) {
-				AnimEnd();
-				RateOfFire = 0;
+			if ((Pawn(Owner) == none) || (Pawn(Owner).bFire == 0)) { 
+				AnimEnd(); 
 			} else {
-				RateOfFire += GetWeaponSettings().PulseSphereFireRate;
+                if ((AmmoType == None) || (AmmoType.AmmoAmount <= 0)) {
+                    AnimEnd();
+                } else {
+                    Global.ClientFire(0); 
+                    if (IsInState('ClientFiring')) { 
+				        RateOfFire += GetWeaponSettings().PulseSphereFireRate; 
+                    }
+                }
 			}
 		}
 
-		if (Owner.IsA('Bot'))
-		{
-			Super.Tick(DeltaTime);
-			return;
-		}
-		
-		if (Owner==None) 
-			GotoState('Pickup');
-			
 		if ( (Pawn(Owner) != None) && (Pawn(Owner).bFire != 0) )
 			AmbientSound = FireSound;
 		else
 			AmbientSound = None;
 	}
+
 Begin:
-	if (!Owner.IsA('Bot'))
-	{
-		Sleep(0.18);
-		ClientFinish();
-	}
-}
-
-simulated function ClientFinish()
-{
-	local Pawn PawnOwner;
-	local bool bForce, bForceAlt;
-	local bbPlayer bbP;
-	
-	if (Owner.IsA('Bot'))
-		return;
-	
-	bbP = bbPlayer(Owner);
-	bForce = bForceFire;
-	bForceAlt = bForceAltFire;
-	bForceFire = false;
-	bForceAltFire = false;
-
-	if ( bChangeWeapon )
-	{
-		GotoState('DownWeapon');
-		return;
-	}
-
-	PawnOwner = Pawn(Owner);
-	if ( PawnOwner == None )
-		return;
-		
-	AnimEnd();
-	if ( ((AmmoType != None) && (AmmoType.AmmoAmount<=0)) || (PawnOwner.Weapon != self) )
-		GotoState('Idle');
-	else if ( (PawnOwner.bFire!=0) || bForce )
-		Global.ClientFire(0);
-	else if ( (PawnOwner.bAltFire!=0) || bForceAlt )
-		Global.ClientAltFire(0);
-	else 
-		GotoState('Idle');
 }
 
 simulated function PlaySelect() {

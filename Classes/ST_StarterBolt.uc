@@ -11,6 +11,8 @@ var float DamageCarry;
 var float DecalInterval;
 var float DecalMinInterval;
 
+var WeaponSettingsRepl WSettings;
+
 replication
 {
 	// Things the server should send to the client.
@@ -18,6 +20,23 @@ replication
 		AimError,
 		NewError,
 		AimRotation;
+}
+
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
 }
 
 simulated function PostBeginPlay()
@@ -187,12 +206,12 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 
 	BeamLen = BeamLength();
 
-	// check to see if hits something
-	if (WImp != None && WImp.WeaponSettings.PulseCompensatePing && bbPlayer(Owner) != none) {
-		HitActor = WImp.TraceShot(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, Instigator);
+	if (GetWeaponSettings().PulseCompensatePing) {
+		HitActor = Instigator.TraceShot(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin);
 	} else {
 		HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
 	}
+	
 	if ( (HitActor != None)    && (HitActor != Instigator) && (HitActor.bProjTarget || (HitActor == Level) || (HitActor.bBlockActors && HitActor.bBlockPlayers)) )
 	{
 		if ( Level.Netmode != NM_Client )

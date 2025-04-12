@@ -131,6 +131,13 @@ var config CrosshairLayerDescr CrosshairLayers[10];
 var CrosshairLayer BottomLayer;
 var CrosshairLayer TopLayer;
 
+var config bool   bBioUseClientSideAnimations;
+var config bool   bShockUseClientSideAnimations;
+var config bool   bPulseUseClientSideAnimations;
+var config bool   bRipperUseClientSideAnimations;
+var config bool   bFlakUseClientSideAnimations;
+var config bool   bSniperUseClientSideAnimations;
+
 var config float MenuX, MenuY, MenuWidth, MenuHeight;
 
 var Sound DefaultHitSound[16];
@@ -399,6 +406,12 @@ simulated function string DumpSettings() {
 		GetSetting("HitMarkerDecayExponent")$
 		GetSetting("HitMarkerSource")$
 		GetSetting("bUseCrosshairFactory")$
+		GetSetting("bBioUseClientSideAnimations")$
+		GetSetting("bShockUseClientSideAnimations")$
+		GetSetting("bPulseUseClientSideAnimations")$
+		GetSetting("bRipperUseClientSideAnimations")$
+		GetSetting("bFlakUseClientSideAnimations")$
+		GetSetting("bSniperUseClientSideAnimations")$
 		DumpCrosshairLayers();
 }
 
@@ -489,6 +502,12 @@ defaultproperties
 	HitMarkerDecayExponent=5.0
 	HitMarkerSource=HMSRC_Server
 	bUseCrosshairFactory=False
+	bBioUseClientSideAnimations=True
+	bShockUseClientSideAnimations=True
+	bPulseUseClientSideAnimations=True
+	bRipperUseClientSideAnimations=True
+	bFlakUseClientSideAnimations=True
+	bSniperUseClientSideAnimations=True
 
 	MenuX=200
 	MenuY=200

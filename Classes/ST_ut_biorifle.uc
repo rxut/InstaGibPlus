@@ -120,45 +120,51 @@ simulated function bool ClientFire(float Value)
 		return Super.ClientFire(Value);
 	
 	bbP = bbPlayer(Owner);
-	if (bClientAllowedToFire && Role < ROLE_Authority && bbP != None && GetWeaponSettings().BioUseClientSideAnimations && Mover(bbP.Base) == None)
+
+	if (bbP != None && GetWeaponSettings().BioCompensatePing)
 	{
-		if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-			return false;
-
-		if ( (AmmoType == None) && (AmmoName != None) )
+		if (Role < ROLE_Authority &&
+			bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations &&
+			Mover(bbP.Base) == None && // Lifts cause client projectiles to have a different origin
+			bClientAllowedToFire)
 		{
-			// ammocheck
-			GiveAmmo(Pawn(Owner));
-		}
-		if ( AmmoType.AmmoAmount > 0 )
-		{
-			yModInit();
-			
-			Instigator = Pawn(Owner);
-			GotoState('ClientFiring');
-			bPointing=True;
-			bCanClientFire = true;
-			if ( bRapidFire || (FiringSpeed > 0) )
-				Pawn(Owner).PlayRecoil(FiringSpeed);
+			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
+				return false;
 
-			GetAxes(GV,X,Y,Z);
-			Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
-			AdjustedAim = pawn(owner).AdjustToss(ProjectileSpeed, Start, 0, True, bWarnTarget);	
-			
-			BioGelProj = Spawn(class'ST_UT_BioGel',Owner,, Start, AdjustedAim);
-			BioGelProj.RemoteRole = ROLE_None;
-			BioGelProj.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-			BioGelProj.bCollideWorld = false;
-			BioGelProj.BioGelID = BioGelIDCounter;
-			BioGelProj.bClientVisualOnly = true;
-			BioGelProj.WImp = WImp;
+			if ( (AmmoType == None) && (AmmoName != None) )
+			{
+				// ammocheck
+				GiveAmmo(Pawn(Owner));
+			}
+
+			if ( AmmoType.AmmoAmount > 0 )
+			{
+				yModInit();
+				
+				Instigator = Pawn(Owner);
+				GotoState('ClientFiring');
+				bPointing=True;
+				bCanClientFire = true;
+				if ( bRapidFire || (FiringSpeed > 0) )
+					Pawn(Owner).PlayRecoil(FiringSpeed);
+
+				GetAxes(GV,X,Y,Z);
+				Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+				AdjustedAim = pawn(owner).AdjustToss(ProjectileSpeed, Start, 0, True, bWarnTarget);	
+				
+				BioGelProj = Spawn(class'ST_UT_BioGel',Owner,, Start, AdjustedAim);
+				BioGelProj.RemoteRole = ROLE_None;
+				BioGelProj.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+				BioGelProj.bCollideWorld = false;
+				BioGelProj.BioGelID = BioGelIDCounter;
+				BioGelProj.bClientVisualOnly = true;
+				BioGelProj.WImp = WImp;
+			}
 		}
 	}
 		
 	return Super.ClientFire(Value);
 }
-
-// Override the ShootLoad state to add ping compensation for alt-fire
 state ShootLoad
 {
     // Keep original state functionality
@@ -175,18 +181,15 @@ state ShootLoad
         Local Projectile Gel;
         local bbPlayer bbP;
 
-        // Spawn the projectile as in the original
         Gel = ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
         
         if (Gel != None) {
-            // Set the draw scale as in the original
             Gel.DrawScale = 1.0 + 0.8 * ChargeSize;
             
             // Check if we should apply ping compensation
             if (GetWeaponSettings().BioCompensatePing) {
                 bbP = bbPlayer(Owner);
                 if (bbP != None) {
-                    // Simulate projectile forward by player's ping time
                     WImp.SimulateProjectile(Gel, bbP.PingAverage);
                 }
             }

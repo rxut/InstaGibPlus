@@ -7,15 +7,17 @@
 class ST_UTChunk extends UTChunk;
 
 var ST_UTChunkInfo Chunkie;
+
 var int ChunkIndex;
-var float R1, R2, R3, R4, R5, R6, R7, R8;
+
+var float ChunkUniqueID, R1, R2, R3, R4;
+
 var bool bClientVisualOnly;
-var bool bIsOnMover;
 
 replication
 {
 	reliable if ( Role == ROLE_Authority )
-		R1, R2, R3, R4, R5, R6, R7, R8;
+		R1, R2, R3, R4, ChunkUniqueID;
 }
 
 simulated function float GetFRandValues()
@@ -45,51 +47,51 @@ simulated function float GetFRandValues()
 
 simulated function PostBeginPlay() {
 	local rotator RandRot;
+	local bbPlayer bbP;
 
 	if (Level.NetMode != NM_DedicatedServer) {
 		if (!Region.Zone.bWaterZone)
 			Trail = Spawn(class'ChunkTrail',self);
 		SetTimer(0.1, true);
 	}
+	bbP = bbPlayer(Owner);
 
-	if (bbPlayer(Owner) != None)
+	if (bbP != None)
 	{
+		ChunkUniqueID = GetFRandValues();
+		
 		R1 = GetFRandValues();
 		R2 = GetFRandValues();
 		R3 = GetFRandValues();
 		R4 = GetFRandValues();
-		R5 = GetFRandValues();
-		R6 = GetFRandValues();
-		R7 = GetFRandValues();
-		R8 = GetFRandValues();
+		
 	}
 	else
 	{
+		ChunkUniqueID = FRand();
+
 		R1 = FRand();
 		R2 = FRand();
 		R3 = FRand();
 		R4 = FRand();
-		R5 = FRand();
-		R6 = FRand();
-		R7 = FRand();
-		R8 = FRand();
 	}
 
 	if (Role == ROLE_Authority) {
 		Chunkie = ST_UTChunkInfo(Owner);
-
-		if (Chunkie == none || Chunkie.WImp.WeaponSettings.FlakChunkRandomSpread) {
+		
+		if (Chunkie == None || Chunkie.WImp.WeaponSettings.FlakChunkRandomSpread) {
 			RandRot = Rotation;
-			RandRot.Pitch += R2 * 2000 - 1000;
-			RandRot.Yaw += R3 * 2000 - 1000;
-			RandRot.Roll += R4 * 2000 - 1000;
-			Velocity = Vector(RandRot) * (Speed + (R5 * 200 - 100));
+			RandRot.Pitch += R1 * 2000 - 1000;
+			RandRot.Yaw += R2 * 2000 - 1000;
+			RandRot.Roll += R3 * 2000 - 1000;
+			Velocity = Vector(RandRot) * (Speed + (R4 * 200 - 100));
 		} else {
 			Velocity = vector(Rotation) * Speed;
 			RandRot = Rotation;
 			RandRot.Roll = Rand(65536);
 			SetRotation(RandRot);
 		}
+
 		if (Region.zone.bWaterZone)
 			Velocity *= 0.65;
 	}
@@ -107,9 +109,9 @@ simulated function PostNetBeginPlay()
 
     foreach AllActors(class'ST_UTChunk', OtherChunk)
     {
-        if (OtherChunk != self && OtherChunk.R1 == R1 && OtherChunk.bClientVisualOnly)
+        if (OtherChunk != self && OtherChunk.ChunkUniqueID == ChunkUniqueID  && OtherChunk.bClientVisualOnly)
         {
-                OtherChunk.bHidden = true;
+				OtherChunk.bHidden = true;
 				
                 if (OtherChunk.Trail != None)
                 {

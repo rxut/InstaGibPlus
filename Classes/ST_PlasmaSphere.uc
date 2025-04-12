@@ -91,14 +91,11 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 
 simulated function ProcessTouch (Actor Other, vector HitLocation)
 {
-		
-	// For client visual spheres, destroy without any effect
-	if (bClientVisualOnly || Other == Instigator)
-	{
+	if (Other == Instigator)
+        return;
+
+	if (bClientVisualOnly)
 		bHidden = true;
-		Destroy();
-		return;
-	}
 	
 	If (PlasmaSphere(Other) == None)
 	{

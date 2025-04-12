@@ -130,7 +130,6 @@ var config float BioAltMomentum;
 var config float BioHurtRadiusBase;
 var config float BioHurtRadiusMax;
 var config bool  BioCompensatePing;
-var config bool  BioUseClientSideAnimations;
 
 var config float EnforcerSelectTime;
 var config float EnforcerDownTime;
@@ -140,7 +139,6 @@ var config float EnforcerReloadTime;
 var config float EnforcerReloadTimeAlt;
 var config float EnforcerReloadTimeRepeat;
 var config bool  EnforcerUseReducedHitbox;
-var config bool  EnforcerUseClientSideAnimations;
 
 var config bool  EnforcerAllowDouble;
 var config float EnforcerDamageDouble;
@@ -216,7 +214,7 @@ defaultproperties
 	SniperHeadshotMomentum=1.0
 	SniperReloadTime=0.6666666666
 	SniperUseReducedHitbox=False
-	SniperUseClientSideAnimations=False
+
 
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
@@ -243,7 +241,6 @@ defaultproperties
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
 	FlakCompensatePing=False
-	FlakUseClientSideAnimations=False
 
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
@@ -255,7 +252,6 @@ defaultproperties
 	RipperSecondaryDamage=34
 	RipperSecondaryMomentum=1.0
 	RipperCompensatePing=False
-	RipperUseClientSideAnimations=False
 
 	MinigunSelectTime=0.555556
 	MinigunDownTime=0.333333
@@ -277,14 +273,12 @@ defaultproperties
 	PulseBoltGrowthDelay=0.05
 	PulseBoltMaxSegments=10
 	PulseCompensatePing=False
-	PulseUseClientSideAnimations=False
 
 	ShockSelectTime=0.5
 	ShockDownTime=0.259259
 	ShockBeamDamage=40
 	ShockBeamMomentum=1.0
 	ShockBeamUseReducedHitbox=False
-	ShockBeamUseClientSideAnimations=False
 	ShockProjectileDamage=55
 	ShockProjectileHurtRadius=70
 	ShockProjectileMomentum=1.0
@@ -308,7 +302,6 @@ defaultproperties
 	BioHurtRadiusBase=75
 	BioHurtRadiusMax=250
 	BioCompensatePing=False
-	BioUseClientSideAnimations=False
 
 	EnforcerSelectTime=0.777778
 	EnforcerDownTime=0.266667
@@ -318,7 +311,6 @@ defaultproperties
 	EnforcerReloadTimeAlt=0.26
 	EnforcerReloadTimeRepeat=0.266667
 	EnforcerUseReducedHitbox=False
-	EnforcerUseClientSideAnimations=False
 
 	EnforcerAllowDouble=True
 	EnforcerDamageDouble=17

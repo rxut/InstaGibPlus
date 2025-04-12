@@ -4,12 +4,13 @@ var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
 var bool bClientVisualOnly;
-var int SlugID;
+
+var float SlugUniqueID;
 
 replication
 {
     reliable if ( Role == ROLE_Authority )
-        SlugID;
+        SlugUniqueID;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -29,6 +30,48 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
     return WSettings;
 }
 
+simulated function float GetFRandValues()
+{
+	local bbPlayer bbP;
+	local float RandValue;
+	local int OldIndex;
+	
+	bbP = bbPlayer(Owner);
+	if (bbP == None)
+		return 0;
+	
+	OldIndex = bbP.FRandValuesIndex;
+	bbP.FRandValuesIndex++;
+	
+	if (bbP.FRandValuesIndex == bbP.FRandValuesLength)
+		bbP.FRandValuesIndex = 0;
+		
+	if (Level.NetMode == NM_Client && Role < ROLE_Authority)
+	{
+		bbP.FRandValuesIndex = OldIndex;
+	}
+	
+	RandValue = bbP.GetFRandValues(bbP.FRandValuesIndex);
+	return RandValue;
+}
+
+simulated function PostBeginPlay() {
+	local bbPlayer bbP;
+
+	bbP = bbPlayer(Owner);
+
+	if (bbP != None)
+	{
+		SlugUniqueID = GetFRandValues();
+	}
+	else
+	{
+		SlugUniqueID = FRand();
+	}
+
+	Super.PostBeginPlay();
+}
+
 simulated function PostNetBeginPlay()
 {
     local ST_FlakSlug OtherSlug;
@@ -39,7 +82,7 @@ simulated function PostNetBeginPlay()
 
     foreach AllActors(class'ST_FlakSlug', OtherSlug)
     {
-        if (OtherSlug != self && OtherSlug.SlugID == SlugID && OtherSlug.bClientVisualOnly)
+        if (OtherSlug != self && OtherSlug.SlugUniqueID == SlugUniqueID && OtherSlug.bClientVisualOnly)
         {
                 OtherSlug.bHidden = true;
 				
