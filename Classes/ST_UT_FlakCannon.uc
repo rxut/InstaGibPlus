@@ -7,29 +7,12 @@
 class ST_UT_FlakCannon extends UT_FlakCannon;
 
 var IGPlus_WeaponImplementation WImp;
-
 var WeaponSettingsRepl WSettings;
 
 var class<ST_UTChunk> ChunkClasses[4];
 
-var int ChunkCounter;
-var int SlugCounter;
-
-var bool bClientAllowedToFire;
-var bool bClientAllowedToAltFire;
-
-var int LastFiredChunk;
-var int LastFiredSlug;
-
-replication
-{
-    reliable if ( Role == ROLE_Authority )
-        ChunkCounter, SlugCounter, bClientAllowedToFire, bClientAllowedToAltFire;
-}
-
-var Rotator GV;
-var Vector CDO;
-var float yMod;
+var ST_FlakSlug LocalSlugDummy;
+var ST_UTChunk LocalChunkDummy;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -50,206 +33,10 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 
 function PostBeginPlay()
 {
-    Super.PostBeginPlay();
+	Super.PostBeginPlay();
 
-    ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-        break;      // Find master :D
-    
-	ChunkCounter = 0; // Initialize chunk ID counter
-    SlugCounter = 0; // Initialize slug ID counter
-}
-
-simulated function yModInit()
-{
-	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
-		GV = bbPlayer(Owner).ViewRotation;
-	
-	if (PlayerPawn(Owner) == None)
-		return;
-		
-	yMod = PlayerPawn(Owner).Handedness;
-	if (yMod != 2.0)
-		yMod *= Default.FireOffset.Y;
-	else
-		yMod = 0;
-
-	CDO = CalcDrawOffsetClient();
-}
-
-simulated function bool ClientFire( float Value )
-{
-	local Vector Start, X,Y,Z;
-	local vector R;
-	local Pawn PawnOwner;
-	local bbPlayer bbP;
-	local ST_UTChunk ClientChunk;
-	
-	if (Owner.IsA('Bot'))
-		return Super.ClientFire(Value);
-	
-	bbP = bbPlayer(Owner);
-
-	if (bbP != None && GetWeaponSettings().FlakCompensatePing)
-	{
-
-		if (Role < ROLE_Authority &&
-			bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations &&
-			Mover(bbP.Base) == None && // Lifts cause client projectiles to have a different origin
-			bClientAllowedToFire &&
-			LastFiredChunk != ChunkCounter)
-		{
-			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-				return false;
-				
-			yModInit();
-			PawnOwner = Pawn(Owner);
-
-			if ( AmmoType == None )
-			{
-				GiveAmmo(PawnOwner);
-			}
-			if (AmmoType.AmmoAmount > 0)
-			{
-				Instigator = Pawn(Owner);
-				bCanClientFire = true;
-				bPointing=True;
-				PawnOwner.PlayRecoil(FiringSpeed);
-
-				GetAxes(GV,X,Y,Z);
-				Start = Owner.Location + CalcDrawOffsetClient();
-				Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));
-				Start = Start + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
-
-				if (GetWeaponSettings().FlakChunkRandomSpread) {
-					ClientChunk = Spawn( class 'ST_UTChunk1',Owner, '', Start, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk2',Owner, '', Start - Z, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk3',Owner, '', Start + 2 * Y + Z, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk4',Owner, '', Start - Y, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk1',Owner, '', Start + 2 * Y - Z, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk2',Owner, '', Start, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn( class 'ST_UTChunk4',Owner, '', Start + 2 * Y + Z, GV);
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-				} else {
-					R = X / Tan(3.0*Pi/180.0);
-				
-					ClientChunk = Spawn(class 'ST_UTChunk1', Owner, '', Start, rotator(R));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn(class 'ST_UTChunk2', Owner, '', Start + Y*Cos(0.0)        + Z*Sin(0.0),        rotator(R + Y*Cos(0.0)        + Z*Sin(0.0)));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn(class 'ST_UTChunk3', Owner, '', Start + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0),     rotator(R + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0)));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn(class 'ST_UTChunk4', Owner, '', Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0)));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn(class 'ST_UTChunk1', Owner, '', Start + Y*Cos(Pi)         + Z*Sin(Pi),         rotator(R + Y*Cos(Pi)         + Z*Sin(Pi)));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn(class 'ST_UTChunk2', Owner, '', Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0)));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-
-					ClientChunk = Spawn(class 'ST_UTChunk3', Owner, '', Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0)));
-					ClientChunk.RemoteRole = ROLE_None;
-					ClientChunk.bClientVisualOnly = true;
-				}
-
-				LastFiredChunk = ChunkCounter;
-				
-				GoToState('NormalFire');
-			}
-		}
-	}
-	
-	return Super.ClientFire(Value);
-}
-
-simulated function bool ClientAltFire(float Value)
-{
-    local Vector Start, X,Y,Z;
-    local Pawn PawnOwner;
-    local ST_FlakSlug ClientSlug;
-    local bbPlayer bbP;
-  
-    if (Owner.IsA('Bot'))
-        return Super.ClientAltFire(Value);
-
-	bbP = bbPlayer(Owner);
-
-	if (bbP != None && GetWeaponSettings().FlakCompensatePing)
-	{
-
-		if (Role < ROLE_Authority &&
-			bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations &&
-			Mover(bbP.Base) == None && // Lifts cause client projectiles to have a different origin
-			bClientAllowedToAltFire &&
-			SlugCounter != LastFiredSlug)
-		{
-			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-				return false;
-
-			yModInit();
-			PawnOwner = Pawn(Owner);
-
-			if (AmmoType == None)
-			{
-				GiveAmmo(PawnOwner);
-			}
-			if (AmmoType.AmmoAmount > 0)
-			{
-				Instigator = Pawn(Owner);
-				PawnOwner.PlayRecoil(FiringSpeed);
-				bPointing = True;
-				bCanClientFire = true;
-				
-				GetAxes(GV,X,Y,Z);
-				Start = PawnOwner.Location + CalcDrawOffsetClient();
-				Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));
-				Start = Start + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
-				AdjustedAim = PawnOwner.AdjustToss(AltProjectileSpeed, Start, AimError, True, bAltWarnTarget);
-				
-				ClientSlug = Spawn(class'ST_FlakSlug', Owner,, Start, AdjustedAim);
-				ClientSlug.RemoteRole = ROLE_None;
-				ClientSlug.WImp = WImp;
-				ClientSlug.bClientVisualOnly = true;
-							
-				LastFiredSlug = SlugCounter;
-			}
-		}
-	}
-    
-    return Super.ClientAltFire(Value);
+	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
+		break;		// Find master :D
 }
 
 // Fire chunks
@@ -285,7 +72,7 @@ function Fire( float Value )
 		CI = Spawn(class'ST_UTChunkInfo', PawnOwner);
 		CI.WImp = WImp;
 
-		if (B != none || WImp.WeaponSettings.FlakChunkRandomSpread) {
+		if (B != none || GetWeaponSettings().FlakChunkRandomSpread) {
 			// My comment
 			// I am not sure why EPIC has decided to do flak (or rockets) this way, as they could
 			// Have created a masterchunk on client that spawned the rest of the chunks according to
@@ -318,14 +105,7 @@ function Fire( float Value )
 			CI.AddChunk(Spawn(class 'ST_UTChunk3', Owner,'',Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0))));
 		}		
 
-		bClientAllowedToFire = false; 
-
-		ChunkCounter++;
-
-		bClientAllowedToFire = true;
-
 		ClientFire(Value);
-
 		GoToState('NormalFire');
 	}
 }
@@ -356,8 +136,6 @@ function AltFire(float Value)
         Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));        
         Start = Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
         AdjustedAim = PawnOwner.AdjustToss(AltProjectileSpeed, Start, AimError, True, bAltWarnTarget);
-        
-        // Create the server-side slug with same ID
         Slug = Spawn(class'ST_FlakSlug',Owner,, Start, AdjustedAim);
         Slug.WImp = WImp;
 
@@ -366,16 +144,174 @@ function AltFire(float Value)
             WImp.SimulateProjectile(Slug, bbP.PingAverage);
         }
 
-		bClientAllowedToAltFire = false;
-
-        SlugCounter++;
-
-		bClientAllowedToAltFire = true;
-
 		ClientAltFire(Value);
-		
         GoToState('AltFiring');
     }    
+}
+
+state ClientFiring {
+	simulated function BeginState()
+	{
+		local Pawn PawnOwner;
+		local vector X, Y, Z;
+		local vector R;
+		local vector Start;
+		local float Hand;
+		local bbPlayer bbP;
+
+		if (Role < ROLE_Authority)
+		{
+			PawnOwner = Pawn(Owner);
+			bbP = bbPlayer(PawnOwner);
+
+			if (bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations == false)
+				return;
+
+			if (Owner.IsA('PlayerPawn'))
+				Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+			else
+				Hand = 1.0;
+
+			GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+			if (bHideWeapon)
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+			else
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+
+			if (GetWeaponSettings().FlakChunkRandomSpread) {
+				LocalChunkDummy = Spawn( class 'ST_UTChunk1',Owner, '', Start, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk2',Owner, '', Start - Z, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk3',Owner, '', Start + 2 * Y + Z, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk4',Owner, '', Start - Y, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk1',Owner, '', Start + 2 * Y - Z, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk2',Owner, '', Start, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn( class 'ST_UTChunk4',Owner, '', Start + 2 * Y + Z, PawnOwner.ViewRotation);
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);	
+			}
+			else {
+				R = X / Tan(3.0*Pi/180.0);
+			
+				LocalChunkDummy = Spawn(class 'ST_UTChunk1', Owner, '', Start, rotator(R));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn(class 'ST_UTChunk2', Owner, '', Start + Y*Cos(0.0)        + Z*Sin(0.0),        rotator(R + Y*Cos(0.0)        + Z*Sin(0.0)));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn(class 'ST_UTChunk3', Owner, '', Start + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0),     rotator(R + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0)));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn(class 'ST_UTChunk4', Owner, '', Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0)));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn(class 'ST_UTChunk1', Owner, '', Start + Y*Cos(Pi)         + Z*Sin(Pi),         rotator(R + Y*Cos(Pi)         + Z*Sin(Pi)));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn(class 'ST_UTChunk2', Owner, '', Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0)));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+
+				LocalChunkDummy = Spawn(class 'ST_UTChunk3', Owner, '', Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0)));
+				LocalChunkDummy.RemoteRole = ROLE_None;
+				LocalChunkDummy.bClientVisualOnly = true;
+				LocalChunkDummy.bCollideWorld = false;	
+				LocalChunkDummy.SetCollision(false, false, false);
+			}
+		}
+	}
+}
+
+state ClientAltFiring {
+	simulated function BeginState()
+	{
+		local Pawn PawnOwner;
+		local vector X, Y, Z;
+		local vector Start;
+		local float Hand;
+		local bbPlayer bbP;
+
+		if (Role < ROLE_Authority) // <-- Added check
+		{
+			PawnOwner = Pawn(Owner);
+			bbP = bbPlayer(PawnOwner);
+
+			if (bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations == false)
+				return;
+
+			if (Owner.IsA('PlayerPawn'))
+				Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+			else
+				Hand = 1.0;
+
+			GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+			if (bHideWeapon)
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+			else
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+
+			LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
+			LocalSlugDummy.RemoteRole = ROLE_None;
+			LocalSlugDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			LocalSlugDummy.bClientVisualOnly = true;
+			LocalSlugDummy.bCollideWorld = false;
+			LocalSlugDummy.SetCollision(false, false, false);
+		}
+	}
 }
 
 function SetSwitchPriority(pawn Other)
@@ -435,58 +371,6 @@ simulated function vector CalcDrawOffsetClient() {
 	}
 	
 	return DrawOffset;
-}
-
-State ClientActive
-{
-	simulated function bool ClientFire(float Value)
-	{
-		if (Owner.IsA('Bot'))
-			return Super.ClientFire(Value);
-		bForceFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
-		return bForceFire;
-	}
-
-	simulated function bool ClientAltFire(float Value)
-	{
-		if (Owner.IsA('Bot'))
-			return Super.ClientAltFire(Value);
-		bForceAltFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
-		return bForceAltFire;
-	}
-	
-	simulated function AnimEnd()
-	{
-		if ( Owner == None )
-		{
-			Global.AnimEnd();
-			GotoState('');
-		}
-		else if ( Owner.IsA('TournamentPlayer') 
-			&& (TournamentPlayer(Owner).PendingWeapon != None || TournamentPlayer(Owner).ClientPending != None) )
-			GotoState('ClientDown');
-		else if ( bWeaponUp )
-		{
-			if ( (bForceFire || (PlayerPawn(Owner).bFire != 0)) && Global.ClientFire(1) )
-				return;
-			else if ( (bForceAltFire || (PlayerPawn(Owner).bAltFire != 0)) && Global.ClientAltFire(1) )
-				return;
-			PlayIdleAnim();
-			GotoState('');
-		}
-		else
-		{
-			PlayPostSelect();
-			bWeaponUp = true;
-		}
-	}
-}
-
-function bool PutDown()
-{
-    bClientAllowedToFire = false;	
-	bClientAllowedToAltFire = false;
-    return Super.PutDown();
 }
 
 simulated function TweenDown() {

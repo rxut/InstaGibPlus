@@ -47,7 +47,6 @@ function PostBeginPlay()
 		break;		// Find master :D
 }
 
-// Initialize values for client-side visual calculations
 simulated function yModInit()
 {
 	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)

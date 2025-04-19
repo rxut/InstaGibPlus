@@ -558,9 +558,12 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 
 	if (WSettingsRepl.bEnablePingCompensation && bbP != none)
 	{
-		PureRef.CompensateFor(Ping);
+		PureRef.CompensateFor(Ping, PawnOwner);
 
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+			if (A == PawnOwner) {
+				continue;
+			}
 			if (A.IsA('UTPlusDummy')) {
 				D = UTPlusDummy(A);
 				

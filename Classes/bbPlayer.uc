@@ -185,8 +185,6 @@ var bool IGPlus_SkipMovesUntilNextTick;
 
 // SSR Beam
 var float LastWeaponEffectCreated;
-
-
 var bool bWasPaused;
 
 struct AddVelocityCall {
@@ -3585,9 +3583,13 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 
 	if (WS != none && WS.bEnablePingCompensation && zzUTPure != None)
 	{
-		zzUTPure.CompensateFor(PingAverage);
+		zzUTPure.CompensateFor(PingAverage, self);
 		
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {	
+			if (A == self) {
+				continue;
+			}
+
 			if (A.IsA('UTPlusDummy')) {
 				D = UTPlusDummy(A);
 				if (D != none && D.Actual != none && D.Actual != self) {

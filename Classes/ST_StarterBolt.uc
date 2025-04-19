@@ -208,6 +208,9 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 
 	if (GetWeaponSettings().PulseCompensatePing) {
 		HitActor = Instigator.TraceShot(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin);
+		if (HitActor == None) {
+			HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
+		}
 	} else {
 		HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
 	}

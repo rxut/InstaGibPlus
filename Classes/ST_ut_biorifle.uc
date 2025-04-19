@@ -10,18 +10,8 @@ var IGPlus_WeaponImplementation WImp;
 
 var WeaponSettingsRepl WSettings;
 
-var int BioGelIDCounter;
-var bool bClientAllowedToFire;
-
-replication
-{
-    reliable if ( Role == ROLE_Authority )
-        BioGelIDCounter, bClientAllowedToFire;
-}
-
-var Rotator GV;
-var Vector CDO;
-var float yMod;
+var ST_UT_BioGel LocalBioGelDummy;
+var ST_BioGlob LocalBioGlobDummy;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -46,44 +36,6 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
-
-	// Initialize BioGelIDCounter
-	BioGelIDCounter = 0;
-}
-
-simulated function RenderOverlays(Canvas Canvas)
-{
-	local bbPlayer bbP;
-	
-	Super.RenderOverlays(Canvas);
-	yModInit();
-	
-	bbP = bbPlayer(Owner);
-	if (Role < ROLE_Authority && bbP != None)
-	{
-		if (bbP.bFire != 0 && !IsInState('ClientFiring'))
-			ClientFire(1);
-		else if (bbP.bAltFire != 0 && !IsInState('ClientAltFiring'))
-			ClientAltFire(1);
-	}
-}
-
-
-simulated function yModInit()
-{
-	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
-		GV = bbPlayer(Owner).ViewRotation;
-	
-	if (PlayerPawn(Owner) == None)
-		return;
-		
-	yMod = PlayerPawn(Owner).Handedness;
-	if (yMod != 2.0)
-		yMod *= Default.FireOffset.Y;
-	else
-		yMod = 0;
-
-	CDO = CalcDrawOffset();
 }
 
 function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
@@ -91,83 +43,62 @@ function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed,
     local Projectile P;
     local bbPlayer bbP;
 
+    // Call original ProjectileFire to spawn the projectile
     P = Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
-
-	if (ST_UT_BioGel(P) != None)
-        {
-            ST_UT_BioGel(P).BioGelID = BioGelIDCounter;
-        }
     
+    // Check if we should apply ping compensation
     if (P != None && GetWeaponSettings().BioCompensatePing) {
         bbP = bbPlayer(Owner);
         if (bbP != None && bbP.PingAverage > 0 && WImp != None) {
+            // Simulate projectile forward by player's ping time
             WImp.SimulateProjectile(P, bbP.PingAverage);
         }
     }
-
-	bClientAllowedToFire = true;
     
     return P;
 }
 
-simulated function bool ClientFire(float Value)
+simulated function PlayFiring()
 {
-	local Vector Start, X,Y,Z;
-	local ST_UT_BioGel BioGelProj;
-	local bbPlayer bbP;
-	
-	if (Owner.IsA('Bot'))
-		return Super.ClientFire(Value);
-	
-	bbP = bbPlayer(Owner);
+        local Pawn PawnOwner;
+        local vector X, Y, Z;
+        local vector Start;
+        local float Hand;
+        local bbPlayer bbP;
 
-	if (bbP != None && GetWeaponSettings().BioCompensatePing)
-	{
-		if (Role < ROLE_Authority &&
-			bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations &&
-			Mover(bbP.Base) == None && // Lifts cause client projectiles to have a different origin
-			bClientAllowedToFire)
-		{
-			if (bbP.ClientCannotShoot() || bbP.Weapon != Self)
-				return false;
+        Super.PlayFiring();
 
-			if ( (AmmoType == None) && (AmmoName != None) )
-			{
-				// ammocheck
-				GiveAmmo(Pawn(Owner));
-			}
+        if (Role < ROLE_Authority)
+        {
+			// Client side dummy projectile logic
+			PawnOwner = Pawn(Owner);
+			bbP = bbPlayer(PawnOwner);
 
-			if ( AmmoType.AmmoAmount > 0 )
-			{
-				yModInit();
-				
-				Instigator = Pawn(Owner);
-				GotoState('ClientFiring');
-				bPointing=True;
-				bCanClientFire = true;
-				if ( bRapidFire || (FiringSpeed > 0) )
-					Pawn(Owner).PlayRecoil(FiringSpeed);
+			if (bbP != none && bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations == false)
+				return;
 
-				GetAxes(GV,X,Y,Z);
-				Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
-				AdjustedAim = pawn(owner).AdjustToss(ProjectileSpeed, Start, 0, True, bWarnTarget);	
-				
-				BioGelProj = Spawn(class'ST_UT_BioGel',Owner,, Start, AdjustedAim);
-				BioGelProj.RemoteRole = ROLE_None;
-				BioGelProj.LifeSpan = bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-				BioGelProj.bCollideWorld = false;
-				BioGelProj.BioGelID = BioGelIDCounter;
-				BioGelProj.bClientVisualOnly = true;
-				BioGelProj.WImp = WImp;
-			}
-		}
-	}
-		
-	return Super.ClientFire(Value);
+			if (Owner.IsA('PlayerPawn'))
+				Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+			else
+				Hand = 1.0;
+
+			GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+			if (bHideWeapon)
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+			else
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+
+			LocalBioGelDummy = Spawn(class'ST_UT_BioGel', Owner,, Start, PawnOwner.ViewRotation);
+			LocalBioGelDummy.RemoteRole = ROLE_None;
+			LocalBioGelDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			LocalBioGelDummy.bClientVisualOnly = true;
+			LocalBioGelDummy.bCollideWorld = false;
+			LocalBioGelDummy.SetCollision(false, false, false);
+        }
 }
+
 state ShootLoad
 {
-    // Keep original state functionality
     function ForceFire() { Super.ForceFire(); }
     function ForceAltFire() { Super.ForceAltFire(); }
     function Fire(float F) { Super.Fire(F); }
@@ -175,7 +106,6 @@ state ShootLoad
     function Timer() { Super.Timer(); }
     function AnimEnd() { Super.AnimEnd(); }
 
-    // Override BeginState to add ping compensation for the alt-fire projectile
     function BeginState()
     {
         Local Projectile Gel;
@@ -202,6 +132,34 @@ state ShootLoad
     }
 
 Begin:
+}
+
+
+// Compatibility between client and server logic
+simulated function vector CalcDrawOffsetClient() {
+	local vector DrawOffset;
+	local Pawn PawnOwner;
+	local vector WeaponBob;
+	
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return vect(0,0,0);
+
+	DrawOffset = CalcDrawOffset();
+	
+	// On client, make adjustments to match server
+	if (Level.NetMode == NM_Client) {
+		// Correct for EyeHeight differences
+		DrawOffset -= (PawnOwner.EyeHeight * vect(0,0,1));
+		DrawOffset += (PawnOwner.BaseEyeHeight * vect(0,0,1));
+	
+		// Remove WeaponBob, not applied on server
+		WeaponBob = BobDamping * PawnOwner.WalkBob;
+		WeaponBob.Z = (0.45 + 0.55 * BobDamping) * PawnOwner.WalkBob.Z;
+		DrawOffset -= WeaponBob;
+	}
+	
+	return DrawOffset;
 }
 
 function SetSwitchPriority(pawn Other)
@@ -234,25 +192,6 @@ function SetSwitchPriority(pawn Other)
 			}
 		}
 	}		
-}
-
-function bool PutDown()
-{
-    bClientAllowedToFire = false;
-    return Super.PutDown();
-}
-
-state AltFiring
-{
-	function Tick( float DeltaTime )
-	{
-		Super.Tick(DeltaTime);
-		
-		if (bChangeWeapon)
-		{
-			GotoState('DownWeapon');
-		}
-	}
 }
 
 simulated function PlaySelect() {

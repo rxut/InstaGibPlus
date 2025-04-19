@@ -6,7 +6,7 @@ var float EyeHeight;
 var float BaseEyeHeight;
 var bool bHistoryCleared;
 
-var UTPlusSnapshot Data[32];
+var UTPlusSnapshot Data[48];
 var int DataIndex;
 
 var bool bCompActive;
@@ -19,6 +19,13 @@ var bool ActualWasProjTarget;
 var UTPlusDummy Next;
 
 var IGPlus_WeaponImplementation WImp;
+
+var bool bHasStoredDamage;
+var int StoredDamage;
+var Pawn StoredInstigator;
+var vector StoredHitLocation;
+var vector StoredMomentum;
+var name StoredDamageType;
 
 simulated function PostBeginPlay()
 {
@@ -121,6 +128,8 @@ function CompStart(int Ping) {
 	local float TargetAlpha;
 	local UTPlusSnapshot SnapI, SnapNext;
 
+	bHasStoredDamage = false;
+
 	if (Actual == none || Actual.bDeleteMe || WImp == None)
 		return;
 
@@ -204,8 +213,14 @@ function TakeDamage(
     Vector Momentum,
     name DamageType
 ) {
-    if (bCompActive && Actual != none)
-        Actual.TakeDamage(Damage, InstigatedBy, HitLocation, Momentum, DamageType);
+    if (bCompActive && Actual != none && !Actual.bDeleteMe) {
+        StoredDamage = Damage;
+        StoredInstigator = InstigatedBy;
+        StoredHitLocation = Hitlocation;
+        StoredMomentum = Momentum;
+        StoredDamageType = DamageType;
+        bHasStoredDamage = true;
+    }
 }
 
 function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float TargetTimeStamp) {
@@ -300,9 +315,21 @@ function CompEnd() {
 
 		if (Actual != None && !Actual.bDeleteMe)
 		{
+            // Restore actual pawn's collision state first
             Actual.SetCollision(ActualWasColliding, ActualWasBlockingActors, ActualWasBlockingPlayers);
 			Actual.bProjTarget = ActualWasProjTarget;
-		}
+
+            // Now, if damage was stored during this compensation tick, apply it
+            if (bHasStoredDamage) {
+                Actual.TakeDamage(StoredDamage, StoredInstigator, StoredHitLocation, StoredMomentum, StoredDamageType);
+                bHasStoredDamage = false;
+                StoredInstigator = None;
+            }
+		} else {
+            bHasStoredDamage = false;
+            StoredInstigator = None;
+        }
+
 	}
 }
 
@@ -332,4 +359,10 @@ simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDi
 defaultproperties {
 	bHidden=True
 	RemoteRole=ROLE_None;
+	bHasStoredDamage=False
+    StoredDamage=0
+    StoredInstigator=None
+    StoredHitLocation=(X=0,Y=0,Z=0)
+    StoredMomentum=(X=0,Y=0,Z=0)
+    StoredDamageType='None'
 }
