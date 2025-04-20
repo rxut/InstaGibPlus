@@ -8,16 +8,39 @@ class ST_UTChunk extends UTChunk;
 
 var ST_UTChunkInfo Chunkie;
 
+var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
+
 var int ChunkIndex;
 
-var float ChunkUniqueID, R1, R2, R3, R4;
+var bool RandomSpread;
+var float R1, R2, R3, R4;
 
 var bool bClientVisualOnly;
+
+var PlayerPawn InstigatingPlayer;
+
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
+}
 
 replication
 {
 	reliable if ( Role == ROLE_Authority )
-		R1, R2, R3, R4, ChunkUniqueID;
+		R1, R2, R3, R4;
 }
 
 simulated function float GetFRandValues()
@@ -58,8 +81,6 @@ simulated function PostBeginPlay() {
 
 	if (bbP != None)
 	{
-		ChunkUniqueID = GetFRandValues();
-		
 		R1 = GetFRandValues();
 		R2 = GetFRandValues();
 		R3 = GetFRandValues();
@@ -68,8 +89,6 @@ simulated function PostBeginPlay() {
 	}
 	else
 	{
-		ChunkUniqueID = FRand();
-
 		R1 = FRand();
 		R2 = FRand();
 		R3 = FRand();
@@ -79,7 +98,7 @@ simulated function PostBeginPlay() {
 	if (Role == ROLE_Authority) {
 		Chunkie = ST_UTChunkInfo(Owner);
 		
-		if (Chunkie == None || Chunkie.WImp.WeaponSettings.FlakChunkRandomSpread) {
+		if (GetWeaponSettings().FlakChunkRandomSpread) {
 			RandRot = Rotation;
 			RandRot.Pitch += R1 * 2000 - 1000;
 			RandRot.Yaw += R2 * 2000 - 1000;
@@ -97,32 +116,48 @@ simulated function PostBeginPlay() {
 	}
 
 	super(Projectile).PostBeginPlay();
+
+	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
+		break;		// Find master :D
 }
 
 simulated function PostNetBeginPlay()
 {
-    local ST_UTChunk OtherChunk;
+	local PlayerPawn In;
+	local ST_UTChunk OtherChunk;
 
 	super.PostNetBeginPlay();
 
-	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+	if (GetWeaponSettings().FlakCompensatePing) {
 
-    foreach AllActors(class'ST_UTChunk', OtherChunk)
-    {
-        if (OtherChunk != self && OtherChunk.ChunkUniqueID == ChunkUniqueID  && OtherChunk.bClientVisualOnly)
-        {
-				OtherChunk.bHidden = true;
-				
-                if (OtherChunk.Trail != None)
-                {
-                    OtherChunk.Trail.Destroy();
-                    OtherChunk.Trail = None;
-                }
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == false){
+			return;
+		}
 
-                SetTimer(0.0, false);
-                return;
-        }
-    }
+		In = PlayerPawn(Instigator);
+        if (In != none && Viewport(In.Player) != none)
+            InstigatingPlayer = In;
+
+		if (InstigatingPlayer != none) {
+			foreach AllActors(class'ST_UTChunk', OtherChunk)
+			{	
+				if (OtherChunk != self && OtherChunk.bClientVisualOnly)
+				{
+					OtherChunk.bHidden = true;
+					
+					if (OtherChunk.Trail != None)
+					{
+						OtherChunk.Trail.Destroy();
+						OtherChunk.Trail = None;
+					}
+
+					OtherChunk.Destroy();
+				}
+			}
+		}
+	} else {
+		Disable('Tick');
+	}
 }
 
 function ProcessTouch (Actor Other, vector HitLocation)

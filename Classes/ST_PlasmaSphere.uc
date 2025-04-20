@@ -1,19 +1,14 @@
 class ST_PlasmaSphere extends PlasmaSphere;
 
 var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
 
 var bool bClientVisualOnly;
-var int PlasmaSphereID;
 
-replication
-{
-    reliable if ( Role == ROLE_Authority )
-        PlasmaSphereID;
-}
+var PlayerPawn InstigatingPlayer;
 
 simulated function PostBeginPlay()
 {
-
 	if (ROLE == ROLE_Authority)
 	{
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
@@ -23,28 +18,48 @@ simulated function PostBeginPlay()
 	Super.PostBeginPlay();
 }
 
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
+}
+
 simulated function PostNetBeginPlay()
 {
-	local bbPlayer bbP;
-	local ST_PlasmaSphere OtherPlasmaSphere;
+	local PlayerPawn In;
+    local ST_PulseGun PG;
 
 	super.PostNetBeginPlay();
 
-	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+	if (GetWeaponSettings().PulseCompensatePing) {
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bPulseUseClientSideAnimations == false){
+			return;
+		}
 
-	bbP = bbPlayer(Owner);
+		In = PlayerPawn(Instigator);
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
 
-    foreach AllActors(class'ST_PlasmaSphere', OtherPlasmaSphere)
-    {
-        if (OtherPlasmaSphere != self && OtherPlasmaSphere.PlasmaSphereID == PlasmaSphereID && OtherPlasmaSphere.bClientVisualOnly)
-        {
-			OtherPlasmaSphere.bHidden = true;
-            SetTimer(0.0, false);
-            return;
-        }
-    }
+		if (InstigatingPlayer != none) {
+			PG = ST_PulseGun(InstigatingPlayer.Weapon);
+			if (PG != none && PG.LocalPlasmaSphereDummy != none && PG.LocalPlasmaSphereDummy.bDeleteMe == false)
+				PG.LocalPlasmaSphereDummy.Destroy();
+		}
+	} else {
+		Disable('Tick');
+	}
 }
-
 simulated function Explode(vector HitLocation, vector HitNormal)
 {
 	if (bClientVisualOnly)

@@ -5,7 +5,7 @@ var int HitCount;
 var int ChunkCount;
 
 var IGPlus_WeaponImplementation WImp;
-
+var bool RandomSpread;
 function AddChunk(ST_UTChunk Chunk)
 {
 	local bbPlayer bbP;
@@ -17,6 +17,7 @@ function AddChunk(ST_UTChunk Chunk)
 	Chunk.Chunkie = Self;
 	Chunk.ChunkIndex = ChunkCount++;
 	Chunk.LifeSpan = WImp.WeaponSettings.FlakChunkLifespan;
+	Chunk.RandomSpread = WImp.WeaponSettings.FlakChunkRandomSpread;
 
 	// Apply ping compensation for flak chunks if enabled
 	if (bbP != none && WImp.WeaponSettings.FlakCompensatePing) {

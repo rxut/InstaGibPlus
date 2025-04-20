@@ -1,15 +1,11 @@
 class ST_Razor2Alt extends Razor2Alt;
 
 var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
 
 var bool bClientVisualOnly;
-var int Razor2AltID;
 
-replication
-{
-    reliable if ( Role == ROLE_Authority )
-        Razor2AltID;
-}
+var PlayerPawn InstigatingPlayer;
 
 simulated function PostBeginPlay()
 {
@@ -22,27 +18,49 @@ simulated function PostBeginPlay()
 	Super.PostBeginPlay();
 }
 
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
+}
+
 simulated function PostNetBeginPlay()
 {
-    local ST_Razor2Alt OtherRazor2Alt;
-	local bbPlayer bbP;
+	local PlayerPawn In;
+    local ST_ripper R;
 
 	super.PostNetBeginPlay();
 
-	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+	if (GetWeaponSettings().RipperCompensatePing) {
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations == false){
+			return;
+		}
 
-	bbP = bbPlayer(Owner);
+		In = PlayerPawn(Instigator);
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
 
-    foreach AllActors(class'ST_Razor2Alt', OtherRazor2Alt)
-    {
-        if (OtherRazor2Alt != self && OtherRazor2Alt.Razor2AltID == Razor2AltID && OtherRazor2Alt.bClientVisualOnly)
-        {
-            OtherRazor2Alt.bHidden = true;
-            SetTimer(0.0, false);
-            return;
-        }
-    }
+		if (InstigatingPlayer != none) {
+			R = ST_ripper(InstigatingPlayer.Weapon);
+			if (R != none && R.LocalRazor2AltDummy != none && R.LocalRazor2AltDummy.bDeleteMe == false)
+				R.LocalRazor2AltDummy.Destroy();
+		}
+	} else {
+		Disable('Tick');
+	}
 }
+
 auto state Flying
 {
 	function ProcessTouch (Actor Other, Vector HitLocation)

@@ -5,13 +5,7 @@ var WeaponSettingsRepl WSettings;
 
 var bool bClientVisualOnly;
 
-var float SlugUniqueID;
-
-replication
-{
-    reliable if ( Role == ROLE_Authority )
-        SlugUniqueID;
-}
+var PlayerPawn InstigatingPlayer;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
     local WeaponSettingsRepl S;
@@ -30,72 +24,38 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
     return WSettings;
 }
 
-simulated function float GetFRandValues()
-{
-	local bbPlayer bbP;
-	local float RandValue;
-	local int OldIndex;
-	
-	bbP = bbPlayer(Owner);
-	if (bbP == None)
-		return 0;
-	
-	OldIndex = bbP.FRandValuesIndex;
-	bbP.FRandValuesIndex++;
-	
-	if (bbP.FRandValuesIndex == bbP.FRandValuesLength)
-		bbP.FRandValuesIndex = 0;
-		
-	if (Level.NetMode == NM_Client && Role < ROLE_Authority)
-	{
-		bbP.FRandValuesIndex = OldIndex;
-	}
-	
-	RandValue = bbP.GetFRandValues(bbP.FRandValuesIndex);
-	return RandValue;
-}
-
-simulated function PostBeginPlay() {
-	local bbPlayer bbP;
-
-	bbP = bbPlayer(Owner);
-
-	if (bbP != None)
-	{
-		SlugUniqueID = GetFRandValues();
-	}
-	else
-	{
-		SlugUniqueID = FRand();
-	}
-
-	Super.PostBeginPlay();
-}
-
 simulated function PostNetBeginPlay()
 {
-    local ST_FlakSlug OtherSlug;
+	local PlayerPawn In;
+    local ST_UT_FlakCannon FC;
 
 	super.PostNetBeginPlay();
 
-	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+	if (GetWeaponSettings().FlakCompensatePing) {
 
-    foreach AllActors(class'ST_FlakSlug', OtherSlug)
-    {
-        if (OtherSlug != self && OtherSlug.SlugUniqueID == SlugUniqueID && OtherSlug.bClientVisualOnly)
-        {
-                OtherSlug.bHidden = true;
-				
-                if (OtherSlug.Trail != None)
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == false){
+			return;
+		}
+
+		In = PlayerPawn(Instigator);
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
+
+		if (InstigatingPlayer != none) {
+			FC = ST_UT_FlakCannon(InstigatingPlayer.Weapon);
+			if (FC != none && FC.LocalSlugDummy != none && FC.LocalSlugDummy.bDeleteMe == false)
+
+				FC.LocalSlugDummy.Destroy();
+
+				if (FC.LocalSlugDummy.Trail != None)
                 {
-                    OtherSlug.Trail.Destroy();
-                    OtherSlug.Trail = None;
+                    FC.LocalSlugDummy.Trail.Destroy();
+                    FC.LocalSlugDummy.Trail = None;
                 }
-
-                SetTimer(0.0, false);
-                return;
-        }
-    }
+		}
+	} else {
+		Disable('Tick');
+	}
 }
 
 function ProcessTouch (Actor Other, vector HitLocation)

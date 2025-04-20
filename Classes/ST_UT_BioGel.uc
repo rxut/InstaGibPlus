@@ -1,19 +1,31 @@
 class ST_UT_BioGel extends UT_BioGel;
 
 var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
 
-var int BioGelID;
 var bool bClientVisualOnly;
 
-replication
-{
-    reliable if ( Role == ROLE_Authority )
-        BioGelID;
+var PlayerPawn InstigatingPlayer;
+
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+    local WeaponSettingsRepl S;
+
+    foreach AllActors(class'WeaponSettingsRepl', S)
+        return S;
+
+    return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+    if (WSettings != none)
+        return WSettings;
+
+    WSettings = FindWeaponSettings();
+    return WSettings;
 }
 
 function PostBeginPlay()
 {
-	// Call Super.PostBeginPlay() first to ensure proper initialization
 	Super.PostBeginPlay();
 	
 	if (Role == ROLE_Authority)
@@ -32,25 +44,32 @@ function PostBeginPlay()
 
 simulated function PostNetBeginPlay()
 {
-	local bbPlayer bbP;
-	local ST_UT_BioGel OtherBioGel;
+	local PlayerPawn In;
+    local ST_ut_biorifle br;
 
 	super.PostNetBeginPlay();
 
-	if (Level.NetMode == NM_Client && Role == ROLE_Authority) return;
+	if (GetWeaponSettings().FlakCompensatePing) {
 
-	bbP = bbPlayer(Owner);
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations == false){
+			return;
+		}
 
-    foreach AllActors(class'ST_UT_BioGel', OtherBioGel)
-    {
-        if (OtherBioGel != self && OtherBioGel.BioGelID == BioGelID && OtherBioGel.bClientVisualOnly)
-        {
-			OtherBioGel.bHidden = true;
-            SetTimer(0.0, false);
-            return;
-        }
-    }
+		In = PlayerPawn(Instigator);
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
+
+		if (InstigatingPlayer != none) {
+			br = ST_ut_biorifle(InstigatingPlayer.Weapon);
+			if (br != none && br.LocalBioGelDummy != none && br.LocalBioGelDummy.bDeleteMe == false)
+
+				br.LocalBioGelDummy.Destroy();
+		}
+	} else {
+		Disable('Tick');
+	}
 }
+
 
 function Timer()
 {
