@@ -47,7 +47,6 @@ function PostBeginPlay()
 		break;		// Find master :D
 }
 
-// Initialize values for client-side visual calculations
 simulated function yModInit()
 {
 	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
@@ -261,6 +260,7 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
     local vector Loc;
 
     Loc = P.Location;
+	
     if (WImp.WeaponSettings.bEnablePingCompensation) {
         bbP = bbPlayer(Owner);
         if (bbP != none)
@@ -272,7 +272,10 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
     if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
         return (HitLocation.Z - Loc.Z > 0.62 * P.CollisionHeight);
 
-    return WImp.CheckHeadShot(P, HitLocation, BulletDir, Loc);
+	if (WImp.WeaponSettings.bEnablePingCompensation)
+		return WImp.CheckHeadShotCompensated(Dummy, HitLocation, BulletDir);
+
+    return WImp.CheckHeadShot(P, HitLocation, BulletDir);
 }
 
 function SetSwitchPriority(pawn Other)
