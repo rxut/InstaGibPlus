@@ -15,6 +15,9 @@ var bool bSnapProjTarget;
 var float ServerTimeStamp;
 var float ClientTimeStamp;
 
+var name  AnimSequence;
+var float AnimFrame;
+
 defaultproperties
 {
 }

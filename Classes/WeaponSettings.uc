@@ -170,6 +170,8 @@ var config bool  bEnableSubTickCompensation;
 
 var config int   PingCompensationMax;
 
+var config bool  bEnableAnimationAdaptiveHeadHitbox;
+
 defaultproperties
 {
 	bReplaceImpactHammer=True
@@ -340,5 +342,6 @@ defaultproperties
 	bEnableSubTickCompensation=False
 	
 	PingCompensationMax=150
-	
+
+	bEnableAnimationAdaptiveHeadHitbox=False
 }

@@ -376,6 +376,9 @@ struct ClientWeaponSettings { // rX Added
 
 var ClientWeaponSettings ClientWeaponSettingsData;
 
+var bool bEnableDamageDebugMode;
+var bool bEnableDamageDebugConsoleMessages;
+
 replication
 {
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -411,7 +414,9 @@ replication
 		zzMaximumNetspeed,
 		zzMinimumNetspeed,
 		zzTrackFOV,
-		zzWaitTime;
+		zzWaitTime,
+		bEnableDamageDebugMode,
+		bEnableDamageDebugConsoleMessages;
 
 	unreliable if ( Role == ROLE_Authority )
 		DuckFractionRepl,
@@ -977,6 +982,11 @@ event PostBeginPlay()
 	local int TickRate;
 	local class<Info> VersionInfoClass;
 	local int i;
+
+	local bbBaseCylinder BaseCyl; // Variable for the base cylinder
+	local bbBaseCylinderReduced BaseCylReduced; // Variable for the base cylinder
+	local bbHeadCylinder HeadCyl; // Variable for the head cylinder
+
 	for (i = 0; i < FRandValuesLength; i++)
 		FRandValues[i] = FRand();
 
@@ -991,6 +1001,27 @@ event PostBeginPlay()
 	IGPlus_InputReplicationBuffer = new(XLevel) class'IGPlus_DataBuffer';
 
 	InitSettings();
+
+	if (zzUTPure.Settings.bEnableHitboxDebugMode)
+	{
+
+		ConsoleCommand("mlmode 0"); // disable mlmode to prevent culling of triangles due to distance
+
+		BaseCyl = Spawn(class'bbBaseCylinder', self);
+
+		if (BaseCyl != none)
+				BaseCyl.PawnRef = self;
+
+		BaseCylReduced = Spawn(class'bbBaseCylinderReduced', self);
+
+		if (BaseCylReduced != none)
+				BaseCylReduced.PawnRef = self;
+
+		HeadCyl = Spawn(class'bbHeadCylinder', self);
+
+		if (HeadCyl != none)
+				HeadCyl.PawnRef = self;
+	}
 
 	if ( Level.NetMode != NM_Client )
 	{
@@ -1171,6 +1202,9 @@ event Possess()
 		IGPlus_AlwaysRenderDroppedFlags = zzUTPure.Settings.bAlwaysRenderDroppedFlags;
 		IGPlus_UseFastWeaponSwitch = zzUTPure.Settings.bUseFastWeaponSwitch;
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
+
+		bEnableDamageDebugMode = zzUTPure.Settings.bEnableDamageDebugMode;
+		bEnableDamageDebugConsoleMessages = zzUTPure.Settings.bEnableDamageDebugConsoleMessages;
 
 		if(!zzUTPure.bExludeKickers)
 		{
@@ -3615,11 +3649,9 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 			if (Pawn(A) != none) {
 				if ((A != self) && Pawn(A).AdjustHitLocation(HitLocation, EndTrace - StartTrace))
 					Other = A;
-					break;
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
 					Other = A;
-					break;
 				}
 			}
 
@@ -8347,9 +8379,18 @@ event PostRender( canvas zzCanvas )
 	}
 
 	PlayerStatics.DrawFPS(zzCanvas, MyHud, Settings, zzTick);
+
 	PlayerStatics.DrawHitMarker(zzCanvas, Settings, zzTick);
 	if (HitMarkerTestDamage > 0 && PlayerStatics.default.HitMarkerLifespan == 0) {
 		PlayerStatics.PlayHitMarker(self, Settings, HitMarkerTestDamage, PlayerReplicationInfo.Team, HitMarkerTestTeam);
+		++HitMarkerTestTeam;
+		if (HitMarkerTestTeam >= 4)
+			HitMarkerTestTeam = 0;
+	}
+
+	PlayerStatics.DrawDamageNumbers(zzCanvas, zzTick);
+	if (HitMarkerTestDamage > 0 && PlayerStatics.default.DamageNumberLifespan == 0) {
+		PlayerStatics.PlayDamageMarker(self, HitMarkerTestDamage, PlayerReplicationInfo.Team, HitMarkerTestTeam);
 		++HitMarkerTestTeam;
 		if (HitMarkerTestTeam >= 4)
 			HitMarkerTestTeam = 0;

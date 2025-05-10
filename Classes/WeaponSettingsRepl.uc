@@ -145,6 +145,7 @@ var bool  bEnableSubTickCompensation;
 
 var int   PingCompensationMax;
 
+var bool  bEnableAnimationAdaptiveHeadHitbox;
 replication {
 	reliable if (Role == ROLE_Authority)
 		HeadHalfHeight,
@@ -284,7 +285,8 @@ replication {
 
 		bEnablePingCompensation,
 		bEnableSubTickCompensation,
-		PingCompensationMax;
+		PingCompensationMax,
+		bEnableAnimationAdaptiveHeadHitbox;
 }
 
 simulated final function float WarheadSelectAnimSpeed() {
@@ -628,6 +630,8 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	bEnableSubTickCompensation = S.bEnableSubTickCompensation;
 
 	PingCompensationMax = S.PingCompensationMax;
+
+	bEnableAnimationAdaptiveHeadHitbox = S.bEnableAnimationAdaptiveHeadHitbox;
 }
 
 defaultproperties
@@ -780,4 +784,6 @@ defaultproperties
 	bEnableSubTickCompensation=False
 	
 	PingCompensationMax=150
+
+	bEnableAnimationAdaptiveHeadHitbox=False
 }
