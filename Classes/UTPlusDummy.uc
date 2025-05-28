@@ -16,6 +16,8 @@ var bool ActualWasBlockingActors;
 var bool ActualWasBlockingPlayers;
 var bool ActualWasProjTarget;
 
+var vector AccumulatedMomentum;
+
 var UTPlusDummy Next;
 
 var IGPlus_WeaponImplementation WImp;
@@ -211,12 +213,16 @@ function TakeDamage(
     Vector Momentum,
     name DamageType
 ) {
-    if (bCompActive && Actual != none)
-        Actual.TakeDamage(Damage, InstigatedBy, HitLocation, Momentum, DamageType);
+    
+    if (bCompActive && Actual != none) {
+        AccumulatedMomentum += Momentum;
+        Actual.TakeDamage(Damage, InstigatedBy, HitLocation, vect(0,0,0), DamageType);
+    }
 }
 
 function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float TargetTimeStamp) {
 	local vector TargetLoc;
+	local vector TargetVel;
 	local rotator TargetRot;
 	local float TargetEH;
 	local float TargetBEH;
@@ -243,6 +249,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 
 	if (Alpha == -1.0) { // Extrapolation from SnapA
 		TargetLoc = SnapA.Loc + SnapA.Vel * (TargetTimeStamp - SnapA.ServerTimeStamp);
+		TargetVel = SnapA.Vel;
 		TargetEH = SnapA.EyeHeight;
 		TargetRot = SnapA.Rot;
 		TargetBEH = SnapA.BaseEyeHeight;
@@ -257,6 +264,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	}
 	else if (Alpha >= 0.0 && Alpha <= 1.0 && SnapB != None) { // Interpolation between SnapA and SnapB
 		TargetLoc = LerpVector(Alpha, SnapA.Loc, SnapB.Loc);
+		TargetVel = LerpVector(Alpha, SnapA.Vel, SnapB.Vel); 
 		TargetRot = SnapA.Rot;
 		TargetEH = SnapA.EyeHeight;
 		TargetBEH = SnapA.BaseEyeHeight;
@@ -271,6 +279,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	}
 	else if (Alpha == 1.0 && SnapB == None) { // Direct use of SnapA (no interpolation)
 		TargetLoc = SnapA.Loc;
+		TargetVel = SnapA.Vel;
 		TargetRot = SnapA.Rot;
 		TargetEH = SnapA.EyeHeight;
 		TargetBEH = SnapA.BaseEyeHeight;
@@ -299,6 +308,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 
 	SetLocation(TargetLoc);
 	SetRotation(TargetRot);
+	Velocity = TargetVel;
 	EyeHeight = TargetEH;
 	BaseEyeHeight = TargetBEH;
 
@@ -312,24 +322,32 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	SetCollision(TargetCollideActors, TargetBlockActors, TargetBlockPlayers);
 	bProjTarget = TargetProjTarget;
 
+	AccumulatedMomentum = vect(0,0,0);
 	bCompActive = true;
 }
 
 function CompEnd() {
-	if (bCompActive) {
+    if (bCompActive) {
         bCompActive = false;
 
         // Hide the dummy again
-		SetCollision(false, false, false);
-		bProjTarget = false;
+        SetCollision(false, false, false);
+        bProjTarget = false;
 
-		if (Actual != None && !Actual.bDeleteMe)
-		{
+        if (Actual != None && !Actual.bDeleteMe)
+        {
             Actual.SetCollision(ActualWasColliding, ActualWasBlockingActors, ActualWasBlockingPlayers);
-			Actual.bProjTarget = ActualWasProjTarget;
-		}
-
-	}
+            Actual.bProjTarget = ActualWasProjTarget;
+            
+            // Apply all accumulated momentum at once
+            if (AccumulatedMomentum != vect(0,0,0)) {
+                if (Actual.Mass != 0)
+                    AccumulatedMomentum = AccumulatedMomentum / Actual.Mass;
+                Actual.AddVelocity(AccumulatedMomentum);
+                AccumulatedMomentum = vect(0,0,0);
+            }
+        }
+    }
 }
 
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir) {
