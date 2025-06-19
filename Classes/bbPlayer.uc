@@ -4819,6 +4819,9 @@ function xxUpdateRotation(float DeltaTime, float maxPitch)
 	local rotator newRotation;
 	local float PitchDelta, YawDelta;
 
+	if (bUpdating)
+		return;
+
 	DesiredRotation = ViewRotation; //save old rotation
 
 	PitchDelta = 32.0 * DeltaTime * aLookUp * IGPlus_ZoomToggle_SensitivityFactorY + LookUpFractionalPart;
@@ -6049,7 +6052,7 @@ ignores SeePlayer, HearNoise, Bump;
 				CheckBob(DeltaTime, Speed2D, Y);
 			}
 		}
-		else if ( !bShowMenu )
+		else if ( !bShowMenu && bUpdating == false )
 		{
 			BobTime = 0;
 			WalkBob = WalkBob * (1 - FMin(1, 8 * deltatime));
