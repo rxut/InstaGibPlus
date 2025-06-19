@@ -701,6 +701,7 @@ function SimulateProjectile(Projectile P, int Ping) {
   DeltaTime = 0.001*Ping*Level.TimeDilation;
   DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
   SimPing = Ping;
+  
   while (SimPing > 0.0) {
     if (P == None || P.bDeleteMe) {
         break;
@@ -708,6 +709,51 @@ function SimulateProjectile(Projectile P, int Ping) {
 
     PureRef.CompensateFor(int(SimPing), P.Instigator);
     P.AutonomousPhysics(DeltaTime);
+    SimPing -= DeltaTime * 1000.0;
+    PureRef.EndCompensation();
+  }
+}
+
+function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping) {
+  local float DeltaTime;
+  local float SimPing;
+  local UTPure PureRef;
+  local int i;
+  local bool bAnyAlive;
+  
+  if (NumProjectiles == 0 || Projectiles[0] == None)
+    return;
+    
+  PureRef = bbPlayer(Projectiles[0].Instigator).zzUTPure;
+  
+  if (Ping > WeaponSettings.PingCompensationMax)
+    Ping = WeaponSettings.PingCompensationMax;
+    
+  DeltaTime = 0.001*Ping*Level.TimeDilation;
+  DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
+  SimPing = Ping;
+  
+  while (SimPing > 0.0) {
+    bAnyAlive = false;
+    
+    for (i = 0; i < NumProjectiles; i++) {
+      if (Projectiles[i] != None && !Projectiles[i].bDeleteMe) {
+        bAnyAlive = true;
+        break;
+      }
+    }
+    
+    if (!bAnyAlive)
+      break;
+    
+    PureRef.CompensateFor(int(SimPing), Projectiles[0].Instigator);
+    
+    for (i = 0; i < NumProjectiles; i++) {
+      if (Projectiles[i] != None && !Projectiles[i].bDeleteMe) {
+        Projectiles[i].AutonomousPhysics(DeltaTime);
+      }
+    }
+    
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }

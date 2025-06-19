@@ -19,8 +19,7 @@ var EZoomState ZoomState;
 var WeaponSettingsRepl WSettings;
 
 // Variables for client-side animations
-var Rotator GV;           // For storing view rotation
-var float yMod;           // For handedness calculations
+var float yMod; // For handedness calculations
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -49,8 +48,6 @@ function PostBeginPlay()
 
 simulated function yModInit()
 {
-	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
-		GV = bbPlayer(Owner).ViewRotation;
 
 	if (PlayerPawn(Owner) == None)
 		return;
@@ -62,12 +59,46 @@ simulated function yModInit()
 		yMod = 0;
 }
 
-// Client-side shell case spawning
-simulated function DoClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, Vector Y, Vector Z)
+simulated function bool ClientFire( float Value )
+{
+    if (Super.ClientFire(Value))
+    {
+		if (Role < ROLE_Authority)
+			PlayClientEffects();
+    }
+    return true;
+}
+
+simulated function PlayClientEffects()
+{
+	local vector X, Y, Z;
+	local PlayerPawn P;
+	local bbPlayer bbP;
+
+	P = PlayerPawn(Owner);
+	
+	bbP = bbPlayer(P);
+	
+	if (P == None)
+		return;
+
+	if ( GetWeaponSettings().bEnablePingCompensation == false || bbP == None || bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations == false)
+     	return;
+	
+	yModInit();
+
+	GetAxes(P.ViewRotation, X, Y, Z);
+	
+	SpawnClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
+	
+	if (P.DesiredFOV == P.DefaultFOV)
+		bMuzzleFlash++;
+}
+
+simulated function SpawnClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, Vector Y, Vector Z)
 {
 	local UT_ShellCase s;
 
-	// Make sure we're on the client
 	if (Level.NetMode == NM_Client || Level.NetMode == NM_Standalone) {
 		s = Spawn(class'UT_ShellCase', Pwner,, HitLoc);
 		if (s != None) 
@@ -76,84 +107,6 @@ simulated function DoClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, 
 			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
 			s.RemoteRole = ROLE_None;
 		}
-	}
-}
-
-// Handle client-side firing
-simulated function bool ClientFire(float Value)
-{
-	local bbPlayer bbP;
-	
-	if (Owner.IsA('Bot'))
-		return Super.ClientFire(Value);
-		
-	bbP = bbPlayer(Owner);
-	
-	if (bbP != None && GetWeaponSettings().bEnablePingCompensation)
-	{
-		if (Role < ROLE_Authority && bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations)
-		{
-			if (bbP.ClientCannotShoot() || bbP.Weapon != Self) {
-					return false;
-			}
-			
-			if ((AmmoType == None) && (AmmoName != None))
-			{
-				// ammocheck
-				GiveAmmo(Pawn(Owner));
-			}
-			
-			if (AmmoType.AmmoAmount > 0)
-			{
-				Instigator = Pawn(Owner);
-				GotoState('ClientFiring');
-				bPointing = True;
-				bCanClientFire = true;
-				if (bRapidFire || (FiringSpeed > 0))
-					Pawn(Owner).PlayRecoil(FiringSpeed);
-				
-				ClientPlayEffects();
-			}
-		}
-	}
-	
-	return Super.ClientFire(Value);
-}
-
-// Play client-side effects only (no hit detection)
-simulated function ClientPlayEffects()
-{
-	local vector X, Y, Z;
-	local PlayerPawn P;
-
-	P = PlayerPawn(Owner);
-	if (P == None)
-		return;
-	
-	// Initialize positions for visual effects
-	yModInit();
-	GetAxes(GV, X, Y, Z);
-	
-	// Spawn shell case for visual effect only (client-side)
-	DoClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
-	
-	// Play firing animation
-	PlayAnim(FireAnims[Rand(5)], GetWeaponSettings().SniperReloadAnimSpeed(), 0.05);
-	
-	// Add muzzle flash if not zoomed
-	if (P.DesiredFOV == P.DefaultFOV)
-		bMuzzleFlash++;
-}
-
-// Handle rendering overlays for client-side visuals
-simulated function RenderOverlays(Canvas Canvas)
-{
-	Super.RenderOverlays(Canvas);
-	yModInit();
-
-	// Check if we need to fire
-	if (Role < ROLE_Authority && bbPlayer(Owner) != None && bbPlayer(Owner).bFire != 0 && !IsInState('ClientFiring')) {
-		ClientFire(1);
 	}
 }
 
@@ -311,16 +264,13 @@ function SetSwitchPriority(pawn Other)
 }
 
 simulated function PlayFiring() {
-	
-	// Always play sound and animation
+
 	PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*3.0);
 	PlayAnim(FireAnims[Rand(5)], GetWeaponSettings().SniperReloadAnimSpeed(), 0.05);
 
-	// Handle muzzle flash
 	if ((PlayerPawn(Owner) != None) && 
 		(PlayerPawn(Owner).DesiredFOV == PlayerPawn(Owner).DefaultFOV)) {
 		// If compensation is enabled, only show muzzle flash on client side
-		// Otherwise use the old server-side logic
 		if (!bbPlayer(Owner).ClientWeaponSettingsData.bSniperUseClientSideAnimations || 
 			(Level.NetMode == NM_Standalone) || 
 			(PlayerPawn(Owner).RemoteRole != ROLE_AutonomousProxy)) {
@@ -405,75 +355,6 @@ simulated function Tick(float DeltaTime) {
 				ZoomState = ZS_None;
 			}
 			break;
-		}
-	}
-}
-
-// Add state for client-side firing
-state ClientFiring
-{
-
-	simulated function AnimEnd() {
-		if ((Pawn(Owner) == None) || ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))) {
-			PlayIdleAnim();
-			GotoState('');
-		}
-		else if (!bCanClientFire) {
-			GotoState('');
-		}
-		else if (Pawn(Owner).bFire != 0) {
-			Global.ClientFire(0);
-		}
-		else {
-			PlayIdleAnim();
-			GotoState('');
-		}
-	}
-}
-
-// Client-active state to handle client-side firing
-state ClientActive
-{
-	// Check if client can fire
-	simulated function bool ClientFire(float Value)
-	{
-		if (Owner.IsA('Bot'))
-			return Super.ClientFire(Value);
-		bForceFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
-		return bForceFire;
-	}
-
-	// Check if client can alt-fire (for zoom functionality)
-	simulated function bool ClientAltFire(float Value)
-	{
-		if (Owner.IsA('Bot'))
-			return Super.ClientAltFire(Value);
-		bForceAltFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
-		return bForceAltFire;
-	}
-
-	// Handle animation end in client active state
-	simulated function AnimEnd()
-	{
-		if (Owner == None) {
-			Global.AnimEnd();
-			GotoState('');
-		}
-		else if (Owner.IsA('TournamentPlayer')
-			&& (TournamentPlayer(Owner).PendingWeapon != None || TournamentPlayer(Owner).ClientPending != None)) {
-			GotoState('ClientDown');
-		}
-		else if (bWeaponUp) {
-			if ((bForceFire || (PlayerPawn(Owner).bFire != 0)) && Global.ClientFire(1))
-				return;
-			else if ((bForceAltFire || (PlayerPawn(Owner).bAltFire != 0)) && Global.ClientAltFire(1))
-				return;
-			PlayIdleAnim();
-			GotoState('');
-		}
-		else {
-			PlayPostSelect();
-			bWeaponUp = true;
 		}
 	}
 }

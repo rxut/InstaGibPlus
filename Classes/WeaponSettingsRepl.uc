@@ -44,8 +44,10 @@ var bool  FlakCompensatePing;
 var float RipperSelectTime;
 var float RipperDownTime;
 var float RipperHeadshotDamage;
+var float RipperHeadShotDamageWallMultiplier;
 var float RipperHeadshotMomentum;
 var float RipperPrimaryDamage;
+var float RipperPrimaryDamageWallMultiplier;
 var float RipperPrimaryMomentum;
 var float RipperSecondaryHurtRadius;
 var float RipperSecondaryDamage;
@@ -146,6 +148,17 @@ var bool  bEnableSubTickCompensation;
 var int   PingCompensationMax;
 
 var bool  bEnableAnimationAdaptiveHeadHitbox;
+
+var bool  bAdvancedSpawns;
+var bool  bSafeSpawns;
+var int   DefaultSpawnWeight;
+var int   MinSpawnDistance;
+var int   MinSpawnZVariance;
+var int   SpawnRelevantDistance;
+var float SpawnNearLastPenalty;
+var float SpawnRecentPenalty;
+var float SpawnLOSPenalty;
+
 replication {
 	reliable if (Role == ROLE_Authority)
 		HeadHalfHeight,
@@ -190,8 +203,10 @@ replication {
 		RipperSelectTime,
 		RipperDownTime,
 		RipperHeadshotDamage,
+		RipperHeadShotDamageWallMultiplier,
 		RipperHeadshotMomentum,
 		RipperPrimaryDamage,
+		RipperPrimaryDamageWallMultiplier,
 		RipperPrimaryMomentum,
 		RipperSecondaryHurtRadius,
 		RipperSecondaryDamage,
@@ -286,7 +301,17 @@ replication {
 		bEnablePingCompensation,
 		bEnableSubTickCompensation,
 		PingCompensationMax,
-		bEnableAnimationAdaptiveHeadHitbox;
+		bEnableAnimationAdaptiveHeadHitbox,
+
+		bAdvancedSpawns,
+		bSafeSpawns,
+		DefaultSpawnWeight,
+		MinSpawnDistance,
+		MinSpawnZVariance,
+		SpawnRelevantDistance,
+		SpawnNearLastPenalty,
+		SpawnRecentPenalty,
+		SpawnLOSPenalty;
 }
 
 simulated final function float WarheadSelectAnimSpeed() {
@@ -532,8 +557,10 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	RipperSelectTime = S.RipperSelectTime;
 	RipperDownTime = S.RipperDownTime;
 	RipperHeadshotDamage = S.RipperHeadshotDamage;
+	RipperHeadShotDamageWallMultiplier = S.RipperHeadShotDamageWallMultiplier;
 	RipperHeadshotMomentum = S.RipperHeadshotMomentum;
 	RipperPrimaryDamage = S.RipperPrimaryDamage;
+	RipperPrimaryDamageWallMultiplier = S.RipperPrimaryDamageWallMultiplier;
 	RipperPrimaryMomentum = S.RipperPrimaryMomentum;
 	RipperSecondaryHurtRadius = S.RipperSecondaryHurtRadius;
 	RipperSecondaryDamage = S.RipperSecondaryDamage;
@@ -685,8 +712,10 @@ defaultproperties
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
 	RipperHeadshotDamage=105
+	RipperHeadShotDamageWallMultiplier=1.0
 	RipperHeadshotMomentum=1.0
 	RipperPrimaryDamage=30
+	RipperPrimaryDamageWallMultiplier=1.0
 	RipperPrimaryMomentum=1.0
 	RipperSecondaryHurtRadius=180
 	RipperSecondaryDamage=34
@@ -786,4 +815,14 @@ defaultproperties
 	PingCompensationMax=150
 
 	bEnableAnimationAdaptiveHeadHitbox=False
+
+	bAdvancedSpawns=False
+	bSafeSpawns=False
+	DefaultSpawnWeight=2000
+	MinSpawnDistance=1200
+	MinSpawnZVariance=-190
+	SpawnRelevantDistance=4000
+	SpawnNearLastPenalty=1.500000
+	SpawnRecentPenalty=0.500000
+	SpawnLOSPenalty=2.000000
 }

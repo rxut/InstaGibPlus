@@ -82,10 +82,10 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 				return;
 			}
 			else
-				DrawScale = 0.2;
+				DrawScale = 0.4;
 		}
 		else
-			DrawScale = 0.2;
+			DrawScale = 0.4;
 
 	    LightType = LT_Steady;
 		LightRadius = 5;

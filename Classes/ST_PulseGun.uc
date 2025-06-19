@@ -160,7 +160,7 @@ state NormalFire
     }
 
 Begin:
-    Sleep(0.18);
+    Sleep(GetWeaponSettings().PulseSphereFireRate);
     Finish();
 }
 

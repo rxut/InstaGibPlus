@@ -51,54 +51,14 @@ simulated function yModInit() {
 	CDO = CalcDrawOffsetClient();
 }
 
-simulated function bool ClientFire(float Value) {
-	local Pawn PawnOwner;
-	local bool Result;
-	local bbPlayer bbP;
-
-	PawnOwner = Pawn(Owner);
-	
-	if (PawnOwner == None) 
-		return false;
-
-	if (GetWeaponSettings().bEnablePingCompensation)
-	{
-		bbP = bbPlayer(PawnOwner);
-
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None && bbP.ClientWeaponSettingsData.bShockUseClientSideAnimations)
-		{
-
-			if ((AmmoType == None) && (AmmoName != None)) {
-				GiveAmmo(PawnOwner);
-			}
-			
-			if (AmmoType != None && AmmoType.AmmoAmount > 0) // Check ammo
-			{
-				Instigator = PawnOwner;
-				GotoState('ClientFiring');
-				bPointing = True;
-				bCanClientFire = true;
-
-				if (bRapidFire || (FiringSpeed > 0))
-					PawnOwner.PlayRecoil(FiringSpeed);
-					
-				PlayFiring();
-				ClientTraceFire();
-
-				if ( Affector != None )
-					Affector.FireEffect();
-
-				if (PlayerPawn(Owner) != None)
-					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
-
-				return true;
-			}
-			return false; // No ammo
-		}
-	}
-	
-	Result = Super.ClientFire(Value);
-	return Result;
+simulated function bool ClientFire( float Value )
+{
+    if (Super.ClientFire(Value))
+    {
+		if (Role < ROLE_Authority)
+			ClientTraceFire();
+    }
+    return true;
 }
 
 // Client-side shock beam tracing and effect spawning
@@ -117,7 +77,7 @@ simulated function ClientTraceFire() {
 
 	bbP = bbPlayer(PawnOwner);
 
-	if ( GetWeaponSettings().bEnablePingCompensation == false || bbP == None || !bbP.ClientWeaponSettingsData.bShockUseClientSideAnimations )
+	if (GetWeaponSettings().bEnablePingCompensation == false || bbP == None || bbP.ClientWeaponSettingsData.bShockUseClientSideAnimations == false)
      	return;
 
 	yModInit();
@@ -184,48 +144,12 @@ simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
 		bbPlayer(Owner).xxClientDemoFix(None, class'ShockBeam', SmokeLocation, , , SmokeRotation, , , DVector/NumPoints, NumPoints-1);
 }
 
-simulated function bool ClientAltFire(float Value) {
-	local Pawn PawnOwner;
-	local bool Result;
-	local bbPlayer bbP;
+simulated function PlayAltFiring()
+{
+	Super.PlayAltFiring();
 
-	PawnOwner = Pawn(Owner);
-	
-	if (PawnOwner == None)
-		return false;
-
-	bbP = bbPlayer(PawnOwner);
-
-	if (Owner.Role == ROLE_AutonomousProxy && bbP != None && GetWeaponSettings().ShockProjectileCompensatePing)
-	{
-		if ((AmmoType == None && AmmoName != None)) {
-			GiveAmmo(PawnOwner);
-		}
-		
-		if (AmmoType != None && AmmoType.AmmoAmount > 0) { // Check ammo
-
-			Instigator = PawnOwner;
-			bPointing = True;
-			bCanClientFire = true;
-
-			GotoState('ClientAltFiring');
-
-			if (bRapidFire || (FiringSpeed > 0))
-				PawnOwner.PlayRecoil(FiringSpeed);
-				
-			PlayAltFiring();
+	if ((Role < ROLE_Authority) && GetWeaponSettings().ShockProjectileCompensatePing)
 			ClientSpawnAltProjectileEffects();
-
-			if ( Affector != None )
-				Affector.FireEffect();
-
-			return true;
-		}
-		return false; // No ammo
-	}
-	
-	Result = Super.ClientAltFire(Value); 
-	return Result;
 }
 
 simulated function ClientSpawnAltProjectileEffects() {
@@ -236,11 +160,10 @@ simulated function ClientSpawnAltProjectileEffects() {
 
 	PawnOwner = Pawn(Owner);
 
-	if (Owner.IsA('PlayerPawn')) {
-		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-	} else {
-		Hand = 1.0;
-	}
+	if (Owner.IsA('PlayerPawn'))
+			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+		else
+			Hand = 1.0;
 
 	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
 	

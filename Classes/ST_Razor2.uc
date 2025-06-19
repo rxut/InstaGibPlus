@@ -65,6 +65,7 @@ auto state Flying
 {
 	simulated function ProcessTouch (Actor Other, Vector HitLocation) {
 		local vector Dir;
+		local float DamageToApply;
 
 		if (Other != Instigator && bClientVisualOnly)
 		{
@@ -80,16 +81,24 @@ auto state Flying
 					(HitLocation.Z - Other.Location.Z > 0.62 * Other.CollisionHeight) &&
 					(!Instigator.IsA('Bot') || !Bot(Instigator).bNovice)
 				) {
+
+					if (NumWallHits > 0)
+						DamageToApply = WImp.WeaponSettings.RipperHeadshotDamage * WImp.WeaponSettings.RipperHeadShotDamageWallMultiplier;
+
 					Other.TakeDamage(
-						WImp.WeaponSettings.RipperHeadshotDamage,
+						DamageToApply,
 						Instigator,
 						HitLocation,
 						WImp.WeaponSettings.RipperHeadshotMomentum * MomentumTransfer * Dir,
 						'decapitated'
 					);
 				} else {
+
+					if (NumWallHits > 0)
+						DamageToApply = WImp.WeaponSettings.RipperPrimaryDamage * WImp.WeaponSettings.RipperPrimaryDamageWallMultiplier;
+
 					Other.TakeDamage(
-						WImp.WeaponSettings.RipperPrimaryDamage,
+						DamageToApply,
 						instigator,
 						HitLocation,
 						WImp.WeaponSettings.RipperPrimaryMomentum * MomentumTransfer * Dir,

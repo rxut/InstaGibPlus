@@ -70,6 +70,8 @@ state FireRockets
 		local float Spread;
 		local int i;
 		local bbPlayer bbP;
+		local Projectile SpawnedRockets[6];
+		local int NumSpawnedRockets;
 
 		if (bCanClientFire == false)
 			return;
@@ -125,6 +127,7 @@ state FireRockets
 		else
 			RocketRad = 4;
 
+		NumSpawnedRockets = 0;
 		
 		for (i = 0; i < RocketsLoaded; i++)
 		{
@@ -146,47 +149,23 @@ state FireRockets
 					FireRot.Yaw = AdjustedAim.Yaw + Spread*WSettings.RocketSpreadSpacingDegrees*(65536.0/360.0);
 				}
 
-				// Apply ping compensation if enabled
-				if (bbP != none && WSettings.RocketCompensatePing)
+				// Spawn rockets and collect them for batch simulation
+				if (LockedTarget != None)
 				{
-					
-					// Spawn rockets at original location
-					if (LockedTarget != None)
-					{
-						s = Spawn(class'ST_ut_SeekingRocket',, '', FireLocation, FireRot);
-						s.WImp = WImp;
-						s.Seeking = LockedTarget;
-						s.NumExtraRockets = DupRockets;
-						
-						// Simulate physics for ping compensation using discrete ticks
-						WImp.SimulateProjectile(s, bbP.PingAverage);
-					}
-					else 
-					{
-						r = Spawn(class'ST_rocketmk2',, '', FireLocation, FireRot);
-						r.WImp = WImp;
-						r.NumExtraRockets = DupRockets;
-						
-						// Simulate physics for ping compensation using discrete ticks
-						 WImp.SimulateProjectile(r, bbP.PingAverage);
-					}
+					s = Spawn(class'ST_ut_SeekingRocket',, '', FireLocation, FireRot);
+					s.WImp = WImp;
+					s.Seeking = LockedTarget;
+					s.NumExtraRockets = DupRockets;
+					SpawnedRockets[NumSpawnedRockets] = s;
+					NumSpawnedRockets++;
 				}
-				else
+				else 
 				{
-					// No compensation - spawn rockets normally
-					if (LockedTarget != None)
-					{
-						s = Spawn(class'ST_ut_SeekingRocket',, '', FireLocation, FireRot);
-						s.WImp = WImp;
-						s.Seeking = LockedTarget;
-						s.NumExtraRockets = DupRockets;
-					}
-					else 
-					{
-						r = Spawn(class'ST_rocketmk2',, '', FireLocation, FireRot);
-						r.WImp = WImp;
-						r.NumExtraRockets = DupRockets;
-					}
+					r = Spawn(class'ST_rocketmk2',, '', FireLocation, FireRot);
+					r.WImp = WImp;
+					r.NumExtraRockets = DupRockets;
+					SpawnedRockets[NumSpawnedRockets] = r;
+					NumSpawnedRockets++;
 				}
 			}
 			else // Grenades
@@ -207,6 +186,13 @@ state FireRockets
 
 			Angle += 1.04719755; //2*Pi/6;
 		}
+		
+		// Apply ping compensation to all rockets at once if enabled
+		if (bbP != none && WSettings.RocketCompensatePing && NumSpawnedRockets > 0)
+		{
+			WImp.BatchSimulateProjectiles(SpawnedRockets, NumSpawnedRockets, bbP.PingAverage);
+		}
+		
 		bTightWad=False;
 		bRotated = false;
 	}

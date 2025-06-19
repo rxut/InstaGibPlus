@@ -68,8 +68,10 @@ var config bool  FlakCompensatePing;
 var config float RipperSelectTime;
 var config float RipperDownTime;
 var config float RipperHeadshotDamage;
+var config float RipperHeadShotDamageWallMultiplier;
 var config float RipperHeadshotMomentum;
 var config float RipperPrimaryDamage;
+var config float RipperPrimaryDamageWallMultiplier;
 var config float RipperPrimaryMomentum;
 var config float RipperSecondaryHurtRadius;
 var config float RipperSecondaryDamage;
@@ -172,6 +174,16 @@ var config int   PingCompensationMax;
 
 var config bool  bEnableAnimationAdaptiveHeadHitbox;
 
+var config bool  bAdvancedSpawns;
+var config bool  bSafeSpawns;
+var config int   DefaultSpawnWeight;
+var config int   MinSpawnDistance;
+var config int   MinSpawnZVariance;
+var config int   SpawnRelevantDistance;
+var config float SpawnNearLastPenalty;
+var config float SpawnRecentPenalty;
+var config float SpawnLOSPenalty;
+
 defaultproperties
 {
 	bReplaceImpactHammer=True
@@ -242,8 +254,10 @@ defaultproperties
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
 	RipperHeadshotDamage=105
+	RipperHeadShotDamageWallMultiplier=1.0
 	RipperHeadshotMomentum=1.0
 	RipperPrimaryDamage=30
+	RipperPrimaryDamageWallMultiplier=1.0
 	RipperPrimaryMomentum=1.0
 	RipperSecondaryHurtRadius=180
 	RipperSecondaryDamage=34
@@ -344,4 +358,14 @@ defaultproperties
 	PingCompensationMax=150
 
 	bEnableAnimationAdaptiveHeadHitbox=False
+
+	bAdvancedSpawns=False
+	bSafeSpawns=False
+	DefaultSpawnWeight=2000
+	MinSpawnDistance=1200
+	MinSpawnZVariance=-190
+	SpawnRelevantDistance=4000
+	SpawnNearLastPenalty=1.500000
+	SpawnRecentPenalty=0.500000
+	SpawnLOSPenalty=2.000000
 }

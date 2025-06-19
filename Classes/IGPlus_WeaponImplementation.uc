@@ -58,6 +58,8 @@ function float GetAverageTickRate();
 
 function SimulateProjectile(Projectile P, int Ping);
 
+function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping);
+
 function Actor TraceShot(
 	out vector HitLocation,
 	out vector HitNormal,
