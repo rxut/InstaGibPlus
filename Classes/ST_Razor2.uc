@@ -1,39 +1,104 @@
 class ST_Razor2 extends Razor2;
 
 var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
+
+var bool bClientVisualOnly;
+
+var PlayerPawn InstigatingPlayer;
 
 simulated function PostBeginPlay()
 {
-	if (Role == ROLE_Authority) {
+	if (ROLE == ROLE_Authority)
+	{
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-			break;
+			break;		// Find master :D
 	}
 
 	Super.PostBeginPlay();
+}
+
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
+}
+
+simulated function PostNetBeginPlay()
+{
+	local PlayerPawn In;
+    local ST_ripper R;
+
+	super.PostNetBeginPlay();
+
+	if (GetWeaponSettings().RipperCompensatePing) {
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations == false){
+			return;
+		}
+
+		In = PlayerPawn(Instigator);
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
+
+		if (InstigatingPlayer != none) {
+			R = ST_ripper(InstigatingPlayer.Weapon);
+			if (R != none && R.LocalRazor2Dummy != none && R.LocalRazor2Dummy.bDeleteMe == false)
+				R.LocalRazor2Dummy.Destroy();
+		}
+	} else {
+		Disable('Tick');
+	}
 }
 
 auto state Flying
 {
 	simulated function ProcessTouch (Actor Other, Vector HitLocation) {
 		local vector Dir;
+		local float DamageToApply;
+
+		if (Other != Instigator && bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
 
 		Dir = Normal(Velocity);
 		if (bCanHitInstigator || (Other != Instigator)) {
 			if (Role == ROLE_Authority) {
-				if ((Other.bIsPawn) &&
+				if ((Other.bIsPawn || Other.IsA('UTPlusDummy')) &&
 					(HitLocation.Z - Other.Location.Z > 0.62 * Other.CollisionHeight) &&
 					(!Instigator.IsA('Bot') || !Bot(Instigator).bNovice)
 				) {
+
+					if (NumWallHits > 0)
+						DamageToApply = WImp.WeaponSettings.RipperHeadshotDamage * WImp.WeaponSettings.RipperHeadShotDamageWallMultiplier;
+
 					Other.TakeDamage(
-						WImp.WeaponSettings.RipperHeadshotDamage,
+						DamageToApply,
 						Instigator,
 						HitLocation,
 						WImp.WeaponSettings.RipperHeadshotMomentum * MomentumTransfer * Dir,
 						'decapitated'
 					);
 				} else {
+
+					if (NumWallHits > 0)
+						DamageToApply = WImp.WeaponSettings.RipperPrimaryDamage * WImp.WeaponSettings.RipperPrimaryDamageWallMultiplier;
+
 					Other.TakeDamage(
-						WImp.WeaponSettings.RipperPrimaryDamage,
+						DamageToApply,
 						instigator,
 						HitLocation,
 						WImp.WeaponSettings.RipperPrimaryMomentum * MomentumTransfer * Dir,
@@ -41,7 +106,7 @@ auto state Flying
 					);
 				}
 			}
-			if (Other.bIsPawn)
+			if (Other.bIsPawn || Other.IsA('UTPlusDummy'))
 				PlaySound(MiscSound, SLOT_Misc, 2.0);
 			else
 				PlaySound(ImpactSound, SLOT_Misc, 2.0);
@@ -53,6 +118,13 @@ auto state Flying
 
 	simulated function HitWall (vector HitNormal, actor Wall) {
 		local vector Vel2D, Norm2D;
+
+		if (bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
 
 		bCanHitInstigator = true;
 		PlaySound(ImpactSound, SLOT_Misc, 2.0);

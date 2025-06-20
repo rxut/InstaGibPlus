@@ -185,8 +185,6 @@ var bool IGPlus_SkipMovesUntilNextTick;
 
 // SSR Beam
 var float LastWeaponEffectCreated;
-
-
 var bool bWasPaused;
 
 struct AddVelocityCall {
@@ -363,6 +361,26 @@ struct ReplBuffer {
 
 var string IGPlus_LogoVersionText;
 
+var float FRandValues[47]; // rX Added
+var int FRandValuesIndex; // rX Added
+var int FRandValuesLength; // rX Added
+
+struct ClientWeaponSettings { // rX Added
+	var bool bBioUseClientSideAnimations;
+	var bool bShockUseClientSideAnimations;
+	var bool bPulseUseClientSideAnimations;
+	var bool bRipperUseClientSideAnimations;
+	var bool bFlakUseClientSideAnimations;
+	var bool bSniperUseClientSideAnimations;
+};
+
+var ClientWeaponSettings ClientWeaponSettingsData;
+
+var bool bEnableDamageDebugMode;
+var bool bEnableDamageDebugConsoleMessages;
+
+var NavigationPoint LastStartSpot2, LastStartSpot3;
+
 replication
 {
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -398,7 +416,9 @@ replication
 		zzMaximumNetspeed,
 		zzMinimumNetspeed,
 		zzTrackFOV,
-		zzWaitTime;
+		zzWaitTime,
+		bEnableDamageDebugMode,
+		bEnableDamageDebugConsoleMessages;
 
 	unreliable if ( Role == ROLE_Authority )
 		DuckFractionRepl,
@@ -424,7 +444,8 @@ replication
 		IGPlus_EnableDualButtonSwitch,
 		PingAverage,
 		zzbDemoRecording,
-		zzNetspeed;
+		zzNetspeed,
+		ClientWeaponSettingsData;
 
 	unreliable if (Role == ROLE_AutonomousProxy || RemoteRole <= ROLE_SimulatedProxy)
 		bIs469Client;
@@ -444,7 +465,9 @@ replication
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
 		xxSetTeleRadius,
-		xxSetTimes;
+		xxSetTimes,
+		FRandValues,
+		FRandValuesIndex;
 
 	reliable if ( RemoteRole == ROLE_AutonomousProxy && !bDemoRecording )
 		xxCheatFound,
@@ -925,6 +948,11 @@ function ReplicateSwJumpPad(Teleporter T) {
 	);
 }
 
+function float GetFRandValues(int Index)
+{
+	return FRandValues[Index];
+}
+
 simulated function InitSettings() {
 	local bbPlayer P;
 	local bbCHSpectator S;
@@ -955,6 +983,14 @@ event PostBeginPlay()
 {
 	local int TickRate;
 	local class<Info> VersionInfoClass;
+	local int i;
+
+	local bbBaseCylinder BaseCyl; // Variable for the base cylinder
+	local bbBaseCylinderReduced BaseCylReduced; // Variable for the base cylinder
+	local bbHeadCylinder HeadCyl; // Variable for the head cylinder
+
+	for (i = 0; i < FRandValuesLength; i++)
+		FRandValues[i] = FRand();
 
 	Super.PostBeginPlay();
 
@@ -967,6 +1003,27 @@ event PostBeginPlay()
 	IGPlus_InputReplicationBuffer = new(XLevel) class'IGPlus_DataBuffer';
 
 	InitSettings();
+
+	if (zzUTPure.Settings.bEnableHitboxDebugMode)
+	{
+
+		ConsoleCommand("mlmode 0"); // disable mlmode to prevent culling of triangles due to distance
+
+		BaseCyl = Spawn(class'bbBaseCylinder', self);
+
+		if (BaseCyl != none)
+				BaseCyl.PawnRef = self;
+
+		BaseCylReduced = Spawn(class'bbBaseCylinderReduced', self);
+
+		if (BaseCylReduced != none)
+				BaseCylReduced.PawnRef = self;
+
+		HeadCyl = Spawn(class'bbHeadCylinder', self);
+
+		if (HeadCyl != none)
+				HeadCyl.PawnRef = self;
+	}
 
 	if ( Level.NetMode != NM_Client )
 	{
@@ -1005,6 +1062,13 @@ simulated event PostNetBeginPlay()
 	IGPlus_InputReplicationBuffer = new(XLevel) class'IGPlus_DataBuffer';
 
 	InitSettings();
+
+	ClientWeaponSettingsData.bBioUseClientSideAnimations = Settings.bBioUseClientSideAnimations;
+	ClientWeaponSettingsData.bShockUseClientSideAnimations = Settings.bShockUseClientSideAnimations;
+	ClientWeaponSettingsData.bPulseUseClientSideAnimations = Settings.bPulseUseClientSideAnimations;
+	ClientWeaponSettingsData.bRipperUseClientSideAnimations = Settings.bRipperUseClientSideAnimations;
+	ClientWeaponSettingsData.bFlakUseClientSideAnimations = Settings.bFlakUseClientSideAnimations;
+	ClientWeaponSettingsData.bSniperUseClientSideAnimations = Settings.bSniperUseClientSideAnimations;
 
 	if ( Role != ROLE_SimulatedProxy )	// Other players are Simulated, local player is Autonomous or Authority (if listen server which pure doesn't support anyway :P)
 	{
@@ -1141,6 +1205,9 @@ event Possess()
 		IGPlus_UseFastWeaponSwitch = zzUTPure.Settings.bUseFastWeaponSwitch;
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 
+		bEnableDamageDebugMode = zzUTPure.Settings.bEnableDamageDebugMode;
+		bEnableDamageDebugConsoleMessages = zzUTPure.Settings.bEnableDamageDebugConsoleMessages;
+
 		if(!zzUTPure.bExludeKickers)
 		{
 			ForEach AllActors(class'Kicker', K)
@@ -1238,12 +1305,20 @@ function IGPlus_ForcedSettingRegister(string Key, string Value, int Mode) {
 }
 
 function IGPlus_ForcedSettingRestore(int Index) {
+	local string Key;
+	local bool bValue;
+
 	switch(IGPlus_ForcedSettings[Index].Mode) {
 	case 0:
 		// dont restore
 		break;
 	case 1:
 		Settings.SetPropertyText(IGPlus_ForcedSettings[Index].Key, IGPlus_ForcedSettings[Index].OldValue);
+		Key = IGPlus_ForcedSettings[Index].Key;
+		bValue = (IGPlus_ForcedSettings[Index].OldValue ~= "True");
+
+		// Call helper function to update replicated ClientWeaponSettingsData
+		UpdateReplicatedWeaponSetting(Key, bValue);
 		break;
 	case 2:
 		// dick move ...
@@ -1259,6 +1334,9 @@ function IGPlus_ForcedSettingsRestore() {
 }
 
 function IGPlus_ForcedSettingApply(int Index) {
+	local string Key;
+	local bool bValue;
+	
 	IGPlus_ForcedSettings[Index].OldValue = Settings.GetPropertyText(IGPlus_ForcedSettings[Index].Key);
 	switch(IGPlus_ForcedSettings[Index].Mode) {
 	case 0:
@@ -1268,6 +1346,12 @@ function IGPlus_ForcedSettingApply(int Index) {
 		Settings.SetPropertyText(IGPlus_ForcedSettings[Index].Key, IGPlus_ForcedSettings[Index].NewValue);
 		break;
 	}
+
+	Key = IGPlus_ForcedSettings[Index].Key;
+	bValue = (IGPlus_ForcedSettings[Index].NewValue ~= "True"); // Convert string "True"/"False" to bool
+
+	// Call helper function to update replicated ClientWeaponSettingsData
+	UpdateReplicatedWeaponSetting(Key, bValue);
 }
 
 function IGPlus_ForcedSettingsApply(int Counter) {
@@ -1332,6 +1416,10 @@ function Timer() {
 	if (bIsFinishedLoading == false) {
 		bIsFinishedLoading = true;
 		ClientMessage("[IG+] To view available commands type 'mutate playerhelp' in the console");
+		ClientMessage("[IG+] Server Using Ping Compensation: " $ GetWeaponSettings().bEnablePingCompensation);
+		if (GetWeaponSettings().bEnablePingCompensation) {
+			ClientMessage("[IG+] For Ping Compensation Settings type 'mutate PingCompSettings' in the console");
+		}
 	}
 }
 
@@ -3485,6 +3573,7 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 		|| Weapon.IsA('NN_SuperShockRifle')
 		|| Weapon.IsA('NN_SniperRifle')
 		|| Weapon.IsA('NN_ASMD')
+		|| Weapon.IsA('ST_SniperRifle')
 	);
 }
 
@@ -3518,13 +3607,77 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 	local bool bSProjBlocks;
 	local bool bWeaponShock;
 	local WeaponSettingsRepl WS;
+	local UTPlusDummy D;
+
+	WS = GetWeaponSettings();
+	
+	bSProjBlocks = true;
+	if (WS != none)
+		bSProjBlocks = GetWeaponSettings().ShockProjectileBlockBullets;
+
+	bWeaponShock = (Weapon != none && Weapon.IsA('ShockRifle'));
+
+	if (WS != none && WS.bEnablePingCompensation && zzUTPure != None)
+	{
+		zzUTPure.CompensateFor(PingAverage, self);
+		
+		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {	
+			if (A == self) {
+				continue;
+			}
+
+			if (A.IsA('UTPlusDummy')) {
+				D = UTPlusDummy(A);
+				if (D != none && D.Actual != none && D.Actual != self) {
+					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+						Other = D.Actual;
+						break;
+					}
+				}
+			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
+					Other = A;
+					break;
+				}
+			}
+			if (Other != none)
+				break;
+		}
+		zzUTPure.EndCompensation();
+	}
+	else
+	{
+		foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
+			if (Pawn(A) != none) {
+				if ((A != self) && Pawn(A).AdjustHitLocation(HitLocation, EndTrace - StartTrace))
+					Other = A;
+			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
+					Other = A;
+				}
+			}
+
+			if (Other != none)
+				break;
+		}
+	}
+	return Other;
+}
+
+function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
+{
+	local Actor A, Other;
+	local bool bSProjBlocks;
+	local bool bWeaponShock;
+	local WeaponSettingsRepl WS;
 
 	WS = GetWeaponSettings();
 	bSProjBlocks = true;
 	if (WS != none)
 		bSProjBlocks = GetWeaponSettings().ShockProjectileBlockBullets;
+		
 	bWeaponShock = (Weapon != none && Weapon.IsA('ShockRifle'));
-	
+
 	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
 		if (Pawn(A) != none) {
 			if ((A != self) && Pawn(A).AdjustHitLocation(HitLocation, EndTrace - StartTrace))
@@ -4627,6 +4780,402 @@ exec function SetTeamHitSound(byte hs) {
 	} else {
 		ClientMessage("Please input a value from 0 to 15");
 	}
+}
+
+exec function EnableClientSideAnimations() {
+    local string ForcedValue;
+    local string UpdatedSettings, ForcedSettingsInfo;
+    local bool bMadeChanges;
+
+    // --- Bio ---
+    ForcedValue = GetForcedSettingValue("bBioUseClientSideAnimations");
+    if (ForcedValue == "") { // Not forced
+        if (!Settings.bBioUseClientSideAnimations) { // Check if already enabled
+            Settings.bBioUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bBioUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Bio,";
+            bMadeChanges = true;
+        }
+    } else { // Forced
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Bio (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Shock ---
+    ForcedValue = GetForcedSettingValue("bShockUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bShockUseClientSideAnimations) {
+            Settings.bShockUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bShockUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Shock,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Pulse ---
+    ForcedValue = GetForcedSettingValue("bPulseUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bPulseUseClientSideAnimations) {
+            Settings.bPulseUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bPulseUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Pulse,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Pulse (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Ripper ---
+    ForcedValue = GetForcedSettingValue("bRipperUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bRipperUseClientSideAnimations) {
+            Settings.bRipperUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bRipperUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Ripper,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Ripper (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Flak ---
+    ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bFlakUseClientSideAnimations) {
+            Settings.bFlakUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bFlakUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Flak,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Flak (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Sniper ---
+    ForcedValue = GetForcedSettingValue("bSniperUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bSniperUseClientSideAnimations) {
+            Settings.bSniperUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bSniperUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Sniper,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Sniper (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Report Results ---
+    if (bMadeChanges) {
+        IGPlus_SaveSettings();
+        if (Right(UpdatedSettings, 1) == ",")
+            UpdatedSettings = Left(UpdatedSettings, Len(UpdatedSettings)-1);
+        ClientMessage("Enabled client-side animations for:" @ UpdatedSettings, 'IGPlus');
+    } else if (ForcedSettingsInfo == "") {
+         ClientMessage("All client-side animations were already enabled.", 'IGPlus');
+    }
+
+    if (ForcedSettingsInfo != "") {
+        if (Right(ForcedSettingsInfo, 1) == ",")
+            ForcedSettingsInfo = Left(ForcedSettingsInfo, Len(ForcedSettingsInfo)-1);
+        ClientMessage("Could not enable (server forced):" @ ForcedSettingsInfo, 'IGPlus');
+    }
+}
+
+exec function DisableClientSideAnimations() {
+    local string ForcedValue;
+    local string UpdatedSettings, ForcedSettingsInfo;
+    local bool bMadeChanges;
+
+    // --- Bio ---
+    ForcedValue = GetForcedSettingValue("bBioUseClientSideAnimations");
+    if (ForcedValue == "") { // Not forced
+        if (Settings.bBioUseClientSideAnimations) { // Check if already disabled
+            Settings.bBioUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bBioUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Bio,";
+            bMadeChanges = true;
+        }
+    } else { // Forced
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Bio (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Shock ---
+    ForcedValue = GetForcedSettingValue("bShockUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bShockUseClientSideAnimations) {
+            Settings.bShockUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bShockUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Shock,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Pulse ---
+    ForcedValue = GetForcedSettingValue("bPulseUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bPulseUseClientSideAnimations) {
+            Settings.bPulseUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bPulseUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Pulse,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Pulse (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Ripper ---
+    ForcedValue = GetForcedSettingValue("bRipperUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bRipperUseClientSideAnimations) {
+            Settings.bRipperUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bRipperUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Ripper,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Ripper (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Flak ---
+    ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bFlakUseClientSideAnimations) {
+            Settings.bFlakUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bFlakUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Flak,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Flak (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Sniper ---
+    ForcedValue = GetForcedSettingValue("bSniperUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bSniperUseClientSideAnimations) {
+            Settings.bSniperUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bSniperUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Sniper,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Sniper (Forced:" $ ForcedValue $ "),";
+    }
+
+    // --- Report Results ---
+    if (bMadeChanges) {
+        IGPlus_SaveSettings();
+        if (Right(UpdatedSettings, 1) == ",")
+            UpdatedSettings = Left(UpdatedSettings, Len(UpdatedSettings)-1);
+        ClientMessage("Disabled client-side animations for:" @ UpdatedSettings, 'IGPlus');
+    } else if (ForcedSettingsInfo == "") {
+         ClientMessage("All client-side animations were already disabled.", 'IGPlus');
+    }
+
+    if (ForcedSettingsInfo != "") {
+        if (Right(ForcedSettingsInfo, 1) == ",")
+            ForcedSettingsInfo = Left(ForcedSettingsInfo, Len(ForcedSettingsInfo)-1);
+        ClientMessage("Could not disable (server forced):" @ ForcedSettingsInfo, 'IGPlus');
+    }
+}
+// Helper function to update the replicated weapon settings struct
+simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
+    if (Key ~= "bBioUseClientSideAnimations") {
+        ClientWeaponSettingsData.bBioUseClientSideAnimations = bValue;
+    } else if (Key ~= "bShockUseClientSideAnimations") {
+        ClientWeaponSettingsData.bShockUseClientSideAnimations = bValue;
+    } else if (Key ~= "bPulseUseClientSideAnimations") {
+        ClientWeaponSettingsData.bPulseUseClientSideAnimations = bValue;
+    } else if (Key ~= "bRipperUseClientSideAnimations") {
+        ClientWeaponSettingsData.bRipperUseClientSideAnimations = bValue;
+    } else if (Key ~= "bFlakUseClientSideAnimations") {
+        ClientWeaponSettingsData.bFlakUseClientSideAnimations = bValue;
+    } else if (Key ~= "bSniperUseClientSideAnimations") {
+        ClientWeaponSettingsData.bSniperUseClientSideAnimations = bValue;
+    }
+}
+
+simulated function string GetForcedSettingValue(string Key) {
+    local int i;
+    if (IGPlus_ForcedSettings_Applied) {
+        for (i = 0; i < IGPlus_ForcedSettings_Counter; ++i) {
+            if (IGPlus_ForcedSettings[i].Key ~= Key) {
+                // Return the forced value if the key is found and settings are applied
+                return IGPlus_ForcedSettings[i].NewValue;
+            }
+        }
+    }
+    // Return an empty string if the setting is not forced or not found
+    return "";
+}
+
+exec function BioClientSideAnimations(bool b) {
+	local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bBioUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Bio animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bBioUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Bio client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Bio client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bBioUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bBioUseClientSideAnimations = b;
+	
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Bio client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Bio client-side animations disabled!", 'IGPlus');
+}
+
+exec function ShockClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bShockUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Shock animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bShockUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Shock client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Shock client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bShockUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bShockUseClientSideAnimations = b;
+
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Shock client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Shock client-side animations disabled!", 'IGPlus');
+}
+
+exec function PulseClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bPulseUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Pulse animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+    if (Settings.bPulseUseClientSideAnimations == b) {
+        if (b)
+            ClientMessage("Pulse client-side animations are already enabled.", 'IGPlus');
+        else
+            ClientMessage("Pulse client-side animations are already disabled.", 'IGPlus');
+        return;
+    }
+
+	Settings.bPulseUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bPulseUseClientSideAnimations = b;
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Pulse client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Pulse client-side animations disabled!", 'IGPlus');
+}
+
+exec function RipperClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bRipperUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Ripper animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bRipperUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Ripper client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Ripper client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bRipperUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bRipperUseClientSideAnimations = b;
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Ripper client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Ripper client-side animations disabled!", 'IGPlus');
+}
+
+exec function FlakClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Flak animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bFlakUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Flak client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Flak client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bFlakUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bFlakUseClientSideAnimations = b;
+
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Flak client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Flak client-side animations disabled!", 'IGPlus');
+}
+
+exec function SniperClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bSniperUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Sniper animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bSniperUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Sniper client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Sniper client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bSniperUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bSniperUseClientSideAnimations = b;
+
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Sniper client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Sniper client-side animations disabled!", 'IGPlus');
 }
 
 exec function setShockBeam(int sb) {
@@ -7835,9 +8384,18 @@ event PostRender( canvas zzCanvas )
 	}
 
 	PlayerStatics.DrawFPS(zzCanvas, MyHud, Settings, zzTick);
+
 	PlayerStatics.DrawHitMarker(zzCanvas, Settings, zzTick);
 	if (HitMarkerTestDamage > 0 && PlayerStatics.default.HitMarkerLifespan == 0) {
 		PlayerStatics.PlayHitMarker(self, Settings, HitMarkerTestDamage, PlayerReplicationInfo.Team, HitMarkerTestTeam);
+		++HitMarkerTestTeam;
+		if (HitMarkerTestTeam >= 4)
+			HitMarkerTestTeam = 0;
+	}
+
+	PlayerStatics.DrawDamageNumbers(zzCanvas, zzTick);
+	if (HitMarkerTestDamage > 0 && PlayerStatics.default.DamageNumberLifespan == 0) {
+		PlayerStatics.PlayDamageMarker(self, HitMarkerTestDamage, PlayerReplicationInfo.Team, HitMarkerTestTeam);
 		++HitMarkerTestTeam;
 		if (HitMarkerTestTeam >= 4)
 			HitMarkerTestTeam = 0;
@@ -9027,26 +9585,31 @@ simulated function xxGetDemoPlaybackSpec()
 
 }
 
-simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional Vector V, optional vector A, optional Rotator R, optional float DS, optional Actor S)
+simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional Vector V, optional vector A, optional Rotator R, optional float DS, optional Actor S, optional Vector MoveAmount, optional int NumPuffs)
 {
-	xxGetDemoPlaybackSpec();
-	if (zzDemoPlaybackSpec == none)
-		return;
+    xxGetDemoPlaybackSpec();
+    if (zzDemoPlaybackSpec == none)
+        return;
 
-	if (zzA == None)
-	{
-		zzDemoPlaybackSN.xxFixActor(C, L, V, A, R, DS, S);
-		return;
-	}
+    if (zzA == None)
+    {
+        zzDemoPlaybackSN.xxFixActor(C, L, V, A, R, DS, S, MoveAmount, NumPuffs);
+        return;
+    }
 
-	zzA.Velocity = V;
-	zzA.Acceleration = A;
-	zzA.SetRotation(R);
-	if(DS != 0)
-		zzA.DrawScale = DS;
-	if((S != none) && UT_SeekingRocket(zzA) != none)
-		UT_SeekingRocket(zzA).Seeking = S;
-
+    zzA.Velocity = V;
+    zzA.Acceleration = A;
+    zzA.SetRotation(R);
+    if(DS != 0)
+        zzA.DrawScale = DS;
+    if((S != none) && UT_SeekingRocket(zzA) != none)
+        UT_SeekingRocket(zzA).Seeking = S;
+    if(ShockBeam(zzA) != none && MoveAmount != vect(0,0,0))
+    {
+        ShockBeam(zzA).MoveAmount = MoveAmount;
+        if(NumPuffs > 0)
+            ShockBeam(zzA).NumPuffs = NumPuffs;
+    }
 }
 
 function string xxFindClanTags() {
@@ -9583,6 +10146,8 @@ defaultproperties
 	RespawnDelay=1.0
 	NetUpdateFrequency=200
 	PlayerReplicationInfoClass=Class'bbPlayerReplicationInfo'
+
+	FRandValuesLength=47
 
 	IGPlus_ZoomToggle_SensitivityFactorX=1.0
 	IGPlus_ZoomToggle_SensitivityFactorY=1.0

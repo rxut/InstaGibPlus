@@ -79,6 +79,9 @@ var config bool  bEnableJitterBounding;
 var config bool  bEnableWarpFix;
 var config bool  bEnableCarcassCollision;
 var config bool  ShowTouchedPackage;
+var config bool  bEnableDamageDebugMode;
+var config bool  bEnableDamageDebugConsoleMessages;
+var config bool  bEnableHitboxDebugMode;
 
 enum EHitFeedbackMode {
 	HFM_Disabled,
@@ -141,6 +144,9 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bEnableWarpFix");
 	DumpSetting(P, "ShowTouchedPackage");
 	DumpSetting(P, "HitFeedbackMode");
+	DumpSetting(P, "bEnableDamageDebugMode");
+	DumpSetting(P, "bEnableDamageDebugConsoleMessages");
+	DumpSetting(P, "bEnableHitboxDebugMode");	
 }
 
 defaultproperties
@@ -207,4 +213,7 @@ defaultproperties
 	bEnableWarpFix=True
 	bEnableCarcassCollision=True
 	HitFeedbackMode=HFM_Always
+	bEnableDamageDebugMode=False
+	bEnableDamageDebugConsoleMessages=False
+	bEnableHitboxDebugMode=False
 }

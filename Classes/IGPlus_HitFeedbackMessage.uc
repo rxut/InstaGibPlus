@@ -10,6 +10,9 @@ static function ClientReceive(
 	local ClientSettings Settings;
 	local bool bInstigator;
 	local bool bViewTarget;
+	local bbPlayer bbP;
+	
+	bbP = bbPlayer(P);
 
 	if (RelatedPRI_1 == none || RelatedPRI_2 == none)
 		return;
@@ -30,6 +33,10 @@ static function ClientReceive(
 
 	if (bViewTarget || Settings == none || Settings.HitMarkerSource == HMSRC_Server)
 		class'bbPlayerStatics'.static.PlayHitMarker(P, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
+
+
+	if (bbP != none && bbP.bEnableDamageDebugMode)
+		class'bbPlayerStatics'.static.PlayDamageMarker(P, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
 
 	if (bViewTarget || Settings == none || Settings.HitSoundSource == HSSRC_Server)
 		class'bbPlayerStatics'.static.PlayHitSound(P, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);

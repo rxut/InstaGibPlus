@@ -48,6 +48,7 @@ var config float RocketSpreadSpacingDegrees;
 var config float GrenadeDamage;
 var config float GrenadeHurtRadius;
 var config float GrenadeMomentum;
+var config bool  RocketCompensatePing;
 
 var config float FlakSelectTime;
 var config float FlakPostSelectTime;
@@ -62,16 +63,20 @@ var config bool  FlakChunkRandomSpread;
 var config float FlakSlugDamage;
 var config float FlakSlugHurtRadius;
 var config float FlakSlugMomentum;
+var config bool  FlakCompensatePing;
 
 var config float RipperSelectTime;
 var config float RipperDownTime;
 var config float RipperHeadshotDamage;
+var config float RipperHeadShotDamageWallMultiplier;
 var config float RipperHeadshotMomentum;
 var config float RipperPrimaryDamage;
+var config float RipperPrimaryDamageWallMultiplier;
 var config float RipperPrimaryMomentum;
 var config float RipperSecondaryHurtRadius;
 var config float RipperSecondaryDamage;
 var config float RipperSecondaryMomentum;
+var config bool  RipperCompensatePing;
 
 var config float MinigunSelectTime;
 var config float MinigunDownTime;
@@ -86,13 +91,13 @@ var config float PulseSelectTime;
 var config float PulseDownTime;
 var config float PulseSphereDamage;
 var config float PulseSphereMomentum;
-var config float PulseSphereSpeed;
 var config float PulseSphereFireRate;
 var config float PulseBoltDPS;
 var config float PulseBoltMomentum;
 var config float PulseBoltMaxAccumulate;
 var config float PulseBoltGrowthDelay;
 var config int   PulseBoltMaxSegments;
+var config bool  PulseCompensatePing;
 
 var config float ShockSelectTime;
 var config float ShockDownTime;
@@ -121,6 +126,7 @@ var config float BioAltDamage;
 var config float BioAltMomentum;
 var config float BioHurtRadiusBase;
 var config float BioHurtRadiusMax;
+var config bool  BioCompensatePing;
 
 var config float EnforcerSelectTime;
 var config float EnforcerDownTime;
@@ -154,10 +160,29 @@ var config float TranslocatorSelectTime;
 var config float TranslocatorOutSelectTime;
 var config float TranslocatorDownTime;
 var config float TranslocatorHealth;
+var config bool  TranslocatorCompensatePing;
 
 var config string DefaultWeaponClass;
 
 var config int   InvisibilityDuration;
+
+var config bool  bEnablePingCompensation;
+
+var config bool  bEnableSubTickCompensation;
+
+var config int   PingCompensationMax;
+
+var config bool  bEnableAnimationAdaptiveHeadHitbox;
+
+var config bool  bAdvancedSpawns;
+var config bool  bSafeSpawns;
+var config int   DefaultSpawnWeight;
+var config int   MinSpawnDistance;
+var config int   MinSpawnZVariance;
+var config int   SpawnRelevantDistance;
+var config float SpawnNearLastPenalty;
+var config float SpawnRecentPenalty;
+var config float SpawnLOSPenalty;
 
 defaultproperties
 {
@@ -199,6 +224,7 @@ defaultproperties
 	SniperReloadTime=0.6666666666
 	SniperUseReducedHitbox=False
 
+
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
 	RocketDamage=75
@@ -208,6 +234,7 @@ defaultproperties
 	GrenadeDamage=80
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
+	RocketCompensatePing=False
 
 	FlakSelectTime=0.625
 	FlakPostSelectTime=0.384615
@@ -222,16 +249,20 @@ defaultproperties
 	FlakSlugDamage=70
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
+	FlakCompensatePing=False
 
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
 	RipperHeadshotDamage=105
+	RipperHeadShotDamageWallMultiplier=1.0
 	RipperHeadshotMomentum=1.0
 	RipperPrimaryDamage=30
+	RipperPrimaryDamageWallMultiplier=1.0
 	RipperPrimaryMomentum=1.0
 	RipperSecondaryHurtRadius=180
 	RipperSecondaryDamage=34
 	RipperSecondaryMomentum=1.0
+	RipperCompensatePing=False
 
 	MinigunSelectTime=0.555556
 	MinigunDownTime=0.333333
@@ -246,13 +277,13 @@ defaultproperties
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
-	PulseSphereSpeed=1450.000000
 	PulseSphereFireRate=0.18
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
 	PulseBoltMaxAccumulate=0.08
 	PulseBoltGrowthDelay=0.05
 	PulseBoltMaxSegments=10
+	PulseCompensatePing=False
 
 	ShockSelectTime=0.5
 	ShockDownTime=0.259259
@@ -281,6 +312,7 @@ defaultproperties
 	BioAltMomentum=1.0
 	BioHurtRadiusBase=75
 	BioHurtRadiusMax=250
+	BioCompensatePing=False
 
 	EnforcerSelectTime=0.777778
 	EnforcerDownTime=0.266667
@@ -314,8 +346,26 @@ defaultproperties
 	TranslocatorOutSelectTime=0.27
 	TranslocatorDownTime=0.212121
 	TranslocatorHealth=65.0
-
+	TranslocatorCompensatePing=False
 	DefaultWeaponClass=""
 
 	InvisibilityDuration=45
+
+	bEnablePingCompensation=False
+
+	bEnableSubTickCompensation=False
+	
+	PingCompensationMax=150
+
+	bEnableAnimationAdaptiveHeadHitbox=False
+
+	bAdvancedSpawns=False
+	bSafeSpawns=False
+	DefaultSpawnWeight=2000
+	MinSpawnDistance=1200
+	MinSpawnZVariance=-190
+	SpawnRelevantDistance=4000
+	SpawnNearLastPenalty=1.500000
+	SpawnRecentPenalty=0.500000
+	SpawnLOSPenalty=2.000000
 }

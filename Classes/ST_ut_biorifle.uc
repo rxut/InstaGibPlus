@@ -10,6 +10,9 @@ var IGPlus_WeaponImplementation WImp;
 
 var WeaponSettingsRepl WSettings;
 
+var ST_UT_BioGel LocalBioGelDummy;
+var ST_BioGlob LocalBioGlobDummy;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -33,6 +36,130 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
+}
+
+function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
+{
+    local Projectile P;
+    local bbPlayer bbP;
+
+    // Call original ProjectileFire to spawn the projectile
+    P = Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
+    
+    // Check if we should apply ping compensation
+    if (P != None && GetWeaponSettings().BioCompensatePing) {
+        bbP = bbPlayer(Owner);
+        if (bbP != None && bbP.PingAverage > 0 && WImp != None) {
+            // Simulate projectile forward by player's ping time
+            WImp.SimulateProjectile(P, bbP.PingAverage);
+        }
+    }
+    
+    return P;
+}
+
+simulated function PlayFiring()
+{
+        local Pawn PawnOwner;
+        local vector X, Y, Z;
+        local vector Start;
+        local float Hand;
+        local bbPlayer bbP;
+
+        Super.PlayFiring();
+
+        if (Role < ROLE_Authority)
+        {
+			// Client side dummy projectile logic
+			PawnOwner = Pawn(Owner);
+			bbP = bbPlayer(PawnOwner);
+
+			if (bbP != none && bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations == false)
+				return;
+
+			if (Owner.IsA('PlayerPawn'))
+				Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+			else
+				Hand = 1.0;
+
+			GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+			if (bHideWeapon)
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+			else
+				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+
+			LocalBioGelDummy = Spawn(class'ST_UT_BioGel', Owner,, Start, PawnOwner.ViewRotation);
+			LocalBioGelDummy.RemoteRole = ROLE_None;
+			LocalBioGelDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			LocalBioGelDummy.bClientVisualOnly = true;
+			LocalBioGelDummy.bCollideWorld = false;
+			LocalBioGelDummy.SetCollision(false, false, false);
+        }
+}
+
+state ShootLoad
+{
+    function ForceFire() { Super.ForceFire(); }
+    function ForceAltFire() { Super.ForceAltFire(); }
+    function Fire(float F) { Super.Fire(F); }
+    function AltFire(float F) { Super.AltFire(F); }
+    function Timer() { Super.Timer(); }
+    function AnimEnd() { Super.AnimEnd(); }
+
+    function BeginState()
+    {
+        Local Projectile Gel;
+        local bbPlayer bbP;
+
+        Gel = ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
+        
+        if (Gel != None) {
+            Gel.DrawScale = 1.0 + 0.8 * ChargeSize;
+            
+            // Check if we should apply ping compensation
+            if (GetWeaponSettings().BioCompensatePing) {
+                bbP = bbPlayer(Owner);
+                if (bbP != None) {
+                    WImp.SimulateProjectile(Gel, bbP.PingAverage);
+                }
+            }
+        }
+        
+        if (Affector != None)
+            Affector.FireEffect();
+        
+        PlayAltBurst();
+    }
+
+Begin:
+}
+
+
+// Compatibility between client and server logic
+simulated function vector CalcDrawOffsetClient() {
+	local vector DrawOffset;
+	local Pawn PawnOwner;
+	local vector WeaponBob;
+	
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return vect(0,0,0);
+
+	DrawOffset = CalcDrawOffset();
+	
+	// On client, make adjustments to match server
+	if (Level.NetMode == NM_Client) {
+		// Correct for EyeHeight differences
+		DrawOffset -= (PawnOwner.EyeHeight * vect(0,0,1));
+		DrawOffset += (PawnOwner.BaseEyeHeight * vect(0,0,1));
+	
+		// Remove WeaponBob, not applied on server
+		WeaponBob = BobDamping * PawnOwner.WalkBob;
+		WeaponBob.Z = (0.45 + 0.55 * BobDamping) * PawnOwner.WalkBob.Z;
+		DrawOffset -= WeaponBob;
+	}
+	
+	return DrawOffset;
 }
 
 function SetSwitchPriority(pawn Other)

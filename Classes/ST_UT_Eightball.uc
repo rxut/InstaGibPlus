@@ -7,7 +7,6 @@
 class ST_UT_Eightball extends UT_Eightball;
 
 var IGPlus_WeaponImplementation WImp;
-
 var WeaponSettingsRepl WSettings;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -33,6 +32,7 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
+		
 }
 
 ///////////////////////////////////////////////////////
@@ -69,6 +69,9 @@ state FireRockets
 		local int DupRockets;
 		local float Spread;
 		local int i;
+		local bbPlayer bbP;
+		local Projectile SpawnedRockets[6];
+		local int NumSpawnedRockets;
 
 		if (bCanClientFire == false)
 			return;
@@ -76,6 +79,9 @@ state FireRockets
 		PawnOwner = Pawn(Owner);
 		if (PawnOwner == None)
 			return;
+		
+		bbP = bbPlayer(PawnOwner);
+
 		PawnOwner.PlayRecoil(FiringSpeed);
 		PlayerOwner = PlayerPawn(Owner);
 		Angle = 0;
@@ -121,6 +127,8 @@ state FireRockets
 		else
 			RocketRad = 4;
 
+		NumSpawnedRockets = 0;
+		
 		for (i = 0; i < RocketsLoaded; i++)
 		{
 			Spread = (-0.5 * (RocketsLoaded-1) + i);
@@ -141,26 +149,33 @@ state FireRockets
 					FireRot.Yaw = AdjustedAim.Yaw + Spread*WSettings.RocketSpreadSpacingDegrees*(65536.0/360.0);
 				}
 
-				if ( LockedTarget != None )
+				// Spawn rockets and collect them for batch simulation
+				if (LockedTarget != None)
 				{
-					s = Spawn( class 'ST_ut_SeekingRocket',, '', FireLocation,FireRot);
+					s = Spawn(class'ST_ut_SeekingRocket',, '', FireLocation, FireRot);
 					s.WImp = WImp;
 					s.Seeking = LockedTarget;
 					s.NumExtraRockets = DupRockets;
+					SpawnedRockets[NumSpawnedRockets] = s;
+					NumSpawnedRockets++;
 				}
 				else 
 				{
-					r = Spawn( class'ST_rocketmk2',, '', FireLocation,FireRot);
+					r = Spawn(class'ST_rocketmk2',, '', FireLocation, FireRot);
 					r.WImp = WImp;
 					r.NumExtraRockets = DupRockets;
+					SpawnedRockets[NumSpawnedRockets] = r;
+					NumSpawnedRockets++;
 				}
 			}
-			else 
+			else // Grenades
 			{
-				g = Spawn( class 'ST_ut_Grenade',, '', FireLocation,AdjustedAim);
+				g = Spawn(class'ST_ut_Grenade',, '', FireLocation, AdjustedAim);
 				g.WImp = WImp;
 				g.NumExtraGrenades = DupRockets;
-				if ( DupRockets > 0 )
+				
+				// Apply randomization for multiple grenades
+				if (DupRockets > 0)
 				{
 					RandRot.Pitch = FRand() * 1500 - 750;
 					RandRot.Yaw = FRand() * 1500 - 750;
@@ -171,6 +186,13 @@ state FireRockets
 
 			Angle += 1.04719755; //2*Pi/6;
 		}
+		
+		// Apply ping compensation to all rockets at once if enabled
+		if (bbP != none && WSettings.RocketCompensatePing && NumSpawnedRockets > 0)
+		{
+			WImp.BatchSimulateProjectiles(SpawnedRockets, NumSpawnedRockets, bbP.PingAverage);
+		}
+		
 		bTightWad=False;
 		bRotated = false;
 	}
@@ -220,6 +242,36 @@ function SetSwitchPriority(pawn Other)
 			}
 		}
 	}		
+}
+
+state NormalFire
+{
+	function Tick(float DeltaTime)
+	{
+		Super.Tick(DeltaTime);
+
+		if (bChangeWeapon)
+		{
+			RocketsLoaded = 0;
+			bRotated = false;
+			GotoState('DownWeapon');
+		}
+	}
+}
+
+state AltFiring
+{
+	function Tick( float DeltaTime )
+	{
+		Super.Tick(DeltaTime);
+		
+		if (bChangeWeapon)
+		{
+			RocketsLoaded = 0;
+			bRotated = false;
+			GotoState('DownWeapon');
+		}
+	}
 }
 
 simulated function PlaySelect() {

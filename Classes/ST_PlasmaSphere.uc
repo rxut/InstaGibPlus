@@ -1,6 +1,11 @@
 class ST_PlasmaSphere extends PlasmaSphere;
 
 var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
+
+var bool bClientVisualOnly;
+
+var PlayerPawn InstigatingPlayer;
 
 simulated function PostBeginPlay()
 {
@@ -8,14 +13,62 @@ simulated function PostBeginPlay()
 	{
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break;
-		Speed = WImp.WeaponSettings.PulseSphereSpeed;
 	}
-	DrawScale = 0.12;
+
 	Super.PostBeginPlay();
 }
 
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
+}
+
+simulated function PostNetBeginPlay()
+{
+	local PlayerPawn In;
+    local ST_PulseGun PG;
+
+	super.PostNetBeginPlay();
+
+	if (GetWeaponSettings().PulseCompensatePing) {
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bPulseUseClientSideAnimations == false){
+			return;
+		}
+
+		In = PlayerPawn(Instigator);
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
+
+		if (InstigatingPlayer != none) {
+			PG = ST_PulseGun(InstigatingPlayer.Weapon);
+			if (PG != none && PG.LocalPlasmaSphereDummy != none && PG.LocalPlasmaSphereDummy.bDeleteMe == false)
+				PG.LocalPlasmaSphereDummy.Destroy();
+		}
+	} else {
+		Disable('Tick');
+	}
+}
 simulated function Explode(vector HitLocation, vector HitNormal)
 {
+	if (bClientVisualOnly)
+	{
+		bHidden = true;
+		Destroy();
+		return;
+	}
+
 	if ( !bExplosionEffect )
 	{
 		if ( Role == ROLE_Authority )
@@ -29,10 +82,10 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 				return;
 			}
 			else
-				DrawScale = 0.2;
+				DrawScale = 0.4;
 		}
 		else
-			DrawScale = 0.2;
+			DrawScale = 0.4;
 
 	    LightType = LT_Steady;
 		LightRadius = 5;
@@ -53,14 +106,21 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 
 simulated function ProcessTouch (Actor Other, vector HitLocation)
 {
-	If ( Other!=Instigator  && PlasmaSphere(Other)==None )
+	if (Other == Instigator)
+        return;
+
+	if (bClientVisualOnly)
+		bHidden = true;
+	
+	If (PlasmaSphere(Other) == None)
 	{
-		if ( Other.bIsPawn )
+		if (Other.bIsPawn || Other.IsA('UTPlusDummy'))
 		{
 			bHitPawn = true;
 			bExploded = !Level.bHighDetailMode || Level.bDropDetail;
 		}
-		if ( Role == ROLE_Authority )
+		
+		if (Role == ROLE_Authority)
 		{
 			Other.TakeDamage(
 				WImp.WeaponSettings.PulseSphereDamage,

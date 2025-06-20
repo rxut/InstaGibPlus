@@ -34,8 +34,14 @@ var Info VersionInfo;
 var Object SettingsHelper;
 var ServerSettings Settings;
 
+var UTPlusDummy CompDummies;
+
 var IGPlus_WeaponImplementation WImp;
 var bool bWImpSearched;
+
+var bool bCompensationIsActive;
+
+var ST_ProjectileDummy ProjDummies;
 
 replication
 {
@@ -486,6 +492,78 @@ event Tick(float zzDelta)
 	}
 }
 
+function RegisterProjectile(Projectile P) {
+    local ST_ProjectileDummy NewDummy;
+    local bool AlreadyRegistered;
+    local ST_ProjectileDummy Dummy;
+    
+    for (Dummy = ProjDummies; Dummy != none; Dummy = Dummy.Next) {
+        if (Dummy.Actual == P) {
+            AlreadyRegistered = true;
+            break;
+        }
+    }
+    
+    if (!AlreadyRegistered) {
+        NewDummy = Spawn(class'ST_ProjectileDummy');
+        NewDummy.Actual = P;
+        
+        NewDummy.Next = ProjDummies;
+        ProjDummies = NewDummy;
+    }
+}
+
+function CompensateFor(int Ping, optional Pawn Instigator) {
+    local UTPlusDummy D;
+	local ST_ProjectileDummy PD;
+    local Pawn DActual;
+	
+	bCompensationIsActive = true;
+
+    for (D = CompDummies; D != none; D = D.Next) {
+        DActual = D.Actual;
+        
+        if (DActual == none || 
+            DActual == Instigator ||
+            DActual.bDeleteMe ||
+            DActual.bHidden ||
+            !DActual.bCollideActors ||
+            DActual.Health <= 0)
+        {
+            continue;
+        }
+            
+        if (DActual.PlayerReplicationInfo == none ||
+            DActual.PlayerReplicationInfo.bIsSpectator)
+        {
+            continue;
+        }
+
+        D.CompStart(Ping);
+    }
+
+	for (PD = ProjDummies; PD != none; PD = PD.Next) {
+		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
+			PD.CompStart(Ping);
+		}
+	}
+}
+
+function EndCompensation() {
+	local UTPlusDummy D;
+	local ST_ProjectileDummy PD;
+	
+	for (D = CompDummies; D != none; D = D.Next) {
+		D.CompEnd();
+	}
+
+	for (PD = ProjDummies; PD != none; PD = PD.Next) {
+		PD.CompEnd();
+	}
+
+	bCompensationIsActive = false;
+}
+
 function xxHideFlags()
 {	// Makes flags untouchable
 	local CTFFlag Flag;
@@ -664,13 +742,32 @@ function AssignFixedSkinIndex(Pawn Other) {
 		}
 	}
 }
+function UTPlusDummy FindDummy(Pawn P) {
+	local UTPlusDummy D;
+
+	for (D = CompDummies; D != none; D = D.Next)
+		if (D.Actual == P)
+			return D;
+
+	return none;
+}
+
+function ST_ProjectileDummy FindProjectileDummy(Projectile P) {
+	local ST_ProjectileDummy D;
+
+	for (D = ProjDummies; D != none; D = D.Next)
+		if (D.Actual == P)
+			return D;
+
+	return none;
+}
 
 // Modify the login classes to our classes.
 function ModifyLogin(out class<playerpawn> SpawnClass, out string Portal, out string Options)
 {
 	local class<playerpawn> origSC;
 	local class<Spectator>  specCls;
-
+	
 	// Someone claims that Engine.Pawn makes it here.
 
 	if (SpawnClass == None)
@@ -716,6 +813,16 @@ function ModifyLogin(out class<playerpawn> SpawnClass, out string Portal, out st
 function ModifyPlayer(Pawn Other)
 {
 	local bbPlayer zzP;
+	local UTPlusDummy D;
+
+	D = FindDummy(Other);
+	if (D == none) {
+		D = Spawn(class'UTPlusDummy');
+		Log("Created new UTPlusDummy for "$Other.PlayerReplicationInfo.PlayerName);
+		D.Actual = Other;
+		D.Next = CompDummies;
+		CompDummies = D;
+	}
 
 	if (Other.IsA('TournamentPlayer') && Settings.bUTPureEnabled)
 	{
@@ -904,6 +1011,17 @@ function Mutate(string MutateString, PlayerPawn Sender)
 		}
 		if (CHSpectator(Sender) != None)
 			Sender.ClientMessage("As spectator, you may need to add 'mutate pure' + command (mutate pureshowtickrate)");
+	}
+	else if (MutateString ~= "PingCompSettings")
+	{
+		Sender.ClientMessage("- EnableClientSideAnimations (Enables all client-side weapon animations)");
+		Sender.ClientMessage("- DisableClientSideAnimations (Disables all client-side weapon animations)");
+		Sender.ClientMessage("- BioClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- ShockClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- PulseClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- RipperClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- FlakClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- SniperClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 	}
 	else if (MutateString ~= "ready")
 	{

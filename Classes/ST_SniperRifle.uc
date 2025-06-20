@@ -18,6 +18,9 @@ var EZoomState ZoomState;
 
 var WeaponSettingsRepl WSettings;
 
+// Variables for client-side animations
+var float yMod; // For handedness calculations
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -41,6 +44,70 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;		// Find master :D
+}
+
+simulated function yModInit()
+{
+
+	if (PlayerPawn(Owner) == None)
+		return;
+
+	yMod = PlayerPawn(Owner).Handedness;
+	if (yMod != 2.0)
+		yMod *= Default.FireOffset.Y;
+	else
+		yMod = 0;
+}
+
+simulated function bool ClientFire( float Value )
+{
+    if (Super.ClientFire(Value))
+    {
+		if (Role < ROLE_Authority)
+			PlayClientEffects();
+    }
+    return true;
+}
+
+simulated function PlayClientEffects()
+{
+	local vector X, Y, Z;
+	local PlayerPawn P;
+	local bbPlayer bbP;
+
+	P = PlayerPawn(Owner);
+	
+	bbP = bbPlayer(P);
+	
+	if (P == None)
+		return;
+
+	if ( GetWeaponSettings().bEnablePingCompensation == false || bbP == None || bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations == false)
+     	return;
+	
+	yModInit();
+
+	GetAxes(P.ViewRotation, X, Y, Z);
+	
+	SpawnClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
+	
+	if (P.DesiredFOV == P.DefaultFOV)
+		bMuzzleFlash++;
+}
+
+simulated function SpawnClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, Vector Y, Vector Z)
+{
+	local UT_ShellCase s;
+
+	if (Level.NetMode == NM_Client || Level.NetMode == NM_Standalone) {
+		s = Spawn(class'UT_ShellCase', Pwner,, HitLoc);
+		if (s != None) 
+		{
+			s.DrawScale = 2.0;
+			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+			s.RemoteRole = ROLE_None;
+		}
+	}
 }
 
 function TraceFire(float Accuracy) {
@@ -68,21 +135,44 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	local UT_Shellcase s;
 	local Pawn PawnOwner;
 	local vector Momentum;
+	local bbPlayer bbP;
 
 	PawnOwner = Pawn(Owner);
 
-	s = Spawn(class'UT_ShellCase',, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
-	if (s != None) {
-		s.DrawScale = 2.0;
-		s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+	bbP = bbPlayer(PawnOwner);
+	
+	// Only spawn shell case on server if compensation is disabled and if player
+	if (bbP != None)
+	{
+		if(WImp.WeaponSettings.bEnablePingCompensation && bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations) {
+			s = Spawn(class'ST_UT_ShellCaseOwnerHidden',Owner, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
+
+			s.RemoteRole = ROLE_None;
+
+			if (s != None) {
+				s.DrawScale = 2.0;
+				s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+			}
+		}
+	}
+	else {
+		s = Spawn(class'UT_ShellCase',, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
+
+		if (s != None) {
+			s.DrawScale = 2.0;
+			s.Eject(((FRand()*0.3+0.4)*X + (FRand()*0.2+0.2)*Y + (FRand()*0.3+1.0) * Z)*160);
+		}
 	}
 
+	// Wall hit effects - always spawn on server for Level and Mover hits
 	if (Other == Level) {
 		Spawn(class'UT_HeavyWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
 	} else if ((Other != self) && (Other != Owner) && (Other != None)) {
-		if (Other.IsA('Mover'))
+		if (Other.IsA('Mover')) {
 			Spawn(class'UT_HeavyWallHitEffect',,, HitLocation+HitNormal, Rotator(HitNormal));
+		}
 
+		// Headshot handling
 		if (Other.bIsPawn && CheckHeadShot(Pawn(Other), HitLocation, X) &&
 			(instigator.IsA('PlayerPawn') || (instigator.IsA('Bot') && !Bot(Instigator).bNovice))
 		) {
@@ -94,9 +184,13 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 				WImp.WeaponSettings.SniperHeadshotMomentum * 35000 * X,
 				AltDamageType);
 		} else {
+			// Regular hit handling
 			if (Other.bIsPawn) {
 				Other.PlaySound(Sound 'ChunkHit',, 4.0,,100);
 				Momentum = WImp.WeaponSettings.SniperMomentum * 30000.0*X;
+				
+				// Always spawn hit effects on players on the server
+				Spawn(class'UT_SpriteSmokePuff',,,HitLocation+HitNormal*9);
 			} else {
 				Momentum = 30000.0*X;
 				if (Other.IsA('Carcass') == false)
@@ -114,10 +208,27 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 }
 
 function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
-	if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
-		return (HitLocation.Z - P.Location.Z > 0.62 * P.CollisionHeight);
+    local UTPlusDummy Dummy;
+    local bbPlayer bbP;
+    local vector Loc;
 
-	return WImp.CheckHeadShot(P, HitLocation, BulletDir);
+    Loc = P.Location;
+	
+    if (WImp.WeaponSettings.bEnablePingCompensation) {
+        bbP = bbPlayer(Owner);
+        if (bbP != none)
+            Dummy = bbP.zzUTPure.FindDummy(P);
+        if (Dummy != none)
+            Loc = Dummy.Location;
+    }
+
+    if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
+        return (HitLocation.Z - Loc.Z > 0.62 * P.CollisionHeight);
+
+	if (WImp.WeaponSettings.bEnablePingCompensation)
+		return WImp.CheckHeadShotCompensated(Dummy, HitLocation, BulletDir);
+
+    return WImp.CheckHeadShot(P, HitLocation, BulletDir);
 }
 
 function SetSwitchPriority(pawn Other)
@@ -153,12 +264,19 @@ function SetSwitchPriority(pawn Other)
 }
 
 simulated function PlayFiring() {
+
 	PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*3.0);
 	PlayAnim(FireAnims[Rand(5)], GetWeaponSettings().SniperReloadAnimSpeed(), 0.05);
 
-	if ( (PlayerPawn(Owner) != None)
-		&& (PlayerPawn(Owner).DesiredFOV == PlayerPawn(Owner).DefaultFOV) )
-		bMuzzleFlash++;
+	if ((PlayerPawn(Owner) != None) && 
+		(PlayerPawn(Owner).DesiredFOV == PlayerPawn(Owner).DefaultFOV)) {
+		// If compensation is enabled, only show muzzle flash on client side
+		if (!bbPlayer(Owner).ClientWeaponSettingsData.bSniperUseClientSideAnimations || 
+			(Level.NetMode == NM_Standalone) || 
+			(PlayerPawn(Owner).RemoteRole != ROLE_AutonomousProxy)) {
+			bMuzzleFlash++;
+		}
+	}
 }
 
 simulated function PlaySelect() {

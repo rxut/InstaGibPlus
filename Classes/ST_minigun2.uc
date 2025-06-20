@@ -164,6 +164,11 @@ state NormalFire
 
 		if	( bFiredShot && ((P.bFire==0) || bOutOfAmmo) )
 			GoToState('FinishFire');
+		
+		if (bChangeWeapon)
+		{
+			GotoState('DownWeapon');
+		}
 	}
 
 	function AnimEnd()
@@ -212,6 +217,11 @@ state AltFiring
 
 		if	( bFiredShot && ((P.bAltFire==0) || bOutOfAmmo) )
 			GoToState('FinishFire');
+		
+		if (bChangeWeapon)
+		{
+			GotoState('DownWeapon');
+		}
 	}
 
 	function AnimEnd()

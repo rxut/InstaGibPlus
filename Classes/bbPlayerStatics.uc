@@ -11,6 +11,21 @@ var float HitMarkerSize;
 var color HitMarkerColor;
 var color HitMarkerTeamColors[4];
 
+// Variables for Damage Number Markers
+var float DamageNumberLifespan;
+var float DamageNumberDamage;
+var color DamageNumberColor;
+var float DamageNumberLastHitTime;
+var float DamageNumberDuration;
+var float DamageNumberDecayExponent;
+var float DamageNumberAccumulationTime;
+var float DamageNumberDrawSize;
+var float DamageNumberDrawOffset;
+
+// Hardcoded values (used directly in functions, not settings struct)
+var color DamageNumberEnemyColor;       // Hardcoded HitMarkerColor
+var color DamageNumberTeamColor;        // Hardcoded HitMarkerTeamColor
+
 static function DrawFPS(Canvas C, HUD MyHud, ClientSettings Settings, float DeltaTime) {
 	local string FPS;
 	local float X,Y;
@@ -161,6 +176,75 @@ static function DrawHitMarker(Canvas C, ClientSettings Settings, float DeltaTime
 	default.HitMarkerLifespan = FMax(0.0, default.HitMarkerLifespan - DeltaTime);
 }
 
+static function PlayDamageMarker(PlayerPawn Me, float Damage, int OwnTeam, int EnemyTeam) {
+	local color NumColor;
+	local float TimeSinceLastHit;
+	local bool bIsTeamHit;
+
+	bIsTeamHit = (Me.GameReplicationInfo.bTeamGame && OwnTeam == EnemyTeam);
+	
+	if (bIsTeamHit)
+		NumColor = default.DamageNumberTeamColor;
+	else
+		NumColor = default.DamageNumberEnemyColor;
+
+	TimeSinceLastHit = Me.Level.TimeSeconds - default.DamageNumberLastHitTime;
+
+	// Check for accumulation conditions: Active AND time < threshold
+	if (default.DamageNumberLifespan > 0.0 && TimeSinceLastHit < default.DamageNumberAccumulationTime) {
+		default.DamageNumberDamage += Damage;
+		default.DamageNumberLifespan = default.DamageNumberDuration;
+		default.DamageNumberColor = NumColor;
+		default.DamageNumberLastHitTime = Me.Level.TimeSeconds;
+
+		if (bbPlayer(Me).bEnableDamageDebugConsoleMessages)
+			bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ (int(default.DamageNumberDamage)));
+
+	} else {
+		// Start new / Replace old
+		default.DamageNumberDamage = Damage;
+		default.DamageNumberLifespan = default.DamageNumberDuration;
+		default.DamageNumberColor = NumColor;
+		default.DamageNumberLastHitTime = Me.Level.TimeSeconds;
+
+		if (bbPlayer(Me).bEnableDamageDebugConsoleMessages)
+			bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ int(default.DamageNumberDamage));
+	}
+}
+
+static function DrawDamageNumbers(Canvas C, float DeltaTime) {
+	local float FadeMultiplier;
+	local string DamageText;
+	local float TextX, TextY;
+	local HUD MyHud;
+	local float DrawSize, DrawOffset;
+
+	if (default.DamageNumberLifespan <= 0.0)
+		return;
+
+	class'CanvasUtils'.static.SaveCanvas(C);
+
+	DrawSize = default.DamageNumberDrawSize;
+	DrawOffset = default.DamageNumberDrawOffset;
+	FadeMultiplier = ((default.DamageNumberLifespan / default.DamageNumberDuration) ** default.DamageNumberDecayExponent);
+
+	MyHud = C.ViewPort.Actor.myHUD;
+	if (MyHud != none && ChallengeHud(MyHud) != none && ChallengeHud(MyHud).MyFonts != none) {
+		DamageText = string(int(default.DamageNumberDamage));
+		C.Style = ERenderStyle.STY_Translucent;
+		C.bNoSmooth = false;
+		C.Font = ChallengeHud(MyHud).MyFonts.GetSmallFont(C.ClipX);
+		C.TextSize(DamageText, TextX, TextY);
+		C.DrawColor = default.DamageNumberColor * FadeMultiplier;
+		C.SetPos(C.SizeX/2 + DrawOffset + DrawSize + 5, C.SizeY/2 - TextY/2);
+		C.DrawText(DamageText);
+	}
+
+	class'CanvasUtils'.static.RestoreCanvas(C);
+
+	default.DamageNumberLifespan = FMax(0.0, default.DamageNumberLifespan - DeltaTime);
+}
+
 static function Sound GetHitSound(ClientSettings Settings) {
 	return Settings.LoadedHitSound[Settings.SelectedHitSound];
 }
@@ -262,6 +346,13 @@ defaultproperties {
 	HitMarkerTeamColors(1)=(R=0,G=0,B=255,A=255)
 	HitMarkerTeamColors(2)=(R=0,G=255,B=0,A=255)
 	HitMarkerTeamColors(3)=(R=255,G=200,B=0,A=255)
+	DamageNumberEnemyColor=(R=255,G=255,B=0,A=255)
+	DamageNumberTeamColor=(R=173,G=216,B=230,A=255)
+	DamageNumberDuration=2.0
+	DamageNumberDecayExponent=5.0
+	DamageNumberAccumulationTime=0.4
+	DamageNumberDrawSize=48.0
+	DamageNumberDrawOffset=48.0
 	RemoteRole=ROLE_None
 	bHidden=True
 }

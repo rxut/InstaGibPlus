@@ -5,4 +5,4 @@
 :: Example:
 ::   set DEPENDENCIES=MyDependency MyOtherDependency MyThirdDependency
 :: 
-set DEPENDENCIES=InstaGibPlusAssets_v2
+set DEPENDENCIES=InstaGibPlusAssets_v2 HeadCylinder BaseCylinder BaseCylinder2
