@@ -149,24 +149,20 @@ function AltFire(float Value)
     }    
 }
 
-simulated function bool ClientFire( float Value )
-{
-	if (Super.ClientFire(Value))
+state ClientFiring {
+	simulated function BeginState()
 	{
 		if (Role < ROLE_Authority)
 			SpawnClientSideChunks();
 	}
-	return true;
 }
 
-simulated function bool ClientAltFire( float Value )
-{
-	if (Super.ClientAltFire(Value))
+state ClientAltFiring {
+	simulated function BeginState()
 	{
 		if (Role < ROLE_Authority)
 			SpawnClientSideSlug();
 	}
-	return true;
 }
 
 simulated function SpawnClientSideChunks()
