@@ -142,7 +142,6 @@ function bool DoReplace(Weapon Other, class<Weapon> ReplacementClass) {
 
 defaultproperties
 {
-    bReplaceWeapons=True
     WeaponName=NN_ShockDOMRifle
     AmmoName=ST_ShockCoreSDOM
     DefaultWeapon=class'NN_ShockDOMRifle'
