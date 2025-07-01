@@ -812,7 +812,7 @@ defaultproperties
 	
 	bEnableSubTickCompensation=False
 	
-	PingCompensationMax=150
+	PingCompensationMax=200
 
 	bEnableAnimationAdaptiveHeadHitbox=False
 

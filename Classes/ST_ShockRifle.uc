@@ -51,15 +51,16 @@ simulated function yModInit() {
 	CDO = CalcDrawOffsetClient();
 }
 
+
 simulated function bool ClientFire( float Value )
 {
-    if (Super.ClientFire(Value))
-    {
-		if (Role < ROLE_Authority)
-			ClientTraceFire();
-    }
-    return true;
+      if (Role < ROLE_Authority && (AmmoType == None || AmmoType.AmmoAmount > 0)) {
+          ClientTraceFire();
+      }
+
+      return Super.ClientFire(Value);
 }
+
 
 // Client-side shock beam tracing and effect spawning
 simulated function ClientTraceFire() {
@@ -144,12 +145,13 @@ simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
 		bbPlayer(Owner).xxClientDemoFix(None, class'ShockBeam', SmokeLocation, , , SmokeRotation, , , DVector/NumPoints, NumPoints-1);
 }
 
-simulated function PlayAltFiring()
+simulated function bool ClientAltFire( float Value )
 {
-	Super.PlayAltFiring();
+      if (Role < ROLE_Authority && (AmmoType == None || AmmoType.AmmoAmount > 0)) {
+          ClientSpawnAltProjectileEffects();
+      }
 
-	if ((Role < ROLE_Authority) && GetWeaponSettings().ShockProjectileCompensatePing)
-			ClientSpawnAltProjectileEffects();
+      return Super.ClientAltFire(Value);
 }
 
 simulated function ClientSpawnAltProjectileEffects() {
@@ -183,8 +185,11 @@ function TraceFire(float Accuracy) {
 	local vector HitLocation, HitNormal, StartTrace, EndTrace, X,Y,Z;
 	local actor Other;
 	local Pawn PawnOwner;
+	local bbPlayer bbP;
 
 	PawnOwner = Pawn(Owner);
+
+	bbP = bbPlayer(PawnOwner);
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
@@ -344,6 +349,18 @@ simulated function TweenDown() {
 		TweenAnim( AnimSequence, AnimFrame * GetWeaponSettings().ShockDownTime );
 	else
 		PlayAnim('Down', GetWeaponSettings().ShockDownAnimSpeed(), TweenTime);
+}
+
+// Prevents shooting on its own on reload
+// Default it would remember that you pressed fire while its reloading
+state ClientFiring {
+	simulated function bool ClientFire(float Value) {
+		return false;
+	}
+
+	simulated function bool ClientAltFire(float Value) {
+		return false;
+	}
 }
 
 // Compatibility between client and server logic
