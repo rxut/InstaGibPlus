@@ -351,8 +351,6 @@ simulated function TweenDown() {
 		PlayAnim('Down', GetWeaponSettings().ShockDownAnimSpeed(), TweenTime);
 }
 
-// Prevents shooting on its own on reload
-// Default it would remember that you pressed fire while its reloading
 state ClientFiring {
 	simulated function bool ClientFire(float Value) {
 		return false;
