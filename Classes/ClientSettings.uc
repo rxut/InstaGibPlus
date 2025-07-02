@@ -502,12 +502,12 @@ defaultproperties
 	HitMarkerDecayExponent=5.0
 	HitMarkerSource=HMSRC_Server
 	bUseCrosshairFactory=False
-	bBioUseClientSideAnimations=True
-	bShockUseClientSideAnimations=True
-	bPulseUseClientSideAnimations=True
-	bRipperUseClientSideAnimations=True
-	bFlakUseClientSideAnimations=True
-	bSniperUseClientSideAnimations=True
+	bBioUseClientSideAnimations=False
+	bShockUseClientSideAnimations=False
+	bPulseUseClientSideAnimations=False
+	bRipperUseClientSideAnimations=False
+	bFlakUseClientSideAnimations=False
+	bSniperUseClientSideAnimations=False
 
 	MenuX=200
 	MenuY=200

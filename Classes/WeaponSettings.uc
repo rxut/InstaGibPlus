@@ -203,9 +203,9 @@ defaultproperties
 	bEnableEnhancedSplashBio=False
 	bEnableEnhancedSplashShockCombo=False
 	bEnableEnhancedSplashShockProjectile=False
-	bEnableEnhancedSplashRipperSecondary=True
-	bEnableEnhancedSplashFlakSlug=True
-	bEnableEnhancedSplashRockets=True
+	bEnableEnhancedSplashRipperSecondary=False
+	bEnableEnhancedSplashFlakSlug=False
+	bEnableEnhancedSplashRockets=False
 	SplashMaxDiffraction=0.5
 	SplashMinDiffractionDistance=50.0
 
@@ -355,7 +355,7 @@ defaultproperties
 
 	bEnableSubTickCompensation=False
 	
-	PingCompensationMax=150
+	PingCompensationMax=200
 
 	bEnableAnimationAdaptiveHeadHitbox=False
 

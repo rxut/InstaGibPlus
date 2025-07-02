@@ -19,6 +19,7 @@ var EZoomState ZoomState;
 var WeaponSettingsRepl WSettings;
 
 // Variables for client-side animations
+var Rotator GV;
 var float yMod; // For handedness calculations
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -48,6 +49,8 @@ function PostBeginPlay()
 
 simulated function yModInit()
 {
+	if (bbPlayer(Owner) != None && Owner.Role == ROLE_AutonomousProxy)
+		GV = bbPlayer(Owner).ViewRotation;
 
 	if (PlayerPawn(Owner) == None)
 		return;
@@ -59,43 +62,18 @@ simulated function yModInit()
 		yMod = 0;
 }
 
-simulated function bool ClientFire( float Value )
+simulated function RenderOverlays(Canvas Canvas)
 {
-    if (Super.ClientFire(Value))
-    {
-		if (Role < ROLE_Authority)
-			PlayClientEffects();
-    }
-    return true;
-}
+	Super.RenderOverlays(Canvas);
 
-simulated function PlayClientEffects()
-{
-	local vector X, Y, Z;
-	local PlayerPawn P;
-	local bbPlayer bbP;
-
-	P = PlayerPawn(Owner);
-	
-	bbP = bbPlayer(P);
-	
-	if (P == None)
-		return;
-
-	if ( GetWeaponSettings().bEnablePingCompensation == false || bbP == None || bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations == false)
-     	return;
-	
 	yModInit();
 
-	GetAxes(P.ViewRotation, X, Y, Z);
-	
-	SpawnClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
-	
-	if (P.DesiredFOV == P.DefaultFOV)
-		bMuzzleFlash++;
+	if (Role < ROLE_Authority && bbPlayer(Owner) != None && bbPlayer(Owner).bFire != 0 && !IsInState('ClientFiring')) {
+		ClientFire(1);
+	}
 }
 
-simulated function SpawnClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, Vector Y, Vector Z)
+simulated function DoClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, Vector Y, Vector Z)
 {
 	local UT_ShellCase s;
 
@@ -108,6 +86,66 @@ simulated function SpawnClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector 
 			s.RemoteRole = ROLE_None;
 		}
 	}
+}
+
+simulated function bool ClientFire(float Value)
+{
+	local bbPlayer bbP;
+	
+	if (Owner.IsA('Bot'))
+		return Super.ClientFire(Value);
+		
+	bbP = bbPlayer(Owner);
+	
+	if (bbP != None && GetWeaponSettings().bEnablePingCompensation)
+	{
+		if (Role < ROLE_Authority && bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations)
+		{
+			if (bbP.ClientCannotShoot() || bbP.Weapon != Self) {
+					return false;
+			}
+			
+			if ((AmmoType == None) && (AmmoName != None))
+			{
+				// ammocheck
+				GiveAmmo(Pawn(Owner));
+			}
+			
+			if (AmmoType.AmmoAmount > 0)
+			{
+				Instigator = Pawn(Owner);
+				GotoState('ClientFiring');
+				bPointing = True;
+				bCanClientFire = true;
+				if (bRapidFire || (FiringSpeed > 0))
+					Pawn(Owner).PlayRecoil(FiringSpeed);
+				
+				ClientPlayEffects();
+			}
+		}
+	}
+	
+	return Super.ClientFire(Value);
+}
+
+simulated function ClientPlayEffects()
+{
+	local vector X, Y, Z;
+	local PlayerPawn P;
+
+	P = PlayerPawn(Owner);
+	if (P == None)
+		return;
+	
+	yModInit();
+	GetAxes(GV, X, Y, Z);
+	
+	DoClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
+	
+	PlayAnim(FireAnims[Rand(5)], GetWeaponSettings().SniperReloadAnimSpeed(), 0.05);
+	
+	if (P.DesiredFOV == P.DefaultFOV)
+		bMuzzleFlash++;
 }
 
 function TraceFire(float Accuracy) {
@@ -355,6 +393,75 @@ simulated function Tick(float DeltaTime) {
 				ZoomState = ZS_None;
 			}
 			break;
+		}
+	}
+}
+
+// Add state for client-side firing
+state ClientFiring
+{
+
+	simulated function AnimEnd() {
+		if ((Pawn(Owner) == None) || ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))) {
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else if (!bCanClientFire) {
+			GotoState('');
+		}
+		else if (Pawn(Owner).bFire != 0) {
+			Global.ClientFire(0);
+		}
+		else {
+			PlayIdleAnim();
+			GotoState('');
+		}
+	}
+}
+
+// Client-active state to handle client-side firing
+state ClientActive
+{
+	// Check if client can fire
+	simulated function bool ClientFire(float Value)
+	{
+		if (Owner.IsA('Bot'))
+			return Super.ClientFire(Value);
+		bForceFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
+		return bForceFire;
+	}
+
+	// Check if client can alt-fire (for zoom functionality)
+	simulated function bool ClientAltFire(float Value)
+	{
+		if (Owner.IsA('Bot'))
+			return Super.ClientAltFire(Value);
+		bForceAltFire = bbPlayer(Owner) == None || !bbPlayer(Owner).ClientCannotShoot();
+		return bForceAltFire;
+	}
+
+	// Handle animation end in client active state
+	simulated function AnimEnd()
+	{
+		if (Owner == None) {
+			Global.AnimEnd();
+			GotoState('');
+		}
+		else if (Owner.IsA('TournamentPlayer')
+			&& (TournamentPlayer(Owner).PendingWeapon != None || TournamentPlayer(Owner).ClientPending != None)) {
+			GotoState('ClientDown');
+		}
+		else if (bWeaponUp) {
+			if ((bForceFire || (PlayerPawn(Owner).bFire != 0)) && Global.ClientFire(1))
+				return;
+			else if ((bForceAltFire || (PlayerPawn(Owner).bAltFire != 0)) && Global.ClientAltFire(1))
+				return;
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else {
+			PlayPostSelect();
+			bWeaponUp = true;
 		}
 	}
 }
