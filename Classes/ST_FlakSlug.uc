@@ -7,6 +7,8 @@ var bool bClientVisualOnly;
 
 var PlayerPawn InstigatingPlayer;
 
+var vector ExtrapolationDelta;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
     local WeaponSettingsRepl S;
 
@@ -31,11 +33,7 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().FlakCompensatePing) {
-
-		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == false){
-			return;
-		}
+	if (GetWeaponSettings().FlakCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
@@ -55,6 +53,24 @@ simulated function PostNetBeginPlay()
 		}
 	} else {
 		Disable('Tick');
+	}
+}
+
+simulated event Tick(float Delta) {
+    local vector NewXPolDelta;
+    super.Tick(Delta);
+
+    if (InstigatingPlayer == none)
+        return;
+
+    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+        return;
+
+    // Extrapolate locally to compensate for ping
+	if (Physics != PHYS_None) {
+		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+		ExtrapolationDelta = NewXPolDelta;
 	}
 }
 
@@ -140,11 +156,13 @@ function NewExplode(vector HitLocation, vector HitNormal)
  	Spawn( class'ut_FlameExplosion',,,Start);
 	CI = Spawn(Class'ST_UTChunkInfo', Instigator);
 	CI.WImp = WImp;
-	CI.AddChunk(Spawn( class 'ST_UTChunk2',, '', Start));
-	CI.AddChunk(Spawn( class 'ST_UTChunk3',, '', Start));
-	CI.AddChunk(Spawn( class 'ST_UTChunk4',, '', Start));
-	CI.AddChunk(Spawn( class 'ST_UTChunk1',, '', Start));
-	CI.AddChunk(Spawn( class 'ST_UTChunk2',, '', Start));
+	CI.RandomSpread = True;
+	
+	CI.AddChunk(Spawn( class 'ST_UTChunk2',CI, '', Start));
+	CI.AddChunk(Spawn( class 'ST_UTChunk3',CI, '', Start));
+	CI.AddChunk(Spawn( class 'ST_UTChunk4',CI, '', Start));
+	CI.AddChunk(Spawn( class 'ST_UTChunk1',CI, '', Start));
+	CI.AddChunk(Spawn( class 'ST_UTChunk2',CI, '', Start));
  	Destroy();
 }
 

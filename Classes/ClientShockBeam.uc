@@ -1,4 +1,4 @@
-class ClientShockBeam extends Effects;
+﻿class ClientShockBeam extends Effects;
 
 // Settings
 var int Team;

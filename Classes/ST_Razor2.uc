@@ -7,6 +7,8 @@ var bool bClientVisualOnly;
 
 var PlayerPawn InstigatingPlayer;
 
+var vector ExtrapolationDelta;
+
 simulated function PostBeginPlay()
 {
 	if (ROLE == ROLE_Authority)
@@ -42,10 +44,8 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().RipperCompensatePing) {
-		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations == false){
-			return;
-		}
+	if (GetWeaponSettings().RipperCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations == true)
+	{
 
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
@@ -59,6 +59,24 @@ simulated function PostNetBeginPlay()
 	} else {
 		Disable('Tick');
 	}
+}
+
+simulated event Tick(float Delta) {
+    local vector NewXPolDelta;
+    super.Tick(Delta);
+
+    if (InstigatingPlayer == none)
+        return;
+
+    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+        return;
+
+    // Extrapolate locally to compensate for ping
+    if (Physics != PHYS_None) {
+        NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+		ExtrapolationDelta = NewXPolDelta;
+    }
 }
 
 auto state Flying

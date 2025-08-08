@@ -31,12 +31,12 @@ function NavigationPoint FindPlayerStart(Pawn Player, optional byte InTeam, opti
     
     if (WImp.WeaponSettings.bAdvancedSpawns && !bStartMatch && bbPlayer(Player) != None && bbPlayer(Player).StartSpot != None)
     {
-        log("Using advanced spawns.");
+        // log("Using advanced spawns.");
         Start = FindPlayerStartAdvanced(Player, InTeam, IncomingName);
     }
     else
     {
-        log("Using default spawns.");
+        // log("Using default spawns.");
         Start = Super.FindPlayerStart(Player, InTeam, IncomingName);
     }
 
@@ -55,7 +55,7 @@ function NavigationPoint FindPlayerStartAdvanced(Pawn Player, optional byte InTe
 
     if (NumValidSpawns == 0)
 	{
-		log("NewTDM.FindPlayerStartAdvanced: No valid spawns found, falling back to default.");
+		//log("NewTDM.FindPlayerStartAdvanced: No valid spawns found, falling back to default.");
 
 	}
 

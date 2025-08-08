@@ -7,6 +7,8 @@ var bool bClientVisualOnly;
 
 var PlayerPawn InstigatingPlayer;
 
+var vector ExtrapolationDelta;
+
 simulated function PostBeginPlay()
 {
 	if (ROLE == ROLE_Authority)
@@ -42,10 +44,7 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().PulseCompensatePing) {
-		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bPulseUseClientSideAnimations == false){
-			return;
-		}
+	if (GetWeaponSettings().PulseCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bPulseUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
@@ -60,6 +59,25 @@ simulated function PostNetBeginPlay()
 		Disable('Tick');
 	}
 }
+
+simulated event Tick(float Delta) {
+    local vector NewXPolDelta;
+    super.Tick(Delta);
+
+    if (InstigatingPlayer == none)
+        return;
+
+    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+        return;
+
+    // Extrapolate locally to compensate for ping
+    if (Physics != PHYS_None) {
+        NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+        ExtrapolationDelta = NewXPolDelta;
+    }
+}
+
 simulated function Explode(vector HitLocation, vector HitNormal)
 {
 	if (bClientVisualOnly)

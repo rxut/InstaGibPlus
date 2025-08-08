@@ -132,11 +132,13 @@ var CrosshairLayer BottomLayer;
 var CrosshairLayer TopLayer;
 
 var config bool   bBioUseClientSideAnimations;
-var config bool   bShockUseClientSideAnimations;
+var config bool   bShockBeamUseClientSideAnimations;
+var config bool   bShockProjectileUseClientSideAnimations;
 var config bool   bPulseUseClientSideAnimations;
 var config bool   bRipperUseClientSideAnimations;
 var config bool   bFlakUseClientSideAnimations;
 var config bool   bSniperUseClientSideAnimations;
+var config bool   bTranslocatorUseClientSideAnimations;
 
 var config float MenuX, MenuY, MenuWidth, MenuHeight;
 
@@ -407,11 +409,13 @@ simulated function string DumpSettings() {
 		GetSetting("HitMarkerSource")$
 		GetSetting("bUseCrosshairFactory")$
 		GetSetting("bBioUseClientSideAnimations")$
-		GetSetting("bShockUseClientSideAnimations")$
+		GetSetting("bShockBeamUseClientSideAnimations")$
+		GetSetting("bShockProjectileUseClientSideAnimations")$
 		GetSetting("bPulseUseClientSideAnimations")$
 		GetSetting("bRipperUseClientSideAnimations")$
 		GetSetting("bFlakUseClientSideAnimations")$
 		GetSetting("bSniperUseClientSideAnimations")$
+		GetSetting("bTranslocatorUseClientSideAnimations")$
 		DumpCrosshairLayers();
 }
 
@@ -503,12 +507,13 @@ defaultproperties
 	HitMarkerSource=HMSRC_Server
 	bUseCrosshairFactory=False
 	bBioUseClientSideAnimations=False
-	bShockUseClientSideAnimations=False
+	bShockBeamUseClientSideAnimations=False
+	bShockProjectileUseClientSideAnimations=False
 	bPulseUseClientSideAnimations=False
 	bRipperUseClientSideAnimations=False
 	bFlakUseClientSideAnimations=False
 	bSniperUseClientSideAnimations=False
-
+	bTranslocatorUseClientSideAnimations=False
 	MenuX=200
 	MenuY=200
 	MenuWidth=240

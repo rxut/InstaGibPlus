@@ -15,7 +15,7 @@ function PreBeginPlay() {
     WeaponString=PreFix$".NN_ShockDOMRifle";
     AmmoString=PreFix$".ST_ShockCoreSDOM";
 
-    super.PreBeginPlay();    
+    super.PreBeginPlay();
 
     InitializeSettings();
 }
@@ -142,7 +142,6 @@ function bool DoReplace(Weapon Other, class<Weapon> ReplacementClass) {
 
 defaultproperties
 {
-    bReplaceWeapons=True
     WeaponName=NN_ShockDOMRifle
     AmmoName=ST_ShockCoreSDOM
     DefaultWeapon=class'NN_ShockDOMRifle'

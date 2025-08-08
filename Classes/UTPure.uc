@@ -1017,11 +1017,13 @@ function Mutate(string MutateString, PlayerPawn Sender)
 		Sender.ClientMessage("- EnableClientSideAnimations (Enables all client-side weapon animations)");
 		Sender.ClientMessage("- DisableClientSideAnimations (Disables all client-side weapon animations)");
 		Sender.ClientMessage("- BioClientSideAnimations x (0 = Disabled, 1 = Enabled)");
-		Sender.ClientMessage("- ShockClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- ShockBeamClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- ShockProjectileClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 		Sender.ClientMessage("- PulseClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 		Sender.ClientMessage("- RipperClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 		Sender.ClientMessage("- FlakClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 		Sender.ClientMessage("- SniperClientSideAnimations x (0 = Disabled, 1 = Enabled)");
+		Sender.ClientMessage("- TranslocatorClientSideAnimations x (0 = Disabled, 1 = Enabled)");
 	}
 	else if (MutateString ~= "ready")
 	{

@@ -88,7 +88,6 @@ var bool  ShockProjectileBlockBullets;
 var bool  ShockProjectileBlockFlakChunk;
 var bool  ShockProjectileBlockFlakSlug;
 var bool  ShockProjectileTakeDamage;
-var bool  ShockProjectileCompensatePing;
 var float ShockProjectileHealth;
 var float ShockComboDamage;
 var float ShockComboMomentum;
@@ -246,7 +245,6 @@ replication {
 		ShockProjectileBlockFlakChunk,
 		ShockProjectileBlockFlakSlug,
 		ShockProjectileTakeDamage,
-		ShockProjectileCompensatePing,
 		ShockProjectileHealth,
 		ShockComboDamage,
 		ShockComboMomentum,
@@ -600,7 +598,6 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	ShockProjectileBlockFlakChunk = S.ShockProjectileBlockFlakChunk;
 	ShockProjectileBlockFlakSlug = S.ShockProjectileBlockFlakSlug;
 	ShockProjectileTakeDamage = S.ShockProjectileTakeDamage;
-	ShockProjectileCompensatePing = S.ShockProjectileCompensatePing;
 	ShockProjectileHealth = S.ShockProjectileHealth;
 	ShockComboDamage = S.ShockComboDamage;
 	ShockComboMomentum = S.ShockComboMomentum;
@@ -755,7 +752,6 @@ defaultproperties
 	ShockProjectileBlockFlakChunk=True
 	ShockProjectileBlockFlakSlug=True
 	ShockProjectileTakeDamage=False
-	ShockProjectileCompensatePing=False
 	ShockProjectileHealth=30
 	ShockComboDamage=165
 	ShockComboHurtRadius=250

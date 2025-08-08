@@ -155,6 +155,22 @@ state ClientFiring {
 		if (Role < ROLE_Authority)
 			SpawnClientSideChunks();
 	}
+
+	simulated function AnimEnd()
+	{
+		if ( (Pawn(Owner) == None) || (Ammotype.AmmoAmount <= 0) )
+		{
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else if ( !bCanClientFire )
+			GotoState('');
+		else
+		{
+			PlayFastReloading();
+			GotoState('ClientReload');
+		}
+	}
 }
 
 state ClientAltFiring {
@@ -162,6 +178,23 @@ state ClientAltFiring {
 	{
 		if (Role < ROLE_Authority)
 			SpawnClientSideSlug();
+	}
+
+	simulated function AnimEnd()
+	{
+		if ( (Pawn(Owner) == None) || (Ammotype.AmmoAmount <= 0) )
+		{
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else if ( !bCanClientFire )
+			GotoState('');
+		else
+		{
+			PlayReloading();
+			GotoState('ClientReload');
+		}
+
 	}
 }
 
@@ -313,7 +346,8 @@ simulated function SpawnClientSideSlug()
 
 		LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
 		LocalSlugDummy.RemoteRole = ROLE_None;
-		LocalSlugDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+		//LocalSlugDummy.bMeshEnviroMap = true;
+		//LocalSlugDummy.Texture = Texture'UWindow.Icons.MenuHighlight';
 		LocalSlugDummy.bClientVisualOnly = true;
 		LocalSlugDummy.bCollideWorld = false;
 		LocalSlugDummy.SetCollision(false, false, false);
