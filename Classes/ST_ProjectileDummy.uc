@@ -85,7 +85,7 @@ function CompStart(int Ping) {
     local ProjectileData NewerSnap;
     local int NewerIdx;
     
-    local float TimeDelta, Distance, Alpha;
+    local float TimeDelta, Alpha;
     local vector TargetLoc;
     local float TargetCR, TargetCH;
 
