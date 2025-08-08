@@ -82,7 +82,7 @@ event Tick(float DeltaTime) {
     PP = PlayerPawn(Actual);
 
     if (PP != None) {
-		if (PP.GetStateName() == 'Dying') {
+		if (PP.Health <= 0 || PP.GetStateName() == 'Dying') {
 			if (PP.Player != None && !bHistoryCleared) {
 				for (i = 0; i < arraycount(Data); i++) {
 					Data[i] = None;
@@ -130,8 +130,8 @@ function CompStart(int Ping)
     local UTPlusSnapshot NewerSnap;
     local float TimeDelta, Alpha;
 
-    if (Actual == None || Actual.bDeleteMe || WImp == None)
-        return;
+    if (Actual == none || Actual.bDeleteMe || WImp == None || Actual.Health <= 0)
+		return;
 
     if (Ping > WImp.WeaponSettings.PingCompensationMax)
 		Ping = WImp.WeaponSettings.PingCompensationMax;
