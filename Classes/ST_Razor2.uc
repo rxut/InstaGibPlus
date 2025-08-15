@@ -100,8 +100,10 @@ auto state Flying
 					(!Instigator.IsA('Bot') || !Bot(Instigator).bNovice)
 				) {
 
+					DamageToApply = WImp.WeaponSettings.RipperHeadshotDamage;
+					
 					if (NumWallHits > 0)
-						DamageToApply = WImp.WeaponSettings.RipperHeadshotDamage * WImp.WeaponSettings.RipperHeadShotDamageWallMultiplier;
+						DamageToApply = DamageToApply * WImp.WeaponSettings.RipperHeadShotDamageWallMultiplier;
 
 					Other.TakeDamage(
 						DamageToApply,
@@ -112,12 +114,13 @@ auto state Flying
 					);
 				} else {
 
+					DamageToApply = WImp.WeaponSettings.RipperPrimaryDamage;
 					if (NumWallHits > 0)
-						DamageToApply = WImp.WeaponSettings.RipperPrimaryDamage * WImp.WeaponSettings.RipperPrimaryDamageWallMultiplier;
+						DamageToApply = DamageToApply * WImp.WeaponSettings.RipperPrimaryDamageWallMultiplier;
 
 					Other.TakeDamage(
 						DamageToApply,
-						instigator,
+						Instigator,
 						HitLocation,
 						WImp.WeaponSettings.RipperPrimaryMomentum * MomentumTransfer * Dir,
 						'shredded'
