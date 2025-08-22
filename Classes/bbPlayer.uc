@@ -4145,6 +4145,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	} else if (RemoteRole == ROLE_Authority) {
 		// this assumes that you always replay up until the present, otherwise
 		// youd have to save and restore these values
+		SetRotation(Old.SavedRotation);
 		bDodging = Old.SavedDodging;
 		DodgeDir = Old.SavedDodgeDir;
 		DodgeClickTimer = Old.SavedDodgeClickTimer;

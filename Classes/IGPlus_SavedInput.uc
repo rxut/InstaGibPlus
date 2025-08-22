@@ -7,6 +7,7 @@ var float TimeStamp;
 var float Delta;
 var vector SavedLocation;
 var vector SavedVelocity;
+var rotator SavedRotation;
 var rotator SavedViewRotation;
 
 var bool SavedDodging;
@@ -43,6 +44,7 @@ function CopyFrom(float Delta, bbPlayer P) {
 	self.Delta = Delta;
 	SavedLocation = P.Location;
 	SavedVelocity = P.Velocity;
+	SavedRotation = P.Rotation;
 	SavedViewRotation = P.ViewRotation;
 
 	SavedDodging = P.bDodging;
