@@ -53,7 +53,7 @@ simulated function float GetFRandValues()
 	
 	bbP = bbPlayer(Owner);
 	if (bbP == None)
-		return 0;
+		return FRand();
 	
 	OldIndex = bbP.FRandValuesIndex;
 	bbP.FRandValuesIndex++;

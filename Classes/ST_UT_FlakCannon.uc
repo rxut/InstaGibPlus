@@ -72,7 +72,7 @@ function Fire( float Value )
 		CI = Spawn(class'ST_UTChunkInfo', PawnOwner);
 		CI.WImp = WImp;
 
-		if (B != none || GetWeaponSettings().FlakChunkRandomSpread) {
+		if (GetWeaponSettings().FlakChunkRandomSpread) {
 			// My comment
 			// I am not sure why EPIC has decided to do flak (or rockets) this way, as they could
 			// Have created a masterchunk on client that spawned the rest of the chunks according to
