@@ -4100,6 +4100,11 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			}
 		}
 
+		if (I.bLive == false) {
+			DodgeDir = DODGE_None;
+			DodgeClickTimer = DodgeClickTime;
+		}
+
 		// handle firing and alt-firing on server
 		if (I.bFire) {
 			if (bFire == 0) {
