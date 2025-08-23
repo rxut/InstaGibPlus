@@ -15,7 +15,7 @@ function PreBeginPlay() {
     WeaponString=PreFix$".NN_ShockDOMRifle";
     AmmoString=PreFix$".ST_ShockCoreSDOM";
 
-    super.PreBeginPlay();    
+    super.PreBeginPlay();
 
     InitializeSettings();
 }

@@ -20,6 +20,8 @@ var bool bClientVisualOnly;
 
 var PlayerPawn InstigatingPlayer;
 
+var vector ExtrapolationDelta;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -51,7 +53,7 @@ simulated function float GetFRandValues()
 	
 	bbP = bbPlayer(Owner);
 	if (bbP == None)
-		return 0;
+		return FRand();
 	
 	OldIndex = bbP.FRandValuesIndex;
 	bbP.FRandValuesIndex++;
@@ -98,7 +100,7 @@ simulated function PostBeginPlay() {
 	if (Role == ROLE_Authority) {
 		Chunkie = ST_UTChunkInfo(Owner);
 		
-		if (GetWeaponSettings().FlakChunkRandomSpread) {
+		if (GetWeaponSettings().FlakChunkRandomSpread || (Chunkie != None && Chunkie.RandomSpread == True)) {
 			RandRot = Rotation;
 			RandRot.Pitch += R1 * 2000 - 1000;
 			RandRot.Yaw += R2 * 2000 - 1000;
@@ -157,6 +159,24 @@ simulated function PostNetBeginPlay()
 		}
 	} else {
 		Disable('Tick');
+	}
+}
+
+simulated event Tick(float Delta) {
+    local vector NewXPolDelta;
+    super.Tick(Delta);
+
+    if (InstigatingPlayer == none)
+        return;
+
+    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+        return;
+
+    // Extrapolate locally to compensate for ping
+	if (Physics == PHYS_Projectile) {
+		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+		ExtrapolationDelta = NewXPolDelta;
 	}
 }
 

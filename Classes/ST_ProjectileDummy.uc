@@ -78,77 +78,75 @@ function vector LerpVector(float Alpha, vector A, vector B) {
 
 function CompStart(int Ping) {
     local float TargetTimeStamp;
-    local int I;
-    local int NextI; // Renamed for clarity
-    local float Alpha;
-    local float TimeDelta;
-    local float Distance;
+    local int   Idx, Scans;
+    local int   BufSize;
+    
+    local ProjectileData OlderSnap;
+    local ProjectileData NewerSnap;
+    local int NewerIdx;
+    
+    local float TimeDelta, Alpha;
     local vector TargetLoc;
     local float TargetCR, TargetCH;
-    local ProjectileData SnapI, SnapNext;
 
     if (Actual == none || Actual.bDeleteMe)
         return;
 
-    TargetTimeStamp = Level.TimeSeconds - 0.001*Ping*Level.TimeDilation;
+    TargetTimeStamp = Level.TimeSeconds - 0.001 * Ping * Level.TimeDilation;
+    
+    BufSize = arraycount(Data);
+    Idx = (DataIndex - 1 + BufSize) % BufSize;
+    NewerIdx = -1;
 
-    I = DataIndex - 1;
-    if (I < 0)
-        I += arraycount(Data);
-    do {
-        NextI = I - 1;
-        if (NextI < 0)
-            NextI += arraycount(Data);
-
-        SnapI = Data[I];
-        SnapNext = Data[NextI];
-
-        if (SnapI.ServerTimeStamp <= 0) {
-             I = NextI;
-             continue;
-        }
-
-        if (SnapI.ServerTimeStamp <= TargetTimeStamp) {
-            TargetLoc = SnapI.Loc + SnapI.Vel * (TargetTimeStamp - SnapI.ServerTimeStamp);
-            TargetCR = SnapI.CollisionRadius;
-            TargetCH = SnapI.CollisionHeight;
-            CompSwap(TargetLoc, TargetCR, TargetCH, I); // Pass index I
-            return;
-        }
-        else if (SnapNext.ServerTimeStamp > 0 && SnapNext.ServerTimeStamp <= TargetTimeStamp) {
-            TimeDelta = SnapI.ServerTimeStamp - SnapNext.ServerTimeStamp;
-            if (TimeDelta > 0.001) {
-                 Distance = VSize(SnapI.Loc - SnapNext.Loc);
-                 if (Distance / TimeDelta <= 5000) {
-                    Alpha = (TargetTimeStamp - SnapNext.ServerTimeStamp) / TimeDelta;
-                    TargetLoc = LerpVector(Alpha, SnapNext.Loc, SnapI.Loc);
-                    TargetCR = SnapNext.CollisionRadius;
-                    TargetCH = SnapNext.CollisionHeight;
-                    CompSwap(TargetLoc, TargetCR, TargetCH, NextI);
-                    return;
-                 }
+    for (Scans = 0; Scans < BufSize; Scans++)
+    {
+        OlderSnap = Data[Idx];
+        
+        if (OlderSnap.ServerTimeStamp > 0)
+        {
+            // Found a snapshot older than our target time?
+            if (OlderSnap.ServerTimeStamp <= TargetTimeStamp)
+            {
+                // Can we interpolate with a newer snapshot?
+                if (NewerIdx >= 0)
+                {
+                    NewerSnap = Data[NewerIdx];
+                    TimeDelta = NewerSnap.ServerTimeStamp - OlderSnap.ServerTimeStamp;
+                    
+                    if (TimeDelta > 0.001 && VSize(NewerSnap.Loc - OlderSnap.Loc) / TimeDelta <= 5000)
+                    {
+                        Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
+                        TargetLoc = LerpVector(FClamp(Alpha, 0.0, 1.0), OlderSnap.Loc, NewerSnap.Loc);
+                        TargetCR = OlderSnap.CollisionRadius;
+                        TargetCH = OlderSnap.CollisionHeight;
+                        CompSwap(TargetLoc, TargetCR, TargetCH, Idx);
+                        return;
+                    }
+                }
+                
+                // Extrapolate from this older snapshot
+                TargetLoc = OlderSnap.Loc + OlderSnap.Vel * (TargetTimeStamp - OlderSnap.ServerTimeStamp);
+                TargetCR = OlderSnap.CollisionRadius;
+                TargetCH = OlderSnap.CollisionHeight;
+                CompSwap(TargetLoc, TargetCR, TargetCH, Idx);
+                return;
             }
-            TargetLoc = SnapNext.Loc + SnapNext.Vel * (TargetTimeStamp - SnapNext.ServerTimeStamp);
-            TargetCR = SnapNext.CollisionRadius;
-            TargetCH = SnapNext.CollisionHeight;
-            CompSwap(TargetLoc, TargetCR, TargetCH, NextI);
-            return;
+            
+            // This snapshot is newer than target
+            NewerIdx = Idx;
         }
-
-        I = NextI;
-    } until(I == DataIndex);
-
-    I = DataIndex - 1;
-    if (I < 0) I += arraycount(Data);
-    while(Data[I].ServerTimeStamp <= 0 && I != DataIndex) {
-        I = I - 1;
-        if (I < 0) I += arraycount(Data);
+        
+        Idx = (Idx - 1 + BufSize) % BufSize;
     }
-    if (Data[I].ServerTimeStamp > 0) {
-        TargetLoc = Data[I].Loc;
-        TargetCR = Data[I].CollisionRadius;
-        TargetCH = Data[I].CollisionHeight;
-        CompSwap(TargetLoc, TargetCR, TargetCH, I);
+    
+    // Fallback: Extrapolate from oldest valid snapshot
+    if (NewerIdx >= 0)
+    {
+        NewerSnap = Data[NewerIdx];
+        TargetLoc = NewerSnap.Loc;
+        TargetCR = NewerSnap.CollisionRadius;
+        TargetCH = NewerSnap.CollisionHeight;
+        CompSwap(TargetLoc, TargetCR, TargetCH, NewerIdx);
     }
 }
 
@@ -216,6 +214,10 @@ event Touch(Actor Other) {
             Other.TakeDamage(100, Actual.Instigator, Other.Location, vect(0,0,0), 'exploded');
         }
         else if (Other.IsA('Projectile') && !Other.IsA('ST_ProjectileDummy')) {
+            Actual.Touch(Other);
+        }
+        // Forward touch events for translocator to handle pawns
+        else if (Actual.IsA('ST_TranslocatorTarget') && Other.IsA('Pawn')) {
             Actual.Touch(Other);
         }
     }

@@ -51,14 +51,52 @@ simulated function yModInit() {
 	CDO = CalcDrawOffsetClient();
 }
 
+simulated function bool ClientFire(float Value) {
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
 
-simulated function bool ClientFire( float Value )
-{
-      if (Role < ROLE_Authority && (AmmoType == None || AmmoType.AmmoAmount > 0)) {
-          ClientTraceFire();
-      }
+	PawnOwner = Pawn(Owner);
+	
+	if (PawnOwner == None) 
+		return false;
 
-      return Super.ClientFire(Value);
+	if (GetWeaponSettings().bEnablePingCompensation)
+	{
+		bbP = bbPlayer(PawnOwner);
+
+		if (Owner.Role == ROLE_AutonomousProxy && bbP != None && bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+		{
+
+			if ((AmmoType == None) && (AmmoName != None)) {
+				GiveAmmo(PawnOwner);
+			}
+			
+			if (AmmoType != None && AmmoType.AmmoAmount > 0) // Check ammo
+			{
+				Instigator = PawnOwner;
+				GotoState('ClientFiring');
+				bPointing = True;
+				bCanClientFire = true;
+
+				if (bRapidFire || (FiringSpeed > 0))
+					PawnOwner.PlayRecoil(FiringSpeed);
+					
+				PlayFiring();
+				ClientTraceFire();
+
+				if ( Affector != None )
+					Affector.FireEffect();
+
+				if (PlayerPawn(Owner) != None)
+					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
+
+				return true;
+			}
+			return false; // No ammo
+		}
+	}
+	
+	return Super.ClientFire(Value);
 }
 
 
@@ -78,7 +116,7 @@ simulated function ClientTraceFire() {
 
 	bbP = bbPlayer(PawnOwner);
 
-	if (GetWeaponSettings().bEnablePingCompensation == false || bbP == None || bbP.ClientWeaponSettingsData.bShockUseClientSideAnimations == false)
+	if (GetWeaponSettings().bEnablePingCompensation == false || bbP == None || bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations == false)
      	return;
 
 	yModInit();
@@ -145,13 +183,46 @@ simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
 		bbPlayer(Owner).xxClientDemoFix(None, class'ShockBeam', SmokeLocation, , , SmokeRotation, , , DVector/NumPoints, NumPoints-1);
 }
 
-simulated function bool ClientAltFire( float Value )
-{
-      if (Role < ROLE_Authority && (AmmoType == None || AmmoType.AmmoAmount > 0)) {
-          ClientSpawnAltProjectileEffects();
-      }
+simulated function bool ClientAltFire(float Value) {
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
 
-      return Super.ClientAltFire(Value);
+	PawnOwner = Pawn(Owner);
+	
+	if (PawnOwner == None)
+		return false;
+
+	bbP = bbPlayer(PawnOwner);
+
+	if (Owner.Role == ROLE_AutonomousProxy && bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
+	{
+		if ((AmmoType == None && AmmoName != None)) {
+			GiveAmmo(PawnOwner);
+		}
+		
+		if (AmmoType != None && AmmoType.AmmoAmount > 0) { // Check ammo
+
+			Instigator = PawnOwner;
+			bPointing = True;
+			bCanClientFire = true;
+
+			GotoState('ClientAltFiring');
+
+			if (bRapidFire || (FiringSpeed > 0))
+				PawnOwner.PlayRecoil(FiringSpeed);
+				
+			PlayAltFiring();
+			ClientSpawnAltProjectileEffects();
+
+			if ( Affector != None )
+				Affector.FireEffect();
+
+			return true;
+		}
+		return false; // No ammo
+	}
+	
+	return Super.ClientAltFire(Value); 
 }
 
 simulated function ClientSpawnAltProjectileEffects() {
@@ -159,8 +230,14 @@ simulated function ClientSpawnAltProjectileEffects() {
 	local vector X, Y, Z;
 	local vector Start;
 	local float Hand;
+	local bbPlayer bbP;
 
 	PawnOwner = Pawn(Owner);
+
+	bbP = bbPlayer(PawnOwner);
+
+	if (bbP == None || bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
+     	return;
 
 	if (Owner.IsA('PlayerPawn'))
 			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
@@ -223,8 +300,13 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 {
 	local PlayerPawn PlayerOwner;
 	local Pawn PawnOwner;
+	local ST_ProjectileDummy Dummy;
+	local ST_ShockProj Proj;
+	local bbPlayer bbP;
 
 	PawnOwner = Pawn(Owner);
+
+	bbP = bbPlayer(PawnOwner);
 
 	if (Other==None)
 	{
@@ -238,11 +320,20 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 		
 	// Server-side beam spawning
 	SpawnEffect(HitLocation, Owner.Location + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z);
+
+	if (GetWeaponSettings().bEnablePingCompensation && bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false) {
+		Dummy = ST_ProjectileDummy(Other);
+	}
+
+	if (Dummy != none)
+		Proj = ST_ShockProj(Dummy.Actual);
+	else
+		Proj = ST_ShockProj(Other);
 	
-	if (ST_ShockProj(Other)!=None)
+	if (Proj != None)
 	{ 
 		AmmoType.UseAmmo(2);
-		ST_ShockProj(Other).SuperExplosion();
+		Proj.SuperExplosion();
 		return;
 	}
 	else
@@ -280,7 +371,7 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 	PlayerOwner = PlayerPawn(Owner);
 
 	// If compensation is active and this is the owner's client, use the hidden beam
-	if (GetWeaponSettings().bEnablePingCompensation && PlayerOwner == Owner && bbPlayer(PlayerOwner).ClientWeaponSettingsData.bShockUseClientSideAnimations) {
+	if (GetWeaponSettings().bEnablePingCompensation && PlayerOwner == Owner && bbPlayer(PlayerOwner).ClientWeaponSettingsData.bShockBeamUseClientSideAnimations) {
 
 		ServerBeamHidden = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
 		ServerBeamHidden.bOwnerNoSee = true;

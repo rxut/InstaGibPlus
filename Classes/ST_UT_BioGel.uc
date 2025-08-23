@@ -6,6 +6,7 @@ var WeaponSettingsRepl WSettings;
 var bool bClientVisualOnly;
 
 var PlayerPawn InstigatingPlayer;
+var vector ExtrapolationDelta;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
     local WeaponSettingsRepl S;
@@ -49,11 +50,7 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().FlakCompensatePing) {
-
-		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations == false){
-			return;
-		}
+	if (GetWeaponSettings().BioCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
@@ -70,6 +67,23 @@ simulated function PostNetBeginPlay()
 	}
 }
 
+simulated event Tick(float Delta) {
+    local vector NewXPolDelta;
+    super.Tick(Delta);
+
+    if (InstigatingPlayer == none)
+        return;
+
+    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+        return;
+		
+    // Extrapolate locally to compensate for ping
+   if (IsInState('Flying')) {
+        NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+        ExtrapolationDelta = NewXPolDelta;
+    }
+}
 
 function Timer()
 {

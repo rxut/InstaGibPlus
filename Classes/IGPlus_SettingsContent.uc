@@ -408,6 +408,42 @@ var localized string MoreInformationText;
 
 	var IGPlus_CrosshairSettingsDialog Wnd_CrosshairSettingsDialog;
 
+// Client-Side Animations
+	var UWindowLabelControl Lbl_ClientSideAnimations;
+	var localized string ClientSideAnimationsText;
+
+	var UWindowCheckbox Chk_BioUseClientSideAnimations;
+	var localized string BioUseClientSideAnimationsText;
+	var localized string BioUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_ShockBeamUseClientSideAnimations;
+	var localized string ShockBeamUseClientSideAnimationsText;
+	var localized string ShockBeamUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_ShockProjectileUseClientSideAnimations;
+	var localized string ShockProjectileUseClientSideAnimationsText;
+	var localized string ShockProjectileUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_PulseUseClientSideAnimations;
+	var localized string PulseUseClientSideAnimationsText;
+	var localized string PulseUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_RipperUseClientSideAnimations;
+	var localized string RipperUseClientSideAnimationsText;
+	var localized string RipperUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_FlakUseClientSideAnimations;
+	var localized string FlakUseClientSideAnimationsText;
+	var localized string FlakUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_SniperUseClientSideAnimations;
+	var localized string SniperUseClientSideAnimationsText;
+	var localized string SniperUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_TranslocatorUseClientSideAnimations;
+	var localized string TranslocatorUseClientSideAnimationsText;
+	var localized string TranslocatorUseClientSideAnimationsHelp;
+
 var float PaddingX;
 var float PaddingY;
 var float LineSpacing;
@@ -819,6 +855,16 @@ function Created() {
 	Edit_DesiredNetspeed = CreateEdit(ECT_Integer, DesiredNetspeedText, DesiredNetspeedHelp, , 64);
 	Edit_FakeCAPInterval = CreateEdit(ECT_Real, FakeCAPIntervalText, FakeCAPIntervalHelp, , 64);
 
+	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
+	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
+	Chk_ShockBeamUseClientSideAnimations = CreateCheckbox(ShockBeamUseClientSideAnimationsText, ShockBeamUseClientSideAnimationsHelp);
+	Chk_ShockProjectileUseClientSideAnimations = CreateCheckbox(ShockProjectileUseClientSideAnimationsText, ShockProjectileUseClientSideAnimationsHelp);
+	Chk_PulseUseClientSideAnimations = CreateCheckbox(PulseUseClientSideAnimationsText, PulseUseClientSideAnimationsHelp);
+	Chk_RipperUseClientSideAnimations = CreateCheckbox(RipperUseClientSideAnimationsText, RipperUseClientSideAnimationsHelp);
+	Chk_FlakUseClientSideAnimations = CreateCheckbox(FlakUseClientSideAnimationsText, FlakUseClientSideAnimationsHelp);
+	Chk_SniperUseClientSideAnimations = CreateCheckbox(SniperUseClientSideAnimationsText, SniperUseClientSideAnimationsHelp);
+	Chk_TranslocatorUseClientSideAnimations = CreateCheckbox(TranslocatorUseClientSideAnimationsText, TranslocatorUseClientSideAnimationsHelp);
+
 	Lbl_Advanced = CreateSeparator(AdvancedText);
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
 	Chk_DebugMovement = CreateCheckbox(DebugMovementText, DebugMovementHelp);
@@ -1068,10 +1114,21 @@ function Load() {
 
 	Chk_UseCrosshairFactory.bChecked = Settings.bUseCrosshairFactory;
 
+	Chk_BioUseClientSideAnimations.bChecked = Settings.bBioUseClientSideAnimations;
+	Chk_ShockBeamUseClientSideAnimations.bChecked = Settings.bShockBeamUseClientSideAnimations;
+	Chk_ShockProjectileUseClientSideAnimations.bChecked = Settings.bShockProjectileUseClientSideAnimations;
+	Chk_PulseUseClientSideAnimations.bChecked = Settings.bPulseUseClientSideAnimations;
+	Chk_RipperUseClientSideAnimations.bChecked = Settings.bRipperUseClientSideAnimations;
+	Chk_FlakUseClientSideAnimations.bChecked = Settings.bFlakUseClientSideAnimations;
+	Chk_SniperUseClientSideAnimations.bChecked = Settings.bSniperUseClientSideAnimations;
+	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
+
 	bLoadSucceeded = true;
 }
 
 function Save() {
+	local bbPlayer P;
+
 	if (Settings == none)
 		Settings = FindSettingsObject();
 	if (Settings == none)
@@ -1175,6 +1232,28 @@ function Save() {
 	Settings.HitMarkerTeamColor.B = HSld_HitMarkerTeamColorB.GetValue();
 
 	Settings.bUseCrosshairFactory = Chk_UseCrosshairFactory.bChecked;
+
+	Settings.bBioUseClientSideAnimations = Chk_BioUseClientSideAnimations.bChecked;
+	Settings.bShockBeamUseClientSideAnimations = Chk_ShockBeamUseClientSideAnimations.bChecked;
+	Settings.bShockProjectileUseClientSideAnimations = Chk_ShockProjectileUseClientSideAnimations.bChecked;
+	Settings.bPulseUseClientSideAnimations = Chk_PulseUseClientSideAnimations.bChecked;
+	Settings.bRipperUseClientSideAnimations = Chk_RipperUseClientSideAnimations.bChecked;
+	Settings.bFlakUseClientSideAnimations = Chk_FlakUseClientSideAnimations.bChecked;
+	Settings.bSniperUseClientSideAnimations = Chk_SniperUseClientSideAnimations.bChecked;
+	Settings.bTranslocatorUseClientSideAnimations = Chk_TranslocatorUseClientSideAnimations.bChecked;
+
+	// Update replicated weapon settings data so server gets changes immediately
+	P = bbPlayer(GetPlayerOwner());
+	if (P != none) {
+		P.UpdateReplicatedWeaponSetting("bBioUseClientSideAnimations", Chk_BioUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bShockBeamUseClientSideAnimations", Chk_ShockBeamUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bShockProjectileUseClientSideAnimations", Chk_ShockProjectileUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bPulseUseClientSideAnimations", Chk_PulseUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bRipperUseClientSideAnimations", Chk_RipperUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bFlakUseClientSideAnimations", Chk_FlakUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bSniperUseClientSideAnimations", Chk_SniperUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bTranslocatorUseClientSideAnimations", Chk_TranslocatorUseClientSideAnimations.bChecked);
+	}
 
 	Settings.SaveConfig();
 }
@@ -1496,6 +1575,32 @@ defaultproperties
 		UseCrosshairFactoryHelp="If checked, replace standard crosshair with custom crosshair"
 
 		CrosshairSettingsText="Crosshair Settings"
+
+	ClientSideAnimationsText="Ping Compensation Settings"
+
+		BioUseClientSideAnimationsText="Use Client-Side Animations for Bio Rifle"
+		BioUseClientSideAnimationsHelp="If checked, use client-side animations for Bio Rifle"
+
+		ShockBeamUseClientSideAnimationsText="Use Client-Side Animations for Shock Beam"
+		ShockBeamUseClientSideAnimationsHelp="If checked, use client-side animations for Shock Beam"
+
+		ShockProjectileUseClientSideAnimationsText="Use Client-Side Animations for Shock Projectile"
+		ShockProjectileUseClientSideAnimationsHelp="If checked, use client-side animations for Shock Projectile"
+
+		PulseUseClientSideAnimationsText="Use Client-Side Animations for Pulse Rifle"
+		PulseUseClientSideAnimationsHelp="If checked, use client-side animations for Pulse Rifle"
+
+		RipperUseClientSideAnimationsText="Use Client-Side Animations for Ripper"
+		RipperUseClientSideAnimationsHelp="If checked, use client-side animations for Ripper"
+
+		FlakUseClientSideAnimationsText="Use Client-Side Animations for Flak Cannon"
+		FlakUseClientSideAnimationsHelp="If checked, use client-side animations for Flak Cannon"
+
+		SniperUseClientSideAnimationsText="Use Client-Side Animations for Sniper Rifle"
+		SniperUseClientSideAnimationsHelp="If checked, use client-side animations for Sniper Rifle"
+
+		TranslocatorUseClientSideAnimationsText="Use Client-Side Animations for Translocator"
+		TranslocatorUseClientSideAnimationsHelp="If checked, use client-side animations for Translocator"
 
 	PaddingX=20
 	PaddingY=20

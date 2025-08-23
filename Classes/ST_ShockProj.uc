@@ -9,6 +9,8 @@ var float Health;
 var PlayerPawn InstigatingPlayer;
 var vector ExtrapolationDelta;
 
+var ST_ProjectileDummy Dummy;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -27,11 +29,23 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 }
 
 simulated function PostBeginPlay() {
-	if (Instigator != none && Instigator.Role == ROLE_Authority) {
+	local UTPure PureRef;
+	local bbPlayer bbP;
+
+	if (Role == ROLE_Authority) {
+		bbP = bbPlayer(Instigator);
+
+		if (Instigator != none && Instigator.IsA('bbPlayer') && GetWeaponSettings().bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
+			PureRef = bbPlayer(Instigator).zzUTPure;
+		
+		if (PureRef != None && GetWeaponSettings().bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false) {
+			PureRef.RegisterProjectile(self);
+		}
+
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break; // Find master :D
 
-		if (WImp.WeaponSettings.ShockProjectileTakeDamage) {
+		if (WImp != none && WImp.WeaponSettings.ShockProjectileTakeDamage) {
 			Health = WImp.WeaponSettings.ShockProjectileHealth;
 		}
 	}
@@ -41,10 +55,13 @@ simulated function PostBeginPlay() {
 simulated function PostNetBeginPlay() {
 	local PlayerPawn In;
 	local ST_ShockRifle SR;
+	local bbPlayer bbP;
+
+	bbP = bbPlayer(Instigator);
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().ShockProjectileCompensatePing) {
+	if (bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;

@@ -683,6 +683,83 @@ function float GetAverageTickRate() {
   return 120.0;
 }
 
+function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) {
+    local float DeltaTime;
+    local float SimPing;
+    local float AccumulatedTime;
+    local int HistoryInterval;
+    local UTPure PureRef;
+    local vector CurrentPos;
+    local vector Delta;
+    local float MinMovementSquared;
+    
+    if (TTarget == None || TTarget.bDeleteMe)
+        return;
+        
+    PureRef = bbPlayer(TTarget.Instigator).zzUTPure;
+    SimPing = float(Ping);
+    
+    // Cap ping compensation
+    if (SimPing > WeaponSettings.PingCompensationMax)
+        SimPing = WeaponSettings.PingCompensationMax;
+        
+    if (SimPing <= 0.0)
+        return;
+        
+    // Pre-calculate squared threshold
+    MinMovementSquared = 0.01; // 0.1 * 0.1
+        
+    // Store initial position BEFORE simulation
+    CurrentPos = TTarget.Location;
+    TTarget.SimulationHistory[0] = CurrentPos;
+    TTarget.SimulationTimes[0] = 0.0;
+    TTarget.HistoryCount = 1;
+    TTarget.SimulationStartTime = Level.TimeSeconds;
+    TTarget.TotalSimulationTime = SimPing * 0.001;
+    
+    // Calculate time step
+    DeltaTime = 0.001 * SimPing * Level.TimeDilation;
+    DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
+    
+    // Calculate storage interval (ms between saves)
+    HistoryInterval = Max(1, int(SimPing / 19.0)); // 19 because we already have 1
+    AccumulatedTime = 0.0;
+    
+    while (SimPing > 0.0 && TTarget != None && !TTarget.bDeleteMe) {
+        PureRef.CompensateFor(int(SimPing), TTarget.Instigator);
+        
+        // Store position BEFORE physics update
+        CurrentPos = TTarget.Location;
+        
+        TTarget.AutonomousPhysics(DeltaTime);
+        
+        SimPing -= DeltaTime * 1000.0;
+        AccumulatedTime += DeltaTime * 1000.0;
+        
+        // Manual squared distance calculation
+        Delta = TTarget.Location - CurrentPos;
+        if ((Delta.X * Delta.X + Delta.Y * Delta.Y + Delta.Z * Delta.Z) > MinMovementSquared) {
+            // Store position at intervals
+            if (AccumulatedTime >= HistoryInterval * (TTarget.HistoryCount - 1) && 
+                TTarget.HistoryCount < 20) {
+                TTarget.SimulationHistory[TTarget.HistoryCount] = TTarget.Location;
+                TTarget.SimulationTimes[TTarget.HistoryCount] = AccumulatedTime * 0.001;
+                TTarget.HistoryCount++;
+            }
+        }
+        
+        PureRef.EndCompensation();
+    }
+    
+    // Always store final position
+    if (TTarget != None && TTarget.HistoryCount < 20) {
+        TTarget.SimulationHistory[TTarget.HistoryCount] = TTarget.Location;
+        TTarget.SimulationTimes[TTarget.HistoryCount] = TTarget.TotalSimulationTime;
+            
+        TTarget.HistoryCount++;
+    }
+}
+
 function SimulateProjectile(Projectile P, int Ping) {
   local float DeltaTime;
   local float SimPing;
@@ -694,13 +771,21 @@ function SimulateProjectile(Projectile P, int Ping) {
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
-  // Cap ping compensation
-  if (Ping > WeaponSettings.PingCompensationMax)
-        Ping = WeaponSettings.PingCompensationMax;
+  SimPing = Ping * 0.5;
 
-  DeltaTime = 0.001*Ping*Level.TimeDilation;
+  // Cap ping compensation
+  if (SimPing > WeaponSettings.PingCompensationMax)
+        SimPing = WeaponSettings.PingCompensationMax;
+
+  if (SimPing <= 0.0)
+    return;
+
+  DeltaTime = 0.001*SimPing*Level.TimeDilation;
+
   DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
-  SimPing = Ping;
+
+  if (DeltaTime <= 0.0)
+    return;
   
   while (SimPing > 0.0) {
     if (P == None || P.bDeleteMe) {
@@ -725,13 +810,21 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
     return;
     
   PureRef = bbPlayer(Projectiles[0].Instigator).zzUTPure;
+
+  SimPing = Ping * 0.5; // Simulate only 1-way latency
   
-  if (Ping > WeaponSettings.PingCompensationMax)
-    Ping = WeaponSettings.PingCompensationMax;
+  if (SimPing > WeaponSettings.PingCompensationMax)
+    SimPing = WeaponSettings.PingCompensationMax;
     
-  DeltaTime = 0.001*Ping*Level.TimeDilation;
+  if (SimPing <= 0.0)
+    return;
+
+  DeltaTime = 0.001*SimPing*Level.TimeDilation;
+
   DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
-  SimPing = Ping;
+
+  if (DeltaTime <= 0.0)
+    return;
   
   while (SimPing > 0.0) {
     bAnyAlive = false;
@@ -817,9 +910,17 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 			}
 			else if (A.IsA('ST_ProjectileDummy')) {
 				PD = ST_ProjectileDummy(A);
-				if (PD.Actual != None && PD.Actual.IsA('ST_TranslocatorTarget')) {
-					Other = PD.Actual;
-					break;
+				if (PD.Actual != None) {
+					if (PD.Actual.IsA('ST_ShockProj')) {
+						if (bWeaponShock || bSProjBlocks) {
+							Other = PD.Actual; // Return the actual shock projectile
+							break;
+						}
+					}
+					else if (PD.Actual.IsA('ST_TranslocatorTarget')) {
+						Other = PD.Actual; // Return the actual translocator target
+						break;
+					}
 				}
 			}
 			else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {

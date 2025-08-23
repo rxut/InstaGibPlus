@@ -82,7 +82,7 @@ event Tick(float DeltaTime) {
     PP = PlayerPawn(Actual);
 
     if (PP != None) {
-		if (PP.GetStateName() == 'Dying') {
+		if (PP.Health <= 0 || PP.GetStateName() == 'Dying') {
 			if (PP.Player != None && !bHistoryCleared) {
 				for (i = 0; i < arraycount(Data); i++) {
 					Data[i] = None;
@@ -120,90 +120,74 @@ function vector LerpVector(float Alpha, vector A, vector B) {
     return A + (B - A) * Alpha;
 }
 
-function CompStart(int Ping) {
-	local float TargetTimeStamp;
-	local int I;
-	local int Next;
-	local float TimeDelta;
-	local float Distance;
-	local bool bSubTickCompensation;
-	local float TargetAlpha;
-	local UTPlusSnapshot SnapI, SnapNext;
+function CompStart(int Ping)
+{
+    local float TargetTimeStamp;
+    local bool  bSubTickCompensation;
+    local int   Idx, Scans;
+    local int   BufSize;
+    local UTPlusSnapshot OlderSnap;
+    local UTPlusSnapshot NewerSnap;
+    local float TimeDelta, Alpha;
 
-	if (Actual == none || Actual.bDeleteMe || WImp == None)
+    if (Actual == none || Actual.bDeleteMe || WImp == None || Actual.Health <= 0)
 		return;
 
-	// Cap ping compensation
-	if (Ping > WImp.WeaponSettings.PingCompensationMax)
+    if (Ping > WImp.WeaponSettings.PingCompensationMax)
 		Ping = WImp.WeaponSettings.PingCompensationMax;
 	if (Ping < 0)
 		Ping = 0;
 
-	bSubTickCompensation = WImp.WeaponSettings.bEnableSubTickCompensation;
+    bSubTickCompensation = WImp.WeaponSettings.bEnableSubTickCompensation;
+    TargetTimeStamp = Level.TimeSeconds - 0.001 * Ping * Level.TimeDilation;
 
-	TargetTimeStamp = Level.TimeSeconds - 0.001 * Ping * Level.TimeDilation;
+	BufSize = arraycount(Data);
+    Idx = (DataIndex - 1 + BufSize) % BufSize;
+	NewerSnap = None;
 
-	I = DataIndex - 1;
-	if (I < 0)
-		I += arraycount(Data);
+    for (Scans = 0; Scans < BufSize; Scans++)
+    {
+        OlderSnap = Data[Idx];
 
-	do {
-		Next = I - 1;
-		if (Next < 0)
-			Next += arraycount(Data);
-
-		SnapI = Data[I];
-		SnapNext = Data[Next];
-
-		// Ensure the primary snapshot for this iteration is valid
-		if (SnapI == None || SnapI.ServerTimeStamp <= 0) {
-			I = Next;
-			continue; // Try the next older snapshot
-		}
-
-		if (bSubTickCompensation) {
-			if (SnapI.ServerTimeStamp <= TargetTimeStamp) {
-				CompSwap(SnapI, None, -1.0, TargetTimeStamp); // Alpha -1.0 signifies extrapolation
-				return;
-			}
-			else if (SnapNext != None && SnapNext.ServerTimeStamp > 0 && SnapNext.ServerTimeStamp <= TargetTimeStamp) {
-				TimeDelta = SnapI.ServerTimeStamp - SnapNext.ServerTimeStamp;
-                // Check for valid TimeDelta to avoid division by zero or huge velocities
-				if (TimeDelta > 0.001) {
-                    Distance = VSize(SnapI.Loc - SnapNext.Loc);
-                    if (Distance / TimeDelta <= 2500) {
-                        TargetAlpha = (TargetTimeStamp - SnapNext.ServerTimeStamp) / TimeDelta;
-                        TargetAlpha = FClamp(TargetAlpha, 0.0, 1.0);
-                        CompSwap(SnapNext, SnapI, TargetAlpha, TargetTimeStamp);
-                    } else {
-                        CompSwap(SnapNext, None, -1.0, TargetTimeStamp);
-                    }
-                } else {
-                    CompSwap(SnapNext, None, -1.0, TargetTimeStamp);
-                }
-				return;
-			}
-		}
-        else // No sub-tick compensation
+        if (OlderSnap != None && OlderSnap.ServerTimeStamp > 0)
         {
-			if (SnapI.ServerTimeStamp <= TargetTimeStamp) {
-				CompSwap(SnapI, None, 1.0, TargetTimeStamp);
-				return;
-			}
-		}
+            // Have we found a snapshot older than our target time?
+            if (OlderSnap.ServerTimeStamp <= TargetTimeStamp)
+            {
+                // If we have a newer snapshot, we can interpolate between them.
+                if (bSubTickCompensation && NewerSnap != None)
+                {
+                    TimeDelta = NewerSnap.ServerTimeStamp - OlderSnap.ServerTimeStamp;
+                    if (TimeDelta > 0.001 && VSize(NewerSnap.Loc - OlderSnap.Loc) / TimeDelta < 3000)
+                    {
+                        Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
+                        CompSwap(OlderSnap, NewerSnap, FClamp(Alpha, 0.0, 1.0), TargetTimeStamp);
+                        return;
+                    }
+                }
+                
+                // Otherwise, we must snap to or extrapolate from this older snapshot.
+                if (bSubTickCompensation)
+                    CompSwap(OlderSnap, None, -1.0, TargetTimeStamp);
+                else
+                    CompSwap(OlderSnap, None, 1.0, TargetTimeStamp);
+                return;
+            }
+            
+            // This snapshot was too new, so it becomes the "NewerSnap" for the next iteration.
+            NewerSnap = OlderSnap;
+        }
 
-		I = Next;
+        Idx = (Idx - 1 + BufSize) % BufSize; // Move to the next older snapshot
+    }
 
-	} until (I == DataIndex);
-
-	I = DataIndex;
-	do {
-		if (Data[I] != None && Data[I].ServerTimeStamp > 0) {
-			CompSwap(Data[I], None, 1.0, TargetTimeStamp);
-			return;
-		}
-		I = (I + 1) % arraycount(Data);
-	} until (I == DataIndex);
+    if (NewerSnap != None)
+    {
+        if (bSubTickCompensation)
+            CompSwap(NewerSnap, None, -1.0, TargetTimeStamp); // Extrapolate from oldest
+        else
+            CompSwap(NewerSnap, None, 1.0, TargetTimeStamp); // Snap to oldest
+    }
 }
 
 function TakeDamage(

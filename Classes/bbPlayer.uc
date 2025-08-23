@@ -367,11 +367,13 @@ var int FRandValuesLength; // rX Added
 
 struct ClientWeaponSettings { // rX Added
 	var bool bBioUseClientSideAnimations;
-	var bool bShockUseClientSideAnimations;
+	var bool bShockBeamUseClientSideAnimations;
+	var bool bShockProjectileUseClientSideAnimations;
 	var bool bPulseUseClientSideAnimations;
 	var bool bRipperUseClientSideAnimations;
 	var bool bFlakUseClientSideAnimations;
 	var bool bSniperUseClientSideAnimations;
+	var bool bTranslocatorUseClientSideAnimations;
 };
 
 var ClientWeaponSettings ClientWeaponSettingsData;
@@ -1006,7 +1008,6 @@ event PostBeginPlay()
 
 	if (zzUTPure.Settings.bEnableHitboxDebugMode)
 	{
-
 		ConsoleCommand("mlmode 0"); // disable mlmode to prevent culling of triangles due to distance
 
 		BaseCyl = Spawn(class'bbBaseCylinder', self);
@@ -1064,11 +1065,13 @@ simulated event PostNetBeginPlay()
 	InitSettings();
 
 	ClientWeaponSettingsData.bBioUseClientSideAnimations = Settings.bBioUseClientSideAnimations;
-	ClientWeaponSettingsData.bShockUseClientSideAnimations = Settings.bShockUseClientSideAnimations;
+	ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = Settings.bShockBeamUseClientSideAnimations;
+	ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = Settings.bShockProjectileUseClientSideAnimations;
 	ClientWeaponSettingsData.bPulseUseClientSideAnimations = Settings.bPulseUseClientSideAnimations;
 	ClientWeaponSettingsData.bRipperUseClientSideAnimations = Settings.bRipperUseClientSideAnimations;
 	ClientWeaponSettingsData.bFlakUseClientSideAnimations = Settings.bFlakUseClientSideAnimations;
 	ClientWeaponSettingsData.bSniperUseClientSideAnimations = Settings.bSniperUseClientSideAnimations;
+	ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = Settings.bTranslocatorUseClientSideAnimations;
 
 	if ( Role != ROLE_SimulatedProxy )	// Other players are Simulated, local player is Autonomous or Authority (if listen server which pure doesn't support anyway :P)
 	{
@@ -3609,6 +3612,7 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 	local bool bWeaponShock;
 	local WeaponSettingsRepl WS;
 	local UTPlusDummy D;
+	local ST_ProjectileDummy PD;
 
 	WS = GetWeaponSettings();
 	
@@ -3635,6 +3639,21 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 						break;
 					}
 				}
+			}
+			else if (A.IsA('ST_ProjectileDummy')) {
+				PD = ST_ProjectileDummy(A);
+				if (PD.Actual != None) {
+					if (PD.Actual.IsA('ST_ShockProj')) {
+						if (bWeaponShock || bSProjBlocks) {
+							Other = PD.Actual; // Return the actual shock projectile
+							break;
+						}
+					}
+					else if (PD.Actual.IsA('ST_TranslocatorTarget')) {
+						Other = PD.Actual; // Return the actual translocator target
+						break;
+					}
+				}
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
 					Other = A;
@@ -3653,9 +3672,8 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 				if ((A != self) && Pawn(A).AdjustHitLocation(HitLocation, EndTrace - StartTrace))
 					Other = A;
 			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
+				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock)
 					Other = A;
-				}
 			}
 
 			if (Other != none)
@@ -4807,17 +4825,30 @@ exec function EnableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Bio (Forced:" $ ForcedValue $ "),";
     }
 
-    // --- Shock ---
-    ForcedValue = GetForcedSettingValue("bShockUseClientSideAnimations");
+    // --- Shock Beam---
+    ForcedValue = GetForcedSettingValue("bShockBeamUseClientSideAnimations");
     if (ForcedValue == "") {
-        if (!Settings.bShockUseClientSideAnimations) {
-            Settings.bShockUseClientSideAnimations = true;
-            ClientWeaponSettingsData.bShockUseClientSideAnimations = true;
-            UpdatedSettings = UpdatedSettings $ " Shock,";
+        if (!Settings.bShockBeamUseClientSideAnimations) {
+            Settings.bShockBeamUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Shock Beam,";
             bMadeChanges = true;
         }
     } else {
-        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock (Forced:" $ ForcedValue $ "),";
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock Beam (Forced:" $ ForcedValue $ "),";
+    }
+
+	// --- Shock Projectile ---
+    ForcedValue = GetForcedSettingValue("bShockProjectileUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bShockProjectileUseClientSideAnimations) {
+            Settings.bShockProjectileUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Shock Projectile,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock Projectile (Forced:" $ ForcedValue $ "),";
     }
 
     // --- Pulse ---
@@ -4872,6 +4903,19 @@ exec function EnableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Sniper (Forced:" $ ForcedValue $ "),";
     }
 
+	// --- Translocator ---
+    ForcedValue = GetForcedSettingValue("bTranslocatorUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bTranslocatorUseClientSideAnimations) {
+            Settings.bTranslocatorUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Translocator,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Translocator (Forced:" $ ForcedValue $ "),";
+    }
+
     // --- Report Results ---
     if (bMadeChanges) {
         IGPlus_SaveSettings();
@@ -4907,17 +4951,30 @@ exec function DisableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Bio (Forced:" $ ForcedValue $ "),";
     }
 
-    // --- Shock ---
-    ForcedValue = GetForcedSettingValue("bShockUseClientSideAnimations");
+    // --- Shock Beam ---
+    ForcedValue = GetForcedSettingValue("bShockBeamUseClientSideAnimations");
     if (ForcedValue == "") {
-        if (Settings.bShockUseClientSideAnimations) {
-            Settings.bShockUseClientSideAnimations = false;
-            ClientWeaponSettingsData.bShockUseClientSideAnimations = false;
-            UpdatedSettings = UpdatedSettings $ " Shock,";
+        if (Settings.bShockBeamUseClientSideAnimations) {
+            Settings.bShockBeamUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Shock Beam,";
             bMadeChanges = true;
         }
     } else {
-        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock (Forced:" $ ForcedValue $ "),";
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock Beam (Forced:" $ ForcedValue $ "),";
+    }
+
+	// --- Shock Projectile ---
+    ForcedValue = GetForcedSettingValue("bShockProjectileUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bShockProjectileUseClientSideAnimations) {
+            Settings.bShockProjectileUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Shock Projectile,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Shock Projectile (Forced:" $ ForcedValue $ "),";
     }
 
     // --- Pulse ---
@@ -4972,6 +5029,19 @@ exec function DisableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Sniper (Forced:" $ ForcedValue $ "),";
     }
 
+	// --- Translocator ---
+    ForcedValue = GetForcedSettingValue("bTranslocatorUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bTranslocatorUseClientSideAnimations) {
+            Settings.bTranslocatorUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Translocator,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Translocator (Forced:" $ ForcedValue $ "),";
+    }
+
     // --- Report Results ---
     if (bMadeChanges) {
         IGPlus_SaveSettings();
@@ -4992,8 +5062,10 @@ exec function DisableClientSideAnimations() {
 simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
     if (Key ~= "bBioUseClientSideAnimations") {
         ClientWeaponSettingsData.bBioUseClientSideAnimations = bValue;
-    } else if (Key ~= "bShockUseClientSideAnimations") {
-        ClientWeaponSettingsData.bShockUseClientSideAnimations = bValue;
+    } else if (Key ~= "bShockBeamUseClientSideAnimations") {
+        ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = bValue;
+    } else if (Key ~= "bShockProjectileUseClientSideAnimations") {
+        ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = bValue;
     } else if (Key ~= "bPulseUseClientSideAnimations") {
         ClientWeaponSettingsData.bPulseUseClientSideAnimations = bValue;
     } else if (Key ~= "bRipperUseClientSideAnimations") {
@@ -5002,6 +5074,8 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bFlakUseClientSideAnimations = bValue;
     } else if (Key ~= "bSniperUseClientSideAnimations") {
         ClientWeaponSettingsData.bSniperUseClientSideAnimations = bValue;
+    } else if (Key ~= "bTranslocatorUseClientSideAnimations") {
+        ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = bValue;
     }
 }
 
@@ -5047,32 +5121,60 @@ exec function BioClientSideAnimations(bool b) {
 		ClientMessage("Bio client-side animations disabled!", 'IGPlus');
 }
 
-exec function ShockClientSideAnimations(bool b) {
+exec function ShockBeamClientSideAnimations(bool b) {
     local string ForcedValue;
 
-    ForcedValue = GetForcedSettingValue("bShockUseClientSideAnimations");
+    ForcedValue = GetForcedSettingValue("bShockBeamUseClientSideAnimations");
 	if (ForcedValue != "") {
-        ClientMessage("Cannot change Shock animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        ClientMessage("Cannot change Shock Beam animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
         return;
     }
 
-	if (Settings.bShockUseClientSideAnimations == b) {
+	if (Settings.bShockBeamUseClientSideAnimations == b) {
 		if (b)
-			ClientMessage("Shock client-side animations are already enabled.", 'IGPlus');
+			ClientMessage("Shock Beam client-side animations are already enabled.", 'IGPlus');
 		else
-			ClientMessage("Shock client-side animations are already disabled.", 'IGPlus');
+			ClientMessage("Shock Beam client-side animations are already disabled.", 'IGPlus');
 		return;
 	}
 
-	Settings.bShockUseClientSideAnimations = b;
-	ClientWeaponSettingsData.bShockUseClientSideAnimations = b;
+	Settings.bShockBeamUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = b;
 
 	IGPlus_SaveSettings();
 
 	if (b)
-		ClientMessage("Shock client-side animations enabled!", 'IGPlus');
+		ClientMessage("Shock Beam client-side animations enabled!", 'IGPlus');
 	else
-		ClientMessage("Shock client-side animations disabled!", 'IGPlus');
+		ClientMessage("Shock Beam client-side animations disabled!", 'IGPlus');
+}
+
+exec function ShockProjectileClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bShockProjectileUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Shock Projectile animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bShockProjectileUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Shock Projectile client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Shock Projectile client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bShockProjectileUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = b;
+
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Shock Projectile client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Shock Projectile client-side animations disabled!", 'IGPlus');
 }
 
 exec function PulseClientSideAnimations(bool b) {
@@ -5183,6 +5285,34 @@ exec function SniperClientSideAnimations(bool b) {
 		ClientMessage("Sniper client-side animations enabled!", 'IGPlus');
 	else
 		ClientMessage("Sniper client-side animations disabled!", 'IGPlus');
+}
+
+exec function TranslocatorClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bTranslocatorUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Translocator animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bTranslocatorUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Translocator client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Translocator client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bTranslocatorUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = b;
+
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Translocator client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Translocator client-side animations disabled!", 'IGPlus');
 }
 
 exec function setShockBeam(int sb) {

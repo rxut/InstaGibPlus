@@ -56,6 +56,8 @@ simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocati
 
 function float GetAverageTickRate();
 
+function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping);
+
 function SimulateProjectile(Projectile P, int Ping);
 
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping);
