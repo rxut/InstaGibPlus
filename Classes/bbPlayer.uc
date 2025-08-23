@@ -5505,9 +5505,6 @@ function xxUpdateRotation(float DeltaTime, float maxPitch)
 	local rotator newRotation;
 	local float PitchDelta, YawDelta;
 
-	if (bUpdating)
-		return;
-
 	DesiredRotation = ViewRotation; //save old rotation
 
 	PitchDelta = 32.0 * DeltaTime * aLookUp * IGPlus_ZoomToggle_SensitivityFactorY + LookUpFractionalPart;
@@ -5522,11 +5519,13 @@ function xxUpdateRotation(float DeltaTime, float maxPitch)
 	if (!Settings.bUseOldMouseInput)
 		TurnFractionalPart = YawDelta - int(YawDelta);
 
-	if (Settings.bDebugMovement && (Abs(PitchDelta) > 1 || Abs(YawDelta) > 1))
-		ClientDebugMessage("PitchDelta:"@PitchDelta@"YawDelta:"@YawDelta);
+	if (bUpdating == false) {
+		if (Settings.bDebugMovement && (Abs(PitchDelta) > 1 || Abs(YawDelta) > 1))
+			ClientDebugMessage("PitchDelta:"@PitchDelta@"YawDelta:"@YawDelta);
 
-	ViewShake(deltaTime);		// ViewRotation is fuked in here.
-	ViewFlash(deltaTime);
+		ViewShake(deltaTime);		// ViewRotation is fuked in here.
+		ViewFlash(deltaTime);
+	}
 
 	newRotation = Rotation;
 	newRotation.Yaw = ViewRotation.Yaw;
