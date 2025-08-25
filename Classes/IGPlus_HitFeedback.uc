@@ -46,22 +46,25 @@ function ModifyPlayer(Pawn P) {
 }
 
 function bool CheckVisibility(Pawn Orig, Pawn Dest) {
+	local vector Start;
 	local rotator DirYaw;
 	local vector X,Y,Z;
-	local vector Start;
 	local vector End[7];
 	local int i;
+
+	local Pawn P;
+	local vector HitLocation;
+	local vector HitNormal;
 
 	if (bCheckVisibility == false)
 		return true;
 
-	DirYaw = rotator(Dest.Location - Orig.Location);
+	Start = Orig.Location + vect(0,0,1)*Orig.BaseEyeHeight;
+	DirYaw = rotator(Dest.Location - Start);
 	DirYaw.Pitch = 0;
 	DirYaw.Roll = 0;
 
 	GetAxes(DirYaw,X,Y,Z);
-
-	Start = Orig.Location + vect(0,0,1)*Orig.BaseEyeHeight;
 
 	End[0] = Dest.Location;                                            // center
 	End[1] = End[0] + Y*Dest.CollisionRadius + Z*Dest.CollisionHeight; // top left
@@ -73,6 +76,10 @@ function bool CheckVisibility(Pawn Orig, Pawn Dest) {
 
 	for (i = 0; i < arraycount(End); ++i)
 		if (FastTrace(End[i], Start))
+			return true;
+
+	foreach TraceActors(class'Pawn', P, HitLocation, HitNormal, Start + vector(Orig.ViewRotation)*100000.0, Start)
+		if (P == Dest)
 			return true;
 
 	return false;
