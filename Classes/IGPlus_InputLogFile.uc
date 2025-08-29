@@ -19,7 +19,7 @@ function StartLog() {
     local string FileName;
 
     bWorld = false;
-    FileName = "../Logs/"$LogId$"_"$Level.Year$PadTo2Digits(Level.Month)$PadTo2Digits(Level.Day)$"_"$PadTo2Digits(Level.Hour)$PadTo2Digits(Level.Minute);
+    FileName = "../Logs/"$LogId$"_"$Level.Year$PadTo2Digits(Level.Month)$PadTo2Digits(Level.Day)$"_"$PadTo2Digits(Level.Hour)$PadTo2Digits(Level.Minute)$PadTo2Digits(Level.Second);
     StatLogFile = FileName$".tmp.csv";
     StatLogFinal = FileName$".csv";
 
