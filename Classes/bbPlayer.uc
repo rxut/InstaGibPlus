@@ -2196,6 +2196,17 @@ function ClientUpdatePositionWithInput() {
 	local vector PostAdjustLocation;
 	local rotator SavedViewRotation;
 
+	local bool RealDodging;
+	local EDodgeDir RealDodgeDir;
+	local float RealDodgeClickTimer;
+
+	// These variables may have been changed due to xxPureCAP forcing our State
+	// to change. We need to preserve the new values, otherwise respawns will
+	// desync.
+	RealDodging = bDodging;
+	RealDodgeDir = DodgeDir;
+	RealDodgeClickTimer = DodgeClickTimer;
+
 	bUpdatePosition = false;
 	bRealJump = bPressedJump;
 	bUpdating = true;
@@ -2247,6 +2258,10 @@ function ClientUpdatePositionWithInput() {
 	bUpdating = false;
 	bPressedJump = bRealJump;
 	zzbFakeUpdate = true;
+
+	bDodging = RealDodging;
+	DodgeDir = RealDodgeDir;
+	DodgeClickTimer = RealDodgeClickTimer;
 
 	UpdatePing();
 }
@@ -4119,6 +4134,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		}
 
 		if (I.bLive == false) {
+			bDodging = false;
 			DodgeDir = DODGE_None;
 			DodgeClickTimer = DodgeClickTime;
 		}
@@ -6811,7 +6827,9 @@ ignores SeePlayer, HearNoise, Bump;
 		if ( Mesh == None )
 			SetMesh();
 		WalkBob = vect(0,0,0);
+		bDodging = false;
 		DodgeDir = DODGE_None;
+		DodgeClickTimer = DodgeClickTime;
 		bIsCrouching = false;
 		bIsTurning = false;
 		bPressedJump = false;
