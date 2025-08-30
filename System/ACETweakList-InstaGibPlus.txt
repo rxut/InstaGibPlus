@@ -24,4 +24,6 @@ ALLOW		InstaGibPlus.PureHUDHelper					InstaGibPlus.PureHUDHelper.bInOvertime				
 ALLOW		InstaGibPlus.PureHUDHelper					InstaGibPlus.PureHUDHelper.OvertimeOffset				EQ				FLOAT				*
 ALLOW		InstaGibPlus.FloatConverter					InstaGibPlus.FloatConverter.Value						EQ				FLOAT				*
 ALLOW		InstaGibPlus.IntConverter					InstaGibPlus.IntConverter.Value							EQ				INT					*
+ALLOW		InstaGibPlus.*								Engine.Pawn.PlayerReplicationInfoClass					EQ				STRING				*
+ALLOW		InstaGibPlus.*								Engine.Actor.NetUpdateFrequency							EQ				FLOAT				*
 ALLOW		*											Core.Object.ObjectFlags									EQ				INT					*
