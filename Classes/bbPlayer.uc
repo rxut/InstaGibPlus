@@ -4133,7 +4133,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			}
 		}
 
-		if (I.bLive == false) {
+		if (Old.bLive == false) {
 			bDodging = false;
 			DodgeDir = DODGE_None;
 			DodgeClickTimer = DodgeClickTime;
