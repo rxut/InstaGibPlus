@@ -8419,7 +8419,12 @@ simulated function IGPlus_LocationOffsetFix_Before() {
 	IGPlus_LocationOffsetFix_Velocity = Velocity;
 	IGPlus_LocationOffsetFix_OnGround = IGPlus_LocationOffsetFix_IsOnGround(IGPlus_LocationOffsetFix_GroundNormal);
 
-	SetLocation(vect(65535, 65535, 65535) + vect(512.0,512.0,512.0)*PlayerReplicationInfo.PlayerID);
+	SetLocation(
+		vect(65535, 65535, 65535) +  // edge of the playable area
+		// Separate players by some distance
+		// Guarantee its always outside the playable area (+1)
+		vect(512.0,512.0,512.0)*(PlayerReplicationInfo.PlayerID+1)
+	);
 	Velocity = IGPlus_LocationOffsetFix_DummyVel;
 	IGPlus_LocationOffsetFix_SafeLocation = Location;
 
