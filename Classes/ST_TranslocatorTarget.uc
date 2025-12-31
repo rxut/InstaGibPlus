@@ -5,8 +5,8 @@ var WeaponSettingsRepl WSettings;
 
 var PlayerPawn InstigatingPlayer;
 
-var vector SimulationHistory[20];  // Store up to 20 positions
-var float SimulationTimes[20];     // Timestamps for each position
+var vector SimulationHistory[50];  // Store up to 50 positions
+var float SimulationTimes[50];     // Timestamps for each position
 var int HistoryCount;              // Number of valid history entries
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
@@ -76,11 +76,53 @@ simulated function PostNetBeginPlay()
 			TL = ST_Translocator(InstigatingPlayer.Weapon);
 			if (TL != none && TL.TTarget_Client != none && TL.TTarget_Client.bDeleteMe == false)
 			{
+                // The server compensated for Upstream (Ping*0.5), we must compensate for Downstream (Ping*0.5)
+                SimulateClientCatchUp(bbP.PingAverage * 0.5);
+
 				TL.TTarget_Client.Destroy();
 				TL.TTarget_Client = None;
 			}
 		}
 	}
+}
+
+simulated function SimulateClientCatchUp(float CatchUpTime)
+{
+    local float Step, MaxStep;
+    local int Steps, i;
+
+    if (CatchUpTime <= 0)
+        return;
+
+    // Safety clamp
+    if (CatchUpTime > 200) 
+        CatchUpTime = 200;
+
+    // Break into small physics steps for accuracy
+    MaxStep = 0.02;
+    Steps = int(CatchUpTime * 0.001 / MaxStep) + 1;
+    Step = (CatchUpTime * 0.001) / float(Steps);
+
+    for (i=0; i<Steps; i++)
+    {
+        AutonomousPhysics(Step);
+    }
+}
+
+function InitSimulationHistory(vector StartPos, float StartTime, float TotalTime) {
+    SimulationHistory[0] = StartPos;
+    SimulationTimes[0] = StartTime;
+    HistoryCount = 1;
+    SimulationStartTime = Level.TimeSeconds;
+    TotalSimulationTime = TotalTime;
+}
+
+function AddSimulationHistoryStep(vector NewPos, float TimeStamp) {
+    if (HistoryCount < 50) {
+        SimulationHistory[HistoryCount] = NewPos;
+        SimulationTimes[HistoryCount] = TimeStamp;
+        HistoryCount++;
+    }
 }
 
 function SimulateWithHistory(IGPlus_WeaponImplementation WImpl, int Ping)

@@ -14,6 +14,20 @@ var class<ST_UTChunk> ChunkClasses[4];
 var ST_FlakSlug LocalSlugDummy;
 var ST_UTChunk LocalChunkDummy;
 
+// Explicit client aim data (sent via ServerExplicitFire/AltFire)
+var vector ExplicitClientLoc;
+var rotator ExplicitClientRot;
+var bool bUseExplicitData;
+
+// Server-side position validation
+const MAX_POSITION_ERROR_SQ = 1250.0;
+
+replication
+{
+	reliable if(Role < ROLE_Authority)
+		ServerExplicitFire, ServerExplicitAltFire, ServerSynchronizeWeapon;
+}
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -39,72 +53,233 @@ function PostBeginPlay()
 		break;		// Find master :D
 }
 
-// Fire chunks
-function Fire( float Value )
+function ServerSynchronizeWeapon(Weapon NewWeapon)
 {
-	local Vector Start, X,Y,Z;
+	local PlayerPawn P;
+	
+	if (NewWeapon == None || NewWeapon.Owner != Owner)
+		return;
+		
+	P = PlayerPawn(Owner);
+	if (P == None)
+		return;
+
+	if (P.Weapon != NewWeapon)
+	{
+		P.PendingWeapon = NewWeapon;
+		P.ChangedWeapon();
+	}
+}
+
+function bool IsPositionReasonable(vector ClientLoc)
+{
+	local vector Diff;
+	
+	Diff = ClientLoc - Owner.Location;
+	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
+}
+
+// Server function called by client when firing
+function ServerExplicitFire(vector ClientLoc, rotator ClientRot)
+{
+	local PlayerPawn P;
+	
+	P = PlayerPawn(Owner);
+	if (P == None)
+		return;
+
+	// Sync Check: If server weapon isn't this one, force it
+	if (P.Weapon != self)
+		ServerSynchronizeWeapon(self);
+
+	// Position validation - use server position if client position is unreasonable
+	if (IsPositionReasonable(ClientLoc))
+		ExplicitClientLoc = ClientLoc;
+	else
+		ExplicitClientLoc = Owner.Location;
+	
+	ExplicitClientRot = ClientRot;
+	bUseExplicitData = true;
+
+	if (AmmoType == None)
+		GiveAmmo(P);
+
+	if (AmmoType != None && AmmoType.AmmoAmount > 0)
+	{
+		AmmoType.UseAmmo(1);
+		bCanClientFire = true;
+		bPointing = True;
+		
+		P.PlayRecoil(FiringSpeed);
+		PlayFiring();
+		SpawnServerChunks();
+		GoToState('NormalFire');
+	}
+
+	bUseExplicitData = false;
+}
+
+function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot)
+{
+	local PlayerPawn P;
+	
+	P = PlayerPawn(Owner);
+	if (P == None)
+		return;
+
+	// Sync Check
+	if (P.Weapon != self)
+		ServerSynchronizeWeapon(self);
+
+	// Position validation - use server position if client position is unreasonable
+	if (IsPositionReasonable(ClientLoc))
+		ExplicitClientLoc = ClientLoc;
+	else
+		ExplicitClientLoc = Owner.Location;
+
+	ExplicitClientRot = ClientRot;
+	bUseExplicitData = true;
+
+	if (AmmoType == None)
+		GiveAmmo(P);
+
+	if (AmmoType != None && AmmoType.AmmoAmount > 0)
+	{
+		AmmoType.UseAmmo(1);
+		bCanClientFire = true;
+		bPointing = True;
+		
+		P.PlayRecoil(FiringSpeed);
+		PlayAltFiring();
+		SpawnServerSlug();
+		GoToState('AltFiring');
+	}
+
+	bUseExplicitData = false;
+}
+
+// Server-side chunk spawning (uses explicit client data when available)
+function SpawnServerChunks()
+{
+	local Vector Start, X, Y, Z;
 	local vector R;
 	local Bot B;
 	local ST_UTChunkInfo CI;
 	local Pawn PawnOwner;
+	local rotator AimRot;
+
+	PawnOwner = Pawn(Owner);
+	B = Bot(PawnOwner);
+
+	// Use explicit client data if available
+	if (bUseExplicitData)
+	{
+		AimRot = ExplicitClientRot;
+		Start = ExplicitClientLoc + CalcDrawOffset();
+	}
+	else
+	{
+		Start = PawnOwner.Location + CalcDrawOffset();
+		AimRot = PawnOwner.AdjustAim(AltProjectileSpeed, Start, AimError, True, bWarnTarget);
+	}
+
+	PawnOwner.MakeNoise(2.0 * PawnOwner.SoundDampening);
+	GetAxes(AimRot, X, Y, Z);
+	Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));
+	Start = Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	
+	CI = Spawn(class'ST_UTChunkInfo', PawnOwner);
+	CI.WImp = WImp;
+
+	if (GetWeaponSettings().FlakChunkRandomSpread) {
+		CI.AddChunk(Spawn( class 'ST_UTChunk1',Owner, '', Start, AimRot));
+		CI.AddChunk(Spawn( class 'ST_UTChunk2',Owner, '', Start - Z, AimRot));
+		CI.AddChunk(Spawn( class 'ST_UTChunk3',Owner, '', Start + 2 * Y + Z, AimRot));
+		CI.AddChunk(Spawn( class 'ST_UTChunk4',Owner, '', Start - Y, AimRot));
+		CI.AddChunk(Spawn( class 'ST_UTChunk1',Owner, '', Start + 2 * Y - Z, AimRot));
+		CI.AddChunk(Spawn( class 'ST_UTChunk2',Owner, '', Start, AimRot));
+
+		// lower skill bots fire less flak chunks
+		if ( (B == None) || !B.bNovice || ((B.Enemy != None) && (B.Enemy.Weapon != None) && B.Enemy.Weapon.bMeleeWeapon) )
+		{
+			CI.AddChunk(Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, AimRot));
+			CI.AddChunk(Spawn( class 'ST_UTChunk4',Owner, '', Start + 2 * Y + Z, AimRot));
+		}
+		else if ( B.Skill > 1 )
+			CI.AddChunk(Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, AimRot));
+	} else {
+		R = X / Tan(3.0*Pi/180.0);
+
+		CI.AddChunk(Spawn(class 'ST_UTChunk1', Owner,'',Start, rotator(R)));
+		CI.AddChunk(Spawn(class 'ST_UTChunk2', Owner,'',Start + Y*Cos(0.0)        + Z*Sin(0.0),        rotator(R + Y*Cos(0.0)        + Z*Sin(0.0))));
+		CI.AddChunk(Spawn(class 'ST_UTChunk3', Owner,'',Start + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0),     rotator(R + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0))));
+		CI.AddChunk(Spawn(class 'ST_UTChunk4', Owner,'',Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0))));
+		CI.AddChunk(Spawn(class 'ST_UTChunk1', Owner,'',Start + Y*Cos(Pi)         + Z*Sin(Pi),         rotator(R + Y*Cos(Pi)         + Z*Sin(Pi))));
+		CI.AddChunk(Spawn(class 'ST_UTChunk2', Owner,'',Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0))));
+		CI.AddChunk(Spawn(class 'ST_UTChunk3', Owner,'',Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0))));
+	}
+}
+
+// Server-side slug spawning (uses explicit client data when available)
+function SpawnServerSlug()
+{
+	local Vector Start, X, Y, Z;
+	local ST_FlakSlug Slug;
+	local Pawn PawnOwner;
 	local bbPlayer bbP;
+	local rotator AimRot;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
 
-	if ( AmmoType == None )
+	// Use explicit client data if available
+	if (bUseExplicitData)
 	{
-		// ammocheck
-		GiveAmmo(PawnOwner);
+		AimRot = ExplicitClientRot;
+		GetAxes(AimRot, X, Y, Z);
+		Start = ExplicitClientLoc + CalcDrawOffset();
 	}
+	else
+	{
+		GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+		Start = PawnOwner.Location + CalcDrawOffset();
+		AimRot = PawnOwner.AdjustToss(AltProjectileSpeed, Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z, AimError, True, bAltWarnTarget);
+	}
+
+	PawnOwner.MakeNoise(PawnOwner.SoundDampening);
+	Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));
+	Start = Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	
+	Slug = Spawn(class'ST_FlakSlug', Owner,, Start, AimRot);
+	Slug.WImp = WImp;
+
+	// Apply ping compensation for flak slug if enabled
+	if (bbP != None && GetWeaponSettings().FlakCompensatePing) {
+		WImp.SimulateProjectile(Slug, bbP.PingAverage);
+	}
+}
+
+// Fire chunks - for bots or when explicit fire isn't used
+function Fire( float Value )
+{
+	local Pawn PawnOwner;
+
+	PawnOwner = Pawn(Owner);
+
+	// If this is a player with explicit firing enabled, wait for ServerExplicitFire
+	if (GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
+		return;
+
+	if ( AmmoType == None )
+		GiveAmmo(PawnOwner);
+
 	if (AmmoType.UseAmmo(1))
 	{
 		bCanClientFire = true;
-		bPointing=True;
-		Start = PawnOwner.Location + CalcDrawOffset();
-		B = Bot(PawnOwner);
+		bPointing = True;
 		PawnOwner.PlayRecoil(FiringSpeed);
-		PawnOwner.MakeNoise(2.0 * PawnOwner.SoundDampening);
-		AdjustedAim = PawnOwner.AdjustAim(AltProjectileSpeed, Start, AimError, True, bWarnTarget);
-		GetAxes(AdjustedAim,X,Y,Z);
-		Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));		
-		Start = Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;	
-		CI = Spawn(class'ST_UTChunkInfo', PawnOwner);
-		CI.WImp = WImp;
-
-		if (GetWeaponSettings().FlakChunkRandomSpread) {
-			// My comment
-			// I am not sure why EPIC has decided to do flak (or rockets) this way, as they could
-			// Have created a masterchunk on client that spawned the rest of the chunks according to
-			// The below rules, creating less network traffic. Of course it would pose a problem
-			// When you run into a chunk that wasn't relevant when the original shot was fired. Oh well :/
-			CI.AddChunk(Spawn( class 'ST_UTChunk1',Owner, '', Start, AdjustedAim));
-			CI.AddChunk(Spawn( class 'ST_UTChunk2',Owner, '', Start - Z, AdjustedAim));
-			CI.AddChunk(Spawn( class 'ST_UTChunk3',Owner, '', Start + 2 * Y + Z, AdjustedAim));
-			CI.AddChunk(Spawn( class 'ST_UTChunk4',Owner, '', Start - Y, AdjustedAim));
-			CI.AddChunk(Spawn( class 'ST_UTChunk1',Owner, '', Start + 2 * Y - Z, AdjustedAim));
-			CI.AddChunk(Spawn( class 'ST_UTChunk2',Owner, '', Start, AdjustedAim));
-
-			// lower skill bots fire less flak chunks
-			if ( (B == None) || !B.bNovice || ((B.Enemy != None) && (B.Enemy.Weapon != None) && B.Enemy.Weapon.bMeleeWeapon) )
-			{
-				CI.AddChunk(Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, AdjustedAim));
-				CI.AddChunk(Spawn( class 'ST_UTChunk4',Owner, '', Start + 2 * Y + Z, AdjustedAim));
-			}
-			else if ( B.Skill > 1 )
-				CI.AddChunk(Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, AdjustedAim));
-		} else {
-			R = X / Tan(3.0*Pi/180.0);
-
-			CI.AddChunk(Spawn(class 'ST_UTChunk1', Owner,'',Start, rotator(R)));
-			CI.AddChunk(Spawn(class 'ST_UTChunk2', Owner,'',Start + Y*Cos(0.0)        + Z*Sin(0.0),        rotator(R + Y*Cos(0.0)        + Z*Sin(0.0))));
-			CI.AddChunk(Spawn(class 'ST_UTChunk3', Owner,'',Start + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0),     rotator(R + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0))));
-			CI.AddChunk(Spawn(class 'ST_UTChunk4', Owner,'',Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0))));
-			CI.AddChunk(Spawn(class 'ST_UTChunk1', Owner,'',Start + Y*Cos(Pi)         + Z*Sin(Pi),         rotator(R + Y*Cos(Pi)         + Z*Sin(Pi))));
-			CI.AddChunk(Spawn(class 'ST_UTChunk2', Owner,'',Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0))));
-			CI.AddChunk(Spawn(class 'ST_UTChunk3', Owner,'',Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0))));
-		}		
-
+		PlayFiring();
+		SpawnServerChunks();
 		ClientFire(Value);
 		GoToState('NormalFire');
 	}
@@ -112,53 +287,158 @@ function Fire( float Value )
 
 function AltFire(float Value)
 {
-    local Vector Start, X,Y,Z;
-    local ST_FlakSlug Slug;
-    local Pawn PawnOwner;
-    local bbPlayer bbP;
+	local Pawn PawnOwner;
 
-    PawnOwner = Pawn(Owner);
-    bbP = bbPlayer(PawnOwner);
+	PawnOwner = Pawn(Owner);
 
-    if (AmmoType == None)
-    {
-        GiveAmmo(PawnOwner);
-    }
-    if (AmmoType.UseAmmo(1))
-    {  
-            
-        PawnOwner.PlayRecoil(FiringSpeed);
-        bPointing = True;
-        bCanClientFire = true;
-        PawnOwner.MakeNoise(PawnOwner.SoundDampening);
-        GetAxes(PawnOwner.ViewRotation,X,Y,Z);
-        Start = PawnOwner.Location + CalcDrawOffset();
-        Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));        
-        Start = Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
-        AdjustedAim = PawnOwner.AdjustToss(AltProjectileSpeed, Start, AimError, True, bAltWarnTarget);
-        Slug = Spawn(class'ST_FlakSlug',Owner,, Start, AdjustedAim);
-        Slug.WImp = WImp;
+	// If this is a player with explicit firing enabled, wait for ServerExplicitAltFire
+	if (GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
+		return;
 
-        // Apply ping compensation for flak slug if enabled
-        if (bbP != None && GetWeaponSettings().FlakCompensatePing) {
-            WImp.SimulateProjectile(Slug, bbP.PingAverage);
-        }
+	if (AmmoType == None)
+		GiveAmmo(PawnOwner);
 
+	if (AmmoType.UseAmmo(1))
+	{
+		bCanClientFire = true;
+		bPointing = True;
+		PawnOwner.PlayRecoil(FiringSpeed);
+		PlayAltFiring();
+		SpawnServerSlug();
 		ClientAltFire(Value);
-        GoToState('AltFiring');
-    }    
+		GoToState('AltFiring');
+	}
+}
+
+simulated function bool ClientFire(float Value)
+{
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
+
+	PawnOwner = Pawn(Owner);
+	
+	if (PawnOwner == None) 
+		return false;
+
+	if (GetWeaponSettings().bEnablePingCompensation)
+	{
+		bbP = bbPlayer(PawnOwner);
+
+		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
+		{
+			if (AmmoType == None && AmmoName != None)
+				GiveAmmo(PawnOwner);
+			
+			if (AmmoType != None && AmmoType.AmmoAmount > 0)
+			{
+				Instigator = PawnOwner;
+				GotoState('ClientFiring');
+				bPointing = True;
+				bCanClientFire = true;
+
+				// Always play weapon animations
+				PawnOwner.PlayRecoil(FiringSpeed);
+				PlayFiring();
+
+				if (Affector != None)
+					Affector.FireEffect();
+
+				if (PlayerPawn(Owner) != None)
+					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(650, 450, 190));
+
+				// Spawn client-side visuals if setting enabled
+				if (bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
+				{
+					SpawnClientSideChunks();
+				}
+
+				// Send explicit fire data to server
+				ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation);
+
+				return true;
+			}
+			return false;
+		}
+	}
+	
+	return Super.ClientFire(Value);
+}
+
+simulated function bool ClientAltFire(float Value)
+{
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
+
+	PawnOwner = Pawn(Owner);
+	
+	if (PawnOwner == None)
+		return false;
+
+	if (GetWeaponSettings().bEnablePingCompensation)
+	{
+		bbP = bbPlayer(PawnOwner);
+
+		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
+		{
+			if (AmmoType == None && AmmoName != None)
+				GiveAmmo(PawnOwner);
+			
+			if (AmmoType != None && AmmoType.AmmoAmount > 0)
+			{
+				Instigator = PawnOwner;
+				GotoState('ClientAltFiring');
+				bPointing = True;
+				bCanClientFire = true;
+
+				// Always play weapon animations
+				PawnOwner.PlayRecoil(FiringSpeed);
+				PlayAltFiring();
+
+				if (Affector != None)
+					Affector.FireEffect();
+
+				if (PlayerPawn(Owner) != None)
+					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(650, 450, 190));
+
+				// Spawn client-side visuals if setting enabled
+				if (bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
+				{
+					SpawnClientSideSlug();
+				}
+
+				// Send explicit fire data to server
+				ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation);
+
+				return true;
+			}
+			return false;
+		}
+	}
+	
+	return Super.ClientAltFire(Value);
 }
 
 state ClientFiring {
+	simulated function bool ClientFire(float Value)
+	{
+		return false;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		return false;
+	}
+
 	simulated function BeginState()
 	{
-		if (Role < ROLE_Authority)
+		// Only spawn visuals in BeginState for legacy mode (non-explicit firing)
+		if (Role < ROLE_Authority && !GetWeaponSettings().bEnablePingCompensation)
 			SpawnClientSideChunks();
 	}
 
 	simulated function AnimEnd()
 	{
-		if ( (Pawn(Owner) == None) || (Ammotype.AmmoAmount <= 0) )
+		if ( (Pawn(Owner) == None) || (AmmoType != None && AmmoType.AmmoAmount <= 0) )
 		{
 			PlayIdleAnim();
 			GotoState('');
@@ -167,6 +447,7 @@ state ClientFiring {
 			GotoState('');
 		else
 		{
+			// Play reload sequence like base game (Eject + Loading)
 			PlayFastReloading();
 			GotoState('ClientReload');
 		}
@@ -174,15 +455,26 @@ state ClientFiring {
 }
 
 state ClientAltFiring {
+	simulated function bool ClientFire(float Value)
+	{
+		return false;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		return false;
+	}
+
 	simulated function BeginState()
 	{
-		if (Role < ROLE_Authority)
+		// Only spawn visuals in BeginState for legacy mode (non-explicit firing)
+		if (Role < ROLE_Authority && !GetWeaponSettings().bEnablePingCompensation)
 			SpawnClientSideSlug();
 	}
 
 	simulated function AnimEnd()
 	{
-		if ( (Pawn(Owner) == None) || (Ammotype.AmmoAmount <= 0) )
+		if ( (Pawn(Owner) == None) || (AmmoType != None && AmmoType.AmmoAmount <= 0) )
 		{
 			PlayIdleAnim();
 			GotoState('');
@@ -191,10 +483,51 @@ state ClientAltFiring {
 			GotoState('');
 		else
 		{
+			// Play reload sequence like base game (Loading)
 			PlayReloading();
 			GotoState('ClientReload');
 		}
+	}
+}
 
+// Client reload state - handles the reload animation sequence before allowing next shot
+state ClientReload {
+	// Queue fire commands during reload
+	simulated function bool ClientFire(float Value)
+	{
+		bForceFire = bForceFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
+		return bForceFire;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		bForceAltFire = bForceAltFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
+		return bForceAltFire;
+	}
+
+	simulated function AnimEnd()
+	{
+		if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
+		{
+			if ( bForceFire || (Pawn(Owner).bFire != 0) )
+			{
+				Global.ClientFire(0);
+				return;
+			}
+			else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
+			{
+				Global.ClientAltFire(0);
+				return;
+			}
+		}
+		GotoState('');
+		Global.AnimEnd();
+	}
+
+	simulated function EndState()
+	{
+		bForceFire = false;
+		bForceAltFire = false;
 	}
 }
 
@@ -411,6 +744,54 @@ simulated function vector CalcDrawOffsetClient() {
 	}
 	
 	return DrawOffset;
+}
+
+simulated function PlayFiring()
+{
+	PlayAnim('Fire', 0.9, 0.05);
+	Owner.PlaySound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
+	bMuzzleFlash++;
+}
+
+simulated function PlayAltFiring()
+{
+	PlayAnim('AltFire', 1.3, 0.05);
+	Owner.PlaySound(Misc1Sound, SLOT_None, 0.6*Pawn(Owner).SoundDampening);
+	Owner.PlaySound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
+	bMuzzleFlash++;
+}
+
+// Idle state - prevents server from auto-firing when client is in control
+state Idle
+{
+	function BeginState()
+	{
+		if (GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
+		{
+			// Don't check for bFire/bAltFire to trigger server-side firing
+			bPointing = false;
+			Disable('AnimEnd');
+			PlayIdleAnim();
+		}
+		else
+		{
+			bPointing = False;
+			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
+				Pawn(Owner).SwitchToBestWeapon();
+			if ( Pawn(Owner).bFire != 0 ) Fire(0.0);
+			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);	
+			Disable('AnimEnd');
+			PlayIdleAnim();
+		}
+	}
+
+	function AnimEnd()
+	{
+		if (GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
+			PlayIdleAnim();
+		else
+			Super.AnimEnd();
+	}
 }
 
 simulated function TweenDown() {

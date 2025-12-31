@@ -62,12 +62,17 @@ var float MinigunBulletInterval;
 var float MinigunAlternateBulletInterval;
 var float MinigunMinDamage;
 var float MinigunMaxDamage;
+var float MinigunAltMinDamage;
+var float MinigunAltMaxDamage;
 
 var float PulseSelectTime;
 var float PulseDownTime;
 var float PulseSphereDamage;
 var float PulseSphereMomentum;
+var float PulseSphereSpeed;
 var float PulseSphereFireRate;
+var float PulseSphereCollisionRadius;
+var float PulseSphereCollisionHeight;
 var float PulseBoltDPS;
 var float PulseBoltMomentum;
 var float PulseBoltMaxAccumulate;
@@ -220,12 +225,17 @@ replication {
 		MinigunAlternateBulletInterval,
 		MinigunMinDamage,
 		MinigunMaxDamage,
+		MinigunAltMinDamage,
+		MinigunAltMaxDamage,
 
 		PulseSelectTime,
 		PulseDownTime,
 		PulseSphereDamage,
 		PulseSphereMomentum,
+		PulseSphereSpeed,
 		PulseSphereFireRate,
+		PulseSphereCollisionRadius,
+		PulseSphereCollisionHeight,
 		PulseBoltDPS,
 		PulseBoltMomentum,
 		PulseBoltMaxAccumulate,
@@ -573,12 +583,17 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	MinigunAlternateBulletInterval = S.MinigunAlternateBulletInterval;
 	MinigunMinDamage = S.MinigunMinDamage;
 	MinigunMaxDamage = S.MinigunMaxDamage;
+	MinigunAltMinDamage = S.MinigunAltMinDamage;
+	MinigunAltMaxDamage = S.MinigunAltMaxDamage;
 
 	PulseSelectTime = S.PulseSelectTime;
 	PulseDownTime = S.PulseDownTime;
 	PulseSphereDamage = S.PulseSphereDamage;
 	PulseSphereMomentum = S.PulseSphereMomentum;
+	PulseSphereSpeed = S.PulseSphereSpeed;
 	PulseSphereFireRate = S.PulseSphereFireRate;
+	PulseSphereCollisionRadius = S.PulseSphereCollisionRadius;
+	PulseSphereCollisionHeight = S.PulseSphereCollisionHeight;
 	PulseBoltDPS = S.PulseBoltDPS;
 	PulseBoltMomentum = S.PulseBoltMomentum;
 	PulseBoltMaxAccumulate = S.PulseBoltMaxAccumulate;
@@ -727,12 +742,17 @@ defaultproperties
 	MinigunAlternateBulletInterval=0.050
 	MinigunMinDamage=5
 	MinigunMaxDamage=7
+	MinigunAltMinDamage=5
+	MinigunAltMaxDamage=7
 
 	PulseSelectTime=0.444444
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
 	PulseSphereFireRate=0.18
+	PulseSphereSpeed=1450.0
+	PulseSphereCollisionRadius=6.0
+	PulseSphereCollisionHeight=6.0
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
 	PulseBoltMaxAccumulate=0.08

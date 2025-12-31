@@ -15,8 +15,12 @@ simulated function PostBeginPlay()
 	{
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break;
-	}
 
+		if (WImp != none) {
+			Speed = WImp.WeaponSettings.PulseSphereSpeed;
+			SetCollisionSize(WImp.WeaponSettings.PulseSphereCollisionRadius, WImp.WeaponSettings.PulseSphereCollisionHeight);
+		}
+	}
 	Super.PostBeginPlay();
 }
 

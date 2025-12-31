@@ -343,7 +343,6 @@ var IGPlus_FlagSprite IGPlus_TeamFlagSprite[4];
 var bool IGPlus_EnableDualButtonSwitch;
 var bool IGPlus_UseFastWeaponSwitch;
 
-
 var bool IGPlus_EnableInputReplication;
 var bool IGPlus_PressedJumpSave;
 var IGPlus_SavedInputChain IGPlus_SavedInputChain;
@@ -361,11 +360,13 @@ struct ReplBuffer {
 
 var string IGPlus_LogoVersionText;
 
-var float FRandValues[47]; // rX Added
-var int FRandValuesIndex; // rX Added
-var int FRandValuesLength; // rX Added
+// rX Added
 
-struct ClientWeaponSettings { // rX Added
+var float FRandValues[47];
+var int FRandValuesIndex;
+var int FRandValuesLength;
+
+struct ClientWeaponSettings {
 	var bool bBioUseClientSideAnimations;
 	var bool bShockBeamUseClientSideAnimations;
 	var bool bShockProjectileUseClientSideAnimations;
@@ -380,8 +381,6 @@ var ClientWeaponSettings ClientWeaponSettingsData;
 
 var bool bEnableDamageDebugMode;
 var bool bEnableDamageDebugConsoleMessages;
-
-var NavigationPoint LastStartSpot2, LastStartSpot3;
 
 replication
 {
@@ -4893,7 +4892,7 @@ exec function EnableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Ripper (Forced:" $ ForcedValue $ "),";
     }
 
-    // --- Flak ---
+	// --- Flak ---
     ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
     if (ForcedValue == "") {
         if (!Settings.bFlakUseClientSideAnimations) {
@@ -5019,7 +5018,7 @@ exec function DisableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Ripper (Forced:" $ ForcedValue $ "),";
     }
 
-    // --- Flak ---
+	// --- Flak ---
     ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
     if (ForcedValue == "") {
         if (Settings.bFlakUseClientSideAnimations) {

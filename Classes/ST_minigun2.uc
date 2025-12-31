@@ -288,7 +288,13 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 
 		if ( Other.IsA('Bot') && (FRand() < 0.2) )
 			Pawn(Other).WarnTarget(PawnOwner, 500, X);
-		rndDam = WImp.WeaponSettings.MinigunMinDamage + Rand(WImp.WeaponSettings.MinigunMaxDamage - WImp.WeaponSettings.MinigunMinDamage + 1);
+
+		If (isInState('AltFiring'))
+			rndDam = WImp.WeaponSettings.MinigunAltMinDamage + Rand(WImp.WeaponSettings.MinigunAltMaxDamage - WImp.WeaponSettings.MinigunAltMinDamage + 1);
+
+		else
+			rndDam = WImp.WeaponSettings.MinigunMinDamage + Rand(WImp.WeaponSettings.MinigunMaxDamage - WImp.WeaponSettings.MinigunMinDamage + 1);
+
 		if ( Level.Game.GetPropertyText("NoLockdown") == "1" || FRand() >= 0.2 )
 			X = vect(0, 0, 0);
 		else

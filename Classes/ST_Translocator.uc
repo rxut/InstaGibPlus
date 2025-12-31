@@ -248,15 +248,21 @@ function AltFire( float Value )
         bbP = bbPlayer(Owner);
         STTarget = ST_TranslocatorTarget(TTarget);
         
-        // Apply same position history logic as in Fire()
-        if (bbP != None && STTarget != None && STTarget.HistoryCount > 0 && 
-            ServerTimeSinceTargetSpawn < STTarget.TotalSimulationTime)
+         // CHECK 1: Are we inside the recorded history? (Standard High-Ping Behavior)
+        if (STTarget != None && STTarget.HistoryCount > 0 && ServerTimeSinceTargetSpawn < STTarget.TotalSimulationTime)
         {
-            // Calculate historical position based on time since throw
             TimeSinceThrow = ServerTimeSinceTargetSpawn;
             HistoricalLocation = STTarget.GetHistoricalPosition(TimeSinceThrow);
             
-            // Store original location and temporarily move to historical position
+            STTarget.PreTranslocateLocation = STTarget.Location;
+            STTarget.SetLocation(HistoricalLocation);
+            STTarget.bUsingHistoricalPosition = true;
+        }
+        // CHECK 2: Are we OUTSIDE the history? (Fix for Low-Ping to maintain LAN behavior)
+        else if (STTarget != None && bbP != none && GetWeaponSettings().TranslocatorCompensatePing)
+        {
+            HistoricalLocation = STTarget.Location - (STTarget.Velocity * (float(bbP.PingAverage) * 0.5 * 0.001));
+            
             STTarget.PreTranslocateLocation = STTarget.Location;
             STTarget.SetLocation(HistoricalLocation);
             STTarget.bUsingHistoricalPosition = true;
@@ -324,13 +330,21 @@ function Fire( float Value )
         STTarget = ST_TranslocatorTarget(TTarget);
         
         // Check if we should use position history
+         // CHECK 1: Are we inside the recorded history? (Standard High-Ping Behavior)
         if (STTarget != None && STTarget.HistoryCount > 0 && ServerTimeSinceTargetSpawn < STTarget.TotalSimulationTime)
         {
-            // Calculate historical position based on time since throw
             TimeSinceThrow = ServerTimeSinceTargetSpawn;
             HistoricalLocation = STTarget.GetHistoricalPosition(TimeSinceThrow);
             
-            // Store original location and temporarily move to historical position
+            STTarget.PreTranslocateLocation = STTarget.Location;
+            STTarget.SetLocation(HistoricalLocation);
+            STTarget.bUsingHistoricalPosition = true;
+        }
+        // CHECK 2: Are we OUTSIDE the history? (Fix for Low-Ping to maintain LAN behavior)
+        else if (STTarget != None && bbP != none && GetWeaponSettings().TranslocatorCompensatePing)
+        {
+            HistoricalLocation = STTarget.Location - (STTarget.Velocity * (float(bbP.PingAverage) * 0.5 * 0.001));
+            
             STTarget.PreTranslocateLocation = STTarget.Location;
             STTarget.SetLocation(HistoricalLocation);
             STTarget.bUsingHistoricalPosition = true;

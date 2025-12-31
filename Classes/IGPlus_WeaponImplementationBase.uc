@@ -697,7 +697,7 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
         return;
         
     PureRef = bbPlayer(TTarget.Instigator).zzUTPure;
-    SimPing = float(Ping);
+    SimPing = float(Ping) * 0.5;
     
     // Cap ping compensation
     if (SimPing > WeaponSettings.PingCompensationMax)
@@ -707,28 +707,24 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
         return;
         
     // Pre-calculate squared threshold
-    MinMovementSquared = 0.01; // 0.1 * 0.1
+    MinMovementSquared = 0.01;
         
     // Store initial position BEFORE simulation
     CurrentPos = TTarget.Location;
-    TTarget.SimulationHistory[0] = CurrentPos;
-    TTarget.SimulationTimes[0] = 0.0;
-    TTarget.HistoryCount = 1;
-    TTarget.SimulationStartTime = Level.TimeSeconds;
-    TTarget.TotalSimulationTime = SimPing * 0.001;
     
-    // Calculate time step
+    TTarget.InitSimulationHistory(CurrentPos, 0.0, float(Ping) * 0.001);
+    
+    // Calculate time step based on SimPing (Half-Ping)
     DeltaTime = 0.001 * SimPing * Level.TimeDilation;
     DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
     
-    // Calculate storage interval (ms between saves)
-    HistoryInterval = Max(1, int(SimPing / 19.0)); // 19 because we already have 1
+    // Calculate storage interval based on SimPing
+    HistoryInterval = Max(1, int(SimPing / 49.0));
     AccumulatedTime = 0.0;
     
     while (SimPing > 0.0 && TTarget != None && !TTarget.bDeleteMe) {
         PureRef.CompensateFor(int(SimPing), TTarget.Instigator);
         
-        // Store position BEFORE physics update
         CurrentPos = TTarget.Location;
         
         TTarget.AutonomousPhysics(DeltaTime);
@@ -736,27 +732,20 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
         SimPing -= DeltaTime * 1000.0;
         AccumulatedTime += DeltaTime * 1000.0;
         
-        // Manual squared distance calculation
         Delta = TTarget.Location - CurrentPos;
         if ((Delta.X * Delta.X + Delta.Y * Delta.Y + Delta.Z * Delta.Z) > MinMovementSquared) {
-            // Store position at intervals
             if (AccumulatedTime >= HistoryInterval * (TTarget.HistoryCount - 1) && 
-                TTarget.HistoryCount < 20) {
-                TTarget.SimulationHistory[TTarget.HistoryCount] = TTarget.Location;
-                TTarget.SimulationTimes[TTarget.HistoryCount] = AccumulatedTime * 0.001;
-                TTarget.HistoryCount++;
+                TTarget.HistoryCount < 50) {
+                TTarget.AddSimulationHistoryStep(TTarget.Location, AccumulatedTime * 0.001);
             }
         }
         
         PureRef.EndCompensation();
     }
     
-    // Always store final position
-    if (TTarget != None && TTarget.HistoryCount < 20) {
-        TTarget.SimulationHistory[TTarget.HistoryCount] = TTarget.Location;
-        TTarget.SimulationTimes[TTarget.HistoryCount] = TTarget.TotalSimulationTime;
-            
-        TTarget.HistoryCount++;
+    // Store final simulated position
+    if (TTarget != None && TTarget.HistoryCount < 50) {
+        TTarget.AddSimulationHistoryStep(TTarget.Location, TTarget.TotalSimulationTime);
     }
 }
 

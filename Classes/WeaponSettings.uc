@@ -86,12 +86,17 @@ var config float MinigunBulletInterval;
 var config float MinigunAlternateBulletInterval;
 var config float MinigunMinDamage;
 var config float MinigunMaxDamage;
+var config float MinigunAltMinDamage;
+var config float MinigunAltMaxDamage;
 
 var config float PulseSelectTime;
 var config float PulseDownTime;
 var config float PulseSphereDamage;
 var config float PulseSphereMomentum;
+var config float PulseSphereSpeed;
 var config float PulseSphereFireRate;
+var config float PulseSphereCollisionRadius;
+var config float PulseSphereCollisionHeight;
 var config float PulseBoltDPS;
 var config float PulseBoltMomentum;
 var config float PulseBoltMaxAccumulate;
@@ -271,12 +276,17 @@ defaultproperties
 	MinigunAlternateBulletInterval=0.050
 	MinigunMinDamage=5
 	MinigunMaxDamage=7
+	MinigunAltMinDamage=5
+	MinigunAltMaxDamage=7
 
 	PulseSelectTime=0.444444
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
 	PulseSphereFireRate=0.18
+	PulseSphereSpeed=1450.0
+	PulseSphereCollisionRadius=6.0
+	PulseSphereCollisionHeight=6.0
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
 	PulseBoltMaxAccumulate=0.08
