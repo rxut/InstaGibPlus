@@ -11,16 +11,20 @@ var vector ExtrapolationDelta;
 
 simulated function PostBeginPlay()
 {
+	local WeaponSettingsRepl WS;
+
 	if (ROLE == ROLE_Authority)
 	{
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break;
-
-		if (WImp != none) {
-			Speed = WImp.WeaponSettings.PulseSphereSpeed;
-			SetCollisionSize(WImp.WeaponSettings.PulseSphereCollisionRadius, WImp.WeaponSettings.PulseSphereCollisionHeight);
-		}
 	}
+
+	WS = GetWeaponSettings();
+	if (WS != none) {
+		Speed = WS.PulseSphereSpeed;
+		SetCollisionSize(WS.PulseSphereCollisionRadius, WS.PulseSphereCollisionHeight);
+	}
+
 	Super.PostBeginPlay();
 }
 
@@ -77,7 +81,7 @@ simulated event Tick(float Delta) {
     // Extrapolate locally to compensate for ping
     if (Physics != PHYS_None) {
         NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+        Move(NewXPolDelta - ExtrapolationDelta);
         ExtrapolationDelta = NewXPolDelta;
     }
 }

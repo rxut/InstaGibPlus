@@ -560,50 +560,50 @@ simulated function SpawnClientSideChunks()
 			LocalChunkDummy = Spawn( class 'ST_UTChunk1',Owner, '', Start, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk2',Owner, '', Start - Z, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk3',Owner, '', Start + 2 * Y + Z, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk4',Owner, '', Start - Y, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk1',Owner, '', Start + 2 * Y - Z, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk2',Owner, '', Start, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk3',Owner, '', Start + Y - Z, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn( class 'ST_UTChunk4',Owner, '', Start + 2 * Y + Z, PawnOwner.ViewRotation);
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
-			LocalChunkDummy.SetCollision(false, false, false);	
+			LocalChunkDummy.bCollideWorld = true;
+			LocalChunkDummy.SetCollision(false, false, false);
 		}
 		else {
 			R = X / Tan(3.0*Pi/180.0);
@@ -611,43 +611,43 @@ simulated function SpawnClientSideChunks()
 			LocalChunkDummy = Spawn(class 'ST_UTChunk1', Owner, '', Start, rotator(R));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn(class 'ST_UTChunk2', Owner, '', Start + Y*Cos(0.0)        + Z*Sin(0.0),        rotator(R + Y*Cos(0.0)        + Z*Sin(0.0)));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn(class 'ST_UTChunk3', Owner, '', Start + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0),     rotator(R + Y*Cos(Pi/3.0)     + Z*Sin(Pi/3.0)));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn(class 'ST_UTChunk4', Owner, '', Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0)));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn(class 'ST_UTChunk1', Owner, '', Start + Y*Cos(Pi)         + Z*Sin(Pi),         rotator(R + Y*Cos(Pi)         + Z*Sin(Pi)));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn(class 'ST_UTChunk2', Owner, '', Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0)));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 
 			LocalChunkDummy = Spawn(class 'ST_UTChunk3', Owner, '', Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0)));
 			LocalChunkDummy.RemoteRole = ROLE_None;
 			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.bCollideWorld = false;	
+			LocalChunkDummy.bCollideWorld = true;
 			LocalChunkDummy.SetCollision(false, false, false);
 		}
 	}
@@ -679,6 +679,7 @@ simulated function SpawnClientSideSlug()
 
 		LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
 		LocalSlugDummy.RemoteRole = ROLE_None;
+		LocalSlugDummy.Instigator = PawnOwner;
 		//LocalSlugDummy.bMeshEnviroMap = true;
 		//LocalSlugDummy.Texture = Texture'UWindow.Icons.MenuHighlight';
 		LocalSlugDummy.bClientVisualOnly = true;
@@ -749,16 +750,14 @@ simulated function vector CalcDrawOffsetClient() {
 simulated function PlayFiring()
 {
 	PlayAnim('Fire', 0.9, 0.05);
-	Owner.PlaySound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
-	bMuzzleFlash++;
+	PlayOwnedSound(FireSound, SLOT_Misc, Pawn(Owner).SoundDampening*4.0);
 }
 
 simulated function PlayAltFiring()
 {
 	PlayAnim('AltFire', 1.3, 0.05);
 	Owner.PlaySound(Misc1Sound, SLOT_None, 0.6*Pawn(Owner).SoundDampening);
-	Owner.PlaySound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
-	bMuzzleFlash++;
+	PlayOwnedSound(AltFireSound, SLOT_Misc, Pawn(Owner).SoundDampening*4.0);
 }
 
 // Idle state - prevents server from auto-firing when client is in control

@@ -14,7 +14,7 @@ var WeaponSettingsRepl WSettings;
 var int ChunkIndex;
 
 var bool RandomSpread;
-var float R1, R2, R3, R4;
+var float R1, R2, R3, R4, RBounce;
 
 var bool bClientVisualOnly;
 
@@ -42,7 +42,7 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 replication
 {
 	reliable if ( Role == ROLE_Authority )
-		R1, R2, R3, R4;
+		R1, R2, R3, R4, RBounce;
 }
 
 simulated function float GetFRandValues()
@@ -87,7 +87,7 @@ simulated function PostBeginPlay() {
 		R2 = GetFRandValues();
 		R3 = GetFRandValues();
 		R4 = GetFRandValues();
-		
+		RBounce = GetFRandValues();
 	}
 	else
 	{
@@ -95,6 +95,7 @@ simulated function PostBeginPlay() {
 		R2 = FRand();
 		R3 = FRand();
 		R4 = FRand();
+		RBounce = FRand();
 	}
 
 	if (Role == ROLE_Authority) {
@@ -175,7 +176,7 @@ simulated event Tick(float Delta) {
     // Extrapolate locally to compensate for ping
 	if (Physics == PHYS_Projectile) {
 		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-		MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+		Move(NewXPolDelta - ExtrapolationDelta);
 		ExtrapolationDelta = NewXPolDelta;
 	}
 }
@@ -218,6 +219,26 @@ function ProcessTouch (Actor Other, vector HitLocation)
 	}
 }
 
+simulated function ZoneChange(ZoneInfo NewZone)
+{
+	if (bClientVisualOnly && NewZone.bWaterZone)
+	{
+		bHidden = true;
+		if (Trail != None)
+		{
+			Trail.Destroy();
+			Trail = None;
+		}
+		SetTimer(0.0, false);
+		Destroy();
+		return;
+	}
+	if (NewZone.bWaterZone)
+		ExtrapolationDelta *= 0.65;
+
+	Super.ZoneChange(NewZone);
+}
+
 simulated function HitWall( vector HitNormal, actor Wall )
 {
 		local float Rand;
@@ -225,29 +246,20 @@ simulated function HitWall( vector HitNormal, actor Wall )
 
 		if (bClientVisualOnly)
 		{
-			bHidden = true;
-
-			if (Trail != None)
-			{
-				Trail.Destroy();
-				Trail = None;
-			}
-			SetTimer(0.0, false);
-			Destroy();
-			return;
+			// Do not destroy, allow bounce
 		}
-
-		if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
+		else if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
 		{
 			if ( Level.NetMode != NM_Client )
 				Wall.TakeDamage( Damage, instigator, Location, MomentumTransfer * Normal(Velocity), MyDamageType);
 			Destroy();
 			return;
 		}
+
 		if ( Physics != PHYS_Falling ) 
 		{
 			SetPhysics(PHYS_Falling);
-			if ( !Level.bDropDetail && (Level.Netmode != NM_DedicatedServer) && !Region.Zone.bWaterZone ) 
+			if ( !bClientVisualOnly && !Level.bDropDetail && (Level.Netmode != NM_DedicatedServer) && !Region.Zone.bWaterZone ) 
 			{
 				if ( FRand() < 0.5 )
 				{
@@ -258,10 +270,10 @@ simulated function HitWall( vector HitNormal, actor Wall )
 					Spawn(class'WallCrack',,,Location, rotator(HitNormal));
 			}
 		}
-		Velocity = 0.8*(( Velocity dot HitNormal ) * HitNormal * (-1.8 + FRand()*0.8) + Velocity);   // Reflect off Wall w/damping
+		Velocity = 0.8*(( Velocity dot HitNormal ) * HitNormal * (-1.8 + RBounce*0.8) + Velocity);   // Reflect off Wall w/damping
 		SetRotation(rotator(Velocity));
 		speed = VSize(Velocity);
-		if ( speed > 100 ) 
+		if ( !bClientVisualOnly && speed > 100 ) 
 		{
 			MakeNoise(0.3);
 			Rand = FRand();

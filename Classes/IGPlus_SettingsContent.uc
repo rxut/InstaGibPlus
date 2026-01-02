@@ -436,6 +436,10 @@ var localized string MoreInformationText;
 	var localized string FlakUseClientSideAnimationsText;
 	var localized string FlakUseClientSideAnimationsHelp;
 
+	var UWindowCheckbox Chk_RocketUseClientSideAnimations;
+	var localized string RocketUseClientSideAnimationsText;
+	var localized string RocketUseClientSideAnimationsHelp;
+
 	var UWindowCheckbox Chk_SniperUseClientSideAnimations;
 	var localized string SniperUseClientSideAnimationsText;
 	var localized string SniperUseClientSideAnimationsHelp;
@@ -862,6 +866,7 @@ function Created() {
 	Chk_PulseUseClientSideAnimations = CreateCheckbox(PulseUseClientSideAnimationsText, PulseUseClientSideAnimationsHelp);
 	Chk_RipperUseClientSideAnimations = CreateCheckbox(RipperUseClientSideAnimationsText, RipperUseClientSideAnimationsHelp);
 	Chk_FlakUseClientSideAnimations = CreateCheckbox(FlakUseClientSideAnimationsText, FlakUseClientSideAnimationsHelp);
+	Chk_RocketUseClientSideAnimations = CreateCheckbox(RocketUseClientSideAnimationsText, RocketUseClientSideAnimationsHelp);
 	Chk_SniperUseClientSideAnimations = CreateCheckbox(SniperUseClientSideAnimationsText, SniperUseClientSideAnimationsHelp);
 	Chk_TranslocatorUseClientSideAnimations = CreateCheckbox(TranslocatorUseClientSideAnimationsText, TranslocatorUseClientSideAnimationsHelp);
 
@@ -1120,6 +1125,7 @@ function Load() {
 	Chk_PulseUseClientSideAnimations.bChecked = Settings.bPulseUseClientSideAnimations;
 	Chk_RipperUseClientSideAnimations.bChecked = Settings.bRipperUseClientSideAnimations;
 	Chk_FlakUseClientSideAnimations.bChecked = Settings.bFlakUseClientSideAnimations;
+	Chk_RocketUseClientSideAnimations.bChecked = Settings.bRocketUseClientSideAnimations;
 	Chk_SniperUseClientSideAnimations.bChecked = Settings.bSniperUseClientSideAnimations;
 	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
 
@@ -1239,6 +1245,7 @@ function Save() {
 	Settings.bPulseUseClientSideAnimations = Chk_PulseUseClientSideAnimations.bChecked;
 	Settings.bRipperUseClientSideAnimations = Chk_RipperUseClientSideAnimations.bChecked;
 	Settings.bFlakUseClientSideAnimations = Chk_FlakUseClientSideAnimations.bChecked;
+	Settings.bRocketUseClientSideAnimations = Chk_RocketUseClientSideAnimations.bChecked;
 	Settings.bSniperUseClientSideAnimations = Chk_SniperUseClientSideAnimations.bChecked;
 	Settings.bTranslocatorUseClientSideAnimations = Chk_TranslocatorUseClientSideAnimations.bChecked;
 
@@ -1251,6 +1258,7 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bPulseUseClientSideAnimations", Chk_PulseUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bRipperUseClientSideAnimations", Chk_RipperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bFlakUseClientSideAnimations", Chk_FlakUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bRocketUseClientSideAnimations", Chk_RocketUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bSniperUseClientSideAnimations", Chk_SniperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bTranslocatorUseClientSideAnimations", Chk_TranslocatorUseClientSideAnimations.bChecked);
 	}
@@ -1595,6 +1603,9 @@ defaultproperties
 
 		FlakUseClientSideAnimationsText="Use Client-Side Animations for Flak Cannon"
 		FlakUseClientSideAnimationsHelp="If checked, use client-side animations for Flak Cannon"
+
+		RocketUseClientSideAnimationsText="Use Client-Side Animations for Rocket Launcher"
+		RocketUseClientSideAnimationsHelp="If checked, use client-side animations for Rocket Launcher"
 
 		SniperUseClientSideAnimationsText="Use Client-Side Animations for Sniper Rifle"
 		SniperUseClientSideAnimationsHelp="If checked, use client-side animations for Sniper Rifle"

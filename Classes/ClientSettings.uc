@@ -137,6 +137,7 @@ var config bool   bShockProjectileUseClientSideAnimations;
 var config bool   bPulseUseClientSideAnimations;
 var config bool   bRipperUseClientSideAnimations;
 var config bool   bFlakUseClientSideAnimations;
+var config bool   bRocketUseClientSideAnimations;
 var config bool   bSniperUseClientSideAnimations;
 var config bool   bTranslocatorUseClientSideAnimations;
 
@@ -414,6 +415,7 @@ simulated function string DumpSettings() {
 		GetSetting("bPulseUseClientSideAnimations")$
 		GetSetting("bRipperUseClientSideAnimations")$
 		GetSetting("bFlakUseClientSideAnimations")$
+		GetSetting("bRocketUseClientSideAnimations")$
 		GetSetting("bSniperUseClientSideAnimations")$
 		GetSetting("bTranslocatorUseClientSideAnimations")$
 		DumpCrosshairLayers();
@@ -512,6 +514,7 @@ defaultproperties
 	bPulseUseClientSideAnimations=False
 	bRipperUseClientSideAnimations=False
 	bFlakUseClientSideAnimations=False
+	bRocketUseClientSideAnimations=False
 	bSniperUseClientSideAnimations=False
 	bTranslocatorUseClientSideAnimations=False
 

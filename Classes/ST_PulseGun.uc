@@ -96,6 +96,7 @@ simulated function SpawnClientDummyProjectile() {
 
 	LocalPlasmaSphereDummy = Spawn(class'ST_PlasmaSphere', Owner,, Start, PawnOwner.ViewRotation);
 	LocalPlasmaSphereDummy.RemoteRole = ROLE_None;
+	LocalPlasmaSphereDummy.Instigator = PawnOwner;
 	LocalPlasmaSphereDummy.bClientVisualOnly = true;
 	LocalPlasmaSphereDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 	LocalPlasmaSphereDummy.bCollideWorld = false;

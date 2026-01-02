@@ -69,7 +69,7 @@ simulated event Tick(float Delta) {
     // Extrapolate locally to compensate for ping
 	if (Physics != PHYS_None) {
 		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-		MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+		Move(NewXPolDelta - ExtrapolationDelta);
 		ExtrapolationDelta = NewXPolDelta;
 	}
 }
@@ -134,7 +134,10 @@ function NewExplode(vector HitLocation, vector HitNormal)
 	local ST_UTChunkInfo CI;
 
 	if (bClientVisualOnly)
-		return;
+		{
+			bHidden = true;
+			return;
+		}
 
 	if (WImp.WeaponSettings.bEnableEnhancedSplashFlakSlug) {
 		WImp.EnhancedHurtRadius(
