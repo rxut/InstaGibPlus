@@ -77,6 +77,10 @@ var localized string MoreInformationText;
 	var localized string LogClientMessagesText;
 	var localized string LogClientMessagesHelp;
 
+	var UWindowCheckbox Chk_DemoShowClientMessages;
+	var localized string DemoShowClientMessagesText;
+	var localized string DemoShowClientMessagesHelp;
+
 	var UWindowCheckbox Chk_DebugMovement;
 	var localized string DebugMovementText;
 	var localized string DebugMovementHelp;
@@ -872,6 +876,7 @@ function Created() {
 
 	Lbl_Advanced = CreateSeparator(AdvancedText);
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
+	Chk_DemoShowClientMessages = CreateCheckbox(DemoShowClientMessagesText, DemoShowClientMessagesHelp);
 	Chk_DebugMovement = CreateCheckbox(DebugMovementText, DebugMovementHelp);
 	Chk_LocationOffsetFix = CreateCheckbox(LocationOffsetFixText, LocationOffsetFixHelp);
 
@@ -1041,6 +1046,7 @@ function Load() {
 	Edit_FakeCAPInterval.SetValue(string(Settings.FakeCAPInterval));
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
+	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
 	Chk_DebugMovement.bChecked = Settings.bDebugMovement;
 	Chk_LocationOffsetFix.bChecked = Settings.bEnableLocationOffsetFix;
 
@@ -1160,6 +1166,7 @@ function Save() {
 	Settings.FakeCAPInterval = float(Edit_FakeCAPInterval.GetValue());
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
+	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
 	Settings.bDebugMovement = Chk_DebugMovement.bChecked;
 	Settings.bEnableLocationOffsetFix = Chk_LocationOffsetFix.bChecked;
 
@@ -1336,6 +1343,9 @@ defaultproperties
 
 		LogClientMessagesText="Log Client Messages"
 		LogClientMessagesHelp="If checked, write client messages to log in addition to console"
+
+		DemoShowClientMessagesText="Demo Show Client Messages"
+		DemoShowClientMessagesHelp="If checked, show client messages during demo playback"
 
 		DebugMovementText="Trace Movement Input"
 		DebugMovementHelp="If checked, trace movement input to demo"

@@ -1566,6 +1566,9 @@ event PlayerTick( float Time )
 
 simulated function ClientDemoMessage(coerce string S, optional name Type, optional bool bBeep)
 {
+	if (Settings != none && !Settings.bDemoShowClientMessages)
+		return;
+	
 	if (S == zzPrevClientMessage)
 		return;
 	ClientMessage(S, Type, bBeep);

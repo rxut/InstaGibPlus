@@ -17,6 +17,11 @@ var bool bUseExplicitData;
 // Server-side position validation
 const MAX_POSITION_ERROR_SQ = 1250.0;
 
+// Rate limiting to prevent rapid fire exploits
+var float LastServerFireTime;
+var float LastClientFireTime;
+const FIRE_RATE_LIMIT = 0.25;
+
 // Client-side visual projectiles tracking
 var ST_RocketMk2 LocalRockets[16];
 var int LocalRocketIndex;
@@ -57,25 +62,6 @@ function PostBeginPlay()
 		
 }
 
-// Helper to ensure server weapon state matches client
-function ServerSynchronizeWeapon(Weapon NewWeapon)
-{
-	local PlayerPawn P;
-	
-	if (NewWeapon == None || NewWeapon.Owner != Owner)
-		return;
-		
-	P = PlayerPawn(Owner);
-	if (P == None)
-		return;
-
-	if (P.Weapon != NewWeapon)
-	{
-		P.PendingWeapon = NewWeapon;
-		P.ChangedWeapon();
-	}
-}
-
 function bool IsPositionReasonable(vector ClientLoc)
 {
 	local vector Diff;
@@ -101,9 +87,11 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, int NumRockets,
 	if (P == None)
 		return;
 
-	// Sync Check
-	if (P.Weapon != self)
-		ServerSynchronizeWeapon(self);
+	// Rate limit check
+	if (Level.TimeSeconds - LastServerFireTime < FIRE_RATE_LIMIT)
+		return;
+
+	LastServerFireTime = Level.TimeSeconds;
 
 	// Position validation
 	if (IsPositionReasonable(ClientLoc))
@@ -136,11 +124,21 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, int NumRockets,
 
 	if (NumRockets > 0)
 	{
-		bCanClientFire = true;
-		bPointing = True;
+
+		bCanClientFire = true; 
+
+		if (P.PendingWeapon != None && P.PendingWeapon != self)
+		{
+			P.PlayRecoil(FiringSpeed);
+			bChangeWeapon = true;
+		}
+		else
+		{
+			bCanClientFire = true;
+			bPointing = True;
+		}
 		
-		P.PlayRecoil(FiringSpeed);
-		// Transition to firing state immediately
+		// Always transition to firing state to spawn projectiles
 		GoToState('FireRockets');
 	}
 
@@ -168,6 +166,18 @@ function AltFire( float Value )
 
 simulated function bool ClientFire( float Value )
 {
+	local Pawn PawnOwner;
+
+	if (!bCanClientFire)
+		return false;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return false;
+
+	// if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
+	//	return false;
+
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
 	{
 		// Update bInstantRocket from owner on client to ensure correct firing mode
@@ -176,7 +186,11 @@ simulated function bool ClientFire( float Value )
 
 		if ( GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None )
 		{
-			bCanClientFire = true;
+			// Client-side rate limiting
+			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
+				return false;
+
+			LastClientFireTime = Level.TimeSeconds;
 			GotoState('ClientFiring');
 			return true;
 		}
@@ -186,6 +200,18 @@ simulated function bool ClientFire( float Value )
 
 simulated function bool ClientAltFire( float Value )
 {
+	local Pawn PawnOwner;
+
+	if (!bCanClientFire)
+		return false;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return false;
+
+	// if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
+	//	return false;
+
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
 	{
 		// Update bInstantRocket from owner on client to ensure correct firing mode
@@ -194,12 +220,25 @@ simulated function bool ClientAltFire( float Value )
 
 		if ( GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None )
 		{
-			bCanClientFire = true;
+			// Client-side rate limiting
+			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
+				return false;
+
+			LastClientFireTime = Level.TimeSeconds;
 			GotoState('ClientAltFiring');
 			return true;
 		}
 	}
 	return Super.ClientAltFire(Value);
+}
+
+state ClientActive
+{
+	simulated function AnimEnd()
+	{
+		bCanClientFire = true;
+		Super.AnimEnd();
+	}
 }
 
 // Hook into the client-side release trigger
@@ -557,6 +596,13 @@ state FireRockets
 
 	function AnimEnd()
 	{
+
+		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
+		{
+			LockedTarget = None;
+			GotoState('DownWeapon');
+			return;
+		}
 		// We do NOT want to start loading a new rocket automatically on the server.
 		if (GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
 		{
@@ -614,6 +660,12 @@ function SetSwitchPriority(pawn Other)
 
 state NormalFire
 {
+
+	function bool SplashJump()
+	{
+		return true;
+	}
+
 	function Tick(float DeltaTime)
 	{
 		Super.Tick(DeltaTime);
@@ -650,6 +702,13 @@ state NormalFire
 		}
 	}
 
+	function BeginState()
+	{
+		bFireLoad = True;
+		RocketsLoaded = 1;
+		RotateRocket();
+	}
+
 	function RotateRocket()
 	{
 		if ( PlayerPawn(Owner) == None )
@@ -678,15 +737,60 @@ state AltFiring
 {
 	function Tick( float DeltaTime )
 	{
-		Super.Tick(DeltaTime);
-		
 		if (bChangeWeapon)
 		{
 			RocketsLoaded = 0;
 			bRotated = false;
 			GotoState('DownWeapon');
 		}
+
+		Super.Tick(DeltaTime);
 	}
+	
+	function AnimEnd()
+	{
+		if ( bRotated )
+		{
+			bRotated = false;
+			PlayLoading(1.1, RocketsLoaded);
+		}
+		else
+		{
+			if ( RocketsLoaded == 6 )
+			{
+				GotoState('FireRockets');
+				return;
+			}
+			RocketsLoaded++;
+			AmmoType.UseAmmo(1);		
+			if ( (PlayerPawn(Owner) == None) && ((FRand() > 0.5) || (Pawn(Owner).Enemy == None)) )
+				Pawn(Owner).bAltFire = 0;
+			bPointing = true;
+			Owner.MakeNoise(0.6 * Pawn(Owner).SoundDampening);		
+			RotateRocket();
+		}
+	}
+
+	function RotateRocket()
+	{
+		if (AmmoType.AmmoAmount<=0)
+		{ 
+			GotoState('FireRockets');
+			return;
+		}		
+		PlayRotating(RocketsLoaded-1);
+		bRotated = true;
+	}
+
+	function BeginState()
+	{
+		RocketsLoaded = 1;
+		bFireLoad = False;
+		RotateRocket();
+	}
+
+Begin:
+	bLockedOn = False;
 }
 
 // Idle state - prevents server from auto-firing when client is in control
@@ -694,6 +798,12 @@ state Idle
 {
 	function BeginState()
 	{
+		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
+		{
+			GotoState('DownWeapon');
+			return;
+		}
+		
 		if (GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
 		{
 			// Don't check for bFire/bAltFire to trigger server-side firing
@@ -725,6 +835,61 @@ state Idle
 		else
 			Super.AnimEnd();
 	}
+
+	function Timer()
+	{
+		NewTarget = CheckTarget();
+		if ( NewTarget == OldTarget )
+		{
+			LockedTarget = NewTarget;
+			If (LockedTarget != None) 
+			{
+				bLockedOn=True;			
+				Owner.MakeNoise(Pawn(Owner).SoundDampening);
+				Owner.PlaySound(Misc1Sound, SLOT_None,Pawn(Owner).SoundDampening);
+				if ( (Pawn(LockedTarget) != None) && (FRand() < 0.7) )
+					Pawn(LockedTarget).WarnTarget(Pawn(Owner), ProjectileSpeed, vector(Pawn(Owner).ViewRotation));	
+				if ( bPendingLock )
+				{
+					OldTarget = NewTarget;
+					Pawn(Owner).bFire = 0;
+					bFireLoad = True;
+					RocketsLoaded = 1;
+					GotoState('FireRockets', 'Begin');
+					return;
+				}
+			}
+		}
+		else if( (OldTarget != None) && (NewTarget == None) ) 
+		{
+			Owner.PlaySound(Misc2Sound, SLOT_None,Pawn(Owner).SoundDampening);
+			bLockedOn = False;
+		}
+		else 
+		{
+			LockedTarget = None;
+			bLockedOn = False;
+		}
+		OldTarget = NewTarget;
+		bPendingLock = false;
+	}
+
+Begin:
+	if (Pawn(Owner).bFire!=0) Fire(0.0);
+	if (Pawn(Owner).bAltFire!=0) AltFire(0.0);	
+	bPointing=False;
+	if (AmmoType.AmmoAmount<=0) 
+		Pawn(Owner).SwitchToBestWeapon();  //Goto Weapon that has Ammo
+	PlayIdleAnim();
+	OldTarget = CheckTarget();
+	SetTimer(1.25,True);
+	LockedTarget = None;
+	bLockedOn = False;
+PendingLock:
+	if ( bPendingLock )
+		bPointing = true;
+	if ( TimerRate <= 0 )
+		SetTimer(1.0, true);
 }
 
 simulated function PlaySelect() {
@@ -755,6 +920,9 @@ simulated function TweenDown() {
 
 state ClientFiring
 {
+	simulated function bool ClientFire(float Value) { return false; }
+	simulated function bool ClientAltFire(float Value) { return false; }
+
 	simulated function Tick(float DeltaTime)
 	{
 		if ( (Pawn(Owner).bFire == 0) || (Ammotype.AmmoAmount <= 0) )
@@ -826,6 +994,9 @@ state ClientFiring
 
 state ClientAltFiring
 {
+	simulated function bool ClientFire(float Value) { return false; }
+	simulated function bool ClientAltFire(float Value) { return false; }
+
 	simulated function Tick(float DeltaTime)
 	{
 		if ( (Pawn(Owner).bAltFire == 0) || (Ammotype.AmmoAmount <= 0) )

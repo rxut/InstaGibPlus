@@ -31,16 +31,19 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostBeginPlay() {
 	local UTPure PureRef;
 	local bbPlayer bbP;
+	local WeaponSettingsRepl WS;
 
 	if (Role == ROLE_Authority) {
-		bbP = bbPlayer(Instigator);
 
-		if (Instigator != none && Instigator.IsA('bbPlayer') && GetWeaponSettings().bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
-			PureRef = bbPlayer(Instigator).zzUTPure;
-		
-		if (PureRef != None && GetWeaponSettings().bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false) {
-			PureRef.RegisterProjectile(self);
-		}
+		bbP = bbPlayer(Instigator);
+		WS = GetWeaponSettings();
+
+        if (Instigator != none && Instigator.IsA('bbPlayer') && WS != None && WS.bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
+            PureRef = bbPlayer(Instigator).zzUTPure;
+        
+        if (PureRef != None && WS != None && WS.bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false) {
+            PureRef.RegisterProjectile(self);
+        }
 
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break; // Find master :D
@@ -97,27 +100,42 @@ simulated event Tick(float Delta) {
 }
 
 function SuperExplosion() {
+	local float ComboDamage, ComboRadius, ComboMomentum;
+
+	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
+	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
+	ComboMomentum = WImp.WeaponSettings.ShockComboMomentum * MomentumTransfer * 2;
+
+	// Register explosion for translocator simulation tracking
+	IGPlus_WeaponImplementationBase(WImp).RegisterExplosion(
+		Location,
+		ComboRadius,
+		ComboDamage,
+		ComboMomentum,
+		Instigator
+	);
+
 	if (WImp.WeaponSettings.bEnableEnhancedSplashShockCombo) {
 		WImp.EnhancedHurtRadius(
 			self,
-			WImp.WeaponSettings.ShockComboDamage,
-			WImp.WeaponSettings.ShockComboHurtRadius,
+			ComboDamage,
+			ComboRadius,
 			MyDamageType,
-			WImp.WeaponSettings.ShockComboMomentum * MomentumTransfer * 2,
+			ComboMomentum,
 			Location);
 	} else {
 		HurtRadius(
-			WImp.WeaponSettings.ShockComboDamage,
-			WImp.WeaponSettings.ShockComboHurtRadius,
+			ComboDamage,
+			ComboRadius,
 			MyDamageType,
-			WImp.WeaponSettings.ShockComboMomentum * MomentumTransfer * 2,
+			ComboMomentum,
 			Location);
 	}
-	
+
 	Spawn(Class'ut_ComboRing',,'',Location, Instigator.ViewRotation);
-	PlaySound(ExploSound,,20.0,,2000,0.6);	
-	
-	Destroy(); 
+	PlaySound(ExploSound,,20.0,,2000,0.6);
+
+	Destroy();
 }
 
 function Explode(vector HitLocation,vector HitNormal) {

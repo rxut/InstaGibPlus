@@ -58,6 +58,7 @@ var config int    DesiredNetspeed;
 var config bool   bNoSmoothing;
 var config bool   bNoOwnFootsteps;
 var config bool   bLogClientMessages;
+var config bool   bDemoShowClientMessages;
 var config bool   bDebugMovement;
 var config bool   bEnableKillCam;
 var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
@@ -367,6 +368,7 @@ simulated function string DumpSettings() {
 		GetSetting("bNoSmoothing")$
 		GetSetting("bNoOwnFootsteps")$
 		GetSetting("bLogClientMessages")$
+		GetSetting("bDemoShowClientMessages")$
 		GetSetting("bDebugMovement")$
 		GetSetting("bEnableKillCam")$
 		GetSetting("FakeCAPInterval")$
@@ -466,6 +468,7 @@ defaultproperties
 	bNoSmoothing=True
 	bNoOwnFootsteps=False
 	bLogClientMessages=True
+	bDemoShowClientMessages=False
 	bDebugMovement=False
 	bEnableKillCam=False
 	FakeCAPInterval=0.1

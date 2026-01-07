@@ -8,6 +8,14 @@ var bool bClientVisualOnly;
 var PlayerPawn InstigatingPlayer;
 var vector ExtrapolationDelta;
 
+var float R1, R2, R3;
+
+replication
+{
+	reliable if ( Role == ROLE_Authority )
+		R1, R2, R3;
+}
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
     local WeaponSettingsRepl S;
 
@@ -25,8 +33,37 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
     return WSettings;
 }
 
+simulated function float GetFRandValues()
+{
+	local bbPlayer bbP;
+	local float RandValue;
+	local int OldIndex;
+	
+	bbP = bbPlayer(Owner);
+	if (bbP == None)
+		return FRand();
+	
+	OldIndex = bbP.FRandValuesIndex;
+	bbP.FRandValuesIndex++;
+	
+	if (bbP.FRandValuesIndex == bbP.FRandValuesLength)
+		bbP.FRandValuesIndex = 0;
+		
+	if (Level.NetMode == NM_Client && Role < ROLE_Authority)
+	{
+		bbP.FRandValuesIndex = OldIndex;
+	}
+	
+	RandValue = bbP.GetFRandValues(bbP.FRandValuesIndex);
+	return RandValue;
+}
+
 function PostBeginPlay()
 {
+	R1 = GetFRandValues();
+	R2 = GetFRandValues();
+	R3 = GetFRandValues();
+
 	Super.PostBeginPlay();
 	
 	if (Role == ROLE_Authority)
@@ -47,8 +84,16 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
     local ST_ut_biorifle br;
+	local vector FakeLocation;
 
 	super.PostNetBeginPlay();
+
+	if (Level.NetMode != NM_DedicatedServer)
+	{
+		RotationRate.Yaw = 100000 * 2 * R1 - 100000;
+		RotationRate.Pitch = 100000 * 2 * R2 - 100000;
+		RotationRate.Roll = 100000 * 2 * R3 - 100000;
+	}
 
 	if (GetWeaponSettings().BioCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations == true) {
 
@@ -59,8 +104,20 @@ simulated function PostNetBeginPlay()
 		if (InstigatingPlayer != none) {
 			br = ST_ut_biorifle(InstigatingPlayer.Weapon);
 			if (br != none && br.LocalBioGelDummy != none && br.LocalBioGelDummy.bDeleteMe == false)
+			{
+				// Store fake's current position for smooth hand-off
+				FakeLocation = br.LocalBioGelDummy.Location;
 
+				// Destroy the fake projectile
 				br.LocalBioGelDummy.Destroy();
+
+				// Teleport real projectile to where the fake was
+				// This prevents the visual "jump" on high ping
+				SetLocation(FakeLocation);
+
+				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
+				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+			}
 		}
 	} else {
 		Disable('Tick');
@@ -78,9 +135,10 @@ simulated event Tick(float Delta) {
         return;
 		
     // Extrapolate locally to compensate for ping
-   if (IsInState('Flying')) {
+    // Stop extrapolation when bOnGround is true
+    if (IsInState('Flying') && !bOnGround) {
         NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-        Move(NewXPolDelta - ExtrapolationDelta);
+        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
         ExtrapolationDelta = NewXPolDelta;
     }
 }
@@ -166,16 +224,36 @@ state Exploding
 auto state Flying
 {
 	function ProcessTouch (Actor Other, vector HitLocation) 
-	{ 
+	{
+		if (bClientVisualOnly)
+		{
+			bHidden = true;
+			Destroy();
+			return;
+		}
 		
 		if ( Pawn(Other)!=Instigator || bOnGround) 
 		{
-			if (bClientVisualOnly)
-			{
-				bHidden = true;
-				return;
-			}
 			Global.Timer(); 
 		}
+	}
+
+	function BeginState()
+	{	
+		if ( Role == ROLE_Authority )
+		{
+			Velocity = Vector(Rotation) * Speed;
+			Velocity.z += 120;
+			if( Region.zone.bWaterZone )
+				Velocity=Velocity*0.7;
+
+			RotationRate.Yaw = 100000 * 2 * R1 - 100000;
+			RotationRate.Pitch = 100000 * 2 * R2 - 100000;
+			RotationRate.Roll = 100000 * 2 * R3 - 100000;
+		}
+		
+		LoopAnim('Flying',0.4);
+		bOnGround=False;
+		PlaySound(SpawnSound);
 	}
 }

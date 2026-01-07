@@ -48,7 +48,10 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-    local ST_PulseGun PG;
+	local ST_PulseGun PG;
+	local vector FakeLocation;
+	local vector MyDir;
+	local ST_PlasmaSphere MatchedDummy;
 
 	super.PostNetBeginPlay();
 
@@ -60,8 +63,21 @@ simulated function PostNetBeginPlay()
 
 		if (InstigatingPlayer != none) {
 			PG = ST_PulseGun(InstigatingPlayer.Weapon);
-			if (PG != none && PG.LocalPlasmaSphereDummy != none && PG.LocalPlasmaSphereDummy.bDeleteMe == false)
-				PG.LocalPlasmaSphereDummy.Destroy();
+			if (PG != none)
+			{
+				MyDir = Normal(Velocity);
+				MatchedDummy = PG.FindBestMatchingDummy(MyDir);
+
+				if (MatchedDummy != none)
+				{
+					FakeLocation = MatchedDummy.Location;
+					PG.ClearDummyFromArray(MatchedDummy);
+					MatchedDummy.Destroy();
+					SetLocation(FakeLocation);
+				}
+
+				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+			}
 		}
 	} else {
 		Disable('Tick');

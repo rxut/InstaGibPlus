@@ -43,6 +43,8 @@ replication
 {
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3, R4, RBounce;
+	reliable if ( Role == ROLE_Authority && bNetInitial )
+		ChunkIndex;
 }
 
 simulated function float GetFRandValues()
@@ -127,35 +129,60 @@ simulated function PostBeginPlay() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-	local ST_UTChunk OtherChunk;
+	local ST_UTChunk FakeChunk;
+	local vector FakeLocation;
+	local vector FakeVelocity;
+	local EPhysics FakePhysics;
+	local bool bFoundFake;
 
 	super.PostNetBeginPlay();
 
 	if (GetWeaponSettings().FlakCompensatePing) {
 
-		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == false){
+		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == false) {
+			Disable('Tick');
 			return;
 		}
 
 		In = PlayerPawn(Instigator);
-        if (In != none && Viewport(In.Player) != none)
-            InstigatingPlayer = In;
+		if (In != none && Viewport(In.Player) != none)
+			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
-			foreach AllActors(class'ST_UTChunk', OtherChunk)
-			{	
-				if (OtherChunk != self && OtherChunk.bClientVisualOnly)
+			// Find the matching fake chunk by index
+			foreach AllActors(class'ST_UTChunk', FakeChunk)
+			{
+				if (FakeChunk != self && FakeChunk.bClientVisualOnly && FakeChunk.ChunkIndex == ChunkIndex)
 				{
-					OtherChunk.bHidden = true;
-					
-					if (OtherChunk.Trail != None)
+					// Store fake's current state for smooth hand-off
+					FakeLocation = FakeChunk.Location;
+					FakeVelocity = FakeChunk.Velocity;
+					FakePhysics = FakeChunk.Physics;
+					bFoundFake = true;
+
+					// Destroy the trail first
+					if (FakeChunk.Trail != None)
 					{
-						OtherChunk.Trail.Destroy();
-						OtherChunk.Trail = None;
+						FakeChunk.Trail.Destroy();
+						FakeChunk.Trail = None;
 					}
 
-					OtherChunk.Destroy();
+					FakeChunk.bHidden = true;
+					FakeChunk.Destroy();
+					break;
 				}
+			}
+
+			// Teleport real chunk to where the fake was, with fake's state
+			if (bFoundFake)
+			{
+				SetLocation(FakeLocation);
+				// Copy fake's velocity - critical if fake has bounced off a wall
+				Velocity = FakeVelocity;
+				// Copy fake's physics mode - stops extrapolation if fake has bounced (PHYS_Falling)
+				SetPhysics(FakePhysics);
+				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
+				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 			}
 		}
 	} else {

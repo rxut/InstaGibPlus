@@ -16,6 +16,7 @@ var float ServerTimeSinceLastFire;
 var float ServerTimeSinceTargetSpawn;
 
 var float LastClientDiscSpawnTime;
+var float LastClientFireSoundTime;
 
 replication
 {
@@ -83,9 +84,14 @@ simulated function bool ClientFire(float Value)
     
     if ( !bTTargetOut && bCanClientFire && (CompensatedTime > 0.45) )
     {
+		// Prevent duplicate firing sounds on client
+		if ((Level.TimeSeconds - LastClientFireSoundTime) < 0.45)
+			return false;
+
 		if (Role < ROLE_Authority && GetWeaponSettings().TranslocatorCompensatePing && bbP != none && bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations == true)
 			ClientThrowTarget();
 
+		LastClientFireSoundTime = Level.TimeSeconds;
         PlayFiring();
         return true;
     }
@@ -261,8 +267,9 @@ function AltFire( float Value )
         // CHECK 2: Are we OUTSIDE the history? (Fix for Low-Ping to maintain LAN behavior)
         else if (STTarget != None && bbP != none && GetWeaponSettings().TranslocatorCompensatePing)
         {
-            HistoricalLocation = STTarget.Location - (STTarget.Velocity * (float(bbP.PingAverage) * 0.5 * 0.001));
-            
+            // Convert real ping time to game time by multiplying by TimeDilation
+            HistoricalLocation = STTarget.Location - (STTarget.Velocity * (float(bbP.PingAverage) * 0.5 * 0.001 * Level.TimeDilation));
+
             STTarget.PreTranslocateLocation = STTarget.Location;
             STTarget.SetLocation(HistoricalLocation);
             STTarget.bUsingHistoricalPosition = true;
@@ -343,13 +350,14 @@ function Fire( float Value )
         // CHECK 2: Are we OUTSIDE the history? (Fix for Low-Ping to maintain LAN behavior)
         else if (STTarget != None && bbP != none && GetWeaponSettings().TranslocatorCompensatePing)
         {
-            HistoricalLocation = STTarget.Location - (STTarget.Velocity * (float(bbP.PingAverage) * 0.5 * 0.001));
-            
+            // Convert real ping time to game time by multiplying by TimeDilation
+            HistoricalLocation = STTarget.Location - (STTarget.Velocity * (float(bbP.PingAverage) * 0.5 * 0.001 * Level.TimeDilation));
+
             STTarget.PreTranslocateLocation = STTarget.Location;
             STTarget.SetLocation(HistoricalLocation);
             STTarget.bUsingHistoricalPosition = true;
         }
-        
+
         if ( TTarget.Disrupted() )
         {
             if (Level.Game.LocalLog != None)

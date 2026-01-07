@@ -76,37 +76,11 @@ simulated function PostNetBeginPlay()
 			TL = ST_Translocator(InstigatingPlayer.Weapon);
 			if (TL != none && TL.TTarget_Client != none && TL.TTarget_Client.bDeleteMe == false)
 			{
-                // The server compensated for Upstream (Ping*0.5), we must compensate for Downstream (Ping*0.5)
-                SimulateClientCatchUp(bbP.PingAverage * 0.5);
-
 				TL.TTarget_Client.Destroy();
 				TL.TTarget_Client = None;
 			}
 		}
 	}
-}
-
-simulated function SimulateClientCatchUp(float CatchUpTime)
-{
-    local float Step, MaxStep;
-    local int Steps, i;
-
-    if (CatchUpTime <= 0)
-        return;
-
-    // Safety clamp
-    if (CatchUpTime > 200) 
-        CatchUpTime = 200;
-
-    // Break into small physics steps for accuracy
-    MaxStep = 0.02;
-    Steps = int(CatchUpTime * 0.001 / MaxStep) + 1;
-    Step = (CatchUpTime * 0.001) / float(Steps);
-
-    for (i=0; i<Steps; i++)
-    {
-        AutonomousPhysics(Step);
-    }
 }
 
 function InitSimulationHistory(vector StartPos, float StartTime, float TotalTime) {

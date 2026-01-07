@@ -10,7 +10,7 @@ var IGPlus_WeaponImplementation WImp;
 
 var WeaponSettingsRepl WSettings;
 
-var ST_PlasmaSphere LocalPlasmaSphereDummy;
+var ST_PlasmaSphere LocalPlasmaSphereDummies[16];
 
 // For the PulseSphereFireRate setting
 var float RateOfFire;
@@ -72,13 +72,66 @@ function SetSwitchPriority(pawn Other)
 	}		
 }
 
+simulated function int FindFreeDummySlot() {
+	local int i;
+
+	for (i = 0; i < ArrayCount(LocalPlasmaSphereDummies); i++) {
+		if (LocalPlasmaSphereDummies[i] == none || LocalPlasmaSphereDummies[i].bDeleteMe)
+			return i;
+	}
+	return -1;
+}
+
+simulated function ST_PlasmaSphere FindBestMatchingDummy(vector Direction) {
+	local int i;
+	local float BestMatch, DirMatch;
+	local int BestIndex;
+	local vector DummyDir;
+
+	BestMatch = 0.9;
+	BestIndex = -1;
+
+	for (i = 0; i < ArrayCount(LocalPlasmaSphereDummies); i++) {
+		if (LocalPlasmaSphereDummies[i] != none && !LocalPlasmaSphereDummies[i].bDeleteMe) {
+			DummyDir = Normal(LocalPlasmaSphereDummies[i].Velocity);
+			DirMatch = Direction dot DummyDir;
+			if (DirMatch > BestMatch) {
+				BestMatch = DirMatch;
+				BestIndex = i;
+			}
+		}
+	}
+
+	if (BestIndex >= 0)
+		return LocalPlasmaSphereDummies[BestIndex];
+
+	return none;
+}
+
+simulated function ClearDummyFromArray(ST_PlasmaSphere Dummy) {
+	local int i;
+
+	for (i = 0; i < ArrayCount(LocalPlasmaSphereDummies); i++) {
+		if (LocalPlasmaSphereDummies[i] == Dummy) {
+			LocalPlasmaSphereDummies[i] = none;
+			return;
+		}
+	}
+}
+
 simulated function SpawnClientDummyProjectile() {
 	local Pawn PawnOwner;
 	local vector Start, X, Y, Z;
 	local float Hand;
+	local int Slot;
+	local ST_PlasmaSphere NewDummy;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None)
+		return;
+
+	Slot = FindFreeDummySlot();
+	if (Slot < 0)
 		return;
 
 	if (Owner.IsA('PlayerPawn'))
@@ -94,14 +147,16 @@ simulated function SpawnClientDummyProjectile() {
 
 	Start = Start - Sin(Angle)*Y*4 + (Cos(Angle)*4 - 10.78)*Z;
 
-	LocalPlasmaSphereDummy = Spawn(class'ST_PlasmaSphere', Owner,, Start, PawnOwner.ViewRotation);
-	LocalPlasmaSphereDummy.RemoteRole = ROLE_None;
-	LocalPlasmaSphereDummy.Instigator = PawnOwner;
-	LocalPlasmaSphereDummy.bClientVisualOnly = true;
-	LocalPlasmaSphereDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-	LocalPlasmaSphereDummy.bCollideWorld = false;
-	LocalPlasmaSphereDummy.SetCollision(false, false, false);
-	LocalPlasmaSphereDummy.Velocity = vector(PawnOwner.ViewRotation) * LocalPlasmaSphereDummy.Speed;
+	NewDummy = Spawn(class'ST_PlasmaSphere', Owner,, Start, PawnOwner.ViewRotation);
+	NewDummy.RemoteRole = ROLE_None;
+	NewDummy.Instigator = PawnOwner;
+	NewDummy.bClientVisualOnly = true;
+	NewDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+	NewDummy.bCollideWorld = false;
+	NewDummy.SetCollision(false, false, false);
+	NewDummy.Velocity = vector(PawnOwner.ViewRotation) * NewDummy.Speed;
+
+	LocalPlasmaSphereDummies[Slot] = NewDummy;
 }
 
 simulated function PlayFiring()
@@ -191,8 +246,16 @@ simulated state ClientFiring
 	}
 
 	simulated event Tick(float DeltaTime) {
+		local TournamentPlayer T;
 		local bbPlayer bbP;
-		RateOfFire -= DeltaTime; // Count down timer
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		RateOfFire -= DeltaTime;
 
 		if (RateOfFire <= 0) {
 			if ((Pawn(Owner) != none) && (Pawn(Owner).bFire != 0)) {
@@ -203,20 +266,102 @@ simulated state ClientFiring
 
 					if (bbP != none && bbP.ClientWeaponSettingsData.bPulseUseClientSideAnimations)
 					{
-						// Spawn next dummy using the CURRENT angle
 						SpawnClientDummyProjectile();
 					}
 				}
 
-				Angle += 1.8; // Increment angle AFTER spawning
+				Angle += 1.8;
 
-				RateOfFire = GetWeaponSettings().PulseSphereFireRate; // Reset timer
+				RateOfFire = GetWeaponSettings().PulseSphereFireRate;
 			} else {
 				AnimEnd();
 			}
 		}
 	}
+
+	simulated function AnimEnd() {
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+		Super.AnimEnd();
+	}
 Begin:
+}
+
+simulated state ClientAltFiring
+{
+	simulated event BeginState()
+	{
+		Super.BeginState();
+		Count = 0;
+		AmbientGlow = 200;
+	}
+	
+	simulated event EndState()
+	{
+		Super.EndState();
+		AmbientSound = None;
+		AmbientGlow = 0;
+	}
+
+	simulated event Tick( float DeltaTime)
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		if ( Pawn(Owner) == None || Pawn(Owner).bAltFire == 0 )
+			AnimEnd();
+
+		Count += DeltaTime;
+		if ( Count > 0.24 )
+		{
+			if ( Affector != None )
+				Affector.FireEffect();
+			Count -= 0.24;
+		}
+	}
+
+	simulated event AnimEnd()
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		if ( AmmoType.AmmoAmount <= 0 )
+		{
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else if ( !bCanClientFire )
+			GotoState('');
+		else if ( Pawn(Owner) == None )
+		{
+			PlayIdleAnim();
+			GotoState('');
+		}
+		else if ( Pawn(Owner).bAltFire != 0 )
+			LoopAnim('BoltLoop');
+		else if ( Pawn(Owner).bFire != 0 )
+			Global.ClientFire(0);
+		else
+		{
+			PlayIdleAnim();
+			GotoState('');
+		}
+	}
 }
 
 // Compatibility between client and server logic
@@ -262,6 +407,36 @@ simulated function TweenDown() {
 		TweenAnim( AnimSequence, AnimFrame * GetWeaponSettings().PulseDownTime );
 	else
 		TweenAnim('Down', GetWeaponSettings().PulseDownTime);
+}
+
+State ClientDown
+{
+	simulated function AnimEnd()
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if ( T != None )
+		{
+			if ( (T.ClientPending != None)
+				&& (T.ClientPending.Owner == Owner) )
+			{
+				T.Weapon = T.ClientPending;
+				T.Weapon.GotoState('ClientActive');
+				T.ClientPending = None;
+				GotoState('');
+			}
+			else
+			{
+				T.NeedActivate();
+			}
+		}
+	}
+
+	simulated function BeginState()
+	{
+		TweenDown();
+	}
 }
 
 defaultproperties {

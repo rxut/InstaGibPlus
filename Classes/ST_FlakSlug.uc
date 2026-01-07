@@ -29,7 +29,8 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-    local ST_UT_FlakCannon FC;
+	local ST_UT_FlakCannon FC;
+	local vector FakeLocation;
 
 	super.PostNetBeginPlay();
 
@@ -42,14 +43,26 @@ simulated function PostNetBeginPlay()
 		if (InstigatingPlayer != none) {
 			FC = ST_UT_FlakCannon(InstigatingPlayer.Weapon);
 			if (FC != none && FC.LocalSlugDummy != none && FC.LocalSlugDummy.bDeleteMe == false)
-
-				FC.LocalSlugDummy.Destroy();
+			{
+				// Store fake's current position for smooth hand-off
+				FakeLocation = FC.LocalSlugDummy.Location;
 
 				if (FC.LocalSlugDummy.Trail != None)
-                {
-                    FC.LocalSlugDummy.Trail.Destroy();
-                    FC.LocalSlugDummy.Trail = None;
-                }
+				{
+					FC.LocalSlugDummy.Trail.Destroy();
+					FC.LocalSlugDummy.Trail = None;
+				}
+
+				// Destroy the fake projectile
+				FC.LocalSlugDummy.Destroy();
+
+				// Teleport real projectile to where the fake was
+				// This prevents the visual "jump" on high ping
+				SetLocation(FakeLocation);
+
+				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
+				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+			}
 		}
 	} else {
 		Disable('Tick');
@@ -84,7 +97,10 @@ function ProcessTouch (Actor Other, vector HitLocation)
         return; // If ShockProjectileBlockFlakSlug is False, we do nothing and the flak slug passes through
 
 	if (bClientVisualOnly)
+	{
 		bHidden = true;
+		return;
+	}
 
     NewExplode(HitLocation, Normal(HitLocation-Other.Location));
 }
@@ -99,7 +115,7 @@ simulated function Landed( vector HitNormal )
 			return;
 		}
 
-	if ( Level.NetMode != NM_DedicatedServer )
+	if ( bClientVisualOnly == false && Level.NetMode != NM_DedicatedServer )
 	{
 		D = Spawn(class'Botpack.DirectionalBlast',self);
 		if ( D != None )
@@ -119,7 +135,7 @@ simulated function HitWall (vector HitNormal, actor Wall)
 			return;
 		}
 
-	if ( Level.NetMode != NM_DedicatedServer )
+	if ( bClientVisualOnly == false && Level.NetMode != NM_DedicatedServer )
 	{
 		D = Spawn(class'Botpack.DirectionalBlast',self);
 		if ( D != None )

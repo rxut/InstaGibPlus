@@ -3,12 +3,84 @@ class IGPlus_WeaponImplementationBase extends IGPlus_WeaponImplementation;
 var ST_HitTestHelper CollChecker;
 var ST_HitTestHelper HitTestHelper;
 
+// Shock combo explosion tracking for translocator simulation
+struct RecentExplosion {
+    var vector Location;
+    var float TimeStamp;
+    var float Radius;
+    var float Damage;
+    var float Momentum;
+    var Pawn Instigator;
+};
+var RecentExplosion RecentExplosions[16];  // Ring buffer of recent explosions
+var int ExplosionWriteIndex;                // Next write position
+
 function PostBeginPlay() {
 	super.PostBeginPlay();
 
 	HitTestHelper = Spawn(class'ST_HitTestHelper');
 	CollChecker = Spawn(class'ST_HitTestHelper');
 	CollChecker.SetCollision(true, false, false);
+}
+
+// Register a shock combo explosion for translocator simulation tracking
+function RegisterExplosion(vector ExpLocation, float ExpRadius, float ExpDamage, float ExpMomentum, Pawn ExpInstigator) {
+    RecentExplosions[ExplosionWriteIndex].Location = ExpLocation;
+    RecentExplosions[ExplosionWriteIndex].TimeStamp = Level.TimeSeconds;
+    RecentExplosions[ExplosionWriteIndex].Radius = ExpRadius;
+    RecentExplosions[ExplosionWriteIndex].Damage = ExpDamage;
+    RecentExplosions[ExplosionWriteIndex].Momentum = ExpMomentum;
+    RecentExplosions[ExplosionWriteIndex].Instigator = ExpInstigator;
+
+    ExplosionWriteIndex = (ExplosionWriteIndex + 1) % 16;
+}
+
+// Check if a location is within any recent explosion radius
+// MaxAge is how far back in time to check (in seconds)
+function bool CheckRecentExplosions(ST_TranslocatorTarget TTarget, float MaxAge) {
+    local int i;
+    local float Age;
+    local vector Delta;
+    local float Dist;
+    local vector MomentumDir;
+
+    if (TTarget == None || TTarget.bDeleteMe)
+        return true;
+
+    for (i = 0; i < 16; i++) {
+        // Skip empty or old entries
+        if (RecentExplosions[i].TimeStamp <= 0)
+            continue;
+
+        Age = Level.TimeSeconds - RecentExplosions[i].TimeStamp;
+        if (Age > MaxAge)
+            continue;
+
+        // Skip explosions from the same player
+        if (RecentExplosions[i].Instigator == TTarget.Instigator)
+            continue;
+
+        // Check distance to explosion
+        Delta = TTarget.Location - RecentExplosions[i].Location;
+        Dist = VSize(Delta);
+
+        if (Dist <= RecentExplosions[i].Radius) {
+            // Apply damage scaled by distance (like HurtRadius)
+            MomentumDir = Normal(Delta);
+            TTarget.TakeDamage(
+                RecentExplosions[i].Damage * (1.0 - Dist / RecentExplosions[i].Radius),
+                RecentExplosions[i].Instigator,
+                TTarget.Location,
+                MomentumDir * RecentExplosions[i].Momentum * (1.0 - Dist / RecentExplosions[i].Radius),
+                'jolted'
+            );
+
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+        }
+    }
+
+    return false;
 }
 
 function EnhancedHurtRadius(
@@ -683,66 +755,391 @@ function float GetAverageTickRate() {
   return 120.0;
 }
 
+// Helper function for cylinder vs cylinder collision check
+function bool CylinderOverlap(Actor A, Actor B) {
+    local vector Delta;
+    local float CombinedRadius, CombinedHeight;
+    local float DistXY, DistZ;
+
+    Delta = A.Location - B.Location;
+    CombinedRadius = A.CollisionRadius + B.CollisionRadius;
+    CombinedHeight = A.CollisionHeight + B.CollisionHeight;
+
+    DistXY = Sqrt(Delta.X * Delta.X + Delta.Y * Delta.Y);
+    DistZ = Abs(Delta.Z);
+
+    return (DistXY <= CombinedRadius && DistZ <= CombinedHeight);
+}
+
+// Helper function to check if a line segment intersects a cylinder
+// Returns true if the line from Start to End passes within Radius of CylinderCenter
+function bool LineIntersectsCylinder(vector Start, vector End, vector CylinderCenter, float Radius, float HalfHeight) {
+    local vector ClosestPoint, LineDir, ToCenter;
+    local float LineLength, T, DistXY, DistZ;
+
+    LineDir = End - Start;
+    LineLength = VSize(LineDir);
+    if (LineLength < 0.001)
+        return false;
+
+    LineDir = LineDir / LineLength;
+
+    // Project cylinder center onto line
+    ToCenter = CylinderCenter - Start;
+    T = ToCenter dot LineDir;
+    T = FClamp(T, 0.0, LineLength);
+
+    ClosestPoint = Start + LineDir * T;
+
+    // Check distance from closest point to cylinder center
+    DistXY = Sqrt(Square(ClosestPoint.X - CylinderCenter.X) + Square(ClosestPoint.Y - CylinderCenter.Y));
+    DistZ = Abs(ClosestPoint.Z - CylinderCenter.Z);
+
+    return (DistXY <= Radius && DistZ <= HalfHeight);
+}
+
+// Check for beam weapon (PBolt/Pulse Gun) collisions during simulation
+// Returns true if the translocator was hit
+function bool CheckSimulationBeamCollisions(ST_TranslocatorTarget TTarget) {
+    local PBolt Bolt;
+    local vector BeamStart, BeamEnd, BeamDir;
+    local float BeamSize;
+    local float DamageAmount;
+
+    if (TTarget == None || TTarget.bDeleteMe)
+        return true;
+
+    // Find all active PBolt beams
+    foreach AllActors(class'PBolt', Bolt) {
+        if (Bolt == None || Bolt.bDeleteMe)
+            continue;
+
+        // Skip bolts from the same player
+        if (Bolt.Instigator == TTarget.Instigator)
+            continue;
+
+        // Get beam direction from rotation
+        BeamDir = vector(Bolt.Rotation);
+        BeamSize = 81.0; // Default PBolt.BeamSize
+        BeamStart = Bolt.Location;
+        BeamEnd = Bolt.Location + BeamDir * BeamSize;
+
+        // Check if the beam intersects the translocator
+        if (LineIntersectsCylinder(BeamStart, BeamEnd, TTarget.Location,
+                                   TTarget.CollisionRadius, TTarget.CollisionHeight)) {
+            // Apply pulse gun damage
+            DamageAmount = 72.0 * 0.1; // Damage per tick approximation
+            TTarget.TakeDamage(
+                DamageAmount,
+                Bolt.Instigator,
+                TTarget.Location,
+                BeamDir * 8500 * 0.1, // MomentumTransfer scaled
+                'zapped'
+            );
+
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+// Check for collisions between translocator and projectiles during ping simulation
+// Returns true if the translocator was destroyed or should stop simulating
+function bool CheckSimulationProjectileCollisions(ST_TranslocatorTarget TTarget, UTPure PureRef) {
+    local ST_ProjectileDummy PD;
+    local ST_ShockProj ShockProj;
+    local Projectile P;
+    local ST_RocketMk2 Rocket;
+    local ST_UT_SeekingRocket SeekingRocket;
+    local ST_Razor2 Razor;
+    local ST_Razor2Alt RazorAlt;
+    local ST_FlakSlug FlakSlug;
+    local vector Delta;
+    local float CombinedRadius;
+    local float CombinedHeight;
+    local float DistXY, DistZ;
+    local float SearchRadius;
+
+    if (TTarget == None || TTarget.bDeleteMe)
+        return true;
+
+    // PART 1: Check compensated projectile dummies (historical positions)
+    // This handles shock projectiles that are registered with the dummy system
+    for (PD = PureRef.ProjDummies; PD != None; PD = PD.Next) {
+        if (!PD.bCompActive || PD.Actual == None || PD.Actual.bDeleteMe)
+            continue;
+
+        // Check for shock projectiles
+        ShockProj = ST_ShockProj(PD.Actual);
+        if (ShockProj == None)
+            continue;
+
+        // Cylinder vs cylinder collision check
+        Delta = TTarget.Location - PD.Location;
+        CombinedRadius = TTarget.CollisionRadius + PD.CollisionRadius;
+        CombinedHeight = TTarget.CollisionHeight + PD.CollisionHeight;
+
+        DistXY = Sqrt(Delta.X * Delta.X + Delta.Y * Delta.Y);
+        DistZ = Abs(Delta.Z);
+
+        if (DistXY <= CombinedRadius && DistZ <= CombinedHeight) {
+            // Collision detected - trigger shock projectile explosion at dummy location
+            ShockProj.SetLocation(PD.Location);
+            ShockProj.Explode(PD.Location, Normal(TTarget.Location - PD.Location));
+
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+        }
+    }
+
+    // PART 2: Check non-registered projectiles at their current positions
+    // This handles rockets, ripper, flak that aren't in the dummy system
+    SearchRadius = TTarget.CollisionRadius + 100; // Search a reasonable radius
+
+    foreach TTarget.RadiusActors(class'Projectile', P, SearchRadius) {
+        if (P == None || P.bDeleteMe || P == TTarget)
+            continue;
+
+        // Skip projectiles owned by the same player
+        if (P.Instigator == TTarget.Instigator)
+            continue;
+
+        // Skip shock projectiles (handled above via dummies)
+        if (P.IsA('ST_ShockProj') || P.IsA('ShockProj'))
+            continue;
+
+        // Skip other translocator targets
+        if (P.IsA('TranslocatorTarget'))
+            continue;
+
+        // Check for rockets
+        Rocket = ST_RocketMk2(P);
+        if (Rocket != None && CylinderOverlap(TTarget, Rocket)) {
+            Rocket.Explode(Rocket.Location, Normal(TTarget.Location - Rocket.Location));
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+            continue;
+        }
+
+        // Check for seeking rockets
+        SeekingRocket = ST_UT_SeekingRocket(P);
+        if (SeekingRocket != None && CylinderOverlap(TTarget, SeekingRocket)) {
+            SeekingRocket.Explode(SeekingRocket.Location, Normal(TTarget.Location - SeekingRocket.Location));
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+            continue;
+        }
+
+        // Check for ripper primary
+        Razor = ST_Razor2(P);
+        if (Razor != None && CylinderOverlap(TTarget, Razor)) {
+            // Ripper does direct damage, not explosion
+            TTarget.TakeDamage(
+                30, // Standard ripper damage
+                Razor.Instigator,
+                TTarget.Location,
+                Normal(Razor.Velocity) * 10000,
+                'shredded'
+            );
+            Razor.Destroy();
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+            continue;
+        }
+
+        // Check for ripper alt (exploding blade)
+        RazorAlt = ST_Razor2Alt(P);
+        if (RazorAlt != None && CylinderOverlap(TTarget, RazorAlt)) {
+            RazorAlt.Explode(RazorAlt.Location, Normal(TTarget.Location - RazorAlt.Location));
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+            continue;
+        }
+
+        // Check for flak slug
+        FlakSlug = ST_FlakSlug(P);
+        if (FlakSlug != None && CylinderOverlap(TTarget, FlakSlug)) {
+            FlakSlug.Explode(FlakSlug.Location, Normal(TTarget.Location - FlakSlug.Location));
+            if (TTarget == None || TTarget.bDeleteMe)
+                return true;
+            continue;
+        }
+
+        // Check for base game rockets (RocketMk2, UT_SeekingRocket)
+        if (P.IsA('RocketMk2') || P.IsA('UT_SeekingRocket')) {
+            if (CylinderOverlap(TTarget, P)) {
+                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+
+        // Check for base game ripper
+        if (P.IsA('Razor2')) {
+            if (CylinderOverlap(TTarget, P)) {
+                TTarget.TakeDamage(30, P.Instigator, TTarget.Location, Normal(P.Velocity) * 10000, 'shredded');
+                P.Destroy();
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+
+        // Check for base game ripper alt
+        if (P.IsA('Razor2Alt')) {
+            if (CylinderOverlap(TTarget, P)) {
+                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+
+        // Check for base game flak
+        if (P.IsA('FlakSlug')) {
+            if (CylinderOverlap(TTarget, P)) {
+                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+
+        // Check for flak chunks (ut_Chunk)
+        if (P.IsA('ut_Chunk') || P.IsA('ST_UTChunk1') || P.IsA('ST_UTChunk2') ||
+            P.IsA('ST_UTChunk3') || P.IsA('ST_UTChunk4')) {
+            if (CylinderOverlap(TTarget, P)) {
+                // Chunks do direct damage
+                TTarget.TakeDamage(17, P.Instigator, TTarget.Location, Normal(P.Velocity) * 12000, 'shredded');
+                P.Destroy();
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+
+        // Check for bio globs (ST_BioGlob, ST_UT_BioGel, UT_BioGel, BioGlob)
+        if (P.IsA('UT_BioGel') || P.IsA('BioGlob')) {
+            if (CylinderOverlap(TTarget, P)) {
+                // Bio does direct damage on touch, then explodes
+                TTarget.TakeDamage(P.Damage, P.Instigator, TTarget.Location, Normal(P.Velocity) * P.MomentumTransfer, 'Corroded');
+                P.Destroy();
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+
+        // Check for plasma spheres (pulse gun alt-fire)
+        if (P.IsA('PlasmaSphere')) {
+            if (CylinderOverlap(TTarget, P)) {
+                // PlasmaSphere does 20 damage with 'Pulsed' type
+                TTarget.TakeDamage(P.Damage, P.Instigator, TTarget.Location, Normal(P.Velocity) * P.MomentumTransfer, 'Pulsed');
+                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
+                if (TTarget == None || TTarget.bDeleteMe)
+                    return true;
+            }
+            continue;
+        }
+    }
+
+    return false;
+}
+
 function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) {
-    local float DeltaTime;
+    local float GameDeltaTime;
+    local float RealDeltaTime;
     local float SimPing;
-    local float AccumulatedTime;
+    local float RealTimeRemaining;
+    local float AccumulatedGameTime;
     local int HistoryInterval;
     local UTPure PureRef;
     local vector CurrentPos;
     local vector Delta;
     local float MinMovementSquared;
-    
+    local float TotalGameTime;
+
     if (TTarget == None || TTarget.bDeleteMe)
         return;
-        
+
     PureRef = bbPlayer(TTarget.Instigator).zzUTPure;
-    SimPing = float(Ping) * 0.5;
-    
+
+    SimPing = float(Ping);
+
     // Cap ping compensation
     if (SimPing > WeaponSettings.PingCompensationMax)
         SimPing = WeaponSettings.PingCompensationMax;
-        
+
     if (SimPing <= 0.0)
         return;
-        
+
     // Pre-calculate squared threshold
     MinMovementSquared = 0.01;
-        
+
     // Store initial position BEFORE simulation
     CurrentPos = TTarget.Location;
-    
-    TTarget.InitSimulationHistory(CurrentPos, 0.0, float(Ping) * 0.001);
-    
-    // Calculate time step based on SimPing (Half-Ping)
-    DeltaTime = 0.001 * SimPing * Level.TimeDilation;
-    DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
-    
+
+    // TotalSimulationTime is in game time (for comparison with ServerTimeSinceTargetSpawn)
+    TotalGameTime = SimPing * 0.001 * Level.TimeDilation;
+    TTarget.InitSimulationHistory(CurrentPos, 0.0, TotalGameTime);
+
+    // Calculate time steps
+    // RealDeltaTime: how much real time passes per iteration (undilated)
+    // GameDeltaTime: how much game time passes per iteration (dilated)
+    RealDeltaTime = SimPing * 0.001;
+    RealDeltaTime = RealDeltaTime / (int(RealDeltaTime * GetAverageTickRate()) + 1);
+    GameDeltaTime = RealDeltaTime * Level.TimeDilation;
+
     // Calculate storage interval based on SimPing
     HistoryInterval = Max(1, int(SimPing / 49.0));
-    AccumulatedTime = 0.0;
-    
-    while (SimPing > 0.0 && TTarget != None && !TTarget.bDeleteMe) {
-        PureRef.CompensateFor(int(SimPing), TTarget.Instigator);
-        
+    RealTimeRemaining = SimPing;
+    AccumulatedGameTime = 0.0;
+
+    while (RealTimeRemaining > 0.0 && TTarget != None && !TTarget.bDeleteMe) {
+        PureRef.CompensateFor(int(RealTimeRemaining), TTarget.Instigator);
+
         CurrentPos = TTarget.Location;
-        
-        TTarget.AutonomousPhysics(DeltaTime);
-        
-        SimPing -= DeltaTime * 1000.0;
-        AccumulatedTime += DeltaTime * 1000.0;
-        
+
+        TTarget.AutonomousPhysics(GameDeltaTime);
+
+        // Check for collisions with compensated projectiles (shock balls, etc.)
+        if (CheckSimulationProjectileCollisions(TTarget, PureRef)) {
+            PureRef.EndCompensation();
+            return; // Translocator was destroyed or affected
+        }
+
+        // Check for beam weapon collisions (pulse gun)
+        if (CheckSimulationBeamCollisions(TTarget)) {
+            PureRef.EndCompensation();
+            return; // Translocator was destroyed by beam
+        }
+
+        // Check for recent shock combo explosions
+        // MaxAge covers the simulation window plus a small buffer
+        if (CheckRecentExplosions(TTarget, SimPing * 0.002)) {
+            PureRef.EndCompensation();
+            return; // Translocator was destroyed by explosion
+        }
+
+        // Decrement by real time (undilated)
+        RealTimeRemaining -= RealDeltaTime * 1000.0;
+        // Track game time for history (dilated)
+        AccumulatedGameTime += GameDeltaTime * 1000.0;
+
         Delta = TTarget.Location - CurrentPos;
         if ((Delta.X * Delta.X + Delta.Y * Delta.Y + Delta.Z * Delta.Z) > MinMovementSquared) {
-            if (AccumulatedTime >= HistoryInterval * (TTarget.HistoryCount - 1) && 
+            if (AccumulatedGameTime >= HistoryInterval * (TTarget.HistoryCount - 1) &&
                 TTarget.HistoryCount < 50) {
-                TTarget.AddSimulationHistoryStep(TTarget.Location, AccumulatedTime * 0.001);
+                TTarget.AddSimulationHistoryStep(TTarget.Location, AccumulatedGameTime * 0.001);
             }
         }
-        
+
         PureRef.EndCompensation();
     }
-    
+
     // Store final simulated position
     if (TTarget != None && TTarget.HistoryCount < 50) {
         TTarget.AddSimulationHistoryStep(TTarget.Location, TTarget.TotalSimulationTime);
