@@ -935,9 +935,6 @@ state ClientFiring
 			GotoState('');
 		else if ( bClientDone )
 		{
-			// Manually decrement ammo on client for visual feedback (Instant Fire)
-			if (AmmoType != None)
-				AmmoType.AmmoAmount--;
 			PlayLoading(1.5,0);
 			GotoState('ClientReload');
 		}
@@ -957,7 +954,6 @@ state ClientFiring
 			Enable('Tick');
 			PlayRotating(ClientRocketsLoaded - 1);
 			bRotated = true;
-			// Manually decrement ammo on client for visual feedback (Loading)
 			if (AmmoType != None)
 				AmmoType.AmmoAmount--;
 		}
@@ -970,6 +966,9 @@ state ClientFiring
 		// Notify server to stop lock-on checking - can only lock before loading
 		if (Role < ROLE_Authority && GetWeaponSettings().bEnablePingCompensation)
 			ServerStartedLoading();
+
+		if (AmmoType != None)
+        	AmmoType.AmmoAmount--;
 		
 		if ( bInstantRocket )
 		{
@@ -1009,9 +1008,6 @@ state ClientAltFiring
 			GotoState('');
 		else if ( bClientDone )
 		{
-			// Manually decrement ammo on client for visual feedback (Instant Fire)
-			if (AmmoType != None)
-				AmmoType.AmmoAmount--;
 			PlayLoading(1.5,0);
 			GotoState('ClientReload');
 		}
@@ -1045,6 +1041,9 @@ state ClientAltFiring
 		if (Role < ROLE_Authority && GetWeaponSettings().bEnablePingCompensation)
 			ServerStartedLoading();
 		
+		if (AmmoType != None)
+        	AmmoType.AmmoAmount--;
+
 		ClientRocketsLoaded = 1;
 		PlayRotating(ClientRocketsLoaded - 1);
 		bRotated = true;
