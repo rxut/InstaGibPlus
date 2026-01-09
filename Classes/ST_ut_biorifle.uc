@@ -85,6 +85,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 
 		P.PlayRecoil(FiringSpeed);
 		PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening * 4.0);
+		if (Affector != None)
+			Affector.FireEffect();
 		ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget);
 		
 		bUseExplicitData = false;
@@ -116,6 +118,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 		
 		P.PlayRecoil(FiringSpeed);
 		PlayFiring();
+		if (Affector != None)
+			Affector.FireEffect();
 		ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget);
 		GoToState('NormalFire');
 	}

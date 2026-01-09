@@ -33,7 +33,7 @@ var vector CDO;
 replication
 {
 	reliable if(Role < ROLE_Authority)
-		ServerExplicitFire, ServerStartedLoading;
+		ServerExplicitFire, ServerStartedLoading, ServerPlayLoadSound;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -76,6 +76,18 @@ function ServerStartedLoading()
 	// Only stop the timer to prevent acquiring NEW locks
 	// Don't clear existing lock - player may have locked before pressing fire
 	SetTimer(0, false);
+}
+
+// Called by client to play loading sounds on server so other players can hear
+function ServerPlayLoadSound(int RocketNum, bool bIsRotate)
+{
+	if (Owner == None || Pawn(Owner) == None)
+		return;
+		
+	if (bIsRotate)
+		Owner.PlaySound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
+	else
+		Owner.PlaySound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 }
 
 // Explicit RPC called when client triggers FiringRockets
@@ -914,6 +926,32 @@ simulated function TweenDown() {
 		PlayAnim('Down', GetWeaponSettings().EightballDownAnimSpeed(), TweenTime);
 }
 
+simulated function PlayLoading(float rate, int num)
+{
+	if (Owner == None)
+		return;
+	
+	PlayAnim(LoadAnim[num],, 0.05);
+	
+	if (Role < ROLE_Authority && GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
+		ServerPlayLoadSound(num, false);
+	else
+		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
+}
+
+simulated function PlayRotating(int num)
+{
+	if (Owner == None)
+		return;
+	
+	PlayAnim(RotateAnim[num],, 0.05);
+	
+	if (Role < ROLE_Authority && GetWeaponSettings().bEnablePingCompensation && PlayerPawn(Owner) != None)
+		ServerPlayLoadSound(num, true);
+	else
+		Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
+}
+
 // =========================================================================
 // Fixes for Client Side State Management
 // =========================================================================
@@ -1027,7 +1065,6 @@ state ClientAltFiring
 			Enable('Tick');
 			PlayRotating(ClientRocketsLoaded - 1);
 			bRotated = true;
-			// Manually decrement ammo on client for visual feedback (Loading)
 			if (AmmoType != None)
 				AmmoType.AmmoAmount--;
 		}

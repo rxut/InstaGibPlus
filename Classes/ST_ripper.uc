@@ -85,6 +85,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 
 		P.PlayRecoil(FiringSpeed);
 		PlayOwnedSound(class'Razor2'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+		if (Affector != None)
+			Affector.FireEffect();
 		SpawnServerRazor();
 		
 		bUseExplicitData = false;
@@ -116,6 +118,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 		
 		P.PlayRecoil(FiringSpeed);
 		PlayFiring();
+		if (Affector != None)
+			Affector.FireEffect();
 		SpawnServerRazor();
 		GoToState('NormalFire');
 	}
@@ -148,6 +152,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
 
 		P.PlayRecoil(FiringSpeed);
 		PlayOwnedSound(class'Razor2Alt'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+		if (Affector != None)
+			Affector.FireEffect();
 		SpawnServerRazorAlt();
 		
 		bUseExplicitData = false;
@@ -179,6 +185,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
 		
 		P.PlayRecoil(FiringSpeed);
 		PlayAltFiring();
+		if (Affector != None)
+			Affector.FireEffect();
 		SpawnServerRazorAlt();
 		GoToState('AltFiring');
 	}

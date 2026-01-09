@@ -114,6 +114,11 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
 			P.PlayRecoil(FiringSpeed);
 		
 		PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
+
+		if (Affector != None) {
+			Affector.FireEffect();
+		}
+
 		TraceFire(0.0);
 		
 		bUseExplicitData = false;
@@ -151,6 +156,11 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
 			P.PlayRecoil(FiringSpeed);
 		
 		PlayFiring();
+
+		if (Affector != None) {
+			Affector.FireEffect();
+		}
+
 		TraceFire(0.0);
     }
 
@@ -186,8 +196,13 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 			P.PlayRecoil(FiringSpeed);
 			
 		PlayOwnedSound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
-		ExplicitProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
 		
+		if (Affector != None) {
+			Affector.FireEffect();
+		}
+
+		ExplicitProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
+
 		bUseExplicitData = false;
 		bClientShownVisuals = false;
 		
@@ -218,6 +233,11 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 			P.PlayRecoil(FiringSpeed);
 			
 		PlayAltFiring();
+		
+		if (Affector != None) {
+			Affector.FireEffect();
+		}
+
 		ExplicitProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
     }
 
