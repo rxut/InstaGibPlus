@@ -7,9 +7,46 @@
 class ST_UT_SeekingRocket extends UT_SeekingRocket;
 
 var IGPlus_WeaponImplementation WImp;
+var WeaponSettingsRepl WSettings;
+
+simulated final function WeaponSettingsRepl FindWeaponSettings() {
+	local WeaponSettingsRepl S;
+
+	foreach AllActors(class'WeaponSettingsRepl', S)
+		return S;
+
+	return none;
+}
+
+simulated final function WeaponSettingsRepl GetWeaponSettings() {
+	if (WSettings != none)
+		return WSettings;
+
+	WSettings = FindWeaponSettings();
+	return WSettings;
+}
 
 auto state Flying
 {
+	function BeginState()
+	{
+		local vector Dir;
+		local WeaponSettingsRepl WS;
+
+		WS = GetWeaponSettings();
+		if (WS != none)
+			Speed = WS.RocketSpeed;
+
+		Dir = vector(Rotation);
+		Velocity = Speed * Dir;
+		Acceleration = Dir * 50;
+		PlayAnim('Wing', 0.2);
+		if (Region.Zone.bWaterZone)
+		{
+			bHitWater = True;
+			Velocity = 0.6 * Velocity;
+		}
+	}
 	function HitWall (vector HitNormal, actor Wall)
 	{
 		if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
@@ -41,22 +78,17 @@ auto state Flying
 
 	function BlowUp(vector HitLocation)
 	{
-		if (WImp.WeaponSettings.bEnableEnhancedSplashRockets) {
-			WImp.EnhancedHurtRadius(
-				self,
-				WImp.WeaponSettings.RocketDamage,
-				WImp.WeaponSettings.RocketHurtRadius,
-				MyDamageType,
-				WImp.WeaponSettings.RocketMomentum * MomentumTransfer,
-				HitLocation);
-		} else {
-			HurtRadius(
-				WImp.WeaponSettings.RocketDamage,
-				WImp.WeaponSettings.RocketHurtRadius,
-				MyDamageType,
-				WImp.WeaponSettings.RocketMomentum * MomentumTransfer,
-				HitLocation);
-		}
+		WImp.SplashDamageWithSelfDamage(
+			self,
+			WImp.WeaponSettings.RocketDamage,
+			WImp.WeaponSettings.RocketSelfDamage,
+			WImp.WeaponSettings.RocketHurtRadius,
+			MyDamageType,
+			WImp.WeaponSettings.RocketMomentum * MomentumTransfer,
+			WImp.WeaponSettings.RocketMomentum * MomentumTransfer,
+			HitLocation,
+			WImp.WeaponSettings.bEnableEnhancedSplashRockets
+		);
 
 		MakeNoise(1.0);
 	}

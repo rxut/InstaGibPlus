@@ -1,0 +1,7 @@
+#####################################################################################################################################################################
+# Type		Class Name									Property Name										Condition		Property Type		Property Value		#
+#####################################################################################################################################################################
+ALLOW		InstaGibPlus-kLe51.*						*														EQ				STRING				*
+ALLOW		InstaGibPlus-kLe51.*						*														EQ				INT					*
+ALLOW		InstaGibPlus-kLe51.*						*														EQ				FLOAT				*
+ALLOW		InstaGibPlus-kLe51.*						*														EQ				BOOL				*

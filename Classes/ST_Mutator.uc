@@ -42,6 +42,7 @@ function bool CheckReplacement(Actor Other, out byte bSuperRelevant)
 		if (Other.Class == class'ShieldBelt')      { ReplaceWith(Other, PreFix$".ST_ShieldBelt"); return false; }
 		if (Other.Class == class'Invisibility')    { ReplaceWith(Other, PreFix$".ST_Invisibility"); return false; }
 		if (Other.Class == class'UT_Invisibility') { ReplaceWith(Other, PreFix$".ST_Invisibility"); return false; }
+		if (Other.Class == class'MedBox')          { ReplaceWith(Other, PreFix$".ST_MedBox"); return false; }
 	}
 
 	if (bReplaceWeapons && Other.IsA('Weapon'))

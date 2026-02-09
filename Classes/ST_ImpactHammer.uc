@@ -400,6 +400,13 @@ state Firing
 							GoToState('FireBlast');
 						}
 					}
+					// Is it a direct TranslocatorTarget hit (not through dummy)
+					else if ( HitActor.IsA('TranslocatorTarget') )
+					{
+						ProcessTraceHit(HitActor, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+						PlayFiring();
+						GoToState('FireBlast');
+					}
 				}
 			}
 			else { // Regular base game trace

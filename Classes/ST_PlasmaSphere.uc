@@ -11,10 +11,18 @@ var vector ExtrapolationDelta;
 
 simulated function PostBeginPlay()
 {
+	local WeaponSettingsRepl WS;
+
 	if (ROLE == ROLE_Authority)
 	{
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break;
+	}
+
+	WS = GetWeaponSettings();
+	if (WS != none) {
+		Speed = WS.PulseSphereSpeed;
+		SetCollisionSize(WS.PulseSphereCollisionRadius, WS.PulseSphereCollisionHeight);
 	}
 
 	Super.PostBeginPlay();
@@ -40,7 +48,10 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-    local ST_PulseGun PG;
+	local ST_PulseGun PG;
+	local vector FakeLocation;
+	local vector MyDir;
+	local ST_PlasmaSphere MatchedDummy;
 
 	super.PostNetBeginPlay();
 
@@ -52,8 +63,21 @@ simulated function PostNetBeginPlay()
 
 		if (InstigatingPlayer != none) {
 			PG = ST_PulseGun(InstigatingPlayer.Weapon);
-			if (PG != none && PG.LocalPlasmaSphereDummy != none && PG.LocalPlasmaSphereDummy.bDeleteMe == false)
-				PG.LocalPlasmaSphereDummy.Destroy();
+			if (PG != none)
+			{
+				MyDir = Normal(Velocity);
+				MatchedDummy = PG.FindBestMatchingDummy(MyDir);
+
+				if (MatchedDummy != none)
+				{
+					FakeLocation = MatchedDummy.Location;
+					PG.ClearDummyFromArray(MatchedDummy);
+					MatchedDummy.Destroy();
+					SetLocation(FakeLocation);
+				}
+
+				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+			}
 		}
 	} else {
 		Disable('Tick');
@@ -73,7 +97,7 @@ simulated event Tick(float Delta) {
     // Extrapolate locally to compensate for ping
     if (Physics != PHYS_None) {
         NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+        Move(NewXPolDelta - ExtrapolationDelta);
         ExtrapolationDelta = NewXPolDelta;
     }
 }

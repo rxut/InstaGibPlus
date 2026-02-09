@@ -43,7 +43,21 @@ function EnhancedHurtRadius(
 	name   DamageName,
 	float  Momentum,
 	vector HitLocation,
-	optional bool bIsRazor2Alt
+	optional bool bIsRazor2Alt,
+	optional float SelfDamageAmount,
+	optional float SelfMomentum
+);
+
+function SplashDamageWithSelfDamage(
+	Actor Source,
+	float DamageAmount,
+	float SelfDamageAmount,
+	float DamageRadius,
+	name DamageName,
+	float Momentum,
+	float SelfMomentum,
+	vector HitLocation,
+	optional bool bUseEnhancedSplash
 );
 
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction);

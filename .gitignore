@@ -1,9 +1,19 @@
 /Classes/VersionInfo.uc
 
 *.sublime-workspace
-PostBuildHook.bat
 
 /Build/Temp/**/*
 /System/**/*.u
 /System/**/*.uz
 
+/IG+ Extras/
+/IG+ Extras/**/*
+/OtherMods/**/*
+.env
+/Build/**/*
+
+build_all.sh
+build.sh
+
+.cursorignore
+.DS_Store

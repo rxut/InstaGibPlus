@@ -57,8 +57,8 @@ static function DrawTime(ChallengeHUD H, Canvas C) {
 
 	CharX = 25.0;
 	CharY = 64.0;
-	CharXScaled = CharX * H.Scale;
-	CharYScaled = CharY * H.Scale;
+	CharXScaled = CharX * H.Scale * 1.03;
+	CharYScaled = CharY * H.Scale * 1.03;
 
 	C.DrawColor = H.HUDColor;
 
@@ -78,16 +78,16 @@ static function DrawTime(ChallengeHUD H, Canvas C) {
 			X = 0.5*C.ClipX - 384*H.Scale - XL*H.Scale;
 			Y = C.ClipY - 64*H.Scale;
 		} else {
-			X = C.ClipX - 140*H.Scale - XL*H.Scale;
+			X = C.ClipX - 160*H.Scale - XL*H.Scale;
 			Y = 128*H.Scale;
 		}
 	} else {
-		X = C.ClipX - 128*H.StatusScale*H.Scale - 140*H.Scale - XL*H.Scale;
+		X = C.ClipX - 128*H.StatusScale*H.Scale - 160*H.Scale - XL*H.Scale;
 		Y = 128*H.Scale;
 	}
 
 	C.SetPos(X,Y);
-	C.DrawTile(Texture'PureTimeBG', 128*H.Scale + XL * H.Scale, 64*H.Scale, 0, 0, 128.0, 64.0);
+	C.DrawTile(Texture'PureTimeBG', 148*H.Scale + XL * H.Scale, 64*H.Scale, 0, 0, 128.0, 64.0);
 	C.Style = H.Style;
 	C.DrawColor = H.WhiteColor;
 
@@ -98,7 +98,7 @@ static function DrawTime(ChallengeHUD H, Canvas C) {
 
 	FullSize = CharXScaled * 4 + 12 * H.Scale; //At least 4 digits and : (extra size not counted)
 
-	C.SetPos( X + 64 * H.Scale, Y + 12 * H.Scale);
+	C.SetPos( X + 70 * H.Scale, Y + 14 * H.Scale);
 	C.CurX -= (FullSize / 2);
 	if (Min >= 100) {
 		C.CurX -= XL * H.Scale;

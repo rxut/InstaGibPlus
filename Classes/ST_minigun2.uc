@@ -241,6 +241,181 @@ state AltFiring
 Begin:
 }
 
+state ClientFiring
+{
+	simulated function AnimEnd()
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		if ( (Pawn(Owner) == None) || (AmmoType.AmmoAmount <= 0) )
+		{
+			PlayUnwind();
+			GotoState('');
+		}
+		else if ( !bCanClientFire )
+			GotoState('');
+		else if ( Pawn(Owner).bFire != 0 )
+			Global.ClientFire(0);
+		else if ( Pawn(Owner).bAltFire != 0 )
+			Global.ClientAltFire(0);
+		else
+		{
+			PlayUnwind();
+			GotoState('ClientFinish');
+		}
+	}
+
+	simulated function BeginState()
+	{
+		AmbientSound = FireSound;
+		bSteadyFlash3rd = true;
+	}
+
+	simulated function EndState()
+	{
+		bSteadyFlash3rd = false;
+		Super.EndState();
+	}
+}
+
+simulated state ClientAltFiring
+{
+	simulated function Tick( float DeltaTime)
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		if ( bFiredShot && (Pawn(Owner) != None) && (Pawn(Owner).bAltFire == 0) )
+			AnimEnd();
+	}
+
+	simulated function AnimEnd()
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		if ( (Pawn(Owner) == None) || (AmmoType.AmmoAmount <= 0) )
+		{
+			PlayUnwind();
+			GotoState('');
+		}
+		else if ( !bCanClientFire )
+			GotoState('');
+		else if ( Pawn(Owner).bAltFire != 0 )
+		{
+			if ( (AnimSequence != 'Shoot2') || !bAnimLoop )
+			{	
+				AmbientSound = AltFireSound;
+				SoundVolume = 255*Pawn(Owner).SoundDampening;
+				LoopAnim('Shoot2',1.9);
+			}
+			else if ( AmbientSound == None )
+				AmbientSound = FireSound;
+
+			if ( Affector != None )
+				Affector.FireEffect();
+			if ( PlayerPawn(Owner) != None )
+				PlayerPawn(Owner).ShakeView(ShakeTime, ShakeMag, ShakeVert);
+		}
+		else
+		{
+			PlayUnwind();
+			bSteadyFlash3rd = false;
+			GotoState('ClientFinish');
+		}
+	}
+
+	simulated function BeginState()
+	{
+		bSteadyFlash3rd = true;
+		AmbientSound = FireSound;
+		bFiredShot = false;
+	}
+
+	simulated function EndState()
+	{
+		bSteadyFlash3rd = false;
+		bFiredShot = false;
+		Super.EndState();
+	}
+Begin:
+	Sleep(0.13);
+	bFiredShot = true;
+}
+
+state ClientFinish
+{
+	simulated function bool ClientFire(float Value)
+	{
+		bForceFire = bForceFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
+		return bForceFire;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		bForceAltFire = bForceAltFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
+		return bForceAltFire;
+	}
+
+	simulated function AnimEnd()
+	{
+		local TournamentPlayer T;
+
+		T = TournamentPlayer(Owner);
+		if (T != None && T.ClientPending != None) {
+			GotoState('ClientDown');
+			return;
+		}
+
+		if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
+		{
+			if ( bForceFire || (Pawn(Owner).bFire != 0) )
+			{
+				Global.ClientFire(0);
+				return;
+			}
+			else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
+			{
+				Global.ClientAltFire(0);
+				return;
+			}
+		}			
+		GotoState('');
+		Global.AnimEnd();
+	}
+
+	simulated function EndState()
+	{
+		bSteadyFlash3rd = false;
+		bForceFire = false;
+		bForceAltFire = false;
+		AmbientSound = None;
+	}
+
+	simulated function BeginState()
+	{
+		bSteadyFlash3rd = false;
+		bForceFire = false;
+		bForceAltFire = false;
+	}
+}
+
 State ClientDown
 {
 	simulated function AnimEnd()
@@ -265,7 +440,10 @@ State ClientDown
 		}
 	}
 
-	simulated function BeginState();
+	simulated function BeginState()
+	{
+		TweenDown();
+	}
 }
 
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
@@ -288,7 +466,13 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 
 		if ( Other.IsA('Bot') && (FRand() < 0.2) )
 			Pawn(Other).WarnTarget(PawnOwner, 500, X);
-		rndDam = WImp.WeaponSettings.MinigunMinDamage + Rand(WImp.WeaponSettings.MinigunMaxDamage - WImp.WeaponSettings.MinigunMinDamage + 1);
+
+		If (isInState('AltFiring'))
+			rndDam = WImp.WeaponSettings.MinigunAltMinDamage + Rand(WImp.WeaponSettings.MinigunAltMaxDamage - WImp.WeaponSettings.MinigunAltMinDamage + 1);
+
+		else
+			rndDam = WImp.WeaponSettings.MinigunMinDamage + Rand(WImp.WeaponSettings.MinigunMaxDamage - WImp.WeaponSettings.MinigunMinDamage + 1);
+
 		if ( Level.Game.GetPropertyText("NoLockdown") == "1" || FRand() >= 0.2 )
 			X = vect(0, 0, 0);
 		else

@@ -5,8 +5,8 @@ var WeaponSettingsRepl WSettings;
 
 var PlayerPawn InstigatingPlayer;
 
-var vector SimulationHistory[20];  // Store up to 20 positions
-var float SimulationTimes[20];     // Timestamps for each position
+var vector SimulationHistory[50];  // Store up to 50 positions
+var float SimulationTimes[50];     // Timestamps for each position
 var int HistoryCount;              // Number of valid history entries
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
@@ -81,6 +81,22 @@ simulated function PostNetBeginPlay()
 			}
 		}
 	}
+}
+
+function InitSimulationHistory(vector StartPos, float StartTime, float TotalTime) {
+    SimulationHistory[0] = StartPos;
+    SimulationTimes[0] = StartTime;
+    HistoryCount = 1;
+    SimulationStartTime = Level.TimeSeconds;
+    TotalSimulationTime = TotalTime;
+}
+
+function AddSimulationHistoryStep(vector NewPos, float TimeStamp) {
+    if (HistoryCount < 50) {
+        SimulationHistory[HistoryCount] = NewPos;
+        SimulationTimes[HistoryCount] = TimeStamp;
+        HistoryCount++;
+    }
 }
 
 function SimulateWithHistory(IGPlus_WeaponImplementation WImpl, int Ping)

@@ -77,6 +77,10 @@ var localized string MoreInformationText;
 	var localized string LogClientMessagesText;
 	var localized string LogClientMessagesHelp;
 
+	var UWindowCheckbox Chk_DemoShowClientMessages;
+	var localized string DemoShowClientMessagesText;
+	var localized string DemoShowClientMessagesHelp;
+
 	var UWindowCheckbox Chk_DebugMovement;
 	var localized string DebugMovementText;
 	var localized string DebugMovementHelp;
@@ -435,6 +439,10 @@ var localized string MoreInformationText;
 	var UWindowCheckbox Chk_FlakUseClientSideAnimations;
 	var localized string FlakUseClientSideAnimationsText;
 	var localized string FlakUseClientSideAnimationsHelp;
+
+	var UWindowCheckbox Chk_RocketUseClientSideAnimations;
+	var localized string RocketUseClientSideAnimationsText;
+	var localized string RocketUseClientSideAnimationsHelp;
 
 	var UWindowCheckbox Chk_SniperUseClientSideAnimations;
 	var localized string SniperUseClientSideAnimationsText;
@@ -862,11 +870,13 @@ function Created() {
 	Chk_PulseUseClientSideAnimations = CreateCheckbox(PulseUseClientSideAnimationsText, PulseUseClientSideAnimationsHelp);
 	Chk_RipperUseClientSideAnimations = CreateCheckbox(RipperUseClientSideAnimationsText, RipperUseClientSideAnimationsHelp);
 	Chk_FlakUseClientSideAnimations = CreateCheckbox(FlakUseClientSideAnimationsText, FlakUseClientSideAnimationsHelp);
+	Chk_RocketUseClientSideAnimations = CreateCheckbox(RocketUseClientSideAnimationsText, RocketUseClientSideAnimationsHelp);
 	Chk_SniperUseClientSideAnimations = CreateCheckbox(SniperUseClientSideAnimationsText, SniperUseClientSideAnimationsHelp);
 	Chk_TranslocatorUseClientSideAnimations = CreateCheckbox(TranslocatorUseClientSideAnimationsText, TranslocatorUseClientSideAnimationsHelp);
 
 	Lbl_Advanced = CreateSeparator(AdvancedText);
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
+	Chk_DemoShowClientMessages = CreateCheckbox(DemoShowClientMessagesText, DemoShowClientMessagesHelp);
 	Chk_DebugMovement = CreateCheckbox(DebugMovementText, DebugMovementHelp);
 	Chk_LocationOffsetFix = CreateCheckbox(LocationOffsetFixText, LocationOffsetFixHelp);
 
@@ -1036,6 +1046,7 @@ function Load() {
 	Edit_FakeCAPInterval.SetValue(string(Settings.FakeCAPInterval));
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
+	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
 	Chk_DebugMovement.bChecked = Settings.bDebugMovement;
 	Chk_LocationOffsetFix.bChecked = Settings.bEnableLocationOffsetFix;
 
@@ -1120,6 +1131,7 @@ function Load() {
 	Chk_PulseUseClientSideAnimations.bChecked = Settings.bPulseUseClientSideAnimations;
 	Chk_RipperUseClientSideAnimations.bChecked = Settings.bRipperUseClientSideAnimations;
 	Chk_FlakUseClientSideAnimations.bChecked = Settings.bFlakUseClientSideAnimations;
+	Chk_RocketUseClientSideAnimations.bChecked = Settings.bRocketUseClientSideAnimations;
 	Chk_SniperUseClientSideAnimations.bChecked = Settings.bSniperUseClientSideAnimations;
 	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
 
@@ -1154,6 +1166,7 @@ function Save() {
 	Settings.FakeCAPInterval = float(Edit_FakeCAPInterval.GetValue());
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
+	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
 	Settings.bDebugMovement = Chk_DebugMovement.bChecked;
 	Settings.bEnableLocationOffsetFix = Chk_LocationOffsetFix.bChecked;
 
@@ -1239,6 +1252,7 @@ function Save() {
 	Settings.bPulseUseClientSideAnimations = Chk_PulseUseClientSideAnimations.bChecked;
 	Settings.bRipperUseClientSideAnimations = Chk_RipperUseClientSideAnimations.bChecked;
 	Settings.bFlakUseClientSideAnimations = Chk_FlakUseClientSideAnimations.bChecked;
+	Settings.bRocketUseClientSideAnimations = Chk_RocketUseClientSideAnimations.bChecked;
 	Settings.bSniperUseClientSideAnimations = Chk_SniperUseClientSideAnimations.bChecked;
 	Settings.bTranslocatorUseClientSideAnimations = Chk_TranslocatorUseClientSideAnimations.bChecked;
 
@@ -1251,6 +1265,7 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bPulseUseClientSideAnimations", Chk_PulseUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bRipperUseClientSideAnimations", Chk_RipperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bFlakUseClientSideAnimations", Chk_FlakUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bRocketUseClientSideAnimations", Chk_RocketUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bSniperUseClientSideAnimations", Chk_SniperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bTranslocatorUseClientSideAnimations", Chk_TranslocatorUseClientSideAnimations.bChecked);
 	}
@@ -1328,6 +1343,9 @@ defaultproperties
 
 		LogClientMessagesText="Log Client Messages"
 		LogClientMessagesHelp="If checked, write client messages to log in addition to console"
+
+		DemoShowClientMessagesText="Demo Show Client Messages"
+		DemoShowClientMessagesHelp="If checked, show client messages during demo playback"
 
 		DebugMovementText="Trace Movement Input"
 		DebugMovementHelp="If checked, trace movement input to demo"
@@ -1595,6 +1613,9 @@ defaultproperties
 
 		FlakUseClientSideAnimationsText="Use Client-Side Animations for Flak Cannon"
 		FlakUseClientSideAnimationsHelp="If checked, use client-side animations for Flak Cannon"
+
+		RocketUseClientSideAnimationsText="Use Client-Side Animations for Rocket Launcher"
+		RocketUseClientSideAnimationsHelp="If checked, use client-side animations for Rocket Launcher"
 
 		SniperUseClientSideAnimationsText="Use Client-Side Animations for Sniper Rifle"
 		SniperUseClientSideAnimationsHelp="If checked, use client-side animations for Sniper Rifle"

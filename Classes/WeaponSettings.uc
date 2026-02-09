@@ -42,9 +42,11 @@ var config bool  SniperUseReducedHitbox;
 var config float EightballSelectTime;
 var config float EightballDownTime;
 var config float RocketDamage;
+var config float RocketSelfDamage;
 var config float RocketHurtRadius;
 var config float RocketMomentum;
 var config float RocketSpreadSpacingDegrees;
+var config float RocketSpeed;
 var config float GrenadeDamage;
 var config float GrenadeHurtRadius;
 var config float GrenadeMomentum;
@@ -60,6 +62,7 @@ var config float FlakChunkDropOffStart;
 var config float FlakChunkDropOffEnd;
 var config float FlakChunkDropOffDamageRatio;
 var config bool  FlakChunkRandomSpread;
+var config float FlakChunkRandomSpreadSize;
 var config float FlakSlugDamage;
 var config float FlakSlugHurtRadius;
 var config float FlakSlugMomentum;
@@ -86,12 +89,17 @@ var config float MinigunBulletInterval;
 var config float MinigunAlternateBulletInterval;
 var config float MinigunMinDamage;
 var config float MinigunMaxDamage;
+var config float MinigunAltMinDamage;
+var config float MinigunAltMaxDamage;
 
 var config float PulseSelectTime;
 var config float PulseDownTime;
 var config float PulseSphereDamage;
 var config float PulseSphereMomentum;
+var config float PulseSphereSpeed;
 var config float PulseSphereFireRate;
+var config float PulseSphereCollisionRadius;
+var config float PulseSphereCollisionHeight;
 var config float PulseBoltDPS;
 var config float PulseBoltMomentum;
 var config float PulseBoltMaxAccumulate;
@@ -163,8 +171,6 @@ var config bool  TranslocatorCompensatePing;
 
 var config string DefaultWeaponClass;
 
-var config int   InvisibilityDuration;
-
 var config bool  bEnablePingCompensation;
 
 var config bool  bEnableSubTickCompensation;
@@ -173,15 +179,15 @@ var config int   PingCompensationMax;
 
 var config bool  bEnableAnimationAdaptiveHeadHitbox;
 
-var config bool  bAdvancedSpawns;
-var config bool  bSafeSpawns;
-var config int   DefaultSpawnWeight;
-var config int   MinSpawnDistance;
-var config int   MinSpawnZVariance;
-var config int   SpawnRelevantDistance;
-var config float SpawnNearLastPenalty;
-var config float SpawnRecentPenalty;
-var config float SpawnLOSPenalty;
+var config int   InvisibilityDuration;
+
+var config int   ShieldBeltCharge;
+
+var config int   ArmorCharge;
+
+var config int   ThighPadsCharge;
+
+var config int   HealthPackHealingAmount;
 
 defaultproperties
 {
@@ -209,7 +215,7 @@ defaultproperties
 	SplashMinDiffractionDistance=50.0
 
 	HeadHalfHeight=7.5
-	HeadRadius=10.0
+	HeadRadius=11.0
 
 	WarheadSelectTime=0.5
 	WarheadDownTime=0.233333
@@ -227,9 +233,11 @@ defaultproperties
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
 	RocketDamage=75
+	RocketSelfDamage=75
 	RocketHurtRadius=220
 	RocketMomentum=1.0
 	RocketSpreadSpacingDegrees=3.6
+	RocketSpeed=900.0
 	GrenadeDamage=80
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
@@ -245,6 +253,7 @@ defaultproperties
 	FlakChunkDropOffEnd=0.0
 	FlakChunkDropOffDamageRatio=1.0
 	FlakChunkRandomSpread=True
+	FlakChunkRandomSpreadSize=2000
 	FlakSlugDamage=70
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
@@ -271,12 +280,17 @@ defaultproperties
 	MinigunAlternateBulletInterval=0.050
 	MinigunMinDamage=5
 	MinigunMaxDamage=7
+	MinigunAltMinDamage=5
+	MinigunAltMaxDamage=7
 
 	PulseSelectTime=0.444444
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
 	PulseSphereFireRate=0.18
+	PulseSphereSpeed=1450.0
+	PulseSphereCollisionRadius=6.0
+	PulseSphereCollisionHeight=6.0
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
 	PulseBoltMaxAccumulate=0.08
@@ -349,6 +363,14 @@ defaultproperties
 
 	InvisibilityDuration=45
 
+	ShieldBeltCharge=150
+
+	ArmorCharge=100
+
+	ThighPadsCharge=50
+
+	HealthPackHealingAmount=20
+
 	bEnablePingCompensation=False
 
 	bEnableSubTickCompensation=False
@@ -356,14 +378,4 @@ defaultproperties
 	PingCompensationMax=200
 
 	bEnableAnimationAdaptiveHeadHitbox=False
-
-	bAdvancedSpawns=False
-	bSafeSpawns=False
-	DefaultSpawnWeight=2000
-	MinSpawnDistance=1200
-	MinSpawnZVariance=-190
-	SpawnRelevantDistance=4000
-	SpawnNearLastPenalty=1.500000
-	SpawnRecentPenalty=0.500000
-	SpawnLOSPenalty=2.000000
 }

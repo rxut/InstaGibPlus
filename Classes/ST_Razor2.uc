@@ -40,21 +40,26 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-    local ST_ripper R;
+	local ST_Razor2 Raz;
 
 	super.PostNetBeginPlay();
 
 	if (GetWeaponSettings().RipperCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations == true)
 	{
-
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
-			R = ST_ripper(InstigatingPlayer.Weapon);
-			if (R != none && R.LocalRazor2Dummy != none && R.LocalRazor2Dummy.bDeleteMe == false)
-				R.LocalRazor2Dummy.Destroy();
+			// Find the oldest client-side dummy and destroy it
+			foreach AllActors(class'ST_Razor2', Raz)
+			{
+				if (Raz.bClientVisualOnly && Raz.Owner == InstigatingPlayer && !Raz.bDeleteMe)
+				{
+					Raz.Destroy();
+					break;
+				}
+			}
 		}
 	} else {
 		Disable('Tick');
@@ -62,21 +67,21 @@ simulated function PostNetBeginPlay()
 }
 
 simulated event Tick(float Delta) {
-    local vector NewXPolDelta;
-    super.Tick(Delta);
+	local vector NewXPolDelta;
+	super.Tick(Delta);
 
-    if (InstigatingPlayer == none)
-        return;
+	if (InstigatingPlayer == none)
+		return;
 
-    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
-        return;
+	if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+		return;
 
-    // Extrapolate locally to compensate for ping
-    if (Physics != PHYS_None) {
-        NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+	// Extrapolate locally to compensate for ping
+	if (Physics != PHYS_None) {
+		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		Move(NewXPolDelta - ExtrapolationDelta);
 		ExtrapolationDelta = NewXPolDelta;
-    }
+	}
 }
 
 auto state Flying
@@ -140,15 +145,9 @@ auto state Flying
 	simulated function HitWall (vector HitNormal, actor Wall) {
 		local vector Vel2D, Norm2D;
 
-		if (bClientVisualOnly)
-		{
-			bHidden = true;
-			Destroy();
-			return;
-		}
-
 		bCanHitInstigator = true;
-		PlaySound(ImpactSound, SLOT_Misc, 2.0);
+		if (!bClientVisualOnly)
+			PlaySound(ImpactSound, SLOT_Misc, 2.0);
 		LoopAnim('Spin',1.0);
 		if ((Mover(Wall) != none) && Mover(Wall).bDamageTriggered) {
 			if (Role == ROLE_Authority) {
@@ -164,7 +163,8 @@ auto state Flying
 			Destroy();
 
 		if (NumWallHits == 1) {
-			Spawn(class'WallCrack',,,Location, rotator(HitNormal));
+			if (!bClientVisualOnly)
+				Spawn(class'WallCrack',,,Location, rotator(HitNormal));
 			Vel2D = Velocity;
 			Vel2D.Z = 0;
 			Norm2D = HitNormal;
@@ -189,7 +189,9 @@ auto state Flying
 				}
 			}
 		}
-		Velocity -= 2 * (Velocity dot HitNormal) * HitNormal;  
+		Velocity -= 2 * (Velocity dot HitNormal) * HitNormal;
+		// Disable extrapolation after bouncing - trajectory is now server-authoritative
+		Disable('Tick');
 		SetRoll(Velocity);
 	}
 }

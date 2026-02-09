@@ -1,6 +1,6 @@
 // ===============================================================
 // UTPureStats7A.ST_ut_biorifle: put your comment here
-
+//
 // Created by UClasses - (C) 2000-2001 by meltdown@thirdtower.com
 // ===============================================================
 
@@ -11,7 +11,20 @@ var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
 var ST_UT_BioGel LocalBioGelDummy;
-var ST_BioGlob LocalBioGlobDummy;
+
+// Explicit client aim data (sent via ServerExplicitFire)
+var vector ExplicitClientLoc;
+var rotator ExplicitClientRot;
+var bool bUseExplicitData;
+
+// Server-side position validation
+const MAX_POSITION_ERROR_SQ = 1250.0;
+
+replication
+{
+	reliable if(Role < ROLE_Authority)
+		ServerExplicitFire;
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -30,24 +43,149 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 	return WSettings;
 }
 
+simulated function bool IsPingCompEnabled() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	return WS != None && WS.BioCompensatePing;
+}
+
 function PostBeginPlay()
 {
 	Super.PostBeginPlay();
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-		break;		// Find master :D
+		break;
+}
+
+function bool IsPositionReasonable(vector ClientLoc)
+{
+	local vector Diff;
+	
+	Diff = ClientLoc - Owner.Location;
+	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
+}
+
+// Server function called by client when firing
+function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool bIsSwitching)
+{
+	local PlayerPawn P;
+	
+	P = PlayerPawn(Owner);
+	if (P == None)
+		return;
+
+	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) &&
+         (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self)) )
+	{
+		AmmoType.UseAmmo(1);
+
+		// Position validation - use server position if client position is unreasonable
+		if (IsPositionReasonable(ClientLoc))
+			ExplicitClientLoc = ClientLoc;
+		else
+			ExplicitClientLoc = Owner.Location;
+		
+		ExplicitClientRot = ClientRot;
+		bUseExplicitData = true;
+
+		P.PlayRecoil(FiringSpeed);
+		PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening * 4.0);
+		if (Affector != None)
+			Affector.FireEffect();
+		ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget);
+		
+		bUseExplicitData = false;
+		bChangeWeapon = true;
+		GotoState('DownWeapon'); // Manually trigger the transition
+		return;
+	}
+	
+	if (bChangeWeapon || IsInState('DownWeapon') || P.Weapon != self)
+ 		return;
+
+	// Position validation - use server position if client position is unreasonable
+	if (IsPositionReasonable(ClientLoc))
+		ExplicitClientLoc = ClientLoc;
+	else
+		ExplicitClientLoc = Owner.Location;
+	
+	ExplicitClientRot = ClientRot;
+	bUseExplicitData = true;
+
+	if (AmmoType == None)
+		GiveAmmo(P);
+
+	if (AmmoType != None && AmmoType.AmmoAmount > 0)
+	{
+		AmmoType.UseAmmo(1);
+		
+		bCanClientFire = true;
+		bPointing = True;
+		
+		P.PlayRecoil(FiringSpeed);
+		PlayFiring();
+		if (Affector != None)
+			Affector.FireEffect();
+		ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget);
+		GoToState('NormalFire');
+	}
+
+	bUseExplicitData = false;
+}
+
+function Finish()
+{
+	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+	{
+		if (bChangeWeapon)
+			GotoState('DownWeapon');
+		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
+		{
+			Pawn(Owner).StopFiring();
+			Pawn(Owner).SwitchToBestWeapon();
+			if (bChangeWeapon)
+				GotoState('DownWeapon');
+		}
+		else
+			GotoState('Idle');
+		return;
+	}
+	Super.Finish();
+}
+
+function Fire( float Value )
+{
+	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+		return;
+
+	Super.Fire(Value);
 }
 
 function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
 {
     local Projectile P;
     local bbPlayer bbP;
+    local Vector Start, X, Y, Z;
 
-    // Call original ProjectileFire to spawn the projectile
-    P = Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
+    if (bUseExplicitData)
+    {
+        // Explicit Fire Logic using client data
+        Owner.MakeNoise(Pawn(Owner).SoundDampening);
+        GetAxes(ExplicitClientRot, X, Y, Z);
+        Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+        
+        // Direct spawn using explicit rotation
+        P = Spawn(ProjClass,,, Start, ExplicitClientRot);
+    }
+    else
+    {
+        // Standard Logic (original behavior)
+        P = Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
+    }
     
-    // Check if we should apply ping compensation
-    if (P != None && GetWeaponSettings().BioCompensatePing) {
+    // Check if we should apply ping compensation (for both explicit and standard fire)
+    if (P != None && IsPingCompEnabled()) {
         bbP = bbPlayer(Owner);
         if (bbP != None && bbP.PingAverage > 0 && WImp != None) {
             // Simulate projectile forward by player's ping time
@@ -58,72 +196,120 @@ function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed,
     return P;
 }
 
-simulated function PlayFiring()
+simulated function bool ClientFire(float Value)
 {
-        local Pawn PawnOwner;
-        local vector X, Y, Z;
-        local vector Start;
-        local float Hand;
-        local bbPlayer bbP;
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
 
-        Super.PlayFiring();
+	if (!bCanClientFire)
+		return false;
 
-        if (Role < ROLE_Authority)
-        {
-			// Client side dummy projectile logic
-			PawnOwner = Pawn(Owner);
-			bbP = bbPlayer(PawnOwner);
+	PawnOwner = Pawn(Owner);
+	
+	if (PawnOwner == None) 
+		return false;
 
-			if (bbP != none && bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations == false)
-				return;
+	if (IsPingCompEnabled())
+	{
+		bbP = bbPlayer(PawnOwner);
 
-			if (Owner.IsA('PlayerPawn'))
-				Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-			else
-				Hand = 1.0;
+		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
+		{
+			if (AmmoType == None && AmmoName != None)
+				GiveAmmo(PawnOwner);
+			
+			if (AmmoType != None && AmmoType.AmmoAmount > 0)
+			{
+				Instigator = PawnOwner;
+				
+				if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
+				{
+					ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation, true);
+					return true;
+				}
 
-			GetAxes(PawnOwner.ViewRotation,X,Y,Z);
-			if (bHideWeapon)
-				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
-			else
-				Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+				GotoState('ClientFiring');
+				bPointing = True;
 
-			LocalBioGelDummy = Spawn(class'ST_UT_BioGel', Owner,, Start, PawnOwner.ViewRotation);
-			LocalBioGelDummy.RemoteRole = ROLE_None;
-			LocalBioGelDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-			LocalBioGelDummy.bClientVisualOnly = true;
-			LocalBioGelDummy.bCollideWorld = false;
-			LocalBioGelDummy.SetCollision(false, false, false);
-        }
+				// Always play weapon animations
+				PawnOwner.PlayRecoil(FiringSpeed);
+				PlayFiring();
+
+				if (Affector != None)
+					Affector.FireEffect();
+
+				if (PlayerPawn(Owner) != None)
+					PlayerPawn(Owner).ClientInstantFlash(InstFlash, InstFog);
+
+				// Spawn client-side visual
+				if (bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
+				{
+					SpawnClientDummyBioGel();
+				}
+
+				// Send explicit fire data to server
+				ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation);
+
+				return true;
+			}
+			return false;
+		}
+	}
+	
+	return Super.ClientFire(Value);
+}
+
+simulated function SpawnClientDummyBioGel()
+{
+	local Pawn PawnOwner;
+	local vector X, Y, Z;
+	local vector Start;
+	local float Hand;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return;
+
+	if (Owner.IsA('PlayerPawn'))
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	else
+		Hand = 1.0;
+
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	if (bHideWeapon)
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	else
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+
+	LocalBioGelDummy = Spawn(class'ST_UT_BioGel', Owner,, Start, PawnOwner.ViewRotation);
+	LocalBioGelDummy.RemoteRole = ROLE_None;
+	LocalBioGelDummy.Instigator = PawnOwner;
+	LocalBioGelDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+	LocalBioGelDummy.bClientVisualOnly = true;
+	LocalBioGelDummy.bCollideWorld = false;
+	LocalBioGelDummy.SetCollision(false, false, false);
+}
+
+state ClientActive
+{
+	simulated function AnimEnd()
+	{
+		bCanClientFire = true;
+		Super.AnimEnd();
+	}
 }
 
 state ShootLoad
 {
-    function ForceFire() { Super.ForceFire(); }
-    function ForceAltFire() { Super.ForceAltFire(); }
-    function Fire(float F) { Super.Fire(F); }
-    function AltFire(float F) { Super.AltFire(F); }
-    function Timer() { Super.Timer(); }
-    function AnimEnd() { Super.AnimEnd(); }
 
     function BeginState()
     {
         Local Projectile Gel;
-        local bbPlayer bbP;
 
         Gel = ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
         
-        if (Gel != None) {
+        if (Gel != None)
             Gel.DrawScale = 1.0 + 0.8 * ChargeSize;
-            
-            // Check if we should apply ping compensation
-            if (GetWeaponSettings().BioCompensatePing) {
-                bbP = bbPlayer(Owner);
-                if (bbP != None) {
-                    WImp.SimulateProjectile(Gel, bbP.PingAverage);
-                }
-            }
-        }
         
         if (Affector != None)
             Affector.FireEffect();
@@ -215,6 +401,7 @@ simulated function TweenDown() {
 	else
 		PlayAnim('Down', GetWeaponSettings().BioDownAnimSpeed(), TweenTime);
 }
+
 
 defaultproperties {
 	ProjectileClass=Class'ST_UT_BioGel'

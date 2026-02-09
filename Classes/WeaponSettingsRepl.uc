@@ -18,9 +18,11 @@ var bool  SniperUseReducedHitbox;
 var float EightballSelectTime;
 var float EightballDownTime;
 var float RocketDamage;
+var float RocketSelfDamage;
 var float RocketHurtRadius;
 var float RocketMomentum;
 var float RocketSpreadSpacingDegrees;
+var float RocketSpeed;
 var float GrenadeDamage;
 var float GrenadeHurtRadius;
 var float GrenadeMomentum;
@@ -36,6 +38,7 @@ var float FlakChunkDropOffStart;
 var float FlakChunkDropOffEnd;
 var float FlakChunkDropOffDamageRatio;
 var bool  FlakChunkRandomSpread;
+var float FlakChunkRandomSpreadSize;
 var float FlakSlugDamage;
 var float FlakSlugHurtRadius;
 var float FlakSlugMomentum;
@@ -62,12 +65,17 @@ var float MinigunBulletInterval;
 var float MinigunAlternateBulletInterval;
 var float MinigunMinDamage;
 var float MinigunMaxDamage;
+var float MinigunAltMinDamage;
+var float MinigunAltMaxDamage;
 
 var float PulseSelectTime;
 var float PulseDownTime;
 var float PulseSphereDamage;
 var float PulseSphereMomentum;
+var float PulseSphereSpeed;
 var float PulseSphereFireRate;
+var float PulseSphereCollisionRadius;
+var float PulseSphereCollisionHeight;
 var float PulseBoltDPS;
 var float PulseBoltMomentum;
 var float PulseBoltMaxAccumulate;
@@ -138,7 +146,6 @@ var float TranslocatorDownTime;
 var float TranslocatorHealth;
 var bool  TranslocatorCompensatePing;
 
-var int   InvisibilityDuration;
 
 var bool  bEnablePingCompensation;
 
@@ -148,15 +155,15 @@ var int   PingCompensationMax;
 
 var bool  bEnableAnimationAdaptiveHeadHitbox;
 
-var bool  bAdvancedSpawns;
-var bool  bSafeSpawns;
-var int   DefaultSpawnWeight;
-var int   MinSpawnDistance;
-var int   MinSpawnZVariance;
-var int   SpawnRelevantDistance;
-var float SpawnNearLastPenalty;
-var float SpawnRecentPenalty;
-var float SpawnLOSPenalty;
+var int   InvisibilityDuration;
+
+var int   ArmorCharge;
+
+var int   ShieldBeltCharge;
+
+var int   ThighPadsCharge;
+
+var int   HealthPackHealingAmount;
 
 replication {
 	reliable if (Role == ROLE_Authority)
@@ -178,8 +185,10 @@ replication {
 		EightballSelectTime,
 		EightballDownTime,
 		RocketDamage,
+		RocketSelfDamage,
 		RocketHurtRadius,
 		RocketMomentum,
+		RocketSpeed,
 		GrenadeDamage,
 		GrenadeHurtRadius,
 		GrenadeMomentum,
@@ -194,6 +203,7 @@ replication {
 		FlakChunkDropOffEnd,
 		FlakChunkDropOffDamageRatio,
 		FlakChunkRandomSpread,
+		FlakChunkRandomSpreadSize,
 		FlakSlugDamage,
 		FlakSlugHurtRadius,
 		FlakSlugMomentum,
@@ -220,12 +230,17 @@ replication {
 		MinigunAlternateBulletInterval,
 		MinigunMinDamage,
 		MinigunMaxDamage,
+		MinigunAltMinDamage,
+		MinigunAltMaxDamage,
 
 		PulseSelectTime,
 		PulseDownTime,
 		PulseSphereDamage,
 		PulseSphereMomentum,
+		PulseSphereSpeed,
 		PulseSphereFireRate,
+		PulseSphereCollisionRadius,
+		PulseSphereCollisionHeight,
 		PulseBoltDPS,
 		PulseBoltMomentum,
 		PulseBoltMaxAccumulate,
@@ -294,22 +309,21 @@ replication {
 		TranslocatorDownTime,
 		TranslocatorHealth,
 		TranslocatorCompensatePing,
+
 		InvisibilityDuration,
+
+		ShieldBeltCharge,
+
+		ArmorCharge,
+		
+		ThighPadsCharge,
+
+		HealthPackHealingAmount,
 
 		bEnablePingCompensation,
 		bEnableSubTickCompensation,
 		PingCompensationMax,
-		bEnableAnimationAdaptiveHeadHitbox,
-
-		bAdvancedSpawns,
-		bSafeSpawns,
-		DefaultSpawnWeight,
-		MinSpawnDistance,
-		MinSpawnZVariance,
-		SpawnRelevantDistance,
-		SpawnNearLastPenalty,
-		SpawnRecentPenalty,
-		SpawnLOSPenalty;
+		bEnableAnimationAdaptiveHeadHitbox;
 }
 
 simulated final function float WarheadSelectAnimSpeed() {
@@ -529,9 +543,11 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	EightballSelectTime = S.EightballSelectTime;
 	EightballDownTime = S.EightballDownTime;
 	RocketDamage = S.RocketDamage;
+	RocketSelfDamage = S.RocketSelfDamage;
 	RocketHurtRadius = S.RocketHurtRadius;
 	RocketMomentum = S.RocketMomentum;
 	RocketSpreadSpacingDegrees = S.RocketSpreadSpacingDegrees;
+	RocketSpeed = S.RocketSpeed;
 	GrenadeDamage = S.GrenadeDamage;
 	GrenadeHurtRadius = S.GrenadeHurtRadius;
 	GrenadeMomentum = S.GrenadeMomentum;
@@ -547,6 +563,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	FlakChunkDropOffEnd = S.FlakChunkDropOffEnd;
 	FlakChunkDropOffDamageRatio = S.FlakChunkDropOffDamageRatio;
 	FlakChunkRandomSpread = S.FlakChunkRandomSpread;
+	FlakChunkRandomSpreadSize = S.FlakChunkRandomSpreadSize;
 	FlakSlugDamage = S.FlakSlugDamage;
 	FlakSlugHurtRadius = S.FlakSlugHurtRadius;
 	FlakSlugMomentum = S.FlakSlugMomentum;
@@ -573,12 +590,17 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	MinigunAlternateBulletInterval = S.MinigunAlternateBulletInterval;
 	MinigunMinDamage = S.MinigunMinDamage;
 	MinigunMaxDamage = S.MinigunMaxDamage;
+	MinigunAltMinDamage = S.MinigunAltMinDamage;
+	MinigunAltMaxDamage = S.MinigunAltMaxDamage;
 
 	PulseSelectTime = S.PulseSelectTime;
 	PulseDownTime = S.PulseDownTime;
 	PulseSphereDamage = S.PulseSphereDamage;
 	PulseSphereMomentum = S.PulseSphereMomentum;
+	PulseSphereSpeed = S.PulseSphereSpeed;
 	PulseSphereFireRate = S.PulseSphereFireRate;
+	PulseSphereCollisionRadius = S.PulseSphereCollisionRadius;
+	PulseSphereCollisionHeight = S.PulseSphereCollisionHeight;
 	PulseBoltDPS = S.PulseBoltDPS;
 	PulseBoltMomentum = S.PulseBoltMomentum;
 	PulseBoltMaxAccumulate = S.PulseBoltMaxAccumulate;
@@ -647,7 +669,16 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	TranslocatorDownTime = S.TranslocatorDownTime;
 	TranslocatorHealth = S.TranslocatorHealth;
 	TranslocatorCompensatePing = S.TranslocatorCompensatePing;
+
 	InvisibilityDuration = S.InvisibilityDuration;
+
+	ShieldBeltCharge = S.ShieldBeltCharge;
+
+	ArmorCharge = S.ArmorCharge;
+
+	ThighPadsCharge = S.ThighPadsCharge;
+
+	HealthPackHealingAmount = S.HealthPackHealingAmount;
 
 	bEnablePingCompensation = S.bEnablePingCompensation;
 
@@ -666,7 +697,7 @@ defaultproperties
 	DrawType=DT_None
 
 	HeadHalfHeight=7.5
-	HeadRadius=10.0
+	HeadRadius=11.0
 
 	WarheadSelectTime=0.5
 	WarheadDownTime=0.233333
@@ -683,9 +714,11 @@ defaultproperties
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
 	RocketDamage=75
+	RocketSelfDamage=75
 	RocketHurtRadius=220
 	RocketMomentum=1.0
 	RocketSpreadSpacingDegrees=3.6
+	RocketSpeed=900.0
 	GrenadeDamage=80
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
@@ -701,6 +734,7 @@ defaultproperties
 	FlakChunkDropOffEnd=0.0
 	FlakChunkDropOffDamageRatio=1.0
 	FlakChunkRandomSpread=True
+	FlakChunkRandomSpreadSize=2000
 	FlakSlugDamage=70
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
@@ -727,12 +761,17 @@ defaultproperties
 	MinigunAlternateBulletInterval=0.050
 	MinigunMinDamage=5
 	MinigunMaxDamage=7
+	MinigunAltMinDamage=5
+	MinigunAltMaxDamage=7
 
 	PulseSelectTime=0.444444
 	PulseDownTime=0.26
 	PulseSphereDamage=20
 	PulseSphereMomentum=1.0
 	PulseSphereFireRate=0.18
+	PulseSphereSpeed=1450.0
+	PulseSphereCollisionRadius=6.0
+	PulseSphereCollisionHeight=6.0
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
 	PulseBoltMaxAccumulate=0.08
@@ -804,6 +843,14 @@ defaultproperties
 
 	InvisibilityDuration=45
 
+	ShieldBeltCharge=150
+
+	ArmorCharge=100
+
+	ThighPadsCharge=50
+
+	HealthPackHealingAmount=20
+
 	bEnablePingCompensation=False
 	
 	bEnableSubTickCompensation=False
@@ -811,14 +858,4 @@ defaultproperties
 	PingCompensationMax=200
 
 	bEnableAnimationAdaptiveHeadHitbox=False
-
-	bAdvancedSpawns=False
-	bSafeSpawns=False
-	DefaultSpawnWeight=2000
-	MinSpawnDistance=1200
-	MinSpawnZVariance=-190
-	SpawnRelevantDistance=4000
-	SpawnNearLastPenalty=1.500000
-	SpawnRecentPenalty=0.500000
-	SpawnLOSPenalty=2.000000
 }

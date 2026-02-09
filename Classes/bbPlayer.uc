@@ -86,6 +86,7 @@ var float NextRealCAPTime;
 var decoration carriedFlag;
 var WeaponSettingsRepl WSettings;
 
+
 // HUD stuff
 var Mutator	zzHudMutes[50];		// Accepted Hud Mutators
 var Mutator	zzWaitMutes[50];	// Hud Mutes waiting to be accepted
@@ -343,7 +344,6 @@ var IGPlus_FlagSprite IGPlus_TeamFlagSprite[4];
 var bool IGPlus_EnableDualButtonSwitch;
 var bool IGPlus_UseFastWeaponSwitch;
 
-
 var bool IGPlus_EnableInputReplication;
 var bool IGPlus_PressedJumpSave;
 var IGPlus_SavedInputChain IGPlus_SavedInputChain;
@@ -361,17 +361,20 @@ struct ReplBuffer {
 
 var string IGPlus_LogoVersionText;
 
-var float FRandValues[47]; // rX Added
-var int FRandValuesIndex; // rX Added
-var int FRandValuesLength; // rX Added
+// rX Added
 
-struct ClientWeaponSettings { // rX Added
+var float FRandValues[47];
+var int FRandValuesIndex;
+var int FRandValuesLength;
+
+struct ClientWeaponSettings {
 	var bool bBioUseClientSideAnimations;
 	var bool bShockBeamUseClientSideAnimations;
 	var bool bShockProjectileUseClientSideAnimations;
 	var bool bPulseUseClientSideAnimations;
 	var bool bRipperUseClientSideAnimations;
 	var bool bFlakUseClientSideAnimations;
+	var bool bRocketUseClientSideAnimations;
 	var bool bSniperUseClientSideAnimations;
 	var bool bTranslocatorUseClientSideAnimations;
 };
@@ -380,8 +383,6 @@ var ClientWeaponSettings ClientWeaponSettingsData;
 
 var bool bEnableDamageDebugMode;
 var bool bEnableDamageDebugConsoleMessages;
-
-var NavigationPoint LastStartSpot2, LastStartSpot3;
 
 replication
 {
@@ -1070,6 +1071,7 @@ simulated event PostNetBeginPlay()
 	ClientWeaponSettingsData.bPulseUseClientSideAnimations = Settings.bPulseUseClientSideAnimations;
 	ClientWeaponSettingsData.bRipperUseClientSideAnimations = Settings.bRipperUseClientSideAnimations;
 	ClientWeaponSettingsData.bFlakUseClientSideAnimations = Settings.bFlakUseClientSideAnimations;
+	ClientWeaponSettingsData.bRocketUseClientSideAnimations = Settings.bRocketUseClientSideAnimations;
 	ClientWeaponSettingsData.bSniperUseClientSideAnimations = Settings.bSniperUseClientSideAnimations;
 	ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = Settings.bTranslocatorUseClientSideAnimations;
 
@@ -1565,6 +1567,9 @@ event PlayerTick( float Time )
 
 simulated function ClientDemoMessage(coerce string S, optional name Type, optional bool bBeep)
 {
+	if (Settings != none && !Settings.bDemoShowClientMessages)
+		return;
+	
 	if (S == zzPrevClientMessage)
 		return;
 	ClientMessage(S, Type, bBeep);
@@ -2778,24 +2783,32 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				DoDodge = DODGE_None;
 
 			if (MoveIndex == FireIndex) {
-				if (bFired) {
-					if (bForceFire && (Weapon != None))
-						Weapon.ForceFire();
-					else if (bFire == 0)
-						Fire(0);
-					bFire = 1;
+				if (!IsExplicitFireWeapon()) {
+					if (bFired) {
+						if (bForceFire && (Weapon != None))
+							Weapon.ForceFire();
+						else if (bFire == 0)
+							Fire(0);
+						bFire = 1;
+					} else {
+						bFire = 0;
+					}
 				} else {
 					bFire = 0;
 				}
 			}
 
 			if (MoveIndex == AltFireIndex) {
-				if (bAltFired) {
-					if (bForceAltFire && (Weapon != None))
-						Weapon.ForceAltFire();
-					else if (bAltFire == 0)
-						AltFire(0);
-					bAltFire = 1;
+				if (!IsExplicitAltFireWeapon()) {
+					if (bAltFired) {
+						if (bForceAltFire && (Weapon != None))
+							Weapon.ForceAltFire();
+						else if (bAltFire == 0)
+							AltFire(0);
+						bAltFire = 1;
+					} else {
+						bAltFire = 0;
+					}
 				} else {
 					bAltFire = 0;
 				}
@@ -3596,6 +3609,33 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 	);
 }
 
+function bool IsExplicitFireWeapon() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == None)
+		return false;
+	if (Weapon.IsA('ST_ShockRifle')) return WS.bEnablePingCompensation;
+	if (Weapon.IsA('ST_UT_FlakCannon')) return WS.FlakCompensatePing;
+	if (Weapon.IsA('ST_ripper')) return WS.RipperCompensatePing;
+	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
+	if (Weapon.IsA('ST_ut_biorifle')) return WS.BioCompensatePing;
+	return false;
+}
+
+function bool IsExplicitAltFireWeapon() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == None)
+		return false;
+	if (Weapon.IsA('ST_ShockRifle')) return WS.bEnablePingCompensation;
+	if (Weapon.IsA('ST_UT_FlakCannon')) return WS.FlakCompensatePing;
+	if (Weapon.IsA('ST_ripper')) return WS.RipperCompensatePing;
+	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
+	return false;
+}
+
 simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn TheOwner)
 {
 	local vector realHit;
@@ -4140,26 +4180,34 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		}
 
 		// handle firing and alt-firing on server
-		if (I.bFire) {
-			if (bFire == 0) {
-				if (I.bLive && I.bFFir && Weapon != none)
-					Weapon.ForceFire();
-				else
-					Fire(0);
+		if (!IsExplicitFireWeapon()) {
+			if (I.bFire) {
+				if (bFire == 0) {
+					if (I.bLive && I.bFFir && Weapon != none)
+						Weapon.ForceFire();
+					else
+						Fire(0);
+				}
+				bFire = 1;
+			} else {
+				bFire = 0;
 			}
-			bFire = 1;
 		} else {
 			bFire = 0;
 		}
 
-		if (I.bAFir) {
-			if (bAltFire == 0) {
-				if (I.bLive && I.bFAFr && Weapon != none)
-					Weapon.ForceAltFire();
-				else
-					AltFire(0);
+		if (!IsExplicitAltFireWeapon()) {
+			if (I.bAFir) {
+				if (bAltFire == 0) {
+					if (I.bLive && I.bFAFr && Weapon != none)
+						Weapon.ForceAltFire();
+					else
+						AltFire(0);
+				}
+				bAltFire = 1;
+			} else {
+				bAltFire = 0;
 			}
-			bAltFire = 1;
 		} else {
 			bAltFire = 0;
 		}
@@ -4893,7 +4941,7 @@ exec function EnableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Ripper (Forced:" $ ForcedValue $ "),";
     }
 
-    // --- Flak ---
+	// --- Flak ---
     ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
     if (ForcedValue == "") {
         if (!Settings.bFlakUseClientSideAnimations) {
@@ -4904,6 +4952,19 @@ exec function EnableClientSideAnimations() {
         }
     } else {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Flak (Forced:" $ ForcedValue $ "),";
+    }
+
+	// --- Rocket ---
+    ForcedValue = GetForcedSettingValue("bRocketUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (!Settings.bRocketUseClientSideAnimations) {
+            Settings.bRocketUseClientSideAnimations = true;
+            ClientWeaponSettingsData.bRocketUseClientSideAnimations = true;
+            UpdatedSettings = UpdatedSettings $ " Rocket,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Rocket (Forced:" $ ForcedValue $ "),";
     }
 
     // --- Sniper ---
@@ -5019,7 +5080,7 @@ exec function DisableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Ripper (Forced:" $ ForcedValue $ "),";
     }
 
-    // --- Flak ---
+	// --- Flak ---
     ForcedValue = GetForcedSettingValue("bFlakUseClientSideAnimations");
     if (ForcedValue == "") {
         if (Settings.bFlakUseClientSideAnimations) {
@@ -5030,6 +5091,19 @@ exec function DisableClientSideAnimations() {
         }
     } else {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Flak (Forced:" $ ForcedValue $ "),";
+    }
+
+	// --- Rocket ---
+    ForcedValue = GetForcedSettingValue("bRocketUseClientSideAnimations");
+    if (ForcedValue == "") {
+        if (Settings.bRocketUseClientSideAnimations) {
+            Settings.bRocketUseClientSideAnimations = false;
+            ClientWeaponSettingsData.bRocketUseClientSideAnimations = false;
+            UpdatedSettings = UpdatedSettings $ " Rocket,";
+            bMadeChanges = true;
+        }
+    } else {
+        ForcedSettingsInfo = ForcedSettingsInfo $ " Rocket (Forced:" $ ForcedValue $ "),";
     }
 
     // --- Sniper ---
@@ -5088,6 +5162,8 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bRipperUseClientSideAnimations = bValue;
     } else if (Key ~= "bFlakUseClientSideAnimations") {
         ClientWeaponSettingsData.bFlakUseClientSideAnimations = bValue;
+    } else if (Key ~= "bRocketUseClientSideAnimations") {
+        ClientWeaponSettingsData.bRocketUseClientSideAnimations = bValue;
     } else if (Key ~= "bSniperUseClientSideAnimations") {
         ClientWeaponSettingsData.bSniperUseClientSideAnimations = bValue;
     } else if (Key ~= "bTranslocatorUseClientSideAnimations") {
@@ -5274,6 +5350,35 @@ exec function FlakClientSideAnimations(bool b) {
 	else
 		ClientMessage("Flak client-side animations disabled!", 'IGPlus');
 }
+
+exec function RocketClientSideAnimations(bool b) {
+    local string ForcedValue;
+
+    ForcedValue = GetForcedSettingValue("bRocketUseClientSideAnimations");
+	if (ForcedValue != "") {
+        ClientMessage("Cannot change Rocket animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
+        return;
+    }
+
+	if (Settings.bRocketUseClientSideAnimations == b) {
+		if (b)
+			ClientMessage("Rocket client-side animations are already enabled.", 'IGPlus');
+		else
+			ClientMessage("Rocket client-side animations are already disabled.", 'IGPlus');
+		return;
+	}
+
+	Settings.bRocketUseClientSideAnimations = b;
+	ClientWeaponSettingsData.bRocketUseClientSideAnimations = b;
+
+	IGPlus_SaveSettings();
+
+	if (b)
+		ClientMessage("Rocket client-side animations enabled!", 'IGPlus');
+	else
+		ClientMessage("Rocket client-side animations disabled!", 'IGPlus');
+}
+
 
 exec function SniperClientSideAnimations(bool b) {
     local string ForcedValue;
@@ -6224,6 +6329,25 @@ event ServerTick(float DeltaTime) {
 
 state FeigningDeath
 {
+	// Fix: Base PlayerPawn.AltFire() incorrectly sets bJustFired instead of bJustAltFired
+	exec function Fire(optional float F)
+	{
+		bJustFired = true;
+	}
+
+	exec function AltFire(optional float F)
+	{
+		bJustAltFired = true;
+	}
+
+	// Fix: Base ProcessMove only checks bJustFired, need to also check bJustAltFired
+	function ProcessMove(float DeltaTime, vector NewAccel, eDodgeDir DodgeMove, rotator DeltaRot)
+	{
+		if (bJustFired || bJustAltFired || bPressedJump || (NewAccel.Z > 0))
+			Rise();
+		Acceleration = vect(0,0,0);
+	}
+
 	function xxServerMove
 	(
 		float TimeStamp,
@@ -10100,6 +10224,8 @@ function PlaySpawn() {
 	local name NextSeq;
 
 	if (Mesh == none) return;
+
+	BaseEyeHeight = Default.BaseEyeHeight;
 
 	if ((Weapon == None) || (Weapon.Mass < 20)) {
 		NextSeq = 'Breath1';

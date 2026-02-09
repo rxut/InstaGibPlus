@@ -2,6 +2,7 @@ class ST_ShieldBelt extends UT_ShieldBelt;
 
 function PickupFunction(Pawn Other) {
 	local Inventory I;
+	local IGPlus_WeaponImplementation WImp;
 
 	MyEffect = Spawn(class'ST_ShieldBeltEffect', Other,,Other.Location, Other.Rotation); 
 	MyEffect.Mesh = Owner.Mesh;
@@ -21,4 +22,9 @@ function PickupFunction(Pawn Other) {
 	for (I = Owner.Inventory; I != None; I = I.Inventory)
 		if (I.bIsAnArmor && (I != self))
 			I.Destroy();
+
+	foreach AllActors(class'IGPlus_WeaponImplementation', WImp)
+		break;
+	if (WImp != none)
+		Charge = WImp.WeaponSettings.ShieldBeltCharge;
 }

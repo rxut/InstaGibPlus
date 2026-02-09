@@ -39,7 +39,7 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-    local ST_ripper R;
+	local ST_Razor2Alt RazAlt;
 
 	super.PostNetBeginPlay();
 
@@ -50,9 +50,15 @@ simulated function PostNetBeginPlay()
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
-			R = ST_ripper(InstigatingPlayer.Weapon);
-			if (R != none && R.LocalRazor2AltDummy != none && R.LocalRazor2AltDummy.bDeleteMe == false)
-				R.LocalRazor2AltDummy.Destroy();
+			// Find the oldest client-side dummy and destroy it
+			foreach AllActors(class'ST_Razor2Alt', RazAlt)
+			{
+				if (RazAlt.bClientVisualOnly && RazAlt.Owner == InstigatingPlayer && !RazAlt.bDeleteMe)
+				{
+					RazAlt.Destroy();
+					break;
+				}
+			}
 		}
 	} else {
 		Disable('Tick');
@@ -60,19 +66,19 @@ simulated function PostNetBeginPlay()
 }
 
 simulated event Tick(float Delta) {
-    local vector NewXPolDelta;
-    super.Tick(Delta);
+	local vector NewXPolDelta;
+	super.Tick(Delta);
 
-    if (InstigatingPlayer == none)
-        return;
+	if (InstigatingPlayer == none)
+		return;
 
-    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
-        return;
+	if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+		return;
 
-    // Extrapolate locally to compensate for ping
+	// Extrapolate locally to compensate for ping
 	if (Physics != PHYS_None) {
 		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-		MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+		Move(NewXPolDelta - ExtrapolationDelta);
 		ExtrapolationDelta = NewXPolDelta;
 	}
 }
