@@ -188,7 +188,6 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 	{
 		AmmoType.UseAmmo(1);
 		
-		// Position validation
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -203,9 +202,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 			
 		PlayOwnedSound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
 		
-		if (Affector != None) {
+		if (Affector != None)
 			Affector.FireEffect();
-		}
 
 		ExplicitProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
 
@@ -213,7 +211,7 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 		bClientShownVisuals = false;
 		
 		bChangeWeapon = true;
-		GotoState('DownWeapon'); // Manually trigger the transition
+		GotoState('DownWeapon');
 		return;
 	}
 
@@ -505,11 +503,13 @@ simulated function ClientSpawnAltProjectileEffects() {
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 	
 	LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start, PawnOwner.ViewRotation));
-	LocalDummy.RemoteRole = ROLE_None;
-	LocalDummy.Instigator = PawnOwner;
-	LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-	LocalDummy.bCollideWorld = false;
-	LocalDummy.SetCollision(false, false, false);
+	if (LocalDummy != None) {
+		LocalDummy.RemoteRole = ROLE_None;
+		LocalDummy.Instigator = PawnOwner;
+		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+		LocalDummy.bCollideWorld = false;
+		LocalDummy.SetCollision(false, false, false);
+	}
 }
 
 function TraceFire(float Accuracy) {

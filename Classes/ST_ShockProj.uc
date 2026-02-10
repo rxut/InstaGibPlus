@@ -48,7 +48,7 @@ simulated function PostBeginPlay() {
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break; // Find master :D
 
-		if (WImp != none && WImp.WeaponSettings.ShockProjectileTakeDamage) {
+		if (WImp != none && WImp.WeaponSettings != None && WImp.WeaponSettings.ShockProjectileTakeDamage) {
 			Health = WImp.WeaponSettings.ShockProjectileHealth;
 		}
 	}

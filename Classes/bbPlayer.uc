@@ -2296,14 +2296,11 @@ function TakeFallingDamage()
 			MakeNoise(-0.5 * Velocity.Z/(FMax(JumpZ, 150.0)));
 		if (Velocity.Z <= -750 - JumpZ)
 		{
-			if (Velocity.Z <= -750 - JumpZ)
-			{
-				if ( (Velocity.Z < -1650 - JumpZ) && (ReducedDamageType != 'All') )
-					TakeDamage(1000, None, Location, vect(0,0,0), 'Fell');
-				else if ( Role == ROLE_Authority )
-					TakeDamage(-0.15 * (Velocity.Z + 700 + JumpZ), None, Location, vect(0,0,0), 'Fell');
-				ShakeView(0.175 - 0.00007 * Velocity.Z, -0.85 * Velocity.Z, -0.002 * Velocity.Z);
-			}
+			if ( (Velocity.Z < -1650 - JumpZ) && (ReducedDamageType != 'All') )
+				TakeDamage(1000, None, Location, vect(0,0,0), 'Fell');
+			else if ( Role == ROLE_Authority )
+				TakeDamage(-0.15 * (Velocity.Z + 700 + JumpZ), None, Location, vect(0,0,0), 'Fell');
+			ShakeView(0.175 - 0.00007 * Velocity.Z, -0.85 * Velocity.Z, -0.002 * Velocity.Z);
 		}
 	}
 	else if ( Velocity.Z > 0.5 * Default.JumpZ )
@@ -3612,6 +3609,8 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 function bool IsExplicitFireWeapon() {
 	local WeaponSettingsRepl WS;
 
+	if (Weapon == None)
+		return false;
 	WS = GetWeaponSettings();
 	if (WS == None)
 		return false;
@@ -3626,6 +3625,8 @@ function bool IsExplicitFireWeapon() {
 function bool IsExplicitAltFireWeapon() {
 	local WeaponSettingsRepl WS;
 
+	if (Weapon == None)
+		return false;
 	WS = GetWeaponSettings();
 	if (WS == None)
 		return false;
@@ -7828,7 +7829,7 @@ static function SetForcedSkin(Actor SkinActor, int selectedSkin, bool bTeamGame,
 		case 4: // Female Soldier Marine
 			SetSkinElement(SkinActor, 0, "SGirlSkins.fbth1"$suffix, "SGirlSkins.fbth");
 			SetSkinElement(SkinActor, 1, "SGirlSkins.fbth2"$suffix, "SGirlSkins.fbth");
-			SetSkinElement(SkinActor, 2, "SGirlSkins.fbth3", "SGirkSkins.fbth");
+			SetSkinElement(SkinActor, 2, "SGirlSkins.fbth3", "SGirlSkins.fbth");
 			// Set the face
 			SetSkinElement(SkinActor, 3, "SGirlSkins.fbth4Annaka", "SGirlSkins.fbth");
 			break;

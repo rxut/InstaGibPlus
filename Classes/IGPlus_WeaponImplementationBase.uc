@@ -12,8 +12,10 @@ struct RecentExplosion {
     var float Momentum;
     var Pawn Instigator;
 };
-var RecentExplosion RecentExplosions[16];  // Ring buffer of recent explosions
-var int ExplosionWriteIndex;                // Next write position
+var RecentExplosion RecentExplosions[16];
+var int ExplosionWriteIndex;
+
+var float CachedTickRate;
 
 function PostBeginPlay() {
 	super.PostBeginPlay();
@@ -21,6 +23,14 @@ function PostBeginPlay() {
 	HitTestHelper = Spawn(class'ST_HitTestHelper');
 	CollChecker = Spawn(class'ST_HitTestHelper');
 	CollChecker.SetCollision(true, false, false);
+
+	if (Level.NetMode == NM_DedicatedServer)
+		CachedTickRate = float(int(ConsoleCommand("get ini:Engine.Engine.NetworkDevice NetServerMaxTickRate")));
+	else
+		CachedTickRate = 120.0;
+
+	if (CachedTickRate <= 0.0)
+		CachedTickRate = 30.0;
 }
 
 // Register a shock combo explosion for translocator simulation tracking
@@ -331,6 +341,12 @@ function HurtRadiusWithSelfDamage(
 	Source.bHurtEntry = false;
 }
 
+final simulated function float CalcDuckFraction(float CurrentEyeHeight, float DefaultBaseEyeHeight) {
+	if (DefaultBaseEyeHeight <= 0.0)
+		return 0.0;
+	return FClamp(1.0 - (CurrentEyeHeight / DefaultBaseEyeHeight), 0.0, 1.0);
+}
+
 final simulated function float GetPawnDuckFraction(Pawn P) {
 	local bbPlayer bbP;
 	bbP = bbPlayer(P);
@@ -340,254 +356,129 @@ final simulated function float GetPawnDuckFraction(Pawn P) {
 		else
 			return FClamp(bbP.DuckFraction, 0.0, 1.0);
 	} else {
-		return FClamp(1.0 - (P.EyeHeight / P.default.BaseEyeHeight), 0.0, 1.0);
+		return CalcDuckFraction(P.EyeHeight, P.default.BaseEyeHeight);
 	}
 }
 
-final simulated function float GetPawnBodyHalfHeight(Pawn P, float DuckFrac) {
+final simulated function float GetDummyDuckFraction(UTPlusDummy D) {
+	return CalcDuckFraction(D.EyeHeight, D.BaseEyeHeight);
+}
+
+final simulated function float GetHeadHalfHeight(float DuckFrac) {
+	return Lerp(DuckFrac, WSettingsRepl.HeadHalfHeight, 0);
+}
+
+final simulated function float GetBodyHalfHeight(float CollHeight, float DuckFrac) {
 	return Lerp(DuckFrac,
-		P.CollisionHeight - WSettingsRepl.HeadHalfHeight,
-		(1.3 * 0.5)*P.CollisionHeight
+		CollHeight - WSettingsRepl.HeadHalfHeight,
+		(1.3 * 0.5) * CollHeight
 	);
 }
 
-final simulated function float GetPawnBodyOffsetZ(Pawn P, float DuckFrac) {
+final simulated function float GetBodyOffsetZ(float CollHeight, float DuckFrac) {
 	return Lerp(DuckFrac,
 		-WSettingsRepl.HeadHalfHeight,
-		-(0.7 * 0.5)*P.CollisionHeight
+		-(0.7 * 0.5) * CollHeight
 	);
 }
 
 simulated function vector GetAnimationHeadOffset(Pawn P) {
 	local vector BaseOffset;
-	local vector WorldOffset;
-
-	if (P == none) {
+	if (P == none)
 		return vect(0,0,0);
+	BaseOffset = GetAnimationHeadOffsetFromState(P.class.name, P.AnimSequence, P.AnimFrame);
+	return BaseOffset >> P.Rotation;
+}
+
+final simulated function bool CheckHitboxInternal(
+	vector HitLocation,
+	vector Direction,
+	vector HitboxCenter,
+	float HitboxRadius,
+	float HitboxHalfHeight,
+	float TraceExtent
+) {
+	local ST_HitTestHelper HitActor;
+	local vector HitLoc, HitNorm;
+	local vector EndTrace, StartTrace;
+	local vector BackwardHitLoc, BackwardHitNorm;
+	local vector HitboxTraceStart;
+
+	if (CollChecker == none || CollChecker.bDeleteMe)
+		CollChecker = Spawn(class'ST_HitTestHelper', self, , HitboxCenter);
+
+	CollChecker.SetCollision(true, false, false);
+	CollChecker.SetCollisionSize(HitboxRadius, HitboxHalfHeight);
+	CollChecker.SetLocation(HitboxCenter);
+
+	EndTrace = HitLocation + Direction * TraceExtent;
+	StartTrace = HitLocation - Direction * TraceExtent;
+
+	if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None)
+		HitboxTraceStart = StartTrace;
+	else
+		HitboxTraceStart = BackwardHitLoc;
+
+	foreach TraceActors(class'ST_HitTestHelper', HitActor, HitLoc, HitNorm, EndTrace, HitboxTraceStart) {
+		if (HitActor == CollChecker) {
+			CollChecker.SetCollision(false, false, false);
+			return true;
+		}
 	}
 
-	switch (P.AnimSequence) {
-
-		// Breathing standing still
-		case 'Breath1L':
-        case 'Breath2L':
-        case 'Breath1':
-        case 'Breath2':
-             BaseOffset = vect(2, 0, 0); // Move hitbox forward (relative X)
-             break;
-
-		// Cocking gun standing still
-		case 'CockGun':
-        case 'CockGunL':
-             BaseOffset = vect(-2.5, 0, 0); // Move hitbox backward (relative X)
-             break;
-
-		// Strafing
-		case 'StrafeL':
-			BaseOffset = vect(0, -3.5, 0); // Move hitbox left (relative Y)
-			break;
-		case 'StrafeR':
-			BaseOffset = vect(0, 3.5, 0);  // Move hitbox right (relative Y)
-			break;
-
-		// Forward movement
-		case 'RunLg':
-		case 'RunSm':
-		case 'RunLgFr':
-		case 'RunSmFr':
-		case 'WalkLg':
-		case 'WalkSm':
-		case 'WalkLgFr':
-		case 'WalkSmFr':
-			BaseOffset = vect(3.5, 0, 0); // Move hitbox slightly forward (relative X)
-			break;
-
-		// Backwards movement
-		case 'BackRun':
-			BaseOffset = vect(-2.5, 0, 0); // Move hitbox slightly backward (relative X)
-			break;
-
-		// Dodging
-		case 'DodgeL':
-				BaseOffset = vect(0, -3, 0);
-				break;
-		case 'DodgeR':
-				BaseOffset = vect(0, 3, 0);
-				break;
-		case 'DodgeF':
-				BaseOffset = vect(2.5, 0, 0);
-				break;
-		case 'DodgeB':
-				BaseOffset = vect(-4, 0, 0);
-				break;
-		
-		case 'AimDnLg':
-			BaseOffset = vect(6, 0, 0); // Move hitbox forward
-			break;
-		case 'AimDnSm':
-			BaseOffset = vect(6, 0, 0); // Move hitbox forward
-			break;	
-		case 'AimUpLg':
-			BaseOffset = vect(-6, 0, 0); // Move hitbox backward
-			break;
-		case 'AimUpSm':
-			BaseOffset = vect(-6, 0, 0); // Move hitbox backward
-			break;
-			
-		default:
-			BaseOffset = vect(0,0,0);
-			break;
-	}
-	
-	// Rotate the base offset according to the pawn's current rotation
-	WorldOffset = BaseOffset >> P.Rotation;
-
-	return WorldOffset;
+	CollChecker.SetCollision(false, false, false);
+	return false;
 }
 
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction) {
-    local float DuckFrac;
-    local float BodyOffsetZ;
-    local float BodyHalfHeight, HeadHalfHeight;
-    local vector BasePosition;
-    local ST_HitTestHelper HitActor;
-    local vector HitLoc, HitNorm;
-    local bool Result;
-	local vector EndTrace;
-	local vector StartTrace;
-	local vector BackwardHitLoc, BackwardHitNorm;
-	local vector HitboxTraceStart;
-	local vector AnimOffset;
+	local float DuckFrac;
+	local float BodyOffsetZ, BodyHalfHeight, HeadHH;
+	local vector AnimOffset, HitboxCenter;
 
-    if (P == none)
-        return false;
+	if (P == none)
+		return false;
 
-    BasePosition = P.Location;
+	if (HitLocation.Z - P.Location.Z <= 0.3 * P.CollisionHeight)
+		return false;
 
-    if (HitLocation.Z - P.Location.Z <= 0.3 * P.CollisionHeight)
-        return false;
+	DuckFrac = GetPawnDuckFraction(P);
+	BodyOffsetZ = GetBodyOffsetZ(P.CollisionHeight, DuckFrac);
+	BodyHalfHeight = GetBodyHalfHeight(P.CollisionHeight, DuckFrac);
+	HeadHH = GetHeadHalfHeight(DuckFrac);
 
-    if (CollChecker == none || CollChecker.bDeleteMe) {
-        CollChecker = Spawn(class'ST_HitTestHelper',self, , P.Location);
-    }
+	if (HeadHH <= 0.0)
+		return false;
 
-    DuckFrac = GetPawnDuckFraction(P);
-    BodyOffsetZ = GetPawnBodyOffsetZ(P, DuckFrac);
-    BodyHalfHeight = GetPawnBodyHalfHeight(P, DuckFrac);
-    HeadHalfHeight = Lerp(DuckFrac,
-        WSettingsRepl.HeadHalfHeight,
-        0
-    );
-
-    if (HeadHalfHeight <= 0.0)
-        return false;
-
-	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox) {
+	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox)
 		AnimOffset = GetAnimationHeadOffset(P);
-	} else {
+	else
 		AnimOffset = vect(0,0,0);
-	}
 
-    CollChecker.SetCollision(true, false, false);
-    CollChecker.SetCollisionSize(WSettingsRepl.HeadRadius, HeadHalfHeight); // Use HeadRadius here
-    CollChecker.SetLocation(BasePosition + AnimOffset + vect(0,0,1)*(BodyOffsetZ + BodyHalfHeight + HeadHalfHeight));
+	HitboxCenter = P.Location + AnimOffset + vect(0,0,1) * (BodyOffsetZ + BodyHalfHeight + HeadHH);
 
-    Result = false;
-
-	EndTrace = HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight);
-	StartTrace = HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight);
-
-	// Trace backwards from HitLocation against world geometry only
-	if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
-        HitboxTraceStart = StartTrace;
-    } else {
-        HitboxTraceStart = BackwardHitLoc;
-    }
-
-    foreach TraceActors(
-        class'ST_HitTestHelper',
-        HitActor, HitLoc, HitNorm,
-        EndTrace,
-        HitboxTraceStart
-    ) {
-        if (HitActor == CollChecker) {
-            Result = true;
-            break;
-        }
-    }
-
-    CollChecker.SetCollision(false, false, false);
-
-    return Result;
+	return CheckHitboxInternal(HitLocation, Direction, HitboxCenter,
+		WSettingsRepl.HeadRadius, HeadHH, P.CollisionRadius + P.CollisionHeight);
 }
 
 simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride) {
-    local float DuckFrac;
-    local float HalfHeight;
-    local float OffsetZ;
-    local vector BasePosition;
-    local ST_HitTestHelper HitActor;
-    local vector HitLoc, HitNorm;
-    local bool Result;
-	local vector EndTrace;
-	local vector StartTrace;
-	local vector BackwardHitLoc, BackwardHitNorm;
-	local vector HitboxTraceStart;
+	local float DuckFrac, HalfHeight, OffsetZ;
+	local vector BasePosition;
 
-    if (P == none)
-        return false;
+	if (P == none)
+		return false;
 
-    if (CollChecker == none || CollChecker.bDeleteMe) {
-        CollChecker = Spawn(class'ST_HitTestHelper',self, , P.Location);
-    }
+	DuckFrac = GetPawnDuckFraction(P);
+	HalfHeight = GetBodyHalfHeight(P.CollisionHeight, DuckFrac);
+	OffsetZ = GetBodyOffsetZ(P.CollisionHeight, DuckFrac);
 
-    DuckFrac = GetPawnDuckFraction(P);
-    HalfHeight = GetPawnBodyHalfHeight(P, DuckFrac);
-    OffsetZ = GetPawnBodyOffsetZ(P, DuckFrac);
+	if (PositionOverride != vect(0,0,0))
+		BasePosition = PositionOverride;
+	else
+		BasePosition = P.Location;
 
-    // Use the override position if provided, otherwise use the pawn's current position
-    if (PositionOverride != vect(0,0,0))
-        BasePosition = PositionOverride;
-    else
-        BasePosition = P.Location;
-
-    CollChecker.SetCollision(true, false, false);
-    CollChecker.SetCollisionSize(P.CollisionRadius, HalfHeight);
-    CollChecker.SetLocation(BasePosition + vect(0,0,1)*OffsetZ);
-
-    Result = false;
-
-	EndTrace = HitLocation + Direction * (P.CollisionRadius + P.CollisionHeight);
-	StartTrace = HitLocation - Direction * (P.CollisionRadius + P.CollisionHeight);
-
-	// Trace backwards from HitLocation against world geometry only
-	if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
-        HitboxTraceStart = StartTrace;
-    } else {
-        HitboxTraceStart = BackwardHitLoc;
-    }
-
-    foreach TraceActors(
-        class'ST_HitTestHelper',
-        HitActor, HitLoc, HitNorm,
-        EndTrace,
-        HitboxTraceStart
-    ) {
-        if (HitActor == CollChecker) {
-            Result = true;
-            break;
-        }
-    }
-
-    CollChecker.SetCollision(false, false, false);
-
-    return Result;
-}
-
-final simulated function float GetDummyDuckFraction(UTPlusDummy D) {
-        if (D.BaseEyeHeight <= 0)
-            return 0.0;
-        return FClamp(1.0 - (D.EyeHeight / D.BaseEyeHeight), 0.0, 1.0);
+	return CheckHitboxInternal(HitLocation, Direction,
+		BasePosition + vect(0,0,1) * OffsetZ,
+		P.CollisionRadius, HalfHeight, P.CollisionRadius + P.CollisionHeight);
 }
 
 simulated function vector GetAnimationHeadOffsetFromState(name PClassName, name AnimSequence, float AnimFrame) {
@@ -672,229 +563,112 @@ simulated function vector GetAnimationHeadOffsetFromState(name PClassName, name 
 
 simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction) {
 	local float DuckFrac;
-	local float BodyOffsetZ;
-	local float BodyHalfHeight, HeadHalfHeight;
-	local vector BasePosition;
-	local ST_HitTestHelper HitActor;
-	local vector HitLoc, HitNorm;
-	local bool Result;
-	local vector EndTrace;
-	local vector StartTrace;
-	local vector BackwardHitLoc, BackwardHitNorm;
-	local vector HitboxTraceStart;
-
-	local vector AnimOffset; // Variable for animation offset
-	local vector HorizontalAnimOffset;
+	local float BodyOffsetZ, BodyHalfHeight, HeadHH;
+	local vector AnimOffset, HorizontalAnimOffset;
 	local vector FinalHeadCenter;
-	local vector X, Y, Z; // For rotation
-	local rotator PawnYawRot; // Rotator for pawn's yaw only
+	local vector X, Y, Z;
+	local rotator PawnYawRot;
 
-	 if (D == none || D.Actual == none)
-        return false;
-
-	DuckFrac = GetDummyDuckFraction(D);
-	BodyOffsetZ = Lerp(DuckFrac,
-		-WSettingsRepl.HeadHalfHeight,
-		-(0.7 * 0.5) * D.CollisionHeight
-	);
-	BodyHalfHeight = Lerp(DuckFrac,
-		D.CollisionHeight - WSettingsRepl.HeadHalfHeight,
-		(1.3 * 0.5) * D.CollisionHeight
-	);
-
-	HeadHalfHeight = Lerp(DuckFrac,
-		WSettingsRepl.HeadHalfHeight,
-		0
-	);
-
-	if (HeadHalfHeight <= 0.0)
+	if (D == none || D.Actual == none)
 		return false;
 
-	BasePosition = D.Location;
+	DuckFrac = GetDummyDuckFraction(D);
+	BodyOffsetZ = GetBodyOffsetZ(D.CollisionHeight, DuckFrac);
+	BodyHalfHeight = GetBodyHalfHeight(D.CollisionHeight, DuckFrac);
+	HeadHH = GetHeadHalfHeight(DuckFrac);
 
-	AnimOffset = GetAnimationHeadOffsetFromState(D.Actual.class.name, D.CurrentAnimSequence, D.CurrentAnimFrame);
+	if (HeadHH <= 0.0)
+		return false;
 
-	// Start with the base position
-	FinalHeadCenter = BasePosition;
+	FinalHeadCenter = D.Location;
 
-	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox)
-	{
+	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox) {
 		AnimOffset = GetAnimationHeadOffsetFromState(D.Actual.class.name, D.CurrentAnimSequence, D.CurrentAnimFrame);
 
 		if (Abs(AnimOffset.X) > 0.1 || Abs(AnimOffset.Y) > 0.1 || Abs(AnimOffset.Z) > 0.1) {
-			// Isolate the horizontal component of the local animation offset
 			HorizontalAnimOffset = AnimOffset * vect(1,1,0);
-			
+
 			PawnYawRot = D.Rotation;
 			PawnYawRot.Pitch = 0;
 			PawnYawRot.Roll = 0;
 
-			GetAxes(PawnYawRot, X, Y, Z); 
-
+			GetAxes(PawnYawRot, X, Y, Z);
 			FinalHeadCenter += (HorizontalAnimOffset.X * X) + (HorizontalAnimOffset.Y * Y);
 		}
 	}
 
-	// Apply the calculated vertical offset for head position (always uses world Z-axis)
-	FinalHeadCenter += vect(0,0,1)*(BodyOffsetZ + BodyHalfHeight + HeadHalfHeight);
+	FinalHeadCenter += vect(0,0,1) * (BodyOffsetZ + BodyHalfHeight + HeadHH);
 
-	CollChecker.SetCollision(true, false, false);
-	CollChecker.SetCollisionSize(WSettingsRepl.HeadRadius, HeadHalfHeight);
-	CollChecker.SetLocation(FinalHeadCenter);
-
-	Result = false;
-
-	EndTrace = HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight);
-	StartTrace = HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight);
-
-	// Trace backwards from HitLocation against world geometry only
-	if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
-		HitboxTraceStart = StartTrace;
-	} else {
-		HitboxTraceStart = BackwardHitLoc;
-	}
-
-	foreach TraceActors(
-		class'ST_HitTestHelper',
-		HitActor, HitLoc, HitNorm,
-		EndTrace,
-		HitboxTraceStart
-	) {
-		if (HitActor == CollChecker) {
-			Result = true;
-			break;
-		}
-	}
-
-	CollChecker.SetCollision(false, false, false);
-	return Result;
+	return CheckHitboxInternal(HitLocation, Direction, FinalHeadCenter,
+		WSettingsRepl.HeadRadius, HeadHH, D.CollisionRadius + D.CollisionHeight);
 }
 
 simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction) {
-        local float DuckFrac;
-        local float HalfHeight;
-        local float OffsetZ;
-        local vector BasePosition;
-        local ST_HitTestHelper HitActor;
-        local vector HitLoc, HitNorm;
-        local bool Result;
-		local vector EndTrace;
-		local vector StartTrace;
-		local vector BackwardHitLoc, BackwardHitNorm;
-		local vector HitboxTraceStart;
+	local float DuckFrac, HalfHeight, OffsetZ;
 
-        if (D == none || D.Actual == none)
-            return false;
+	if (D == none || D.Actual == none)
+		return false;
 
-        if (CollChecker == none || CollChecker.bDeleteMe) {
-            CollChecker = Spawn(class'ST_HitTestHelper', self, , D.Location);
-            CollChecker.bCollideWorld = false;
-        }
+	DuckFrac = GetDummyDuckFraction(D);
+	HalfHeight = GetBodyHalfHeight(D.CollisionHeight, DuckFrac);
+	OffsetZ = GetBodyOffsetZ(D.CollisionHeight, DuckFrac);
 
-        DuckFrac = GetDummyDuckFraction(D);
-        HalfHeight = Lerp(DuckFrac,
-            D.CollisionHeight - WSettingsRepl.HeadHalfHeight,
-            (1.3 * 0.5) * D.CollisionHeight
-        );
-        OffsetZ = Lerp(DuckFrac,
-            -WSettingsRepl.HeadHalfHeight,
-            -(0.7 * 0.5) * D.CollisionHeight
-        );
-
-        BasePosition = D.Location;
-
-        CollChecker.SetCollision(true, false, false);
-        CollChecker.SetCollisionSize(D.CollisionRadius, HalfHeight);
-        CollChecker.SetLocation(BasePosition + vect(0,0,1)*OffsetZ);
-
-        Result = false;
-
-		EndTrace = HitLocation + Direction * (D.CollisionRadius + D.CollisionHeight);
-		StartTrace = HitLocation - Direction * (D.CollisionRadius + D.CollisionHeight);
-
-		// Trace backwards from HitLocation against world geometry only
-		if (Trace(BackwardHitLoc, BackwardHitNorm, StartTrace, HitLocation, false) == None) {
-			HitboxTraceStart = StartTrace;
-		} else {
-			HitboxTraceStart = BackwardHitLoc;
-		}
-
-        foreach TraceActors(
-            class'ST_HitTestHelper',
-            HitActor, HitLoc, HitNorm,
-            EndTrace,
-            HitboxTraceStart
-        ) {
-            if (HitActor == CollChecker) {
-                Result = true;
-                break;
-            }
-        }
-
-        CollChecker.SetCollision(false, false, false);
-
-        return Result;
+	return CheckHitboxInternal(HitLocation, Direction,
+		D.Location + vect(0,0,1) * OffsetZ,
+		D.CollisionRadius, HalfHeight, D.CollisionRadius + D.CollisionHeight);
 }
 
 function float GetAverageTickRate() {
-  if (Level.NetMode == NM_DedicatedServer)
-    return int(ConsoleCommand("get ini:Engine.Engine.NetworkDevice NetServerMaxTickRate"));
-  return 120.0;
-}
-
-// Helper function for cylinder vs cylinder collision check
-function bool CylinderOverlap(Actor A, Actor B) {
-    local vector Delta;
-    local float CombinedRadius, CombinedHeight;
-    local float DistXY, DistZ;
-
-    Delta = A.Location - B.Location;
-    CombinedRadius = A.CollisionRadius + B.CollisionRadius;
-    CombinedHeight = A.CollisionHeight + B.CollisionHeight;
-
-    DistXY = Sqrt(Delta.X * Delta.X + Delta.Y * Delta.Y);
-    DistZ = Abs(Delta.Z);
-
-    return (DistXY <= CombinedRadius && DistZ <= CombinedHeight);
+  return CachedTickRate;
 }
 
 // Helper function to check if a line segment intersects a cylinder
 // Returns true if the line from Start to End passes within Radius of CylinderCenter
 function bool LineIntersectsCylinder(vector Start, vector End, vector CylinderCenter, float Radius, float HalfHeight) {
-    local vector ClosestPoint, LineDir, ToCenter;
-    local float LineLength, T, DistXY, DistZ;
+    local vector ClosestPoint, LineDelta, ToCenter;
+    local float LineLengthSq, T, DistXYSq, DistZ;
 
-    LineDir = End - Start;
-    LineLength = VSize(LineDir);
-    if (LineLength < 0.001)
+    LineDelta = End - Start;
+    LineLengthSq = LineDelta dot LineDelta;
+    if (LineLengthSq < 0.000001)
         return false;
-
-    LineDir = LineDir / LineLength;
 
     // Project cylinder center onto line
     ToCenter = CylinderCenter - Start;
-    T = ToCenter dot LineDir;
-    T = FClamp(T, 0.0, LineLength);
+    T = (ToCenter dot LineDelta) / LineLengthSq;
+    T = FClamp(T, 0.0, 1.0);
 
-    ClosestPoint = Start + LineDir * T;
+    ClosestPoint = Start + LineDelta * T;
 
     // Check distance from closest point to cylinder center
-    DistXY = Sqrt(Square(ClosestPoint.X - CylinderCenter.X) + Square(ClosestPoint.Y - CylinderCenter.Y));
+    DistXYSq = Square(ClosestPoint.X - CylinderCenter.X) + Square(ClosestPoint.Y - CylinderCenter.Y);
     DistZ = Abs(ClosestPoint.Z - CylinderCenter.Z);
 
-    return (DistXY <= Radius && DistZ <= HalfHeight);
+    return (DistXYSq <= Square(Radius) && DistZ <= HalfHeight);
 }
 
 // Check for beam weapon (PBolt/Pulse Gun) collisions during simulation
 // Returns true if the translocator was hit
-function bool CheckSimulationBeamCollisions(ST_TranslocatorTarget TTarget) {
+function bool CheckSimulationBeamCollisions(ST_TranslocatorTarget TTarget, float DeltaTime) {
     local PBolt Bolt;
     local vector BeamStart, BeamEnd, BeamDir;
     local float BeamSize;
-    local float DamageAmount;
+    local vector TargetDelta;
+    local float TargetExtent;
+    local float MaxReach;
+    local float MaxReachSq;
+    local float MomentumAmount;
+    local int DamageAmount;
+    local name BeamDamageType;
 
     if (TTarget == None || TTarget.bDeleteMe)
         return true;
+
+    if (WSettingsRepl == none || DeltaTime <= 0.0)
+        return false;
+
+    TargetExtent = FMax(TTarget.CollisionRadius, TTarget.CollisionHeight);
+    DamageAmount = Max(1, int(WSettingsRepl.PulseBoltDPS * DeltaTime));
 
     // Find all active PBolt beams
     foreach AllActors(class'PBolt', Bolt) {
@@ -905,23 +679,37 @@ function bool CheckSimulationBeamCollisions(ST_TranslocatorTarget TTarget) {
         if (Bolt.Instigator == TTarget.Instigator)
             continue;
 
+        BeamSize = Bolt.BeamSize;
+        if (BeamSize <= 0.0)
+            continue;
+
+        MaxReach = BeamSize + TargetExtent;
+        MaxReachSq = MaxReach * MaxReach;
+
         // Get beam direction from rotation
         BeamDir = vector(Bolt.Rotation);
-        BeamSize = 81.0; // Default PBolt.BeamSize
         BeamStart = Bolt.Location;
         BeamEnd = Bolt.Location + BeamDir * BeamSize;
+        TargetDelta = TTarget.Location - BeamStart;
+        if ((TargetDelta dot TargetDelta) > MaxReachSq)
+            continue;
 
         // Check if the beam intersects the translocator
         if (LineIntersectsCylinder(BeamStart, BeamEnd, TTarget.Location,
                                    TTarget.CollisionRadius, TTarget.CollisionHeight)) {
-            // Apply pulse gun damage
-            DamageAmount = 72.0 * 0.1; // Damage per tick approximation
+            // Apply pulse gun damage using current weapon settings.
+            MomentumAmount = WSettingsRepl.PulseBoltMomentum * Bolt.MomentumTransfer * DeltaTime;
+            if (Bolt.MyDamageType == '')
+                BeamDamageType = 'zapped';
+            else
+                BeamDamageType = Bolt.MyDamageType;
+
             TTarget.TakeDamage(
                 DamageAmount,
                 Bolt.Instigator,
                 TTarget.Location,
-                BeamDir * 8500 * 0.1, // MomentumTransfer scaled
-                'zapped'
+                BeamDir * MomentumAmount,
+                BeamDamageType
             );
 
             if (TTarget == None || TTarget.bDeleteMe)
@@ -932,205 +720,78 @@ function bool CheckSimulationBeamCollisions(ST_TranslocatorTarget TTarget) {
     return false;
 }
 
-// Check for collisions between translocator and projectiles during ping simulation
-// Returns true if the translocator was destroyed or should stop simulating
 function bool CheckSimulationProjectileCollisions(ST_TranslocatorTarget TTarget, UTPure PureRef) {
     local ST_ProjectileDummy PD;
     local ST_ShockProj ShockProj;
     local Projectile P;
-    local ST_RocketMk2 Rocket;
-    local ST_UT_SeekingRocket SeekingRocket;
-    local ST_Razor2 Razor;
-    local ST_Razor2Alt RazorAlt;
-    local ST_FlakSlug FlakSlug;
-    local vector Delta;
-    local float CombinedRadius;
-    local float CombinedHeight;
-    local float DistXY, DistZ;
-    local float SearchRadius;
+    local vector Delta, HitNormal;
+    local float CombinedRadius, CombinedHeight, CombinedRadiusSq;
+    local float DistXYSq, DistZ;
 
     if (TTarget == None || TTarget.bDeleteMe)
         return true;
 
-    // PART 1: Check compensated projectile dummies (historical positions)
-    // This handles shock projectiles that are registered with the dummy system
+    // Check compensated shock projectile dummies at historical positions
     for (PD = PureRef.ProjDummies; PD != None; PD = PD.Next) {
         if (!PD.bCompActive || PD.Actual == None || PD.Actual.bDeleteMe)
             continue;
 
-        // Check for shock projectiles
         ShockProj = ST_ShockProj(PD.Actual);
         if (ShockProj == None)
             continue;
 
-        // Cylinder vs cylinder collision check
         Delta = TTarget.Location - PD.Location;
         CombinedRadius = TTarget.CollisionRadius + PD.CollisionRadius;
         CombinedHeight = TTarget.CollisionHeight + PD.CollisionHeight;
-
-        DistXY = Sqrt(Delta.X * Delta.X + Delta.Y * Delta.Y);
+        CombinedRadiusSq = CombinedRadius * CombinedRadius;
+        DistXYSq = Delta.X * Delta.X + Delta.Y * Delta.Y;
         DistZ = Abs(Delta.Z);
 
-        if (DistXY <= CombinedRadius && DistZ <= CombinedHeight) {
-            // Collision detected - trigger shock projectile explosion at dummy location
+        if (DistXYSq <= CombinedRadiusSq && DistZ <= CombinedHeight) {
             ShockProj.SetLocation(PD.Location);
-            ShockProj.Explode(PD.Location, Normal(TTarget.Location - PD.Location));
-
+            ShockProj.Explode(PD.Location, Normal(Delta));
             if (TTarget == None || TTarget.bDeleteMe)
                 return true;
         }
     }
 
-    // PART 2: Check non-registered projectiles at their current positions
-    // This handles rockets, ripper, flak that aren't in the dummy system
-    SearchRadius = TTarget.CollisionRadius + 100; // Search a reasonable radius
-
-    foreach TTarget.RadiusActors(class'Projectile', P, SearchRadius) {
+    // Check non-registered projectiles at current positions
+    foreach TTarget.RadiusActors(class'Projectile', P, TTarget.CollisionRadius + 100) {
         if (P == None || P.bDeleteMe || P == TTarget)
             continue;
-
-        // Skip projectiles owned by the same player
         if (P.Instigator == TTarget.Instigator)
             continue;
-
-        // Skip shock projectiles (handled above via dummies)
-        if (P.IsA('ST_ShockProj') || P.IsA('ShockProj'))
+        if (P.IsA('ShockProj') || P.IsA('TranslocatorTarget'))
             continue;
 
-        // Skip other translocator targets
-        if (P.IsA('TranslocatorTarget'))
+        Delta = TTarget.Location - P.Location;
+        CombinedRadius = TTarget.CollisionRadius + P.CollisionRadius;
+        CombinedHeight = TTarget.CollisionHeight + P.CollisionHeight;
+        CombinedRadiusSq = CombinedRadius * CombinedRadius;
+        DistXYSq = Delta.X * Delta.X + Delta.Y * Delta.Y;
+        DistZ = Abs(Delta.Z);
+
+        if (DistXYSq > CombinedRadiusSq || DistZ > CombinedHeight)
             continue;
 
-        // Check for rockets
-        Rocket = ST_RocketMk2(P);
-        if (Rocket != None && CylinderOverlap(TTarget, Rocket)) {
-            Rocket.Explode(Rocket.Location, Normal(TTarget.Location - Rocket.Location));
-            if (TTarget == None || TTarget.bDeleteMe)
-                return true;
-            continue;
+        HitNormal = Normal(Delta);
+
+        // Splash projectiles — let their Explode() handle damage via HurtRadius
+        if (P.IsA('RocketMk2') || P.IsA('Razor2Alt') || P.IsA('FlakSlug')) {
+            P.Explode(P.Location, HitNormal);
         }
-
-        // Check for seeking rockets
-        SeekingRocket = ST_UT_SeekingRocket(P);
-        if (SeekingRocket != None && CylinderOverlap(TTarget, SeekingRocket)) {
-            SeekingRocket.Explode(SeekingRocket.Location, Normal(TTarget.Location - SeekingRocket.Location));
-            if (TTarget == None || TTarget.bDeleteMe)
-                return true;
-            continue;
-        }
-
-        // Check for ripper primary
-        Razor = ST_Razor2(P);
-        if (Razor != None && CylinderOverlap(TTarget, Razor)) {
-            // Ripper does direct damage, not explosion
-            TTarget.TakeDamage(
-                30, // Standard ripper damage
-                Razor.Instigator,
-                TTarget.Location,
-                Normal(Razor.Velocity) * 10000,
-                'shredded'
-            );
-            Razor.Destroy();
-            if (TTarget == None || TTarget.bDeleteMe)
-                return true;
-            continue;
-        }
-
-        // Check for ripper alt (exploding blade)
-        RazorAlt = ST_Razor2Alt(P);
-        if (RazorAlt != None && CylinderOverlap(TTarget, RazorAlt)) {
-            RazorAlt.Explode(RazorAlt.Location, Normal(TTarget.Location - RazorAlt.Location));
-            if (TTarget == None || TTarget.bDeleteMe)
-                return true;
-            continue;
-        }
-
-        // Check for flak slug
-        FlakSlug = ST_FlakSlug(P);
-        if (FlakSlug != None && CylinderOverlap(TTarget, FlakSlug)) {
-            FlakSlug.Explode(FlakSlug.Location, Normal(TTarget.Location - FlakSlug.Location));
-            if (TTarget == None || TTarget.bDeleteMe)
-                return true;
-            continue;
-        }
-
-        // Check for base game rockets (RocketMk2, UT_SeekingRocket)
-        if (P.IsA('RocketMk2') || P.IsA('UT_SeekingRocket')) {
-            if (CylinderOverlap(TTarget, P)) {
-                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
-        }
-
-        // Check for base game ripper
-        if (P.IsA('Razor2')) {
-            if (CylinderOverlap(TTarget, P)) {
-                TTarget.TakeDamage(30, P.Instigator, TTarget.Location, Normal(P.Velocity) * 10000, 'shredded');
+        // Direct-damage projectiles — apply damage from projectile properties, then clean up
+        else {
+            TTarget.TakeDamage(P.Damage, P.Instigator, TTarget.Location,
+                Normal(P.Velocity) * P.MomentumTransfer, P.MyDamageType);
+            if (P.IsA('PlasmaSphere'))
+                P.Explode(P.Location, HitNormal);
+            else
                 P.Destroy();
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
         }
 
-        // Check for base game ripper alt
-        if (P.IsA('Razor2Alt')) {
-            if (CylinderOverlap(TTarget, P)) {
-                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
-        }
-
-        // Check for base game flak
-        if (P.IsA('FlakSlug')) {
-            if (CylinderOverlap(TTarget, P)) {
-                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
-        }
-
-        // Check for flak chunks (ut_Chunk)
-        if (P.IsA('ut_Chunk') || P.IsA('ST_UTChunk1') || P.IsA('ST_UTChunk2') ||
-            P.IsA('ST_UTChunk3') || P.IsA('ST_UTChunk4')) {
-            if (CylinderOverlap(TTarget, P)) {
-                // Chunks do direct damage
-                TTarget.TakeDamage(17, P.Instigator, TTarget.Location, Normal(P.Velocity) * 12000, 'shredded');
-                P.Destroy();
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
-        }
-
-        // Check for bio globs (ST_BioGlob, ST_UT_BioGel, UT_BioGel, BioGlob)
-        if (P.IsA('UT_BioGel') || P.IsA('BioGlob')) {
-            if (CylinderOverlap(TTarget, P)) {
-                // Bio does direct damage on touch, then explodes
-                TTarget.TakeDamage(P.Damage, P.Instigator, TTarget.Location, Normal(P.Velocity) * P.MomentumTransfer, 'Corroded');
-                P.Destroy();
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
-        }
-
-        // Check for plasma spheres (pulse gun alt-fire)
-        if (P.IsA('PlasmaSphere')) {
-            if (CylinderOverlap(TTarget, P)) {
-                // PlasmaSphere does 20 damage with 'Pulsed' type
-                TTarget.TakeDamage(P.Damage, P.Instigator, TTarget.Location, Normal(P.Velocity) * P.MomentumTransfer, 'Pulsed');
-                P.Explode(P.Location, Normal(TTarget.Location - P.Location));
-                if (TTarget == None || TTarget.bDeleteMe)
-                    return true;
-            }
-            continue;
-        }
+        if (TTarget == None || TTarget.bDeleteMe)
+            return true;
     }
 
     return false;
@@ -1148,6 +809,8 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
     local vector Delta;
     local float MinMovementSquared;
     local float TotalGameTime;
+    local float ExplosionMaxAge;
+    local int HistorySize;
 
     if (TTarget == None || TTarget.bDeleteMe)
         return;
@@ -1162,6 +825,8 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
 
     if (SimPing <= 0.0)
         return;
+    
+    ExplosionMaxAge = SimPing * 0.002;
 
     // Pre-calculate squared threshold
     MinMovementSquared = 0.01;
@@ -1180,8 +845,8 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
     RealDeltaTime = RealDeltaTime / (int(RealDeltaTime * GetAverageTickRate()) + 1);
     GameDeltaTime = RealDeltaTime * Level.TimeDilation;
 
-    // Calculate storage interval based on SimPing
-    HistoryInterval = Max(1, int(SimPing / 49.0));
+    HistorySize = TTarget.MaxHistorySteps;
+    HistoryInterval = Max(1, int(SimPing / float(HistorySize - 1)));
     RealTimeRemaining = SimPing;
     AccumulatedGameTime = 0.0;
 
@@ -1199,14 +864,14 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
         }
 
         // Check for beam weapon collisions (pulse gun)
-        if (CheckSimulationBeamCollisions(TTarget)) {
+        if (CheckSimulationBeamCollisions(TTarget, GameDeltaTime)) {
             PureRef.EndCompensation();
             return; // Translocator was destroyed by beam
         }
 
         // Check for recent shock combo explosions
         // MaxAge covers the simulation window plus a small buffer
-        if (CheckRecentExplosions(TTarget, SimPing * 0.002)) {
+        if (CheckRecentExplosions(TTarget, ExplosionMaxAge)) {
             PureRef.EndCompensation();
             return; // Translocator was destroyed by explosion
         }
@@ -1219,7 +884,7 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
         Delta = TTarget.Location - CurrentPos;
         if ((Delta.X * Delta.X + Delta.Y * Delta.Y + Delta.Z * Delta.Z) > MinMovementSquared) {
             if (AccumulatedGameTime >= HistoryInterval * (TTarget.HistoryCount - 1) &&
-                TTarget.HistoryCount < 50) {
+                TTarget.HistoryCount < HistorySize) {
                 TTarget.AddSimulationHistoryStep(TTarget.Location, AccumulatedGameTime * 0.001);
             }
         }
@@ -1228,7 +893,7 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
     }
 
     // Store final simulated position
-    if (TTarget != None && TTarget.HistoryCount < 50) {
+    if (TTarget != None && TTarget.HistoryCount < HistorySize) {
         TTarget.AddSimulationHistoryStep(TTarget.Location, TTarget.TotalSimulationTime);
     }
 }
@@ -1325,159 +990,128 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   }
 }
 
-simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
-{
+simulated function Actor TraceShotInternal(
+	out vector HitLocation,
+	out vector HitNormal,
+	vector EndTrace,
+	vector StartTrace,
+	Pawn PawnOwner,
+	bool bWeaponShock,
+	bool bSProjBlocks,
+	bool bCompensated
+) {
 	local Actor A, Other;
 	local Pawn P;
-	local bool bSProjBlocks;
-	local bool bWeaponShock;
 	local vector Dir;
 	local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
-	local bbPlayer bbP;
-	local int Ping;
-	local UTPure PureRef;
-	
-	Ping = 0;
-	
-	if (PawnOwner != None) {
-
-		bbP = bbPlayer(PawnOwner);
-	
-		if (bbP != None) {
-			PureRef = bbP.zzUTPure;
-			Ping = bbP.PingAverage;
-
-			// Cap hitscan ping compensation
-			if (Ping > WSettingsRepl.PingCompensationMax)
-				Ping = WSettingsRepl.PingCompensationMax;
-		}
-		
-		bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
-	}
-	
-	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
-	Dir = Normal(EndTrace - StartTrace);
-
-	if (WSettingsRepl.bEnablePingCompensation && bbP != none)
-	{
-		PureRef.CompensateFor(Ping, PawnOwner);
-
-		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
-			if (A == PawnOwner) {
-				continue;
-			}
-			if (A.IsA('UTPlusDummy')) {
-				D = UTPlusDummy(A);
-				
-				if (D.Actual != PawnOwner) {
-					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
-						if (CheckBodyShotCompensated(D, HitLocation, Dir) == false && CheckHeadShotCompensated(D, HitLocation, Dir) == false) {
-    							continue;
-    						}
-						
-						Other = D.Actual;
-						break;
-					}
-				}
-			}
-			else if (A.IsA('ST_ProjectileDummy')) {
-				PD = ST_ProjectileDummy(A);
-				if (PD.Actual != None) {
-					if (PD.Actual.IsA('ST_ShockProj')) {
-						if (bWeaponShock || bSProjBlocks) {
-							Other = PD.Actual; // Return the actual shock projectile
-							break;
-						}
-					}
-					else if (PD.Actual.IsA('ST_TranslocatorTarget')) {
-						Other = PD.Actual; // Return the actual translocator target
-						break;
-					}
-				}
-			}
-			else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
-					Other = A;
-					break;
-				}
-			}
-		}
-		
-		PureRef.EndCompensation();
-		
-		return Other;
-	}
-	else {
-		foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
-			P = Pawn(A);
-			if (P != none) {
-				if (P == PawnOwner) {
-					continue;
-				}
-				
-				if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false) {
-					continue;
-				}
-				
-				if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false) {
-					continue;
-				}
-
-				Other = A;
-				break;
-			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-				if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
-					Other = A;
-					break;
-				}
-			}
-		}
-		
-		return Other;
-	}
-}
-
-simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
-{
-	local Actor A, Other;
-	local Pawn P;
-	local bool bSProjBlocks;
-	local bool bWeaponShock;
-	local vector Dir;
-
-	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
-
-	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 
 	Dir = Normal(EndTrace - StartTrace);
 
 	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {
-		P = Pawn(A);
-		if (P != none) {
-			if (P == PawnOwner) {
-				continue;
-			}
-			
-			if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false) {
-				continue;
-			}
-			
-			if (CheckBodyShot(P, HitLocation, Dir) == false && CheckHeadShot(P, HitLocation, Dir) == false) {
-				continue;
-			}
+		if (A == PawnOwner)
+			continue;
 
-			Other = A;
-			break;
-		} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+		if (bCompensated && A.IsA('UTPlusDummy')) {
+			D = UTPlusDummy(A);
+			if (D.Actual != PawnOwner) {
+				if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+					if (CheckBodyShotCompensated(D, HitLocation, Dir) == false &&
+						CheckHeadShotCompensated(D, HitLocation, Dir) == false)
+						continue;
+					Other = D.Actual;
+					break;
+				}
+			}
+			continue;
+		}
+
+		if (bCompensated && A.IsA('ST_ProjectileDummy')) {
+			PD = ST_ProjectileDummy(A);
+			if (PD.Actual != None) {
+				if (PD.Actual.IsA('ST_ShockProj')) {
+					if (bWeaponShock || bSProjBlocks) {
+						Other = PD.Actual;
+						break;
+					}
+				} else if (PD.Actual.IsA('ST_TranslocatorTarget')) {
+					Other = PD.Actual;
+					break;
+				}
+			}
+			continue;
+		}
+
+		if (!bCompensated) {
+			P = Pawn(A);
+			if (P != none) {
+				if (P.AdjustHitLocation(HitLocation, EndTrace - StartTrace) == false)
+					continue;
+				if (CheckBodyShot(P, HitLocation, Dir) == false &&
+					CheckHeadShot(P, HitLocation, Dir) == false)
+					continue;
+				Other = A;
+				break;
+			}
+		}
+
+		if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 			if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
 				Other = A;
 				break;
 			}
 		}
 	}
-		
+
 	return Other;
+}
+
+simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
+{
+	local Actor Other;
+	local bool bSProjBlocks;
+	local bool bWeaponShock;
+	local bbPlayer bbP;
+	local int Ping;
+	local UTPure PureRef;
+
+	Ping = 0;
+
+	if (PawnOwner != None) {
+		bbP = bbPlayer(PawnOwner);
+
+		if (bbP != None) {
+			PureRef = bbP.zzUTPure;
+			Ping = bbP.PingAverage;
+
+			if (Ping > WSettingsRepl.PingCompensationMax)
+				Ping = WSettingsRepl.PingCompensationMax;
+		}
+
+		bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
+	}
+
+	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
+
+	if (WSettingsRepl.bEnablePingCompensation && bbP != none) {
+		PureRef.CompensateFor(Ping, PawnOwner);
+		Other = TraceShotInternal(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner, bWeaponShock, bSProjBlocks, true);
+		PureRef.EndCompensation();
+		return Other;
+	}
+
+	return TraceShotInternal(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner, bWeaponShock, bSProjBlocks, false);
+}
+
+simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
+{
+	local bool bSProjBlocks;
+	local bool bWeaponShock;
+
+	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
+	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
+
+	return TraceShotInternal(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner, bWeaponShock, bSProjBlocks, false);
 }
 
 defaultproperties {

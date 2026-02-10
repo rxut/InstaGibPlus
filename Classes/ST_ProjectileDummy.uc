@@ -86,8 +86,9 @@ function CompStart(int Ping) {
     local int NewerIdx;
     
     local float TimeDelta, Alpha;
-    local vector TargetLoc;
+    local vector TargetLoc, SnapDelta;
     local float TargetCR, TargetCH;
+    local float MaxTravelDistSq;
 
     if (Actual == none || Actual.bDeleteMe)
         return;
@@ -113,7 +114,9 @@ function CompStart(int Ping) {
                     NewerSnap = Data[NewerIdx];
                     TimeDelta = NewerSnap.ServerTimeStamp - OlderSnap.ServerTimeStamp;
                     
-                    if (TimeDelta > 0.001 && VSize(NewerSnap.Loc - OlderSnap.Loc) / TimeDelta <= 5000)
+                    SnapDelta = NewerSnap.Loc - OlderSnap.Loc;
+                    MaxTravelDistSq = Square(5000.0 * TimeDelta);
+                    if (TimeDelta > 0.001 && (SnapDelta dot SnapDelta) <= MaxTravelDistSq)
                     {
                         Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
                         TargetLoc = LerpVector(FClamp(Alpha, 0.0, 1.0), OlderSnap.Loc, NewerSnap.Loc);

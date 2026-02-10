@@ -47,6 +47,12 @@ function FillData(UTPlusSnapshot D) {
 	D.EyeHeight = Actual.EyeHeight;
 	D.CollisionRadius = Actual.CollisionRadius;
 	D.CollisionHeight = Actual.CollisionHeight;
+	D.bBasedOnMover = Mover(Actual.Base) != None;
+	if (D.bBasedOnMover)
+	{
+		D.BaseMover = Actual.Base;
+		D.MoverZ = Actual.Base.Location.Z;
+	}
 	D.bSnapCollideActors = Actual.bCollideActors;
 	D.bSnapBlockActors = Actual.bBlockActors;
 	D.bSnapBlockPlayers = Actual.bBlockPlayers;
@@ -129,6 +135,8 @@ function CompStart(int Ping)
     local UTPlusSnapshot OlderSnap;
     local UTPlusSnapshot NewerSnap;
     local float TimeDelta, Alpha;
+    local vector SnapDelta;
+    local float MaxTravelDistanceSq;
 
     if (Actual == none || Actual.bDeleteMe || WImp == None || Actual.Health <= 0)
 		return;
@@ -158,11 +166,14 @@ function CompStart(int Ping)
                 if (bSubTickCompensation && NewerSnap != None)
                 {
                     TimeDelta = NewerSnap.ServerTimeStamp - OlderSnap.ServerTimeStamp;
-                    if (TimeDelta > 0.001 && VSize(NewerSnap.Loc - OlderSnap.Loc) / TimeDelta < 3000)
-                    {
-                        Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
-                        CompSwap(OlderSnap, NewerSnap, FClamp(Alpha, 0.0, 1.0), TargetTimeStamp);
-                        return;
+                    if (TimeDelta > 0.001) {
+                        SnapDelta = NewerSnap.Loc - OlderSnap.Loc;
+                        MaxTravelDistanceSq = Square(3000.0 * TimeDelta);
+                        if ((SnapDelta dot SnapDelta) < MaxTravelDistanceSq) {
+                            Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
+                            CompSwap(OlderSnap, NewerSnap, FClamp(Alpha, 0.0, 1.0), TargetTimeStamp);
+                            return;
+                        }
                     }
                 }
                 
@@ -207,104 +218,50 @@ function TakeDamage(
 function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float TargetTimeStamp) {
 	local vector TargetLoc;
 	local vector TargetVel;
-	local rotator TargetRot;
-	local float TargetEH;
-	local float TargetBEH;
-	local float TargetCR;
-	local float TargetCH;
 
-    local bool TargetCollideActors;
-	local bool TargetBlockActors;
-	local bool TargetBlockPlayers;
-	local bool TargetProjTarget;
-
-	local name TargetAnimSequence;
-	local float TargetAnimFrame;
-
-	if (Actual == None || Actual.bDeleteMe) {
+	if (Actual == None || Actual.bDeleteMe || SnapA == None || bCompActive)
 		return;
-	}
-	if (SnapA == None) {
-		return;
-	}
-	if (bCompActive) {
-		return;
-	}
 
-	if (Alpha == -1.0) { // Extrapolation from SnapA
+	// Compute position/velocity based on compensation mode
+	if (Alpha == -1.0) {
+		// Extrapolation from SnapA
 		TargetLoc = SnapA.Loc + SnapA.Vel * (TargetTimeStamp - SnapA.ServerTimeStamp);
 		TargetVel = SnapA.Vel;
-		TargetEH = SnapA.EyeHeight;
-		TargetRot = SnapA.Rot;
-		TargetBEH = SnapA.BaseEyeHeight;
-		TargetCR = SnapA.CollisionRadius;
-		TargetCH = SnapA.CollisionHeight;
-		TargetCollideActors = SnapA.bSnapCollideActors;
-		TargetBlockActors = SnapA.bSnapBlockActors;
-		TargetBlockPlayers = SnapA.bSnapBlockPlayers;
-		TargetProjTarget = SnapA.bSnapProjTarget;
-		TargetAnimSequence = SnapA.AnimSequence;
-		TargetAnimFrame = SnapA.AnimFrame;
-	}
-	else if (Alpha >= 0.0 && Alpha <= 1.0 && SnapB != None) { // Interpolation between SnapA and SnapB
+	} else if (SnapB != None) {
+		// Interpolation between SnapA and SnapB
 		TargetLoc = LerpVector(Alpha, SnapA.Loc, SnapB.Loc);
-		TargetVel = LerpVector(Alpha, SnapA.Vel, SnapB.Vel); 
-		TargetRot = SnapA.Rot;
-		TargetEH = SnapA.EyeHeight;
-		TargetBEH = SnapA.BaseEyeHeight;
-		TargetCR = SnapA.CollisionRadius;
-		TargetCH = SnapA.CollisionHeight;
-		TargetCollideActors = SnapA.bSnapCollideActors;
-		TargetBlockActors = SnapA.bSnapBlockActors;
-		TargetBlockPlayers = SnapA.bSnapBlockPlayers;
-		TargetProjTarget = SnapA.bSnapProjTarget;
-		TargetAnimSequence = SnapA.AnimSequence;
-		TargetAnimFrame = SnapA.AnimFrame;
-	}
-	else if (Alpha == 1.0 && SnapB == None) { // Direct use of SnapA (no interpolation)
+		TargetVel = LerpVector(Alpha, SnapA.Vel, SnapB.Vel);
+	} else {
+		// Direct snap to SnapA
 		TargetLoc = SnapA.Loc;
 		TargetVel = SnapA.Vel;
-		TargetRot = SnapA.Rot;
-		TargetEH = SnapA.EyeHeight;
-		TargetBEH = SnapA.BaseEyeHeight;
-		TargetCR = SnapA.CollisionRadius;
-		TargetCH = SnapA.CollisionHeight;
-		TargetCollideActors = SnapA.bSnapCollideActors;
-		TargetBlockActors = SnapA.bSnapBlockActors;
-		TargetBlockPlayers = SnapA.bSnapBlockPlayers;
-		TargetProjTarget = SnapA.bSnapProjTarget;
-		TargetAnimSequence = SnapA.AnimSequence;
-		TargetAnimFrame = SnapA.AnimFrame;
 	}
-	else {
-		return; // Invalid state
-	}
-    
-	// Store for CompEnd
+
+	if (SnapA.bBasedOnMover && Actual.Base == SnapA.BaseMover)
+		TargetLoc.Z += Actual.Base.Location.Z - SnapA.MoverZ;
+
 	ActualWasColliding = Actual.bCollideActors;
 	ActualWasBlockingActors = Actual.bBlockActors;
 	ActualWasBlockingPlayers = Actual.bBlockPlayers;
 	ActualWasProjTarget = Actual.bProjTarget;
 
-	// Move the Actual pawn out of the way temporarily
 	Actual.SetCollision(false, false, false);
 	Actual.bProjTarget = false;
 
 	SetLocation(TargetLoc);
-	SetRotation(TargetRot);
+	SetRotation(SnapA.Rot);
 	Velocity = TargetVel;
-	EyeHeight = TargetEH;
-	BaseEyeHeight = TargetBEH;
+	EyeHeight = SnapA.EyeHeight;
+	BaseEyeHeight = SnapA.BaseEyeHeight;
 
-    if (CollisionRadius != TargetCR || CollisionHeight != TargetCH)
-	    SetCollisionSize(TargetCR, TargetCH);
+	if (CollisionRadius != SnapA.CollisionRadius || CollisionHeight != SnapA.CollisionHeight)
+		SetCollisionSize(SnapA.CollisionRadius, SnapA.CollisionHeight);
 
-	
-	CurrentAnimSequence = TargetAnimSequence;
-	CurrentAnimFrame = TargetAnimFrame;
-	
-	SetCollision(TargetCollideActors, TargetBlockActors, TargetBlockPlayers);
-	bProjTarget = TargetProjTarget;
+	CurrentAnimSequence = SnapA.AnimSequence;
+	CurrentAnimFrame = SnapA.AnimFrame;
+
+	SetCollision(SnapA.bSnapCollideActors, SnapA.bSnapBlockActors, SnapA.bSnapBlockPlayers);
+	bProjTarget = SnapA.bSnapProjTarget;
 
 	AccumulatedMomentum = vect(0,0,0);
 	bCompActive = true;
@@ -336,6 +293,8 @@ function CompEnd() {
 
 simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDir) {
 	local float adjZ, maxZ;
+	local vector HitDeltaXY;
+	local float RadiusSq;
 
 	TraceDir = Normal(TraceDir);
 	HitLocation = HitLocation + 0.5 * CollisionRadius * TraceDir;
@@ -350,7 +309,9 @@ simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDi
 		HitLocation.Z = maxZ;
 		HitLocation.X = HitLocation.X + TraceDir.X * adjZ;
 		HitLocation.Y = HitLocation.Y + TraceDir.Y * adjZ;
-		if (VSize(vect(1,1,0) * (HitLocation - Location)) > CollisionRadius)
+		HitDeltaXY = vect(1,1,0) * (HitLocation - Location);
+		RadiusSq = CollisionRadius * CollisionRadius;
+		if ((HitDeltaXY dot HitDeltaXY) > RadiusSq)
 			return false;
 	}
 	return true;

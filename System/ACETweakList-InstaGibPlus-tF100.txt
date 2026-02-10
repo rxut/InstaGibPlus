@@ -1,7 +1,7 @@
 #####################################################################################################################################################################
 # Type		Class Name									Property Name										Condition		Property Type		Property Value		#
 #####################################################################################################################################################################
-ALLOW		InstaGibPlus-kLe51.*						*														EQ				STRING				*
-ALLOW		InstaGibPlus-kLe51.*						*														EQ				INT					*
-ALLOW		InstaGibPlus-kLe51.*						*														EQ				FLOAT				*
-ALLOW		InstaGibPlus-kLe51.*						*														EQ				BOOL				*
+ALLOW		InstaGibPlus-tF100.*						*														EQ				STRING				*
+ALLOW		InstaGibPlus-tF100.*						*														EQ				INT					*
+ALLOW		InstaGibPlus-tF100.*						*														EQ				FLOAT				*
+ALLOW		InstaGibPlus-tF100.*						*														EQ				BOOL				*

@@ -12,7 +12,6 @@ var WeaponSettingsRepl WSettings;
 var class<ST_UTChunk> ChunkClasses[4];
 
 var ST_FlakSlug LocalSlugDummy;
-var ST_UTChunk LocalChunkDummy;
 
 // Explicit client aim data (sent via ServerExplicitFire/AltFire)
 var vector ExplicitClientLoc;
@@ -607,140 +606,59 @@ state ClientAltFiring {
 	}
 }
 
-simulated function SpawnClientSideChunks()
-{
+simulated function SpawnClientChunk(class<ST_UTChunk> ChunkClass, vector Pos, rotator Rot, int Index) {
+	local ST_UTChunk C;
+	C = Spawn(ChunkClass, Owner, '', Pos, Rot);
+	if (C == None)
+		return;
+	C.RemoteRole = ROLE_None;
+	C.bClientVisualOnly = true;
+	C.ChunkIndex = Index;
+	C.bCollideWorld = true;
+	C.SetCollision(false, false, false);
+}
+
+simulated function SpawnClientSideChunks() {
 	local Pawn PawnOwner;
-	local vector X, Y, Z;
-	local vector R;
-	local vector Start;
+	local vector X, Y, Z, R, Start;
 	local float Hand;
 	local bbPlayer bbP;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
 
-	if (Role < ROLE_Authority && bbP != None && bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
-	{
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
+	if (Role >= ROLE_Authority || bbP == None || !bbP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
+		return;
 
-		GetAxes(PawnOwner.ViewRotation,X,Y,Z);
-		if (bHideWeapon)
-			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
-		else
-			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+	if (Owner.IsA('PlayerPawn'))
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	else
+		Hand = 1.0;
 
-		if (GetWeaponSettings().FlakChunkRandomSpread) {
-			LocalChunkDummy = Spawn(class'ST_UTChunk1', Owner, '', Start, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 0;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	if (bHideWeapon)
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	else
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 
-			LocalChunkDummy = Spawn(class'ST_UTChunk2', Owner, '', Start - Z, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 1;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk3', Owner, '', Start + 2 * Y + Z, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 2;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk4', Owner, '', Start - Y, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 3;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk1', Owner, '', Start + 2 * Y - Z, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 4;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk2', Owner, '', Start, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 5;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk3', Owner, '', Start + Y - Z, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 6;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk4', Owner, '', Start + 2 * Y + Z, PawnOwner.ViewRotation);
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 7;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-		}
-		else {
-			R = X / Tan(3.0*Pi/180.0);
-		
-			LocalChunkDummy = Spawn(class'ST_UTChunk1', Owner, '', Start, rotator(R));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 0;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk2', Owner, '', Start + Y*Cos(0.0) + Z*Sin(0.0), rotator(R + Y*Cos(0.0) + Z*Sin(0.0)));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 1;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk3', Owner, '', Start + Y*Cos(Pi/3.0) + Z*Sin(Pi/3.0), rotator(R + Y*Cos(Pi/3.0) + Z*Sin(Pi/3.0)));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 2;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk4', Owner, '', Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0)));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 3;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk1', Owner, '', Start + Y*Cos(Pi) + Z*Sin(Pi), rotator(R + Y*Cos(Pi) + Z*Sin(Pi)));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 4;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk2', Owner, '', Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0)));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 5;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-
-			LocalChunkDummy = Spawn(class'ST_UTChunk3', Owner, '', Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0)));
-			LocalChunkDummy.RemoteRole = ROLE_None;
-			LocalChunkDummy.bClientVisualOnly = true;
-			LocalChunkDummy.ChunkIndex = 6;
-			LocalChunkDummy.bCollideWorld = true;
-			LocalChunkDummy.SetCollision(false, false, false);
-		}
+	if (GetWeaponSettings().FlakChunkRandomSpread) {
+		SpawnClientChunk(class'ST_UTChunk1', Start,            PawnOwner.ViewRotation, 0);
+		SpawnClientChunk(class'ST_UTChunk2', Start - Z,        PawnOwner.ViewRotation, 1);
+		SpawnClientChunk(class'ST_UTChunk3', Start + 2*Y + Z,  PawnOwner.ViewRotation, 2);
+		SpawnClientChunk(class'ST_UTChunk4', Start - Y,         PawnOwner.ViewRotation, 3);
+		SpawnClientChunk(class'ST_UTChunk1', Start + 2*Y - Z,  PawnOwner.ViewRotation, 4);
+		SpawnClientChunk(class'ST_UTChunk2', Start,            PawnOwner.ViewRotation, 5);
+		SpawnClientChunk(class'ST_UTChunk3', Start + Y - Z,    PawnOwner.ViewRotation, 6);
+		SpawnClientChunk(class'ST_UTChunk4', Start + 2*Y + Z,  PawnOwner.ViewRotation, 7);
+	} else {
+		R = X / Tan(3.0*Pi/180.0);
+		SpawnClientChunk(class'ST_UTChunk1', Start,                                          rotator(R),                                          0);
+		SpawnClientChunk(class'ST_UTChunk2', Start + Y*Cos(0.0) + Z*Sin(0.0),               rotator(R + Y*Cos(0.0) + Z*Sin(0.0)),               1);
+		SpawnClientChunk(class'ST_UTChunk3', Start + Y*Cos(Pi/3.0) + Z*Sin(Pi/3.0),         rotator(R + Y*Cos(Pi/3.0) + Z*Sin(Pi/3.0)),         2);
+		SpawnClientChunk(class'ST_UTChunk4', Start + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0), rotator(R + Y*Cos(2.0*Pi/3.0) + Z*Sin(2.0*Pi/3.0)), 3);
+		SpawnClientChunk(class'ST_UTChunk1', Start + Y*Cos(Pi) + Z*Sin(Pi),                 rotator(R + Y*Cos(Pi) + Z*Sin(Pi)),                 4);
+		SpawnClientChunk(class'ST_UTChunk2', Start + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0), rotator(R + Y*Cos(4.0*Pi/3.0) + Z*Sin(4.0*Pi/3.0)), 5);
+		SpawnClientChunk(class'ST_UTChunk3', Start + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0), rotator(R + Y*Cos(5.0*Pi/3.0) + Z*Sin(5.0*Pi/3.0)), 6);
 	}
 }
 

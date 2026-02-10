@@ -5,9 +5,10 @@ var WeaponSettingsRepl WSettings;
 
 var PlayerPawn InstigatingPlayer;
 
-var vector SimulationHistory[50];  // Store up to 50 positions
-var float SimulationTimes[50];     // Timestamps for each position
-var int HistoryCount;              // Number of valid history entries
+var int MaxHistorySteps;
+var vector SimulationHistory[50];
+var float SimulationTimes[50];
+var int HistoryCount;
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -92,7 +93,7 @@ function InitSimulationHistory(vector StartPos, float StartTime, float TotalTime
 }
 
 function AddSimulationHistoryStep(vector NewPos, float TimeStamp) {
-    if (HistoryCount < 50) {
+    if (HistoryCount < MaxHistorySteps) {
         SimulationHistory[HistoryCount] = NewPos;
         SimulationTimes[HistoryCount] = TimeStamp;
         HistoryCount++;
@@ -214,5 +215,6 @@ auto state Pickup {
 }
 
 defaultproperties {
+	MaxHistorySteps=50
 	bSimFall=True
 }
