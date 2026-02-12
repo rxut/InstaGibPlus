@@ -77,6 +77,7 @@ var config bool  bPlayersAlwaysRelevant;
 var config bool  bEnablePingCompensatedSpawn;
 var config bool  bEnableJitterBounding;
 var config float LooseCheckCorrectionFactor;
+var config float LooseCheckCorrectionFactorOnMover;
 var config bool  bEnableWarpFix;
 var config bool  bEnableCarcassCollision;
 var config bool  ShowTouchedPackage;
@@ -143,6 +144,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bEnablePingCompensatedSpawn");
 	DumpSetting(P, "bEnableJitterBounding");
 	DumpSetting(P, "LooseCheckCorrectionFactor");
+	DumpSetting(P, "LooseCheckCorrectionFactorOnMover");
 	DumpSetting(P, "bEnableWarpFix");
 	DumpSetting(P, "ShowTouchedPackage");
 	DumpSetting(P, "HitFeedbackMode");
@@ -213,6 +215,7 @@ defaultproperties
 	bEnablePingCompensatedSpawn=True
 	bEnableJitterBounding=False
 	LooseCheckCorrectionFactor=1.0
+	LooseCheckCorrectionFactorOnMover=1.0
 	bEnableWarpFix=True
 	bEnableCarcassCollision=True
 	HitFeedbackMode=HFM_Always

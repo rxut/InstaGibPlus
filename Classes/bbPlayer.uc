@@ -2899,8 +2899,10 @@ function bool IGPlus_IsCAPNecessary() {
 	local bool bForceUpdate;
 	local bool bCanTraceNewLoc;
 	local bool bMovedToNewLoc;
+	local bool bMoverLooseCheckContext;
 	local Decoration Carried;
 	local vector OldLoc;
+	local float LooseCheckCorrectionFactor;
 
 	if (bHaveReceivedServerMove == false)
 		return false;
@@ -2952,6 +2954,13 @@ function bool IGPlus_IsCAPNecessary() {
 		// extending ignore time until landing (probably from a lift jump)
 		zzIgnoreUpdateUntil = ServerTimeStamp;
 	}
+	bMoverLooseCheckContext =
+		bServerOnMover ||
+		bClientOnMover ||
+		(Physics == PHYS_Falling && zzIgnoreUpdateUntil >= ServerTimeStamp);
+	LooseCheckCorrectionFactor = zzUTPure.Settings.LooseCheckCorrectionFactor;
+	if (bMoverLooseCheckContext)
+		LooseCheckCorrectionFactor = zzUTPure.Settings.LooseCheckCorrectionFactorOnMover;
 
 	bForceUpdate = 
 		zzbForceUpdate ||
@@ -2980,8 +2989,8 @@ function bool IGPlus_IsCAPNecessary() {
 		return true;
 	}
 
-	if (zzUTPure.Settings.LooseCheckCorrectionFactor < 1.0)
-		ClientLocAbs = Location + (ClientLocAbs - Location) * zzUTPure.Settings.LooseCheckCorrectionFactor;
+	if (LooseCheckCorrectionFactor < 1.0)
+		ClientLocAbs = Location + (ClientLocAbs - Location) * LooseCheckCorrectionFactor;
 
 	bCanTraceNewLoc = FastTrace(ClientLocAbs);
 	if (bCanTraceNewLoc) {
