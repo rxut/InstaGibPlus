@@ -324,6 +324,8 @@ var vector IGPlus_LocationOffsetFix_PredictionOffset;
 var vector IGPlus_LocationOffsetFix_Velocity;
 var vector IGPlus_LocationOffsetFix_GroundNormal;
 var bool IGPlus_LocationOffsetFix_OnGround;
+var bool IGPlus_LocationOffsetFix_WasOnMover;
+var byte IGPlus_LocationOffsetFix_MoverTransitionFrames;
 var bool IGPlus_LocationOffsetFix_FootstepQueued;
 var vector IGPlus_LocationOffsetFix_SafeLocation;
 var IGPlus_CollisionDummy IGPlus_LocationOffsetFix_CollisionDummy;
@@ -2968,10 +2970,18 @@ function bool IGPlus_IsCAPNecessary() {
 	if (ClientLocError < MinLocError && bForceUpdate == false)
 		return false;
 
-	if (bForceUpdate || (ClientLocError > MaxLocError && zzIgnoreUpdateUntil < ServerTimeStamp)) {
+	if (bForceUpdate) {
 		ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError);
 		return true;
 	}
+
+	if (ClientLocError > MaxLocError && zzIgnoreUpdateUntil < ServerTimeStamp) {
+		ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError);
+		return true;
+	}
+
+	if (zzUTPure.Settings.LooseCheckCorrectionFactor < 1.0)
+		ClientLocAbs = Location + (ClientLocAbs - Location) * zzUTPure.Settings.LooseCheckCorrectionFactor;
 
 	bCanTraceNewLoc = FastTrace(ClientLocAbs);
 	if (bCanTraceNewLoc) {
@@ -8263,6 +8273,7 @@ simulated function IGPlus_LocationOffsetFix_After(float DeltaTime) {
 	local float ExtrapolationTime;
 	local bool bReplicatedLocation;
 	local bool bReplicatedVelocity;
+	local bool bMoverTransitionSmoothing;
 	local vector VelXpol;
 	local float CosAlpha;
 	local float SinAlpha;
@@ -8339,16 +8350,28 @@ simulated function IGPlus_LocationOffsetFix_After(float DeltaTime) {
 	if (VSize(IGPlus_LocationOffsetFix_PredictionOffset) > 100 || VSize(Velocity) < 0.0001)
 		IGPlus_LocationOffsetFix_PredictionOffset = vect(0,0,0);
 
+	if (IGPlus_LocationOffsetFix_WasOnMover && IGPlus_LocationOffsetFix_IsOnMover() == false)
+		IGPlus_LocationOffsetFix_MoverTransitionFrames = 4;
+	else if (IGPlus_LocationOffsetFix_MoverTransitionFrames > 0)
+		IGPlus_LocationOffsetFix_MoverTransitionFrames--;
+
+	bMoverTransitionSmoothing = IGPlus_LocationOffsetFix_MoverTransitionFrames > 0;
+
 	// 
 	if (IGPlus_LocationOffsetFix_PredCompatMode) {
-		if (bReplicatedLocation) {
-			if (VSize(IGPlus_LocationOffsetFix_PredictionOffset) > 40)
+		if (bReplicatedLocation || bMoverTransitionSmoothing) {
+			if (bMoverTransitionSmoothing)
+				IGPlus_LocationOffsetFix_PredictionOffset *= 0.96;
+			else if (VSize(IGPlus_LocationOffsetFix_PredictionOffset) > 40)
 				IGPlus_LocationOffsetFix_PredictionOffset *= 0.65;
 			else
 				IGPlus_LocationOffsetFix_PredictionOffset *= 0.85;
 		}
 	} else {
-		IGPlus_LocationOffsetFix_PredictionOffset *= Exp(-25 * DeltaTime);
+		if (bMoverTransitionSmoothing)
+			IGPlus_LocationOffsetFix_PredictionOffset *= Exp(-5 * DeltaTime);
+		else
+			IGPlus_LocationOffsetFix_PredictionOffset *= Exp(-25 * DeltaTime);
 	}
 
 	bCollideWorld = false;
@@ -8407,7 +8430,7 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 simulated event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
 
-	if (Settings.bEnableLocationOffsetFix)
+	if (Settings.bEnableLocationOffsetFix || IGPlus_LocationOffsetFix_Moved)
 		IGPlus_LocationOffsetFix_After(DeltaTime);
 }
 
@@ -8533,6 +8556,28 @@ simulated function bool IGPlus_LocationOffsetFix_IsOnGround(out vector HitNormal
 		&& (HitNormal.Z >= 0.7);
 }
 
+simulated function bool IGPlus_LocationOffsetFix_IsOnMover() {
+	local Actor HitActor;
+	local vector HitLocation;
+	local vector HitNormal;
+	local vector Extent;
+
+	if (Mover(Base) != none)
+		return true;
+
+	if (bCanFly || Region.Zone.bWaterZone)
+		return false;
+
+	Extent.X = CollisionRadius;
+	Extent.Y = CollisionRadius;
+	Extent.Z = CollisionHeight;
+	HitActor = Trace(HitLocation, HitNormal, Location - vect(0,0,8), Location, false, Extent);
+
+	return (HitActor != none)
+		&& HitActor.IsA('Mover')
+		&& (HitNormal.Z >= 0.7);
+}
+
 simulated function IGPlus_LocationOffsetFix_Before() {
 	if (IGPlus_LocationOffsetFix_Moved)
 		return;
@@ -8543,6 +8588,7 @@ simulated function IGPlus_LocationOffsetFix_Before() {
 	IGPlus_LocationOffsetFix_OldLocation = Location;
 	IGPlus_LocationOffsetFix_Velocity = Velocity;
 	IGPlus_LocationOffsetFix_OnGround = IGPlus_LocationOffsetFix_IsOnGround(IGPlus_LocationOffsetFix_GroundNormal);
+	IGPlus_LocationOffsetFix_WasOnMover = IGPlus_LocationOffsetFix_IsOnMover();
 
 	SetLocation(
 		vect(65535, 65535, 65535) +  // edge of the playable area
@@ -8572,9 +8618,6 @@ function IGPlus_LocationOffsetFix_TickBefore() {
 	local PlayerReplicationInfo PRI;
 	local bbPlayer P;
 
-	if (Settings.bEnableLocationOffsetFix == false)
-		return;
-
 	if (Level.Pauser != "")
 		return;
 
@@ -8587,9 +8630,28 @@ function IGPlus_LocationOffsetFix_TickBefore() {
 			if (P.bDeleteMe) continue;
 			if (P.Role != ROLE_SimulatedProxy) continue;
 
-			P.IGPlus_LocationOffsetFix_Before();
+			if (Settings.bEnableLocationOffsetFix)
+				P.IGPlus_LocationOffsetFix_Before();
+			else if (P.IGPlus_LocationOffsetFix_ShouldRunMoverOnly())
+				P.IGPlus_LocationOffsetFix_Before();
 		}
 	}
+}
+
+simulated function bool IGPlus_LocationOffsetFix_ShouldRunMoverOnly() {
+	local bool bOnMoverNow;
+
+	if (IGPlus_LocationOffsetFix_Moved)
+		return true;
+
+	bOnMoverNow = IGPlus_LocationOffsetFix_IsOnMover();
+	if (bOnMoverNow)
+		return true;
+
+	if (IGPlus_LocationOffsetFix_WasOnMover)
+		return true;
+
+	return VSize(IGPlus_LocationOffsetFix_PredictionOffset) > 0.01;
 }
 
 function IGPlus_FixNetspeed() {
