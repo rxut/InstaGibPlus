@@ -61,7 +61,10 @@ function PostBeginPlay()
 function bool IsPositionReasonable(vector ClientLoc)
 {
 	local vector Diff;
-	
+
+	if (IsPingCompEnabled() && Mover(Owner.Base) != None)
+		return true;
+
 	Diff = ClientLoc - Owner.Location;
 	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
 }
@@ -81,6 +84,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 		AmmoType.UseAmmo(1);
 
 		// Position validation - use server position if client position is unreasonable
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -105,6 +110,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
  		return;
 
 	// Position validation - use server position if client position is unreasonable
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (IsPositionReasonable(ClientLoc))
 		ExplicitClientLoc = ClientLoc;
 	else
@@ -280,6 +287,8 @@ simulated function SpawnClientDummyBioGel()
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 	else
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+	if (bbPlayer(Owner) != None)
+		Start.Z += bbPlayer(Owner).GetMoverFireZOffset();
 
 	LocalBioGelDummy = Spawn(class'ST_UT_BioGel', Owner,, Start, PawnOwner.ViewRotation);
 	LocalBioGelDummy.RemoteRole = ROLE_None;

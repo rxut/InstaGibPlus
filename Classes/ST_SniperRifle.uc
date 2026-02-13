@@ -159,7 +159,9 @@ function TraceFire(float Accuracy) {
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
-	StartTrace = Owner.Location + PawnOwner.Eyeheight * vect(0,0,1); 
+	StartTrace = Owner.Location + PawnOwner.Eyeheight * vect(0,0,1);
+	if (bbPlayer(Owner) != None && WImp.WeaponSettings.bEnablePingCompensation)
+		StartTrace.Z -= bbPlayer(Owner).GetMoverFireZOffset(true);
 	AdjustedAim = PawnOwner.AdjustAim(1000000, StartTrace, 2*AimError, False, False);	
 	X = vector(AdjustedAim);
 	EndTrace = StartTrace + 100000 * X;

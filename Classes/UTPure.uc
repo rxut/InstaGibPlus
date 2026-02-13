@@ -42,6 +42,7 @@ var bool bWImpSearched;
 var bool bCompensationIsActive;
 
 var ST_ProjectileDummy ProjDummies;
+var ST_MoverDummy MoverDummies;
 
 replication
 {
@@ -268,6 +269,19 @@ function PostBeginPlay()
 
 	ReplaceKickers();
 	ReplaceSwJumpPads();
+	RegisterMovers();
+}
+
+function RegisterMovers() {
+	local Mover M;
+	local ST_MoverDummy MD;
+
+	foreach AllActors(class'Mover', M) {
+		MD = Spawn(class'ST_MoverDummy');
+		MD.Actual = M;
+		MD.Next = MoverDummies;
+		MoverDummies = MD;
+	}
 }
 
 function ReplaceKickers() {
@@ -516,9 +530,14 @@ function RegisterProjectile(Projectile P) {
 function CompensateFor(int Ping, optional Pawn Instigator) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
+	local ST_MoverDummy MD;
     local Pawn DActual;
 	
 	bCompensationIsActive = true;
+
+	for (MD = MoverDummies; MD != none; MD = MD.Next) {
+		MD.CompStart(Ping, Instigator);
+	}
 
     for (D = CompDummies; D != none; D = D.Next) {
         DActual = D.Actual;
@@ -552,7 +571,12 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
 function EndCompensation() {
 	local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
-	
+	local ST_MoverDummy MD;
+
+	for (MD = MoverDummies; MD != none; MD = MD.Next) {
+		MD.CompEnd();
+	}
+
 	for (D = CompDummies; D != none; D = D.Next) {
 		D.CompEnd();
 	}

@@ -62,7 +62,10 @@ function PostBeginPlay()
 function bool IsPositionReasonable(vector ClientLoc)
 {
 	local vector Diff;
-	
+
+	if (IsPingCompEnabled() && Mover(Owner.Base) != None)
+		return true;
+
 	Diff = ClientLoc - Owner.Location;
 	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
 }
@@ -82,6 +85,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 		AmmoType.UseAmmo(1);
 
 		// Position validation - use server position if client position is unreasonable
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -106,6 +111,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
  		return;
 
 	// Position validation - use server position if client position is unreasonable
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (IsPositionReasonable(ClientLoc))
 		ExplicitClientLoc = ClientLoc;
 	else
@@ -150,6 +157,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
 		AmmoType.UseAmmo(1);
 
 		// Position validation - use server position if client position is unreasonable
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -174,6 +183,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
  		return;
 
 	// Position validation - use server position if client position is unreasonable
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (IsPositionReasonable(ClientLoc))
 		ExplicitClientLoc = ClientLoc;
 	else
@@ -539,11 +550,14 @@ simulated function SpawnClientSideRazor()
 			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 		else
 			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+		if (bbP != None)
+			Start.Z += bbP.GetMoverFireZOffset();
 
 		LocalRazor2Dummy = Spawn(class'ST_Razor2', Owner,, Start, PawnOwner.ViewRotation);
 		LocalRazor2Dummy.RemoteRole = ROLE_None;
 		LocalRazor2Dummy.bClientVisualOnly = true;
 		LocalRazor2Dummy.SetCollision(false, false, false);
+		LocalRazor2Dummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 	}
 }
 
@@ -570,11 +584,14 @@ simulated function SpawnClientSideRazorAlt()
 			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 		else
 			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+		if (bbP != None)
+			Start.Z += bbP.GetMoverFireZOffset();
 
 		LocalRazor2AltDummy = Spawn(class'ST_Razor2Alt', Owner,, Start, PawnOwner.ViewRotation);
 		LocalRazor2AltDummy.RemoteRole = ROLE_None;
 		LocalRazor2AltDummy.bClientVisualOnly = true;
 		LocalRazor2AltDummy.SetCollision(false, false, false);
+		LocalRazor2AltDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 	}
 }
 

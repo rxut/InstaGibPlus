@@ -446,6 +446,32 @@ State ClientDown
 	}
 }
 
+function TraceFire(float Accuracy) {
+	local vector HitLocation, HitNormal, StartTrace, EndTrace, X,Y,Z, AimDir;
+	local actor Other;
+
+	Owner.MakeNoise(Pawn(Owner).SoundDampening);
+	GetAxes(Pawn(Owner).ViewRotation,X,Y,Z);
+	StartTrace = Owner.Location + CalcDrawOffset() + FireOffset.Y * Y + FireOffset.Z * Z;
+	if (bbPlayer(Owner) != None && GetWeaponSettings() != None && GetWeaponSettings().bEnablePingCompensation)
+		StartTrace.Z -= bbPlayer(Owner).GetMoverFireZOffset(true);
+	AdjustedAim = Pawn(Owner).AdjustAim(1000000, StartTrace, 2.75*AimError, False, False);
+	EndTrace = StartTrace + Accuracy * (FRand() - 0.5 )* Y * 1000
+		+ Accuracy * (FRand() - 0.5 ) * Z * 1000;
+	AimDir = vector(AdjustedAim);
+	EndTrace += (10000 * AimDir);
+	Other = Pawn(Owner).TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
+
+	Count++;
+	if ( Count == 4 )
+	{
+		Count = 0;
+		if ( VSize(HitLocation - StartTrace) > 250 )
+			Spawn(class'MTracer',,, StartTrace + 96 * AimDir,rotator(EndTrace - StartTrace));
+	}
+	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim),Y,Z);
+}
+
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
 {
 	local int rndDam;

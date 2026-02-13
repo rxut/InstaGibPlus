@@ -487,10 +487,10 @@ replication
 		IGPlus_ForcedSettingRegister,
 		IGPlus_ForcedSettingsApply,
 		IGPlus_ClientReStart,
-		IGPlus_NotifyPlayerRestart;
+		IGPlus_NotifyPlayerRestart,
+		ClientAddMomentum;
 
 	unreliable if (RemoteRole == ROLE_AutonomousProxy)
-		ClientAddMomentum,
 		xxCAP,
 		xxCAPLevelBase,
 		xxCAPWalking,
@@ -2508,15 +2508,24 @@ function IGPlus_ApplyMomentum(vector Momentum) {
 	if ( Momentum == vect(0,0,0) )
 		return;
 
-	if (Physics == PHYS_Walking) {
+	if (Physics == PHYS_Walking)
 		Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
-		SetPhysics(PHYS_Falling);
-	}
 
-	if ( (Velocity.Z > 380) && (Momentum.Z > 0) )
-		Momentum.Z *= 0.5;
+	Super.AddVelocity(Momentum);
+}
 
-	Velocity += Momentum;
+simulated function float GetMoverFireZOffset(optional bool bFullPing) {
+	local float Latency;
+
+	if (Mover(Base) == None || PlayerReplicationInfo == None)
+		return 0.0;
+
+	if (bFullPing)
+		Latency = PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation;
+	else
+		Latency = PlayerReplicationInfo.Ping * 0.0005 * Level.TimeDilation;
+
+	return Base.Velocity.Z * Latency;
 }
 
 function IGPlus_BeforeTranslocate() {
@@ -5789,6 +5798,9 @@ simulated function AddVelocity( vector NewVelocity )
 
 simulated function ClientAddMomentum(vector Momentum, float TimeStamp, int Index) {
 	local int Next;
+	if (TimeStamp <= CurrentTimeStamp)
+		return; // CAP/state already advanced past this momentum timestamp
+
 	if (TimeStamp <= AddVelocityCalls[LastAddVelocityIndex].TimeStamp)
 		return; // too old
 
@@ -5800,8 +5812,10 @@ simulated function ClientAddMomentum(vector Momentum, float TimeStamp, int Index
 	AddVelocityCalls[Index].TimeStamp = TimeStamp;
 }
 
-function ServerAddMomentum(vector Momentum) {
+function ServerAddMomentum(vector Momentum, optional bool bForceNetSync) {
 	local int Next;
+	local int AddIndex;
+	local float ForceSyncDuration;
 
 	if (zzUTPure.Settings.bEnableLoosePositionCheck) {
 		if (Momentum == vect(0,0,0))
@@ -5811,11 +5825,29 @@ function ServerAddMomentum(vector Momentum) {
 		if (Next == LastAddVelocityAppliedIndex)
 			return; // full
 
-		AddVelocityCalls[LastAddVelocityIndex].Momentum = Momentum;
-		AddVelocityCalls[LastAddVelocityIndex].TimeStamp = Level.TimeSeconds + 0.5*Level.TimeDilation;
-		ClientAddMomentum(Momentum, Level.TimeSeconds, LastAddVelocityIndex);
+		AddIndex = LastAddVelocityIndex;
+
+		AddVelocityCalls[AddIndex].Momentum = Momentum;
+		AddVelocityCalls[AddIndex].TimeStamp = Level.TimeSeconds;
+		ClientAddMomentum(Momentum, Level.TimeSeconds, AddIndex);
+
+		IGPlus_ApplyMomentum(Momentum);
+		AddVelocityCalls[AddIndex].Momentum = vect(0,0,0);
+		if (bForceNetSync) {
+			zzbForceUpdate = true;
+			ForceSyncDuration = 0.05 * Level.TimeDilation;
+			if (PlayerReplicationInfo != none)
+				ForceSyncDuration = 0.5 * PlayerReplicationInfo.Ping * 0.0011 * Level.TimeDilation;
+			ForceSyncDuration = FClamp(
+				ForceSyncDuration,
+				0.03 * Level.TimeDilation,
+				0.20 * Level.TimeDilation
+			);
+			zzForceUpdateUntil = FMax(zzForceUpdateUntil, Level.TimeSeconds + ForceSyncDuration);
+		}
 
 		LastAddVelocityIndex = Next;
+		LastAddVelocityAppliedIndex = Next;
 	} else {
 		if (Physics == PHYS_Walking)
 			Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
@@ -6015,7 +6047,7 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 	if (InstigatedBy != none)
 		IGPlus_DamageEvent_Add(InstigatedBy.PlayerReplicationInfo, ModifiedDamage1, DamageType);
 
-	ServerAddMomentum(momentum);
+	ServerAddMomentum(momentum, InstigatedBy != none && InstigatedBy != self);
 	Health -= actualDamage;
 
 	IGPlus_DamageEvent_SaveHealth();

@@ -63,7 +63,10 @@ function PostBeginPlay()
 function bool IsPositionReasonable(vector ClientLoc)
 {
 	local vector Diff;
-	
+
+	if (IsPingCompEnabled() && Mover(Owner.Base) != None)
+		return true;
+
 	Diff = ClientLoc - Owner.Location;
 	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
 }
@@ -82,6 +85,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 		AmmoType.UseAmmo(1);
 
 		// Position validation - use server position if client position is unreasonable
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -107,6 +112,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 		return;
 
 	// Position validation - use server position if client position is unreasonable
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (IsPositionReasonable(ClientLoc))
 		ExplicitClientLoc = ClientLoc;
 	else
@@ -149,6 +156,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
 		AmmoType.UseAmmo(1);
 
 		// Position validation - use server position if client position is unreasonable
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -174,6 +183,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
 		return;
 	
 	// Position validation - use server position if client position is unreasonable
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (IsPositionReasonable(ClientLoc))
 		ExplicitClientLoc = ClientLoc;
 	else
@@ -616,6 +627,8 @@ simulated function SpawnClientChunk(class<ST_UTChunk> ChunkClass, vector Pos, ro
 	C.ChunkIndex = Index;
 	C.bCollideWorld = true;
 	C.SetCollision(false, false, false);
+	if (Pawn(Owner) != None && Pawn(Owner).PlayerReplicationInfo != None)
+		C.LifeSpan = Pawn(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 }
 
 simulated function SpawnClientSideChunks() {
@@ -640,6 +653,8 @@ simulated function SpawnClientSideChunks() {
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 	else
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+	if (bbP != None)
+		Start.Z += bbP.GetMoverFireZOffset();
 
 	if (GetWeaponSettings().FlakChunkRandomSpread) {
 		SpawnClientChunk(class'ST_UTChunk1', Start,            PawnOwner.ViewRotation, 0);
@@ -744,6 +759,8 @@ simulated function SpawnClientSideSlug()
             Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
         else
             Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+        if (bbP != None)
+            Start.Z += bbP.GetMoverFireZOffset();
 
         LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
         LocalSlugDummy.RemoteRole = ROLE_None;
@@ -753,6 +770,7 @@ simulated function SpawnClientSideSlug()
         LocalSlugDummy.bClientVisualOnly = true;
         LocalSlugDummy.bCollideWorld = false;
         LocalSlugDummy.SetCollision(false, false, false);
+        LocalSlugDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
     }
 }
 

@@ -81,7 +81,10 @@ simulated function yModInit() {
 function bool IsPositionReasonable(vector ClientLoc)
 {
     local vector Diff;
-    
+
+    if (IsPingCompEnabled() && Mover(Owner.Base) != None)
+        return true;
+
     Diff = ClientLoc - Owner.Location;
     return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
 }
@@ -106,6 +109,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
 		LastServerFireTime = Level.TimeSeconds;
 
 		// Position validation
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -142,6 +147,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
         return;
 
     // Position validation - use server position if client position is unreasonable
+    if (bbPlayer(Owner) != None)
+        ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
     if (IsPositionReasonable(ClientLoc))
         ExplicitClientLoc = ClientLoc;
     else
@@ -188,6 +195,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 	{
 		AmmoType.UseAmmo(1);
 		
+		if (bbPlayer(Owner) != None)
+			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 		if (IsPositionReasonable(ClientLoc))
 			ExplicitClientLoc = ClientLoc;
 		else
@@ -219,6 +228,8 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
  		return;
 
     // Position validation - use server position if client position is unreasonable
+    if (bbPlayer(Owner) != None)
+        ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
     if (IsPositionReasonable(ClientLoc))
         ExplicitClientLoc = ClientLoc;
     else
@@ -501,7 +512,10 @@ simulated function ClientSpawnAltProjectileEffects() {
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 	else
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-	
+
+	if (bbP != None)
+		Start.Z += bbP.GetMoverFireZOffset();
+
 	LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start, PawnOwner.ViewRotation));
 	if (LocalDummy != None) {
 		LocalDummy.RemoteRole = ROLE_None;

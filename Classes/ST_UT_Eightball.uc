@@ -71,7 +71,10 @@ function PostBeginPlay()
 function bool IsPositionReasonable(vector ClientLoc)
 {
 	local vector Diff;
-	
+
+	if (IsPingCompEnabled() && Mover(Owner.Base) != None)
+		return true;
+
 	Diff = ClientLoc - Owner.Location;
 	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
 }
@@ -112,6 +115,8 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, int NumRockets,
 	LastServerFireTime = Level.TimeSeconds;
 
 	// Position validation
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (IsPositionReasonable(ClientLoc))
 		ExplicitClientLoc = ClientLoc;
 	else
@@ -386,7 +391,9 @@ simulated function SpawnClientSideRockets(int NumRockets)
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
 	
 	// Use CDO and yMod for correct positioning (especially when hidden)
-	StartLoc = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z; 
+	StartLoc = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
+	if (bbPlayer(Owner) != None)
+		StartLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	AimRot = PawnOwner.ViewRotation;
 
 	Angle = 0;
@@ -429,6 +436,7 @@ simulated function SpawnClientSideRockets(int NumRockets)
 			r.bClientVisualOnly = true;
 			r.bCollideWorld = true; 
 			r.SetCollision(true, false, false);
+			r.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 			
 			// Store for cleanup
 			if (LocalRockets[LocalRocketIndex] != None)
