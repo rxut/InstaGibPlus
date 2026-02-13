@@ -40,6 +40,7 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
 	local ST_Razor2Alt RazAlt;
+	local vector FakeLocation;
 
 	super.PostNetBeginPlay();
 
@@ -50,12 +51,14 @@ simulated function PostNetBeginPlay()
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
-			// Find the oldest client-side dummy and destroy it
 			foreach AllActors(class'ST_Razor2Alt', RazAlt)
 			{
 				if (RazAlt.bClientVisualOnly && RazAlt.Owner == InstigatingPlayer && !RazAlt.bDeleteMe)
 				{
+					FakeLocation = RazAlt.Location;
 					RazAlt.Destroy();
+					SetLocation(FakeLocation);
+					ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 					break;
 				}
 			}

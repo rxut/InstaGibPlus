@@ -6,6 +6,13 @@ var WeaponSettingsRepl WSettings;
 var bool bClientVisualOnly;
 var PlayerPawn InstigatingPlayer;
 var vector ExtrapolationDelta;
+var int RocketIndex;
+
+replication
+{
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		RocketIndex;
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -27,7 +34,8 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
-	local ST_UT_Eightball EB;
+	local ST_RocketMk2 FakeRocket;
+	local vector FakeLocation;
 
 	super.PostNetBeginPlay();
 
@@ -38,10 +46,16 @@ simulated function PostNetBeginPlay()
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
-			EB = ST_UT_Eightball(InstigatingPlayer.Weapon);
-			if (EB != None)
+			foreach AllActors(class'ST_RocketMk2', FakeRocket)
 			{
-				EB.CleanupClientSideRocket();
+				if (FakeRocket != self && FakeRocket.bClientVisualOnly && FakeRocket.RocketIndex == RocketIndex && FakeRocket.Instigator == InstigatingPlayer)
+				{
+					FakeLocation = FakeRocket.Location;
+					FakeRocket.Destroy();
+					SetLocation(FakeLocation);
+					ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+					break;
+				}
 			}
 		}
 	}

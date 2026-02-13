@@ -22,9 +22,6 @@ var float LastServerFireTime;
 var float LastClientFireTime;
 const FIRE_RATE_LIMIT = 0.25;
 
-// Client-side visual projectiles tracking
-var ST_RocketMk2 LocalRockets[16];
-var int LocalRocketIndex;
 
 // Client-side offset correction
 var float yMod;
@@ -313,23 +310,6 @@ simulated function FiringRockets()
     }
 }
 
-// Called by ST_RocketMk2.PostNetBeginPlay when a server projectile arrives
-simulated function CleanupClientSideRocket()
-{
-	local int i;
-	
-	// Find the oldest valid dummy and destroy it
-	for (i = 0; i < 16; i++)
-	{
-		if (LocalRockets[i] != None && !LocalRockets[i].bDeleteMe)
-		{
-			LocalRockets[i].Destroy();
-			LocalRockets[i] = None;
-			return; // Destroyed one, we're done
-		}
-	}
-}
-
 simulated function yModInit() {
 	if (PlayerPawn(Owner) == None)
 		return;
@@ -434,17 +414,10 @@ simulated function SpawnClientSideRockets(int NumRockets)
 			r.NumExtraRockets = 0; 
 			r.RemoteRole = ROLE_None;
 			r.bClientVisualOnly = true;
+			r.RocketIndex = i;
 			r.bCollideWorld = true; 
 			r.SetCollision(true, false, false);
 			r.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-			
-			// Store for cleanup
-			if (LocalRockets[LocalRocketIndex] != None)
-				LocalRockets[LocalRocketIndex].Destroy(); 
-			
-			LocalRockets[LocalRocketIndex] = r;
-			LocalRocketIndex++;
-			if (LocalRocketIndex >= 16) LocalRocketIndex = 0;
 		}
 
 		Angle += 1.04719755;
@@ -600,6 +573,7 @@ state FireRockets
 					r = Spawn(class'ST_RocketMk2',, '', FireLocation, FireRot);
 					r.WImp = WImp;
 					r.NumExtraRockets = DupRockets;
+					r.RocketIndex = i;
 					SpawnedRockets[NumSpawnedRockets] = r;
 					NumSpawnedRockets++;
 				}
