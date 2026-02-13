@@ -2521,6 +2521,9 @@ function IGPlus_ApplyMomentum(vector Momentum) {
 
 simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 	local float Latency;
+	local float TargetTimeStamp;
+	local ST_MoverDummy MD;
+	local vector HistoricalLoc;
 
 	if (Mover(Base) == None || PlayerReplicationInfo == None)
 		return 0.0;
@@ -2530,6 +2533,17 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 	else
 		Latency = PlayerReplicationInfo.Ping * 0.0005 * Level.TimeDilation;
 
+	if (zzUTPure != None) {
+		MD = zzUTPure.FindMoverDummy(Mover(Base));
+		if (MD != None) {
+			TargetTimeStamp = Level.TimeSeconds - Latency;
+			HistoricalLoc = MD.GetHistoricalLocation(TargetTimeStamp);
+			ClientDebugMessage("MoverZOffset: history="$int(Base.Location.Z - HistoricalLoc.Z)$" linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping$" velZ="$int(Base.Velocity.Z));
+			return Base.Location.Z - HistoricalLoc.Z;
+		}
+	}
+
+	ClientDebugMessage("MoverZOffset: fallback linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping);
 	return Base.Velocity.Z * Latency;
 }
 
