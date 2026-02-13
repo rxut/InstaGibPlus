@@ -11,6 +11,7 @@ var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
 var ST_UT_BioGel LocalBioGelDummy;
+var ST_BioGlob LocalBioGlobDummy;
 
 // Explicit client aim data (sent via ServerExplicitFire)
 var vector ExplicitClientLoc;
@@ -23,7 +24,7 @@ const MAX_POSITION_ERROR_SQ = 1250.0;
 replication
 {
 	reliable if(Role < ROLE_Authority)
-		ServerExplicitFire;
+		ServerExplicitFire, ServerExplicitAltFire;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -136,6 +137,53 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 			Affector.FireEffect();
 		ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget);
 		GoToState('NormalFire');
+	}
+
+	bUseExplicitData = false;
+}
+
+function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, float ClientChargeSize)
+{
+	local PlayerPawn P;
+	local Projectile Gel;
+	local bbPlayer bbP;
+
+	P = PlayerPawn(Owner);
+	if (P == None)
+		return;
+
+	if (bChangeWeapon || IsInState('DownWeapon') || P.Weapon != self)
+		return;
+
+	ClientChargeSize = FClamp(ClientChargeSize, 0.0, 4.1);
+
+	if (bbPlayer(Owner) != None)
+		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (IsPositionReasonable(ClientLoc))
+		ExplicitClientLoc = ClientLoc;
+	else
+		ExplicitClientLoc = Owner.Location;
+
+	ExplicitClientRot = ClientRot;
+	bUseExplicitData = true;
+
+	if (AmmoType == None)
+		GiveAmmo(P);
+
+	if (AmmoType != None && AmmoType.AmmoAmount > 0)
+	{
+		bbP = bbPlayer(P);
+
+		Owner.MakeNoise(P.SoundDampening);
+		Gel = ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
+		if (Gel != None)
+			Gel.DrawScale = 1.0 + 0.8 * ClientChargeSize;
+
+		if (Affector != None)
+			Affector.FireEffect();
+
+		PlayAltBurst();
+		GotoState('NormalFire');
 	}
 
 	bUseExplicitData = false;
@@ -297,6 +345,148 @@ simulated function SpawnClientDummyBioGel()
 	LocalBioGelDummy.bClientVisualOnly = true;
 	LocalBioGelDummy.bCollideWorld = false;
 	LocalBioGelDummy.SetCollision(false, false, false);
+}
+
+simulated function bool ClientAltFire(float Value)
+{
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
+
+	if (!bCanClientFire)
+		return false;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return false;
+
+	if (IsPingCompEnabled())
+	{
+		bbP = bbPlayer(PawnOwner);
+
+		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
+		{
+			if (AmmoType == None && AmmoName != None)
+				GiveAmmo(PawnOwner);
+
+			if (AmmoType != None && AmmoType.AmmoAmount > 0)
+			{
+				Instigator = PawnOwner;
+				AmmoType.UseAmmo(1);
+				bPointing = true;
+				bCanClientFire = true;
+				GotoState('ClientAltFiring');
+				PlayAltFiring();
+				return true;
+			}
+			return false;
+		}
+	}
+
+	return Super.ClientAltFire(Value);
+}
+
+simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
+{
+	local Pawn PawnOwner;
+	local vector X, Y, Z;
+	local vector Start;
+	local float Hand;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return;
+
+	if (Owner.IsA('PlayerPawn'))
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	else
+		Hand = 1.0;
+
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	if (bHideWeapon)
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	else
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+	if (bbPlayer(Owner) != None)
+		Start.Z += bbPlayer(Owner).GetMoverFireZOffset();
+
+	LocalBioGlobDummy = Spawn(class'ST_BioGlob', Owner,, Start, PawnOwner.ViewRotation);
+	if (LocalBioGlobDummy != None) {
+		LocalBioGlobDummy.RemoteRole = ROLE_None;
+		LocalBioGlobDummy.Instigator = PawnOwner;
+		LocalBioGlobDummy.DrawScale = 1.0 + 0.8 * ClientChargeSize;
+		LocalBioGlobDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+		LocalBioGlobDummy.bClientVisualOnly = true;
+		LocalBioGlobDummy.bCollideWorld = false;
+		LocalBioGlobDummy.SetCollision(false, false, false);
+	}
+}
+
+state ClientAltFiring
+{
+	simulated function Tick(float DeltaTime)
+	{
+		local Pawn PawnOwner;
+		local bbPlayer bbP;
+
+		PawnOwner = Pawn(Owner);
+		if (PawnOwner == None) {
+			GotoState('');
+			return;
+		}
+
+		if (!bCanClientFire) {
+			GotoState('');
+			return;
+		}
+
+		if (ChargeSize < 4.1) {
+			Count += DeltaTime;
+			if (Count > 0.5 && AmmoType != None && AmmoType.AmmoAmount > 0) {
+				AmmoType.UseAmmo(1);
+				ChargeSize += Count;
+				Count = 0;
+			}
+		}
+
+		if (PawnOwner.bAltFire == 0) {
+			ChargeSize = FMin(ChargeSize, 4.1);
+
+			bbP = bbPlayer(PawnOwner);
+			if (bbP != None && bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
+				SpawnClientDummyBioGlob(ChargeSize);
+
+			ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation, ChargeSize);
+
+			if (Affector != None)
+				Affector.FireEffect();
+			PlayAltBurst();
+
+			ChargeSize = 0.0;
+			Count = 0.0;
+			GotoState('ClientFiring');
+		}
+	}
+
+	simulated function AnimEnd()
+	{
+		TweenAnim('Loaded', 0.5);
+	}
+
+	simulated function bool ClientFire(float Value)
+	{
+		return false;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		return false;
+	}
+
+	simulated function BeginState()
+	{
+		ChargeSize = 0.0;
+		Count = 0.0;
+	}
 }
 
 state ClientActive
