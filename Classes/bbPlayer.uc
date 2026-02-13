@@ -2508,10 +2508,15 @@ function IGPlus_ApplyMomentum(vector Momentum) {
 	if ( Momentum == vect(0,0,0) )
 		return;
 
-	if (Physics == PHYS_Walking)
+	if (Physics == PHYS_Walking) {
 		Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
+		SetPhysics(PHYS_Falling);
+	}
 
-	Super.AddVelocity(Momentum);
+	if ( (Velocity.Z > 380) && (Momentum.Z > 0) )
+		Momentum.Z *= 0.5;
+
+	Velocity += Momentum;
 }
 
 simulated function float GetMoverFireZOffset(optional bool bFullPing) {
@@ -5812,10 +5817,9 @@ simulated function ClientAddMomentum(vector Momentum, float TimeStamp, int Index
 	AddVelocityCalls[Index].TimeStamp = TimeStamp;
 }
 
-function ServerAddMomentum(vector Momentum, optional bool bForceNetSync) {
+function ServerAddMomentum(vector Momentum) {
 	local int Next;
 	local int AddIndex;
-	local float ForceSyncDuration;
 
 	if (zzUTPure.Settings.bEnableLoosePositionCheck) {
 		if (Momentum == vect(0,0,0))
@@ -5833,18 +5837,7 @@ function ServerAddMomentum(vector Momentum, optional bool bForceNetSync) {
 
 		IGPlus_ApplyMomentum(Momentum);
 		AddVelocityCalls[AddIndex].Momentum = vect(0,0,0);
-		if (bForceNetSync) {
-			zzbForceUpdate = true;
-			ForceSyncDuration = 0.05 * Level.TimeDilation;
-			if (PlayerReplicationInfo != none)
-				ForceSyncDuration = 0.5 * PlayerReplicationInfo.Ping * 0.0011 * Level.TimeDilation;
-			ForceSyncDuration = FClamp(
-				ForceSyncDuration,
-				0.03 * Level.TimeDilation,
-				0.20 * Level.TimeDilation
-			);
-			zzForceUpdateUntil = FMax(zzForceUpdateUntil, Level.TimeSeconds + ForceSyncDuration);
-		}
+		zzIgnoreUpdateUntil = FMax(zzIgnoreUpdateUntil, Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation);
 
 		LastAddVelocityIndex = Next;
 		LastAddVelocityAppliedIndex = Next;
@@ -6047,7 +6040,7 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 	if (InstigatedBy != none)
 		IGPlus_DamageEvent_Add(InstigatedBy.PlayerReplicationInfo, ModifiedDamage1, DamageType);
 
-	ServerAddMomentum(momentum, InstigatedBy != none && InstigatedBy != self);
+	ServerAddMomentum(momentum);
 	Health -= actualDamage;
 
 	IGPlus_DamageEvent_SaveHealth();

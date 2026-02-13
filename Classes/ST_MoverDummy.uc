@@ -85,6 +85,46 @@ function ApplyRewind(vector HistoricalLoc, Pawn Instigator) {
 	bCompActive = true;
 }
 
+function vector GetHistoricalLocation(float TargetTimeStamp) {
+	local int Idx, Scans;
+	local int BufSize;
+	local ST_MoverSnapshot OlderSnap;
+	local ST_MoverSnapshot NewerSnap;
+	local float TimeDelta, Alpha;
+
+	if (Actual == None || Actual.bDeleteMe)
+		return vect(0,0,0);
+
+	BufSize = arraycount(Data);
+	Idx = (DataIndex - 1 + BufSize) % BufSize;
+	NewerSnap = None;
+
+	for (Scans = 0; Scans < BufSize; Scans++) {
+		OlderSnap = Data[Idx];
+
+		if (OlderSnap != None && OlderSnap.ServerTimeStamp > 0) {
+			if (OlderSnap.ServerTimeStamp <= TargetTimeStamp) {
+				if (NewerSnap != None) {
+					TimeDelta = NewerSnap.ServerTimeStamp - OlderSnap.ServerTimeStamp;
+					if (TimeDelta > 0.001) {
+						Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
+						return LerpVector(FClamp(Alpha, 0.0, 1.0), OlderSnap.Loc, NewerSnap.Loc);
+					}
+				}
+				return OlderSnap.Loc;
+			}
+			NewerSnap = OlderSnap;
+		}
+
+		Idx = (Idx - 1 + BufSize) % BufSize;
+	}
+
+	if (NewerSnap != None)
+		return NewerSnap.Loc;
+
+	return Actual.Location;
+}
+
 function CompEnd() {
 	if (bCompActive) {
 		bCompActive = false;

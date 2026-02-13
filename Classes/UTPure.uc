@@ -776,6 +776,16 @@ function UTPlusDummy FindDummy(Pawn P) {
 	return none;
 }
 
+function ST_MoverDummy FindMoverDummy(Mover M) {
+	local ST_MoverDummy MD;
+
+	for (MD = MoverDummies; MD != none; MD = MD.Next)
+		if (MD.Actual == M)
+			return MD;
+
+	return none;
+}
+
 function ST_ProjectileDummy FindProjectileDummy(Projectile P) {
 	local ST_ProjectileDummy D;
 
