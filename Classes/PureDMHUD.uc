@@ -134,7 +134,7 @@ simulated function DrawStatus(Canvas Canvas)
 	}
 	else
 	{
-		X = Canvas.ClipX - 128 * StatScale - 140 * Scale;
+		X = Canvas.ClipX - 128 * StatScale - 160 * Scale;
 		Y = 64 * Scale;
 	}
 	Canvas.SetPos(X,Y);
@@ -146,7 +146,7 @@ simulated function DrawStatus(Canvas Canvas)
 	}
 	else
 		Canvas.DrawColor = HUDColor;
-	Canvas.DrawTile(Texture'BotPack.HudElements1', 128*Scale, 64*Scale, 128, 128, 128.0, 64.0);
+	Canvas.DrawTile(Texture'BotPack.HudElements1', 148*Scale, 64*Scale, 128, 128, 128.0, 64.0);
 
 	if ( PawnOwner.Health < 50 )
 	{
@@ -157,7 +157,7 @@ simulated function DrawStatus(Canvas Canvas)
 	else
 		Canvas.DrawColor = WhiteColor;
 
-	DrawBigNum(Canvas, Max(0, PawnOwner.Health), X + 4 * Scale, Y + 16 * Scale, 1);
+	DrawBigNum(Canvas, Max(0, PawnOwner.Health), X + 14 * Scale, Y + 16 * Scale, 1);
 
 	Canvas.DrawColor = HUDColor;
 
@@ -168,11 +168,11 @@ simulated function DrawStatus(Canvas Canvas)
 	}
 	else
 	{
-		X = Canvas.ClipX - 128 * StatScale - 140 * Scale;
+		X = Canvas.ClipX - 128 * StatScale - 160 * Scale;
 		Y = 0;
 	}
 	Canvas.SetPos(X, Y);
-	Canvas.DrawTile(Texture'BotPack.HudElements1', 128*Scale, 64*Scale, 0, 192, 128.0, 64.0);
+	Canvas.DrawTile(Texture'BotPack.HudElements1', 148*Scale, 64*Scale, 0, 192, 128.0, 64.0);
 	if ( bHideStatus && bShieldBelt )
 		Canvas.DrawColor = GoldColor;
 	else
@@ -181,7 +181,7 @@ simulated function DrawStatus(Canvas Canvas)
 		if (PawnOwner.PlayerReplicationInfo.IsA('bbPlayerReplicationInfo'))
 			ArmorAmount = bbPlayerReplicationInfo(PawnOwner.PlayerReplicationInfo).Armor;
 	}
-	DrawBigNum(Canvas, ArmorAmount, X + 4 * Scale, Y + 16 * Scale, 1);
+	DrawBigNum(Canvas, ArmorAmount, X + 14 * Scale, Y + 16 * Scale, 1);
 
 	if ((bbPlayer(PlayerOwner) != None && bbPlayer(PlayerOwner).HUDInfo > 0) || bbCHSpectator(PlayerOwner) != None)
 	{
@@ -197,13 +197,13 @@ simulated function DrawStatus(Canvas Canvas)
 			}
 			else
 			{
-				X = Canvas.ClipX - 128 * StatScale - 140 * Scale;
-				Y = 192 * Scale;
-			}
-			Canvas.SetPos(X,Y);
-			Canvas.DrawTile(Texture'PureBoots', 128*Scale, 64*Scale, 0, 0, 128.0, 64.0);
-			Canvas.DrawColor = WhiteColor;
-			DrawBigNum(Canvas, BootCharges, X + 4 * Scale, Y + 16 * Scale, 1);
+			X = Canvas.ClipX - 128 * StatScale - 160 * Scale;
+			Y = 192 * Scale;
+		}
+		Canvas.SetPos(X,Y);
+		Canvas.DrawTile(Texture'PureBoots', 148*Scale, 64*Scale, 0, 0, 128.0, 64.0);
+		Canvas.DrawColor = WhiteColor;
+		DrawBigNum(Canvas, BootCharges, X + 14 * Scale, Y + 16 * Scale, 1);
 		}
 	}
 }
