@@ -79,6 +79,9 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 	if (P == None)
 		return;
 
+	if (!IsPingCompEnabled())
+		return;
+
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) &&
          (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self)) )
 	{
@@ -150,6 +153,9 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, float Client
 
 	P = PlayerPawn(Owner);
 	if (P == None)
+		return;
+
+	if (!IsPingCompEnabled())
 		return;
 
 	if (bChangeWeapon || IsInState('DownWeapon') || P.Weapon != self)

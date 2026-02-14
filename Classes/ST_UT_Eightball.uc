@@ -105,11 +105,16 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, int NumRockets,
 	if (P == None)
 		return;
 
+	if (!IsPingCompEnabled())
+		return;
+
 	// Rate limit check
 	if (Level.TimeSeconds - LastServerFireTime < FIRE_RATE_LIMIT)
 		return;
 
 	LastServerFireTime = Level.TimeSeconds;
+
+	NumRockets = Clamp(NumRockets, 1, 6);
 
 	// Position validation
 	if (bbPlayer(Owner) != None)

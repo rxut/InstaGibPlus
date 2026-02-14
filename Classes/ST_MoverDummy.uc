@@ -38,8 +38,7 @@ function CompStart(int Ping, Pawn Instigator) {
 	local ST_MoverSnapshot NewerSnap;
 	local float TimeDelta, Alpha;
 	local vector TargetLoc;
-	local vector MoverDelta;
-
+	
 	if (Actual == None || Actual.bDeleteMe || bCompActive)
 		return;
 

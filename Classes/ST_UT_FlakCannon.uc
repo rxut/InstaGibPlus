@@ -80,6 +80,9 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool b
 	if (P == None)
 		return;
 
+	if (!IsPingCompEnabled())
+		return;
+
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) && (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
 	{
 		AmmoType.UseAmmo(1);
@@ -149,6 +152,9 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional boo
 	
 	P = PlayerPawn(Owner);
 	if (P == None)
+		return;
+
+	if (!IsPingCompEnabled())
 		return;
 
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) && (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
