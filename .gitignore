@@ -3,17 +3,15 @@
 *.sublime-workspace
 
 /Build/Temp/**/*
-/System/**/*.u
-/System/**/*.uz
+/Build/**/*
+/System/
 
 /IG+ Extras/
-/IG+ Extras/**/*
-/OtherMods/**/*
-.env
-/Build/**/*
+/OtherMods/
 
 build_all.sh
 build.sh
 
+.env
 .cursorignore
 .DS_Store
