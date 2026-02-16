@@ -310,6 +310,7 @@ struct IGPlus_WarpFixClient {
 struct IGPlus_SnapData {
 	var vector Location;
 	var vector Velocity;
+	var rotator Rotation;
 	var vector MoverLocation;
 	var float ServerTime;
 	var int Counter;
@@ -6452,6 +6453,8 @@ event ServerTick(float DeltaTime) {
 
 			IGPlus_SnapReplicatedData.Location = Location;
 			IGPlus_SnapReplicatedData.Velocity = Velocity;
+			IGPlus_SnapReplicatedData.Rotation = Rotation;
+			IGPlus_SnapReplicatedData.Rotation.Roll = 0;
 			IGPlus_SnapReplicatedData.ServerTime = Level.TimeSeconds;
 			IGPlus_SnapReplicatedData.Counter += 1;
 			IGPlus_SnapReplicatedData.bHardSnap = bHardSnap;
@@ -8779,6 +8782,7 @@ simulated function Actor IGPlus_SnapInterp_FindNearestMover(vector WorldPos) {
 simulated function IGPlus_SnapInterp_Push(
 	vector Pos,
 	vector Vel,
+	rotator SnapRot,
 	float SnapTime,
 	float ArrivalTime,
 	optional bool bFromServerMoverState,
@@ -8800,6 +8804,8 @@ simulated function IGPlus_SnapInterp_Push(
 	Snap = IGPlus_SnapInterp_Data[IGPlus_SnapInterp_DataIndex];
 	Snap.Loc = Pos;
 	Snap.Vel = Vel;
+	Snap.Rot = SnapRot;
+	Snap.Rot.Roll = 0;
 	Snap.Time = SnapTime;
 	if (bFromServerMoverState) {
 		Snap.bBasedOnMover = bBasedOnMover;
@@ -8861,7 +8867,28 @@ simulated function IGPlus_SnapInterp_Push(
 	IGPlus_SnapInterp_LastArrivalTime = ArrivalTime;
 }
 
-simulated function bool IGPlus_SnapInterp_Interpolate(float RenderTime, out vector OutPos, out vector OutVel, out byte InterpMode) {
+simulated function int IGPlus_SnapInterp_LerpAxis(int A, int B, float Alpha) {
+	local int AS;
+	local int BS;
+	local int Delta;
+	local int Out;
+
+	AS = Utils.RotU2S(A);
+	BS = Utils.RotU2S(B);
+	Delta = ((BS - AS + 32768) & 65535) - 32768;
+	Out = AS + int(float(Delta) * Alpha);
+	return Utils.RotS2U(Out);
+}
+
+simulated function rotator IGPlus_SnapInterp_LerpRot(rotator A, rotator B, float Alpha) {
+	local rotator R;
+	R.Yaw = IGPlus_SnapInterp_LerpAxis(A.Yaw, B.Yaw, Alpha);
+	R.Pitch = IGPlus_SnapInterp_LerpAxis(A.Pitch, B.Pitch, Alpha);
+	R.Roll = 0;
+	return R;
+}
+
+simulated function bool IGPlus_SnapInterp_Interpolate(float RenderTime, out vector OutPos, out vector OutVel, out rotator OutRot, out byte InterpMode) {
 	local int BufSize;
 	local int Idx, Scans;
 	local IGPlus_InterpSnapshot OlderSnap;
@@ -8909,6 +8936,7 @@ simulated function bool IGPlus_SnapInterp_Interpolate(float RenderTime, out vect
 						}
 
 						OutVel = OlderSnap.Vel + (NewerSnap.Vel - OlderSnap.Vel) * Alpha;
+						OutRot = IGPlus_SnapInterp_LerpRot(OlderSnap.Rot, NewerSnap.Rot, Alpha);
 						InterpMode = 1;
 						return true;
 					}
@@ -8924,6 +8952,8 @@ simulated function bool IGPlus_SnapInterp_Interpolate(float RenderTime, out vect
 					OutPos = OlderSnap.Loc + OlderSnap.Vel * ExtrapolationTime;
 				}
 				OutVel = OlderSnap.Vel;
+				OutRot = OlderSnap.Rot;
+				OutRot.Roll = 0;
 				InterpMode = 2;
 				return true;
 			}
@@ -8944,6 +8974,8 @@ simulated function bool IGPlus_SnapInterp_Interpolate(float RenderTime, out vect
 			OutPos = NewerSnap.Loc;
 		}
 		OutVel = NewerSnap.Vel;
+		OutRot = NewerSnap.Rot;
+		OutRot.Roll = 0;
 		InterpMode = 3;
 		return true;
 	}
@@ -8978,6 +9010,7 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 	local float SnapshotTime;
 	local vector OutPos;
 	local vector OutVel;
+	local rotator OutRot;
 	local vector FloorSnapLoc;
 	local bbPlayer LP;
 	local string TargetName;
@@ -8995,6 +9028,8 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 	local int ModeTotal;
 	local int InterpPct;
 	local int ExtrapPct;
+	local int DebugYaw;
+	local int DebugPitch;
 	local int DebugAgeMs;
 	local int NewestIdx;
 	local IGPlus_InterpSnapshot NewestSnap;
@@ -9028,6 +9063,7 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 		IGPlus_SnapInterp_Push(
 			IGPlus_SnapReplicatedData.Location,
 			IGPlus_SnapReplicatedData.Velocity,
+			IGPlus_SnapReplicatedData.Rotation,
 			SnapshotTime,
 			ArrivalTime,
 			true,
@@ -9041,6 +9077,10 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			bCollideWorld = false;
 			SetLocation(IGPlus_SnapReplicatedData.Location);
 			bCollideWorld = true;
+			OutRot = IGPlus_SnapReplicatedData.Rotation;
+			OutRot.Roll = 0;
+			SetRotation(OutRot);
+			DesiredRotation = OutRot;
 		} else {
 			bCollideWorld = false;
 			SetLocation(IGPlus_LocationOffsetFix_OldLocation);
@@ -9055,10 +9095,12 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 	else
 		RenderTime = Level.TimeSeconds - IGPlus_SnapInterp_InterpDelay;
 
-	if (IGPlus_SnapInterp_Interpolate(RenderTime, OutPos, OutVel, InterpMode)) {
+	if (IGPlus_SnapInterp_Interpolate(RenderTime, OutPos, OutVel, OutRot, InterpMode)) {
 		bCollideWorld = false;
 		SetLocation(OutPos);
 		bCollideWorld = true;
+		SetRotation(OutRot);
+		DesiredRotation = OutRot;
 		Velocity = OutVel;
 		if (InterpMode == 1)
 			IGPlus_SnapInterp_DebugInterpCount += 1;
@@ -9138,6 +9180,9 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 				DebugAgeMs = int((RenderTime - NewestSnap.Time) * 1000.0);
 		}
 
+		DebugYaw = Utils.RotU2S(Rotation.Yaw);
+		DebugPitch = Utils.RotU2S(Rotation.Pitch);
+
 		LP.ClientMessage(
 			"SnapInterp target="$TargetName$
 			" mode="$DebugMode$
@@ -9150,6 +9195,8 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			" extrap="$DebugExtrap$
 			" interpPct="$InterpPct$
 			" extrapPct="$ExtrapPct$
+			" yaw="$DebugYaw$
+			" pitch="$DebugPitch$
 			" clamp="$DebugClamp$
 			" fail="$DebugFail
 		);
