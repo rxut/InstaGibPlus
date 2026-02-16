@@ -3392,6 +3392,9 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 	local float DeltaTime;
 	local float ServerDeltaTime;
 	local float LostTime;
+	local Mover PreReplayMover;
+	local ST_MoverDummy MD;
+	local vector MoverCompensation;
 
 	if (Role < ROLE_Authority) {
 		zzbLogoDone = True;
@@ -3468,11 +3471,26 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 	if (LostTime > 0.001)
 		SimMoveAutonomous(LostTime);
 
+	PreReplayMover = Mover(Base);
+
 	while(Old.Next != none) {
 		PlayBackInput(Old, Old.Next);
 		if (bTraceInput && IGPlus_InputLogFile != none)
 			IGPlus_InputLogFile.LogInput(Old.Next);
 		Old = Old.Next;
+	}
+
+	// Compensate mover position desync: the server's mover is further along
+	// than where the client saw it when they jumped. Adjust the player's
+	// position to match the trajectory the client actually experienced.
+	if (PreReplayMover != None && Mover(Base) != PreReplayMover && PlayerReplicationInfo != None) {
+		MD = zzUTPure.FindMoverDummy(PreReplayMover);
+		if (MD != None) {
+			MoverCompensation = PreReplayMover.Location
+				- MD.GetHistoricalLocation(Level.TimeSeconds - PlayerReplicationInfo.Ping * 0.0005 * Level.TimeDilation);
+			if (VSize(MoverCompensation) > 0.1)
+				SetLocation(Location - MoverCompensation);
+		}
 	}
 
 	// clean up
@@ -4273,8 +4291,6 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	}
 
 	ViewRotation = I.SavedViewRotation;
-
-	// 
 
 	IGPlus_TPFix_LastTouched = none;
 	HandleWalking();
