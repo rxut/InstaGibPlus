@@ -4,6 +4,7 @@ var vector Loc;
 var vector Vel;
 var vector RelLoc;
 var vector MoverLoc;
+var rotator Rot;
 var float  Time;
 var bool   bBasedOnMover;
 var Actor  BaseMover;
