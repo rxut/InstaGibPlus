@@ -1991,6 +1991,7 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 {
 	local Decoration Carried;
 	local vector OldLoc;
+	local bool bOldCollWorld, bOldActCol, bOldBlockAct, bOldBlockPlayer;
 
 	if (bDeleteMe)
 		return;
@@ -2034,7 +2035,15 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 	OldLoc = Location;
 
 	bCanTeleport = false;
+	bOldActCol = bCollideActors;
+	bOldBlockAct = bBlockActors;
+	bOldBlockPlayer = bBlockPlayers;
+	bOldCollWorld = bCollideWorld;
+	bCollideWorld = false;
+	SetCollision(false, false, false);
 	SetLocation(NewLoc);
+	bCollideWorld = bOldCollWorld;
+	SetCollision(bOldActCol, bOldBlockAct, bOldBlockPlayer);
 	bCanTeleport = true;
 	Velocity = NewVel;
 
