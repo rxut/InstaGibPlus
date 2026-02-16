@@ -345,6 +345,7 @@ var IGPlus_FlagSprite IGPlus_TeamFlagSprite[4];
 
 var bool IGPlus_EnableDualButtonSwitch;
 var bool IGPlus_UseFastWeaponSwitch;
+var bool IGPlus_DeferredWeaponSwitch;
 
 var bool IGPlus_EnableInputReplication;
 var bool IGPlus_PressedJumpSave;
@@ -2482,6 +2483,12 @@ function ClearLastServerMoveParams() {
 }
 
 function IGPlus_ProcessRemoteMovement() {
+	if (IGPlus_DeferredWeaponSwitch) {
+		if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
+			ChangedWeapon();
+		IGPlus_DeferredWeaponSwitch = false;
+	}
+
 	IGPlus_ApplyAllServerMoves();
 
 	if (IGPlus_EnableInputReplication)
@@ -2743,8 +2750,12 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		}
 	}
 
-	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
-		ChangedWeapon();
+	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None) {
+		if (zzUTPure.Settings.bEnableLoosePositionCheck)
+			IGPlus_DeferredWeaponSwitch = true;
+		else
+			ChangedWeapon();
+	}
 
 	CurrentTimeStamp = SM.TimeStamp;
 	ServerTimeStamp = Level.TimeSeconds;
