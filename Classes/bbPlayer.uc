@@ -307,11 +307,23 @@ struct IGPlus_WarpFixClient {
 	var float TimeStamp;
 };
 
+struct IGPlus_SnapData {
+	var vector Location;
+	var vector Velocity;
+	var vector MoverLocation;
+	var float ServerTime;
+	var int Counter;
+	var bool bHardSnap;
+	var bool bBasedOnMover;
+	var Actor BaseMover;
+};
+
 var bool IGPlus_EnableWarpFix;
 var bool IGPlus_WarpFixUpdate;
 var float IGPlus_WarpFixDelay;
 var IGPlus_WarpFix IGPlus_WarpFixData;
 var IGPlus_WarpFixClient IGPlus_WarpFixClientData;
+var IGPlus_SnapData IGPlus_SnapReplicatedData;
 
 const IGPlus_LocationOffsetFix_DummyVel = vect(4.56,4.56,0.0);
 
@@ -338,6 +350,30 @@ var IGPlus_CollisionDummy IGPlus_LocationOffsetFix_DummyList;
 var float LocalExtrapolationOwnPingFactor;
 var float LocalExtrapolationOtherPingFactor;
 
+var IGPlus_InterpSnapshot IGPlus_SnapInterp_Data[16];
+var int   IGPlus_SnapInterp_DataIndex;
+var int   IGPlus_SnapInterp_Count;
+var float IGPlus_SnapInterp_InterpDelay;
+var float IGPlus_SnapInterp_LastArrivalTime;
+var float IGPlus_SnapInterp_MeanInterval;
+var float IGPlus_SnapInterp_JitterEstimate;
+var bool  IGPlus_SnapInterp_Debug;
+var float IGPlus_SnapInterp_DebugNextTime;
+var int   IGPlus_SnapInterp_LastCounter;
+var float IGPlus_SnapInterp_ServerNextTime;
+var vector IGPlus_SnapInterp_ServerLastLocation;
+var float IGPlus_SnapInterp_ServerLastTime;
+var bool  IGPlus_SnapInterp_ServerHasLast;
+var float IGPlus_SnapInterp_ServerTimeOffset;
+var bool  IGPlus_SnapInterp_HasClockSync;
+var bool  IGPlus_SnapInterp_EnabledLast;
+var int   IGPlus_SnapInterp_DebugHardSnapCount;
+var int   IGPlus_SnapInterp_DebugInterpCount;
+var int   IGPlus_SnapInterp_DebugClampCount;
+var int   IGPlus_SnapInterp_DebugFailCount;
+var int   IGPlus_SnapInterp_DebugExtrapolationCount;
+var int   IGPlus_SnapInterp_DebugSnapCount;
+
 var bool IGPlus_AlwaysRenderFlagCarrier;
 var bool IGPlus_AlwaysRenderDroppedFlags;
 var bool IGPlus_InitFlagSprites;
@@ -348,6 +384,7 @@ var bool IGPlus_UseFastWeaponSwitch;
 var bool IGPlus_DeferredWeaponSwitch;
 
 var bool IGPlus_EnableInputReplication;
+var bool IGPlus_EnableSnapshotInterpolation;
 var bool IGPlus_PressedJumpSave;
 var IGPlus_SavedInputChain IGPlus_SavedInputChain;
 var IGPlus_DataBuffer IGPlus_InputReplicationBuffer;
@@ -429,7 +466,9 @@ replication
 	unreliable if ( Role == ROLE_Authority )
 		DuckFractionRepl,
 		IGPlus_AdditionalReplicationInfo,
-		IGPlus_WarpFixData;
+		IGPlus_WarpFixData,
+		IGPlus_EnableSnapshotInterpolation,
+		IGPlus_SnapReplicatedData;
 
 	unreliable if ( bDrawDebugData && RemoteRole == ROLE_AutonomousProxy )
 		clientForcedPosition,
@@ -519,6 +558,8 @@ replication
 		IGPlus_ForcedSettingsOK,
 		IGPlus_ForcedSettings_InitOK,
 		PrintWeaponState,
+		IGPlus_ServerNetcodeHelp,
+		IGPlus_ServerSetNetcodeSetting,
 		ServerSetDodgeSettings,
 		xxExplodeOther,
 		xxNN_AltFire,
@@ -679,6 +720,8 @@ simulated event Destroyed() {
 	if (Role == ROLE_SimulatedProxy && IGPlus_LocationOffsetFix_CollisionDummy != none) {
 		IGPlus_LocationOffsetFix_DestroyCollisionDummy();
 	}
+	if (Role == ROLE_SimulatedProxy)
+		IGPlus_SnapInterp_Reset();
 
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.StopLog();
@@ -1212,6 +1255,7 @@ event Possess()
 		IGPlus_AlwaysRenderDroppedFlags = zzUTPure.Settings.bAlwaysRenderDroppedFlags;
 		IGPlus_UseFastWeaponSwitch = zzUTPure.Settings.bUseFastWeaponSwitch;
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
+		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
 		bEnableDamageDebugMode = zzUTPure.Settings.bEnableDamageDebugMode;
 		bEnableDamageDebugConsoleMessages = zzUTPure.Settings.bEnableDamageDebugConsoleMessages;
@@ -6373,14 +6417,73 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 }
 
 event ServerTick(float DeltaTime) {
+	local bool bSendSnapshot;
+	local bool bHardSnap;
+	local bool bOnMover;
+	local float SnapshotDeltaTime;
+	local float SnapshotSendHz;
+	local float SnapshotInterval;
+
 	AverageServerDeltaTime = (AverageServerDeltaTime*99 + DeltaTime) * 0.01;
 	IGPlus_ProcessRemoteMovement();
 	xxRememberPosition();
 
-	if (IGPlus_WarpFixUpdate && IGPlus_EnableWarpFix) {
-		IGPlus_WarpFixData.OldLocation = Location;
-		IGPlus_WarpFixData.Counter += 1;
+	if (IGPlus_EnableSnapshotInterpolation) {
+		SnapshotSendHz = 30.0;
+		if (zzUTPure != None && zzUTPure.Settings.SnapshotInterpSendHz > 0.0)
+			SnapshotSendHz = zzUTPure.Settings.SnapshotInterpSendHz;
+		SnapshotInterval = 1.0 / FMax(SnapshotSendHz, 1.0);
+
+		if (IGPlus_SnapInterp_ServerNextTime <= 0)
+			IGPlus_SnapInterp_ServerNextTime = Level.TimeSeconds;
+
+		bSendSnapshot = Level.TimeSeconds >= IGPlus_SnapInterp_ServerNextTime;
+		if (bSendSnapshot) {
+			bHardSnap = false;
+			if (IGPlus_SnapInterp_ServerHasLast) {
+				SnapshotDeltaTime = FMax(Level.TimeSeconds - IGPlus_SnapInterp_ServerLastTime, 0.016);
+				if (VSize(Location - IGPlus_SnapInterp_ServerLastLocation) > 3000.0 * SnapshotDeltaTime)
+					bHardSnap = true;
+			} else {
+				bHardSnap = true;
+			}
+
+			bOnMover = Mover(Base) != none;
+
+			IGPlus_SnapReplicatedData.Location = Location;
+			IGPlus_SnapReplicatedData.Velocity = Velocity;
+			IGPlus_SnapReplicatedData.ServerTime = Level.TimeSeconds;
+			IGPlus_SnapReplicatedData.Counter += 1;
+			IGPlus_SnapReplicatedData.bHardSnap = bHardSnap;
+			IGPlus_SnapReplicatedData.bBasedOnMover = bOnMover;
+			if (bOnMover) {
+				IGPlus_SnapReplicatedData.MoverLocation = Base.Location;
+				IGPlus_SnapReplicatedData.BaseMover = Base;
+			} else {
+				IGPlus_SnapReplicatedData.MoverLocation = vect(0,0,0);
+				IGPlus_SnapReplicatedData.BaseMover = None;
+			}
+
+			IGPlus_SnapInterp_ServerLastLocation = Location;
+			IGPlus_SnapInterp_ServerLastTime = Level.TimeSeconds;
+			IGPlus_SnapInterp_ServerHasLast = true;
+
+			while (IGPlus_SnapInterp_ServerNextTime <= Level.TimeSeconds)
+				IGPlus_SnapInterp_ServerNextTime += SnapshotInterval;
+		}
+
+		// Snapshot interpolation uses a fixed send cadence and does not
+		// depend on per-move WarpFix update flags.
 		IGPlus_WarpFixUpdate = false;
+	} else {
+		IGPlus_SnapInterp_ServerNextTime = 0;
+		IGPlus_SnapInterp_ServerHasLast = false;
+
+		if (IGPlus_WarpFixUpdate && IGPlus_EnableWarpFix) {
+			IGPlus_WarpFixData.OldLocation = Location;
+			IGPlus_WarpFixData.Counter += 1;
+			IGPlus_WarpFixUpdate = false;
+		}
 	}
 
 	if (DelayedNavPoint != none) {
@@ -8148,6 +8251,8 @@ function IGPlus_ApplyWarpFix(PlayerReplicationInfo PRI) {
 		return;
 
 	P = bbPlayer(PRI.Owner);
+	if (P.IGPlus_EnableSnapshotInterpolation)
+		return;
 
 	if (Level.Pauser != "") {
 		P.IGPlus_WarpFixClientData.TimeStamp = Level.TimeSeconds;
@@ -8499,7 +8604,10 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 			if (P == none) continue;
 			if (P.Role != ROLE_SimulatedProxy) continue;
 
-			P.IGPlus_LocationOffsetFix_After(DeltaTime);
+			if (P.IGPlus_EnableSnapshotInterpolation)
+				P.IGPlus_SnapInterp_After(DeltaTime);
+			else
+				P.IGPlus_LocationOffsetFix_After(DeltaTime);
 		}
 	}
 
@@ -8514,8 +8622,16 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 simulated event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
 
-	if (Settings.bEnableLocationOffsetFix || IGPlus_LocationOffsetFix_Moved)
+	if (Role == ROLE_SimulatedProxy && IGPlus_SnapInterp_EnabledLast != IGPlus_EnableSnapshotInterpolation) {
+		IGPlus_SnapInterp_Reset();
+	}
+
+	if (IGPlus_EnableSnapshotInterpolation) {
+		if (IGPlus_LocationOffsetFix_Moved)
+			IGPlus_SnapInterp_After(DeltaTime);
+	} else if (Settings.bEnableLocationOffsetFix || IGPlus_LocationOffsetFix_Moved) {
 		IGPlus_LocationOffsetFix_After(DeltaTime);
+	}
 }
 
 simulated function IGPlus_LocationOffsetFix_Restore() {
@@ -8640,6 +8756,420 @@ simulated function bool IGPlus_LocationOffsetFix_IsOnGround(out vector HitNormal
 		&& (HitNormal.Z >= 0.7);
 }
 
+simulated function Actor IGPlus_SnapInterp_FindNearestMover(vector WorldPos) {
+	local Mover M;
+	local Mover BestMover;
+	local float BestDist;
+	local float Dist;
+
+	BestMover = None;
+	BestDist = 999999.0;
+
+	foreach AllActors(class'Mover', M) {
+		Dist = VSize(M.Location - WorldPos);
+		if (Dist < BestDist) {
+			BestDist = Dist;
+			BestMover = M;
+		}
+	}
+
+	return BestMover;
+}
+
+simulated function IGPlus_SnapInterp_Push(
+	vector Pos,
+	vector Vel,
+	float SnapTime,
+	float ArrivalTime,
+	optional bool bFromServerMoverState,
+	optional bool bBasedOnMover,
+	optional vector BaseMoverLocation,
+	optional Actor BaseMoverActor
+) {
+	local int BufSize;
+	local int PrevIdx;
+	local float Interval;
+	local IGPlus_InterpSnapshot Snap;
+	local IGPlus_InterpSnapshot PrevSnap;
+
+	BufSize = arraycount(IGPlus_SnapInterp_Data);
+
+	if (IGPlus_SnapInterp_Data[IGPlus_SnapInterp_DataIndex] == None)
+		IGPlus_SnapInterp_Data[IGPlus_SnapInterp_DataIndex] = new class'IGPlus_InterpSnapshot';
+
+	Snap = IGPlus_SnapInterp_Data[IGPlus_SnapInterp_DataIndex];
+	Snap.Loc = Pos;
+	Snap.Vel = Vel;
+	Snap.Time = SnapTime;
+	if (bFromServerMoverState) {
+		Snap.bBasedOnMover = bBasedOnMover;
+		if (Snap.bBasedOnMover) {
+			Snap.MoverLoc = BaseMoverLocation;
+			Snap.RelLoc = Pos - BaseMoverLocation;
+			Snap.BaseMover = BaseMoverActor;
+			if (Snap.BaseMover == None) {
+				Snap.bBasedOnMover = false;
+				Snap.RelLoc = vect(0,0,0);
+				Snap.MoverLoc = vect(0,0,0);
+			}
+		} else {
+			Snap.RelLoc = vect(0,0,0);
+			Snap.MoverLoc = vect(0,0,0);
+			Snap.BaseMover = None;
+		}
+	} else {
+		Snap.bBasedOnMover = Mover(Base) != None;
+		if (Snap.bBasedOnMover) {
+			Snap.MoverLoc = Base.Location;
+			Snap.RelLoc = Pos - Base.Location;
+			Snap.BaseMover = Base;
+		} else {
+			Snap.RelLoc = vect(0,0,0);
+			Snap.MoverLoc = vect(0,0,0);
+			Snap.BaseMover = None;
+		}
+	}
+
+	// Teleport detection: if distance to previous snapshot is unreasonably large, reset
+	if (IGPlus_SnapInterp_Count > 0) {
+		PrevIdx = (IGPlus_SnapInterp_DataIndex - 1 + BufSize) % BufSize;
+		PrevSnap = IGPlus_SnapInterp_Data[PrevIdx];
+		if (PrevSnap != None && VSize(Pos - PrevSnap.Loc) > 3000.0 * FMax(SnapTime - PrevSnap.Time, 0.016)) {
+			IGPlus_SnapInterp_Reset();
+			IGPlus_SnapInterp_Data[0] = Snap;
+			IGPlus_SnapInterp_DataIndex = 1 % BufSize;
+			IGPlus_SnapInterp_Count = 1;
+			IGPlus_SnapInterp_LastArrivalTime = ArrivalTime;
+			return;
+		}
+	}
+
+	IGPlus_SnapInterp_DataIndex = (IGPlus_SnapInterp_DataIndex + 1) % BufSize;
+	if (IGPlus_SnapInterp_Count < BufSize)
+		IGPlus_SnapInterp_Count++;
+
+	// Update adaptive interpolation delay
+	if (IGPlus_SnapInterp_LastArrivalTime > 0) {
+		Interval = ArrivalTime - IGPlus_SnapInterp_LastArrivalTime;
+		if (Interval > 0 && Interval < 1.0) {
+			IGPlus_SnapInterp_MeanInterval += 0.1 * (Interval - IGPlus_SnapInterp_MeanInterval);
+			IGPlus_SnapInterp_JitterEstimate += 0.1 * (Abs(Interval - IGPlus_SnapInterp_MeanInterval) - IGPlus_SnapInterp_JitterEstimate);
+			IGPlus_SnapInterp_InterpDelay = FMax(2.0 * IGPlus_SnapInterp_MeanInterval + 2.0 * IGPlus_SnapInterp_JitterEstimate, 0.020);
+			IGPlus_SnapInterp_InterpDelay = FMin(IGPlus_SnapInterp_InterpDelay, 0.200);
+		}
+	}
+	IGPlus_SnapInterp_LastArrivalTime = ArrivalTime;
+}
+
+simulated function bool IGPlus_SnapInterp_Interpolate(float RenderTime, out vector OutPos, out vector OutVel, out byte InterpMode) {
+	local int BufSize;
+	local int Idx, Scans;
+	local IGPlus_InterpSnapshot OlderSnap;
+	local IGPlus_InterpSnapshot NewerSnap;
+	local float TimeDelta, Alpha;
+	local float ExtrapolationTime;
+	local vector MoverOffset;
+
+	InterpMode = 0;
+
+	if (IGPlus_SnapInterp_Count < 1)
+		return false;
+
+	BufSize = arraycount(IGPlus_SnapInterp_Data);
+	Idx = (IGPlus_SnapInterp_DataIndex - 1 + BufSize) % BufSize;
+	NewerSnap = None;
+
+	for (Scans = 0; Scans < IGPlus_SnapInterp_Count; Scans++) {
+		OlderSnap = IGPlus_SnapInterp_Data[Idx];
+
+		if (OlderSnap != None && OlderSnap.Time > 0) {
+			if (OlderSnap.Time <= RenderTime) {
+				if (NewerSnap != None) {
+					TimeDelta = NewerSnap.Time - OlderSnap.Time;
+					if (TimeDelta > 0.001) {
+						Alpha = (RenderTime - OlderSnap.Time) / TimeDelta;
+						if (Alpha > 1.0) Alpha = 1.0;
+
+						// World-space base interpolation
+						OutPos = OlderSnap.Loc + (NewerSnap.Loc - OlderSnap.Loc) * Alpha;
+
+						// Mover compensation: shifts each on-mover endpoint from its
+						// historical server-sampled mover position to the live client
+						// mover position. Alpha-weighting naturally fades the offset
+						// during mount/dismount transitions, avoiding velocity pops.
+						if (OlderSnap.bBasedOnMover && OlderSnap.BaseMover != None) {
+							MoverOffset = OlderSnap.BaseMover.Location - OlderSnap.MoverLoc;
+							if (VSize(MoverOffset) < 256.0)
+								OutPos += MoverOffset * (1.0 - Alpha);
+						}
+						if (NewerSnap.bBasedOnMover && NewerSnap.BaseMover != None) {
+							MoverOffset = NewerSnap.BaseMover.Location - NewerSnap.MoverLoc;
+							if (VSize(MoverOffset) < 256.0)
+								OutPos += MoverOffset * Alpha;
+						}
+
+						OutVel = OlderSnap.Vel + (NewerSnap.Vel - OlderSnap.Vel) * Alpha;
+						InterpMode = 1;
+						return true;
+					}
+				}
+				ExtrapolationTime = FClamp(RenderTime - OlderSnap.Time, 0.0, 0.050);
+				if (OlderSnap.bBasedOnMover && OlderSnap.BaseMover != None) {
+					MoverOffset = OlderSnap.BaseMover.Location - OlderSnap.MoverLoc;
+					if (VSize(MoverOffset) < 256.0)
+						OutPos = OlderSnap.BaseMover.Location + OlderSnap.RelLoc;
+					else
+						OutPos = OlderSnap.Loc + OlderSnap.Vel * ExtrapolationTime;
+				} else {
+					OutPos = OlderSnap.Loc + OlderSnap.Vel * ExtrapolationTime;
+				}
+				OutVel = OlderSnap.Vel;
+				InterpMode = 2;
+				return true;
+			}
+			NewerSnap = OlderSnap;
+		}
+
+		Idx = (Idx - 1 + BufSize) % BufSize;
+	}
+
+	if (NewerSnap != None) {
+		if (NewerSnap.bBasedOnMover && NewerSnap.BaseMover != None) {
+			MoverOffset = NewerSnap.BaseMover.Location - NewerSnap.MoverLoc;
+			if (VSize(MoverOffset) < 256.0)
+				OutPos = NewerSnap.BaseMover.Location + NewerSnap.RelLoc;
+			else
+				OutPos = NewerSnap.Loc;
+		} else {
+			OutPos = NewerSnap.Loc;
+		}
+		OutVel = NewerSnap.Vel;
+		InterpMode = 3;
+		return true;
+	}
+
+	return false;
+}
+
+simulated function IGPlus_SnapInterp_Reset() {
+	local int i;
+
+	for (i = 0; i < arraycount(IGPlus_SnapInterp_Data); i++)
+		IGPlus_SnapInterp_Data[i] = None;
+
+	IGPlus_SnapInterp_DataIndex = 0;
+	IGPlus_SnapInterp_Count = 0;
+	IGPlus_SnapInterp_InterpDelay = 0.050;
+	IGPlus_SnapInterp_LastArrivalTime = 0;
+	IGPlus_SnapInterp_MeanInterval = 0;
+	IGPlus_SnapInterp_JitterEstimate = 0;
+	IGPlus_SnapInterp_LastCounter = 0;
+	IGPlus_SnapInterp_HasClockSync = false;
+	IGPlus_SnapInterp_ServerTimeOffset = 0;
+	IGPlus_SnapInterp_EnabledLast = IGPlus_EnableSnapshotInterpolation;
+}
+
+simulated function IGPlus_SnapInterp_After(float DeltaTime) {
+	local bool bReplicatedLocation;
+	local int RepCounter;
+	local byte InterpMode;
+	local float RenderTime;
+	local float ArrivalTime;
+	local float SnapshotTime;
+	local vector OutPos;
+	local vector OutVel;
+	local vector FloorSnapLoc;
+	local bbPlayer LP;
+	local string TargetName;
+	local string DebugMode;
+	local vector FloorHitLoc;
+	local vector FloorHitNorm;
+	local Actor FloorActor;
+	local vector TraceExtent;
+	local int DebugSnapHz;
+	local int DebugExtrap;
+	local int DebugInterp;
+	local int DebugClamp;
+	local int DebugFail;
+	local int DebugHardSnap;
+	local int ModeTotal;
+	local int InterpPct;
+	local int ExtrapPct;
+	local int DebugAgeMs;
+	local int NewestIdx;
+	local IGPlus_InterpSnapshot NewestSnap;
+
+	if (IGPlus_LocationOffsetFix_Moved == false)
+		return;
+
+	if (IGPlus_LocationOffsetFix_CollisionDummy != none) {
+		IGPlus_LocationOffsetFix_CollisionDummy.bCollideWorld = false;
+		IGPlus_LocationOffsetFix_CollisionDummy.SetCollision(false, false, false);
+	}
+
+	RepCounter = IGPlus_SnapReplicatedData.Counter;
+	bReplicatedLocation = (RepCounter > IGPlus_SnapInterp_LastCounter)
+		|| (IGPlus_SnapInterp_LastCounter == 0 && RepCounter != 0);
+
+	if (bReplicatedLocation) {
+		ArrivalTime = Level.TimeSeconds;
+		// Use arrival time for interpolation to avoid server clock quantization issues.
+		SnapshotTime = ArrivalTime;
+		IGPlus_SnapInterp_HasClockSync = false;
+		IGPlus_SnapInterp_ServerTimeOffset = 0;
+
+		if (IGPlus_SnapReplicatedData.bHardSnap) {
+			IGPlus_SnapInterp_DebugHardSnapCount += 1;
+			IGPlus_SnapInterp_Reset();
+		}
+
+		IGPlus_SnapInterp_LastCounter = RepCounter;
+		IGPlus_SnapInterp_DebugSnapCount += 1;
+		IGPlus_SnapInterp_Push(
+			IGPlus_SnapReplicatedData.Location,
+			IGPlus_SnapReplicatedData.Velocity,
+			SnapshotTime,
+			ArrivalTime,
+			true,
+			IGPlus_SnapReplicatedData.bBasedOnMover,
+			IGPlus_SnapReplicatedData.MoverLocation,
+			IGPlus_SnapReplicatedData.BaseMover);
+	}
+
+	if (IGPlus_SnapInterp_Count < 2) {
+		if (bReplicatedLocation) {
+			bCollideWorld = false;
+			SetLocation(IGPlus_SnapReplicatedData.Location);
+			bCollideWorld = true;
+		} else {
+			bCollideWorld = false;
+			SetLocation(IGPlus_LocationOffsetFix_OldLocation);
+			bCollideWorld = true;
+		}
+		IGPlus_LocationOffsetFix_Moved = false;
+		return;
+	}
+
+	if (IGPlus_SnapInterp_HasClockSync)
+		RenderTime = Level.TimeSeconds - IGPlus_SnapInterp_ServerTimeOffset - IGPlus_SnapInterp_InterpDelay;
+	else
+		RenderTime = Level.TimeSeconds - IGPlus_SnapInterp_InterpDelay;
+
+	if (IGPlus_SnapInterp_Interpolate(RenderTime, OutPos, OutVel, InterpMode)) {
+		bCollideWorld = false;
+		SetLocation(OutPos);
+		bCollideWorld = true;
+		Velocity = OutVel;
+		if (InterpMode == 1)
+			IGPlus_SnapInterp_DebugInterpCount += 1;
+		else if (InterpMode == 2)
+			IGPlus_SnapInterp_DebugExtrapolationCount += 1;
+		else if (InterpMode == 3)
+			IGPlus_SnapInterp_DebugClampCount += 1;
+	} else {
+		bCollideWorld = false;
+		SetLocation(IGPlus_LocationOffsetFix_OldLocation);
+		bCollideWorld = true;
+		IGPlus_SnapInterp_DebugFailCount += 1;
+	}
+
+	// Floor-snap: SetLocation with bCollideWorld=false bypasses UE1 floor tracing.
+	// Use an extent trace so slope/ramp contact uses cylinder geometry and
+	// returns a center position we can snap to directly.
+	// Do not floor-snap while moving upward, otherwise jump ascent can look like
+	// discrete vertical snapping for simulated proxies.
+	if (!bCanFly && !Region.Zone.bWaterZone && Velocity.Z <= 0.0) {
+		TraceExtent.X = CollisionRadius;
+		TraceExtent.Y = CollisionRadius;
+		TraceExtent.Z = CollisionHeight;
+		FloorActor = Trace(FloorHitLoc, FloorHitNorm,
+			Location - vect(0,0,1) * (CollisionHeight + MaxStepHeight + 2),
+			Location + vect(0,0,1) * (MaxStepHeight + 2),
+			false,
+			TraceExtent);
+		if (FloorActor != None && FloorHitNorm.Z >= 0.7 && Mover(FloorActor) == None) {
+			// Preserve interpolated X/Y motion. Only correct Z when the proxy
+			// is slightly below the floor to avoid movement snapping.
+			if (FloorHitLoc.Z > Location.Z + 0.01 && FloorHitLoc.Z - Location.Z <= MaxStepHeight + 2) {
+				FloorSnapLoc = Location;
+				FloorSnapLoc.Z = FloorHitLoc.Z;
+				bCollideWorld = false;
+				SetLocation(FloorSnapLoc);
+				bCollideWorld = true;
+			}
+		}
+	}
+
+	LP = bbPlayer(GetLocalPlayer());
+	if (Level.NetMode == NM_Client &&
+		LP != none &&
+		LP.IGPlus_SnapInterp_Debug &&
+		(LP.ViewTarget == self || LP.ViewTarget == LP || LP.ViewTarget == none) &&
+		Level.TimeSeconds >= LP.IGPlus_SnapInterp_DebugNextTime
+	) {
+		LP.IGPlus_SnapInterp_DebugNextTime = Level.TimeSeconds + 1.0;
+		TargetName = "Unknown";
+		if (PlayerReplicationInfo != none)
+			TargetName = PlayerReplicationInfo.PlayerName;
+		if (LP.ViewTarget == self)
+			DebugMode = "spectate";
+		else
+			DebugMode = "play";
+
+		DebugSnapHz = IGPlus_SnapInterp_DebugSnapCount;
+		DebugExtrap = IGPlus_SnapInterp_DebugExtrapolationCount;
+		DebugInterp = IGPlus_SnapInterp_DebugInterpCount;
+		DebugClamp = IGPlus_SnapInterp_DebugClampCount;
+		DebugFail = IGPlus_SnapInterp_DebugFailCount;
+		DebugHardSnap = IGPlus_SnapInterp_DebugHardSnapCount;
+		ModeTotal = DebugInterp + DebugExtrap;
+		if (ModeTotal > 0) {
+			InterpPct = int(100.0 * float(DebugInterp) / float(ModeTotal));
+			ExtrapPct = int(100.0 * float(DebugExtrap) / float(ModeTotal));
+		} else {
+			InterpPct = 0;
+			ExtrapPct = 0;
+		}
+		DebugAgeMs = 0;
+		if (IGPlus_SnapInterp_Count > 0) {
+			NewestIdx = (IGPlus_SnapInterp_DataIndex - 1 + arraycount(IGPlus_SnapInterp_Data)) % arraycount(IGPlus_SnapInterp_Data);
+			NewestSnap = IGPlus_SnapInterp_Data[NewestIdx];
+			if (NewestSnap != None && NewestSnap.Time > 0)
+				DebugAgeMs = int((RenderTime - NewestSnap.Time) * 1000.0);
+		}
+
+		LP.ClientMessage(
+			"SnapInterp target="$TargetName$
+			" mode="$DebugMode$
+			" count="$IGPlus_SnapInterp_Count$
+			" delayMs="$int(IGPlus_SnapInterp_InterpDelay * 1000.0)$
+			" snapHz="$DebugSnapHz$
+			" ageMs="$DebugAgeMs$
+			" clockOffMs="$int(IGPlus_SnapInterp_ServerTimeOffset * 1000.0)$
+			" hardSnap="$DebugHardSnap$
+			" extrap="$DebugExtrap$
+			" interpPct="$InterpPct$
+			" extrapPct="$ExtrapPct$
+			" clamp="$DebugClamp$
+			" fail="$DebugFail
+		);
+
+		IGPlus_SnapInterp_DebugSnapCount = 0;
+		IGPlus_SnapInterp_DebugExtrapolationCount = 0;
+		IGPlus_SnapInterp_DebugInterpCount = 0;
+		IGPlus_SnapInterp_DebugClampCount = 0;
+		IGPlus_SnapInterp_DebugFailCount = 0;
+		IGPlus_SnapInterp_DebugHardSnapCount = 0;
+	}
+
+	IGPlus_LocationOffsetFix_Moved = false;
+
+	if (IGPlus_LocationOffsetFix_FootstepQueued) {
+		FootStepping();
+		IGPlus_LocationOffsetFix_FootstepQueued = false;
+	}
+}
+
 simulated function bool IGPlus_LocationOffsetFix_IsOnMover() {
 	local Actor HitActor;
 	local vector HitLocation;
@@ -8714,7 +9244,9 @@ function IGPlus_LocationOffsetFix_TickBefore() {
 			if (P.bDeleteMe) continue;
 			if (P.Role != ROLE_SimulatedProxy) continue;
 
-			if (Settings.bEnableLocationOffsetFix)
+			if (P.IGPlus_EnableSnapshotInterpolation)
+				P.IGPlus_LocationOffsetFix_Before();
+			else if (Settings.bEnableLocationOffsetFix)
 				P.IGPlus_LocationOffsetFix_Before();
 			else if (P.IGPlus_LocationOffsetFix_ShouldRunMoverOnly())
 				P.IGPlus_LocationOffsetFix_Before();
@@ -10528,6 +11060,171 @@ function IGPlus_OpenSettingsMenu() {
 
 exec function PrintWeaponState() {
 	if (Weapon != none) ClientMessage(Weapon.Name@Weapon.GetStateName());
+}
+
+exec function ToggleSnapInterpDebug() {
+	IGPlus_SnapInterp_Debug = !IGPlus_SnapInterp_Debug;
+	IGPlus_SnapInterp_DebugNextTime = 0;
+
+	if (IGPlus_SnapInterp_Debug)
+		ClientMessage("SnapInterp debug enabled (shows while playing and spectating)");
+	else
+		ClientMessage("SnapInterp debug disabled");
+}
+
+exec function bEnableLoosePositionCheck(optional string Value) {
+	IGPlus_SetNetcodeSetting("bEnableLoosePositionCheck", Value);
+}
+
+exec function LooseCheckCorrectionFactor(optional string Value) {
+	IGPlus_SetNetcodeSetting("LooseCheckCorrectionFactor", Value);
+}
+
+exec function LooseCheckCorrectionFactorOnMover(optional string Value) {
+	IGPlus_SetNetcodeSetting("LooseCheckCorrectionFactorOnMover", Value);
+}
+
+exec function bEnableInputReplication(optional string Value) {
+	IGPlus_SetNetcodeSetting("bEnableInputReplication", Value);
+}
+
+exec function bEnableSnapshotInterpolation(optional string Value) {
+	IGPlus_SetNetcodeSetting("bEnableSnapshotInterpolation", Value);
+}
+
+exec function SnapshotInterpSendHz(optional string Value) {
+	IGPlus_SetNetcodeSetting("SnapshotInterpSendHz", Value);
+}
+
+exec function SnapshotInterpRewindMs(optional string Value) {
+	IGPlus_SetNetcodeSetting("SnapshotInterpRewindMs", Value);
+}
+
+exec function MaxJitterTime(optional string Value) {
+	IGPlus_SetNetcodeSetting("MaxJitterTime", Value);
+}
+
+exec function bEnableJitterBounding(optional string Value) {
+	IGPlus_SetNetcodeSetting("bEnableJitterBounding", Value);
+}
+
+exec function NetcodeHelp() {
+	if (Role < ROLE_Authority) {
+		IGPlus_ServerNetcodeHelp();
+		return;
+	}
+
+	IGPlus_PrintNetcodeHelp();
+}
+
+function IGPlus_ServerNetcodeHelp() {
+	IGPlus_PrintNetcodeHelp();
+}
+
+function IGPlus_PrintNetcodeHelp() {
+	local ServerSettings S;
+
+	S = None;
+	if (zzUTPure != None)
+		S = zzUTPure.Settings;
+
+	ClientMessage("Netcode settings (use '<Setting> <Value>'):");
+	if (S == None) {
+		ClientMessage("Settings unavailable");
+		return;
+	}
+
+	ClientMessage("bEnableLoosePositionCheck="$S.GetPropertyText("bEnableLoosePositionCheck"));
+	ClientMessage("LooseCheckCorrectionFactor="$S.GetPropertyText("LooseCheckCorrectionFactor"));
+	ClientMessage("LooseCheckCorrectionFactorOnMover="$S.GetPropertyText("LooseCheckCorrectionFactorOnMover"));
+	ClientMessage("bEnableInputReplication="$S.GetPropertyText("bEnableInputReplication"));
+	ClientMessage("bEnableSnapshotInterpolation="$S.GetPropertyText("bEnableSnapshotInterpolation"));
+	ClientMessage("SnapshotInterpSendHz="$S.GetPropertyText("SnapshotInterpSendHz"));
+	ClientMessage("SnapshotInterpRewindMs="$S.GetPropertyText("SnapshotInterpRewindMs"));
+	ClientMessage("MaxJitterTime="$S.GetPropertyText("MaxJitterTime"));
+	ClientMessage("bEnableJitterBounding="$S.GetPropertyText("bEnableJitterBounding"));
+}
+
+exec function IGPlus_SetNetcodeSetting(string Key, optional string Value) {
+	if (Role < ROLE_Authority) {
+		IGPlus_ServerSetNetcodeSetting(Key, Value);
+		return;
+	}
+
+	if (bAdmin == false) {
+		ClientMessage("Admin only");
+		return;
+	}
+
+	IGPlus_ApplyNetcodeSetting(Key, Value);
+}
+
+function IGPlus_ServerSetNetcodeSetting(string Key, string Value) {
+	if (bAdmin == false) {
+		ClientMessage("Admin only");
+		return;
+	}
+
+	IGPlus_ApplyNetcodeSetting(Key, Value);
+}
+
+function string IGPlus_NormalizeNetcodeKey(string Key) {
+	if (Key ~= "bEnableLoosePositionCheck") return "bEnableLoosePositionCheck";
+	if (Key ~= "LooseCheckCorrectionFactor") return "LooseCheckCorrectionFactor";
+	if (Key ~= "LooseCheckCorrectionFactorOnMover") return "LooseCheckCorrectionFactorOnMover";
+	if (Key ~= "bEnableInputReplication") return "bEnableInputReplication";
+	if (Key ~= "bEnableSnapshotInterpolation") return "bEnableSnapshotInterpolation";
+	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
+	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";
+	if (Key ~= "MaxJitterTime") return "MaxJitterTime";
+	if (Key ~= "bEnableJitterBounding") return "bEnableJitterBounding";
+	return "";
+}
+
+function IGPlus_ApplyNetcodeSettingsToPlayers() {
+	local Pawn P;
+	local bbPlayer BP;
+	local bool bOldSnap;
+
+	for (P = Level.PawnList; P != None; P = P.NextPawn) {
+		BP = bbPlayer(P);
+		if (BP == None)
+			continue;
+
+		BP.IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
+		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
+		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
+
+		if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {
+			BP.IGPlus_SnapInterp_ServerNextTime = 0;
+			BP.IGPlus_SnapInterp_ServerHasLast = false;
+		}
+	}
+}
+
+function IGPlus_ApplyNetcodeSetting(string Key, string Value) {
+	local string NormalKey;
+
+	if (zzUTPure == None || zzUTPure.Settings == None) {
+		ClientMessage("No server settings loaded");
+		return;
+	}
+
+	NormalKey = IGPlus_NormalizeNetcodeKey(Key);
+	if (NormalKey == "") {
+		ClientMessage("Unknown netcode setting: " $ Key);
+		return;
+	}
+
+	if (Value == "") {
+		ClientMessage(NormalKey $ "=" $ zzUTPure.Settings.GetPropertyText(NormalKey));
+		return;
+	}
+
+	zzUTPure.Settings.SetPropertyText(NormalKey, Value);
+	zzUTPure.Settings.SaveConfig();
+	IGPlus_ApplyNetcodeSettingsToPlayers();
+	ClientMessage(NormalKey $ "=" $ zzUTPure.Settings.GetPropertyText(NormalKey));
 }
 
 exec function DrawServerLocation() {

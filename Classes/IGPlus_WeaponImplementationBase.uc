@@ -17,6 +17,22 @@ var int ExplosionWriteIndex;
 
 var float CachedTickRate;
 
+function float IGPlus_GetSnapshotInterpRewindMs(Pawn Instigator) {
+    local bbPlayer bbP;
+
+    if (Instigator == None)
+        return 0.0;
+
+    bbP = bbPlayer(Instigator);
+    if (bbP == None || bbP.IGPlus_EnableSnapshotInterpolation == false)
+        return 0.0;
+
+    if (bbP.zzUTPure == None)
+        return 0.0;
+
+    return FMax(0.0, bbP.zzUTPure.Settings.SnapshotInterpRewindMs);
+}
+
 function PostBeginPlay() {
 	super.PostBeginPlay();
 
@@ -801,6 +817,7 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
     local float GameDeltaTime;
     local float RealDeltaTime;
     local float SimPing;
+    local float InterpMs;
     local float RealTimeRemaining;
     local float AccumulatedGameTime;
     local int HistoryInterval;
@@ -817,7 +834,8 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
 
     PureRef = bbPlayer(TTarget.Instigator).zzUTPure;
 
-    SimPing = float(Ping);
+    InterpMs = IGPlus_GetSnapshotInterpRewindMs(TTarget.Instigator);
+    SimPing = float(Ping) + InterpMs;
 
     // Cap ping compensation
     if (SimPing > WeaponSettings.PingCompensationMax)
@@ -901,6 +919,7 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
 function SimulateProjectile(Projectile P, int Ping) {
   local float DeltaTime;
   local float SimPing;
+  local float InterpMs;
   local UTPure PureRef;
 
   // Early exit if the projectile is already destroyed
@@ -909,7 +928,8 @@ function SimulateProjectile(Projectile P, int Ping) {
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
-  SimPing = Ping * 0.5;
+  InterpMs = IGPlus_GetSnapshotInterpRewindMs(P.Instigator);
+  SimPing = Ping * 0.5 + InterpMs;
 
   // Cap ping compensation
   if (SimPing > WeaponSettings.PingCompensationMax)
@@ -940,6 +960,7 @@ function SimulateProjectile(Projectile P, int Ping) {
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping) {
   local float DeltaTime;
   local float SimPing;
+  local float InterpMs;
   local UTPure PureRef;
   local int i;
   local bool bAnyAlive;
@@ -949,7 +970,8 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
     
   PureRef = bbPlayer(Projectiles[0].Instigator).zzUTPure;
 
-  SimPing = Ping * 0.5; // Simulate only 1-way latency
+  InterpMs = IGPlus_GetSnapshotInterpRewindMs(Projectiles[0].Instigator);
+  SimPing = Ping * 0.5 + InterpMs; // Simulate only 1-way latency
   
   if (SimPing > WeaponSettings.PingCompensationMax)
     SimPing = WeaponSettings.PingCompensationMax;
@@ -1074,6 +1096,7 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	local bbPlayer bbP;
 	local int Ping;
 	local UTPure PureRef;
+	local float EffectivePing;
 
 	Ping = 0;
 
@@ -1082,10 +1105,13 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 
 		if (bbP != None) {
 			PureRef = bbP.zzUTPure;
-			Ping = bbP.PingAverage;
+			EffectivePing = float(bbP.PingAverage) + IGPlus_GetSnapshotInterpRewindMs(PawnOwner);
 
-			if (Ping > WSettingsRepl.PingCompensationMax)
-				Ping = WSettingsRepl.PingCompensationMax;
+			if (EffectivePing > WSettingsRepl.PingCompensationMax)
+				EffectivePing = WSettingsRepl.PingCompensationMax;
+			if (EffectivePing < 0.0)
+				EffectivePing = 0.0;
+			Ping = int(EffectivePing);
 		}
 
 		bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
