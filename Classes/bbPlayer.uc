@@ -86,22 +86,6 @@ var float NextRealCAPTime;
 var decoration carriedFlag;
 var WeaponSettingsRepl WSettings;
 
-const IGPLUS_MOVER_EXIT_GRACE_BASE = 0.10;
-const IGPLUS_MOVER_EXIT_GRACE_MIN = 0.16;
-const IGPLUS_MOVER_EXIT_GRACE_MAX = 0.35;
-const IGPLUS_MOVER_GRACE_MEDIUM_UNITS = 80.0;
-const IGPLUS_MOVER_GRACE_HARD_UNITS = 120.0;
-const IGPLUS_MOVER_GRACE_ADAPT_SCALE = 0.20;
-const IGPLUS_MOVER_GRACE_ADAPT_MAX = 20.0;
-const IGPLUS_MOVER_GRACE_DEBOUNCE = 3;
-
-var float IGPlus_MoverExitGraceUntil;
-var bool IGPlus_WasOnMover;
-var int IGPlus_MoverExitGraceDebounceCount;
-var float IGPlus_MoverExitGraceMediumErrorSq;
-var float IGPlus_MoverExitGraceHardErrorSq;
-
-
 // HUD stuff
 var Mutator	zzHudMutes[50];		// Accepted Hud Mutators
 var Mutator	zzWaitMutes[50];	// Hud Mutes waiting to be accepted
@@ -2052,7 +2036,8 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 {
 	local Decoration Carried;
 	local vector OldLoc;
-	local bool bOldCollWorld, bOldActCol, bOldBlockAct, bOldBlockPlayer;
+	local bool bOldCollWorld;
+	local bool bOldActCol, bOldBlockAct, bOldBlockPlayer;
 
 	if (bDeleteMe)
 		return;
@@ -2941,60 +2926,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_WantCAP = IGPlus_IsCAPNecessary();
 }
 
-function float IGPlus_GetHalfPingSeconds() {
-	// Prefer our smoothed ping estimate for stable mover-exit behavior.
-	if (PingAverage > 0)
-		return PingAverage * 0.0005 * Level.TimeDilation;
-
-	if (PlayerReplicationInfo != None)
-		return PlayerReplicationInfo.Ping * 0.0005 * Level.TimeDilation;
-
-	return 0.0;
-}
-
-function float IGPlus_GetMoverExitGraceDuration() {
-	return FClamp(
-		(IGPLUS_MOVER_EXIT_GRACE_BASE * Level.TimeDilation) + IGPlus_GetHalfPingSeconds(),
-		IGPLUS_MOVER_EXIT_GRACE_MIN * Level.TimeDilation,
-		IGPLUS_MOVER_EXIT_GRACE_MAX * Level.TimeDilation
-	);
-}
-
-function vector IGPlus_GetMoverAdjustedClientLocation(vector ClientLoc, Actor ClientBase) {
-	local ST_MoverDummy MD;
-	local float TargetTimeStamp;
-	local vector BaseLoc;
-
-	BaseLoc = vect(0,0,0);
-
-	if (ClientBase == None)
-		return ClientLoc;
-
-	if (zzUTPure != None && Mover(ClientBase) != None) {
-		MD = zzUTPure.FindMoverDummy(Mover(ClientBase));
-		if (MD != None) {
-			TargetTimeStamp = Level.TimeSeconds - IGPlus_GetHalfPingSeconds();
-			if (TargetTimeStamp < 0)
-				TargetTimeStamp = 0;
-			BaseLoc = MD.GetHistoricalLocation(TargetTimeStamp);
-		} else {
-			BaseLoc = ClientBase.Location;
-		}
-	} else {
-		BaseLoc = ClientBase.Location;
-	}
-
-	return ClientLoc + BaseLoc;
-}
-
-simulated function IGPlus_ResetMoverGraceState() {
-	IGPlus_MoverExitGraceUntil = 0;
-	IGPlus_WasOnMover = false;
-	IGPlus_MoverExitGraceDebounceCount = 0;
-	IGPlus_MoverExitGraceMediumErrorSq = 0;
-	IGPlus_MoverExitGraceHardErrorSq = 0;
-}
-
 function IGPlus_CheckClientError() {
 	local vector ClientLoc;
 	local vector ClientVel;
@@ -3005,16 +2936,6 @@ function IGPlus_CheckClientError() {
 	local float ClientLocError;
 	local float MaxLocError;
 	local bool bForceUpdate;
-	local bool bClientOnMover;
-	local bool bGraceActive;
-	local Actor EffectiveServerBase;
-	local float GraceMediumError;
-	local float GraceHardError;
-	local float GraceAdaptiveMargin;
-	local float HalfPingSeconds;
-	local float ClientSpeed;
-	local int GraceDebounceThreshold;
-	local bool bGraceForceCAP;
 
 	if (bHaveReceivedServerMove == false)
 		return;
@@ -3023,10 +2944,8 @@ function IGPlus_CheckClientError() {
 	ClientVel = LastServerMoveParams.Velocity;
 	ClientPhysics = LastServerMoveParams.Physics;
 	ClientLocAbs = ClientLoc;
-	bClientOnMover = Mover(Base) != None;
-	EffectiveServerBase = LastServerMoveParams.Base;
-
-	ClientLocAbs = IGPlus_GetMoverAdjustedClientLocation(ClientLoc, EffectiveServerBase);
+	if (LastServerMoveParams.Base != none)
+		ClientLocAbs += LastServerMoveParams.Base.Location;
 	ClientTlocCounter = LastServerMoveParams.TlocCounter;
 
 	LocDelta = Location - ClientLocAbs;
@@ -3036,57 +2955,12 @@ function IGPlus_CheckClientError() {
 	// Calculate how far off we allow the client to be from the predicted position
 	MaxLocError = 3.0;
 
-	if (IGPlus_WasOnMover && !bClientOnMover && Physics == PHYS_Falling) {
-		// Keep a short post-mover grace to absorb lift-exit desync spikes.
-		IGPlus_MoverExitGraceUntil = Level.TimeSeconds + IGPlus_GetMoverExitGraceDuration();
-		IGPlus_MoverExitGraceDebounceCount = 0;
-		ClientSpeed = VSize(ClientVel);
-		HalfPingSeconds = IGPlus_GetHalfPingSeconds();
-
-		// Lock thresholds for this grace window to avoid per-tick jitter in decisions.
-		GraceAdaptiveMargin = FClamp(ClientSpeed * HalfPingSeconds * IGPLUS_MOVER_GRACE_ADAPT_SCALE, 0.0, IGPLUS_MOVER_GRACE_ADAPT_MAX);
-		GraceMediumError = IGPLUS_MOVER_GRACE_MEDIUM_UNITS + GraceAdaptiveMargin;
-		GraceHardError = IGPLUS_MOVER_GRACE_HARD_UNITS + GraceAdaptiveMargin;
-		IGPlus_MoverExitGraceMediumErrorSq = GraceMediumError * GraceMediumError;
-		IGPlus_MoverExitGraceHardErrorSq = GraceHardError * GraceHardError;
-	}
-
-	bGraceActive = Level.TimeSeconds < IGPlus_MoverExitGraceUntil;
-	if (bGraceActive) {
-		GraceDebounceThreshold = IGPLUS_MOVER_GRACE_DEBOUNCE;
-		bGraceForceCAP = false;
-
-		if (ClientLocError <= IGPlus_MoverExitGraceMediumErrorSq) {
-			IGPlus_MoverExitGraceDebounceCount = 0;
-		} else if (ClientLocError <= IGPlus_MoverExitGraceHardErrorSq) {
-			IGPlus_MoverExitGraceDebounceCount++;
-			if (IGPlus_MoverExitGraceDebounceCount >= GraceDebounceThreshold) {
-				bGraceForceCAP = true;
-				IGPlus_MoverExitGraceDebounceCount = 0;
-			}
-		} else {
-			bGraceForceCAP = true;
-			IGPlus_MoverExitGraceDebounceCount = 0;
-		}
-
-		if (!bGraceForceCAP) {
-			clientLastUpdateTime = ServerTimeStamp;
-			ClearLastServerMoveParams();
-			IGPlus_WasOnMover = bClientOnMover;
-			return;
-		}
-	} else {
-		IGPlus_MoverExitGraceDebounceCount = 0;
-	}
-
 	clientLastUpdateTime = ServerTimeStamp;
 	ClearLastServerMoveParams();
 
 	bForceUpdate = zzbForceUpdate || (zzForceUpdateUntil >= ServerTimeStamp) ||
 		(ClientLocError > MaxLocError && ServerTimeStamp >= NextRealCAPTime) ||
 		(ClientTlocCounter != TlocCounter && IGPlus_NotifiedTranslocate == false);
-
-	IGPlus_WasOnMover = bClientOnMover;
 
 	debugClientForceUpdate = bForceUpdate;
 
@@ -3119,6 +2993,8 @@ function bool IGPlus_IsCAPNecessary() {
 	local bool bCanTraceNewLoc;
 	local bool bMovedToNewLoc;
 	local bool bMoverLooseCheckContext;
+	local bool bAppliedQueuedMomentum;
+	local bool bPreserveServerVelocity;
 	local Decoration Carried;
 	local vector OldLoc;
 	local float LooseCheckCorrectionFactor;
@@ -3139,10 +3015,12 @@ function bool IGPlus_IsCAPNecessary() {
 	debugClientLocError = ClientLocError;
 
 	// Apply momentum that the client never got around to
+	bAppliedQueuedMomentum = false;
 	while(LastAddVelocityAppliedIndex != LastAddVelocityIndex && AddVelocityCalls[LastAddVelocityAppliedIndex].TimeStamp < ServerTimeStamp) {
 		IGPlus_ApplyMomentum(AddVelocityCalls[LastAddVelocityAppliedIndex].Momentum);
 		AddVelocityCalls[LastAddVelocityAppliedIndex].Momentum = vect(0,0,0);
 		zzbForceUpdate = true;
+		bAppliedQueuedMomentum = true;
 		LastAddVelocityAppliedIndex = (LastAddVelocityAppliedIndex+1) & 0xF;
 	}
 
@@ -3211,12 +3089,15 @@ function bool IGPlus_IsCAPNecessary() {
 	if (LooseCheckCorrectionFactor < 1.0)
 		ClientLocAbs = Location + (ClientLocAbs - Location) * LooseCheckCorrectionFactor;
 
+	// Keep server-side knockback velocity authoritative for a short window.
+	bPreserveServerVelocity = bAppliedQueuedMomentum || (zzIgnoreUpdateUntil >= ServerTimeStamp);
+
 	bCanTraceNewLoc = FastTrace(ClientLocAbs);
 	if (bCanTraceNewLoc) {
 		clientForcedPosition = ClientLocAbs;
 		zzLastClientErr = 0;
 		bMovedToNewLoc = xxNewMoveSmooth(ClientLocAbs);
-		if (bMovedToNewLoc && ClientPhysics == Physics)
+		if (bMovedToNewLoc && ClientPhysics == Physics && !bPreserveServerVelocity)
 			Velocity = ClientVel;
 	}
 	if (bCanTraceNewLoc == false) {
@@ -3224,7 +3105,7 @@ function bool IGPlus_IsCAPNecessary() {
 		OldLoc = Location;
 
 		bCanTeleport = false;
-		if (SetLocation(ClientLocAbs) && ClientPhysics == Physics)
+		if (SetLocation(ClientLocAbs) && ClientPhysics == Physics && !bPreserveServerVelocity)
 			Velocity = ClientVel;
 		bCanTeleport = true;
 
@@ -3583,9 +3464,6 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 	local float DeltaTime;
 	local float ServerDeltaTime;
 	local float LostTime;
-	local Mover PreReplayMover;
-	local ST_MoverDummy MD;
-	local vector MoverCompensation;
 
 	if (Role < ROLE_Authority) {
 		zzbLogoDone = True;
@@ -3662,26 +3540,11 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 	if (LostTime > 0.001)
 		SimMoveAutonomous(LostTime);
 
-	PreReplayMover = Mover(Base);
-
 	while(Old.Next != none) {
 		PlayBackInput(Old, Old.Next);
 		if (bTraceInput && IGPlus_InputLogFile != none)
 			IGPlus_InputLogFile.LogInput(Old.Next);
 		Old = Old.Next;
-	}
-
-	// Compensate mover position desync: the server's mover is further along
-	// than where the client saw it when they jumped. Adjust the player's
-	// position to match the trajectory the client actually experienced.
-	if (PreReplayMover != None && Mover(Base) != PreReplayMover && PlayerReplicationInfo != None) {
-		MD = zzUTPure.FindMoverDummy(PreReplayMover);
-		if (MD != None) {
-			MoverCompensation = PreReplayMover.Location
-				- MD.GetHistoricalLocation(Level.TimeSeconds - PlayerReplicationInfo.Ping * 0.0005 * Level.TimeDilation);
-			if (VSize(MoverCompensation) > 0.1)
-				SetLocation(Location - MoverCompensation);
-		}
 	}
 
 	// clean up
@@ -6767,7 +6630,6 @@ state FeigningDeath
 	{
 		zzbForceUpdate = true;
 		zzIgnoreUpdateUntil = 0;
-		IGPlus_ResetMoverGraceState();
 		Super.EndState();
 	}
 }
@@ -7394,7 +7256,6 @@ function xxServerSetReadyToPlay()
 	{
 		zzbForceUpdate = true;
 		zzIgnoreUpdateUntil = 0;
-		IGPlus_ResetMoverGraceState();
 
 		PlayerRestartState = 'PlayerWarmup';
 		GotoState('PlayerWarmup');
@@ -7694,7 +7555,6 @@ state Dying
 
 		bJumpStatus = false;
 		zzIgnoreUpdateUntil = 0;
-		IGPlus_ResetMoverGraceState();
 		if (zzClientTTarget != None)
 			zzClientTTarget.Destroy();
 
