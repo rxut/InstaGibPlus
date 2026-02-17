@@ -311,7 +311,6 @@ struct IGPlus_SnapData {
 	var vector Velocity;
 	var rotator Rotation;
 	var vector MoverLocation;
-	var float ServerTime;
 	var int Counter;
 	var bool bHardSnap;
 	var bool bBasedOnMover;
@@ -364,8 +363,6 @@ var float IGPlus_SnapInterp_ServerNextTime;
 var vector IGPlus_SnapInterp_ServerLastLocation;
 var float IGPlus_SnapInterp_ServerLastTime;
 var bool  IGPlus_SnapInterp_ServerHasLast;
-var float IGPlus_SnapInterp_ServerTimeOffset;
-var bool  IGPlus_SnapInterp_HasClockSync;
 var bool  IGPlus_SnapInterp_EnabledLast;
 var int   IGPlus_SnapInterp_DebugHardSnapCount;
 var int   IGPlus_SnapInterp_DebugInterpCount;
@@ -2529,7 +2526,12 @@ function ClearLastServerMoveParams() {
 
 function IGPlus_ProcessRemoteMovement() {
 	if (IGPlus_DeferredWeaponSwitch) {
-		if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
+		// Deferred fast switch is loose-check-only. If loose check is disabled,
+		// clear any stale deferred switch flag without applying it.
+		if (zzUTPure != None &&
+			zzUTPure.Settings.bEnableLoosePositionCheck &&
+			IGPlus_UseFastWeaponSwitch &&
+			PendingWeapon != None)
 			ChangedWeapon();
 		IGPlus_DeferredWeaponSwitch = false;
 	}
@@ -2796,7 +2798,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 
 	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None) {
-		if (zzUTPure.Settings.bEnableLoosePositionCheck)
+		// Defer only for loose-check path to avoid changing standard/input behavior.
+		if (zzUTPure != None && zzUTPure.Settings.bEnableLoosePositionCheck)
 			IGPlus_DeferredWeaponSwitch = true;
 		else
 			ChangedWeapon();
@@ -6444,7 +6447,6 @@ event ServerTick(float DeltaTime) {
 			IGPlus_SnapReplicatedData.Velocity = Velocity;
 			IGPlus_SnapReplicatedData.Rotation = Rotation;
 			IGPlus_SnapReplicatedData.Rotation.Roll = 0;
-			IGPlus_SnapReplicatedData.ServerTime = Level.TimeSeconds;
 			IGPlus_SnapReplicatedData.Counter += 1;
 			IGPlus_SnapReplicatedData.bHardSnap = bHardSnap;
 			IGPlus_SnapReplicatedData.bBasedOnMover = bOnMover;
@@ -8231,6 +8233,15 @@ function ApplyBrightskins(PlayerReplicationInfo PRI) {
 		P.Weapon.bUnlit = false;
 }
 
+function bool IGPlus_ShouldUseSnapshotInterpForProxy(optional bbPlayer P) {
+	if (P == none)
+		P = self;
+
+	return P != none &&
+		P.Role == ROLE_SimulatedProxy &&
+		P.IGPlus_EnableSnapshotInterpolation;
+}
+
 function IGPlus_ApplyWarpFix(PlayerReplicationInfo PRI) {
 	local bbPlayer P;
 	if (PRI == PlayerReplicationInfo)
@@ -8243,7 +8254,7 @@ function IGPlus_ApplyWarpFix(PlayerReplicationInfo PRI) {
 		return;
 
 	P = bbPlayer(PRI.Owner);
-	if (P.IGPlus_EnableSnapshotInterpolation)
+	if (IGPlus_ShouldUseSnapshotInterpForProxy(P))
 		return;
 
 	if (Level.Pauser != "") {
@@ -8596,7 +8607,7 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 			if (P == none) continue;
 			if (P.Role != ROLE_SimulatedProxy) continue;
 
-			if (P.IGPlus_EnableSnapshotInterpolation)
+			if (IGPlus_ShouldUseSnapshotInterpForProxy(P))
 				P.IGPlus_SnapInterp_After(DeltaTime);
 			else
 				P.IGPlus_LocationOffsetFix_After(DeltaTime);
@@ -8614,11 +8625,12 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 simulated event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
 
+	// Reset on both enable and disable transitions for simulated proxies.
 	if (Role == ROLE_SimulatedProxy && IGPlus_SnapInterp_EnabledLast != IGPlus_EnableSnapshotInterpolation) {
 		IGPlus_SnapInterp_Reset();
 	}
 
-	if (IGPlus_EnableSnapshotInterpolation) {
+	if (IGPlus_ShouldUseSnapshotInterpForProxy()) {
 		if (IGPlus_LocationOffsetFix_Moved)
 			IGPlus_SnapInterp_After(DeltaTime);
 	} else if (Settings.bEnableLocationOffsetFix || IGPlus_LocationOffsetFix_Moved) {
@@ -8746,26 +8758,6 @@ simulated function bool IGPlus_LocationOffsetFix_IsOnGround(out vector HitNormal
 	return (HitActor != none)
 		&& (HitActor == Level || HitActor.IsA('Mover'))
 		&& (HitNormal.Z >= 0.7);
-}
-
-simulated function Actor IGPlus_SnapInterp_FindNearestMover(vector WorldPos) {
-	local Mover M;
-	local Mover BestMover;
-	local float BestDist;
-	local float Dist;
-
-	BestMover = None;
-	BestDist = 999999.0;
-
-	foreach AllActors(class'Mover', M) {
-		Dist = VSize(M.Location - WorldPos);
-		if (Dist < BestDist) {
-			BestDist = Dist;
-			BestMover = M;
-		}
-	}
-
-	return BestMover;
 }
 
 simulated function IGPlus_SnapInterp_Push(
@@ -8985,8 +8977,6 @@ simulated function IGPlus_SnapInterp_Reset() {
 	IGPlus_SnapInterp_MeanInterval = 0;
 	IGPlus_SnapInterp_JitterEstimate = 0;
 	IGPlus_SnapInterp_LastCounter = 0;
-	IGPlus_SnapInterp_HasClockSync = false;
-	IGPlus_SnapInterp_ServerTimeOffset = 0;
 	IGPlus_SnapInterp_EnabledLast = IGPlus_EnableSnapshotInterpolation;
 }
 
@@ -9039,8 +9029,6 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 		ArrivalTime = Level.TimeSeconds;
 		// Use arrival time for interpolation to avoid server clock quantization issues.
 		SnapshotTime = ArrivalTime;
-		IGPlus_SnapInterp_HasClockSync = false;
-		IGPlus_SnapInterp_ServerTimeOffset = 0;
 
 		if (IGPlus_SnapReplicatedData.bHardSnap) {
 			IGPlus_SnapInterp_DebugHardSnapCount += 1;
@@ -9079,10 +9067,7 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 		return;
 	}
 
-	if (IGPlus_SnapInterp_HasClockSync)
-		RenderTime = Level.TimeSeconds - IGPlus_SnapInterp_ServerTimeOffset - IGPlus_SnapInterp_InterpDelay;
-	else
-		RenderTime = Level.TimeSeconds - IGPlus_SnapInterp_InterpDelay;
+	RenderTime = Level.TimeSeconds - IGPlus_SnapInterp_InterpDelay;
 
 	if (IGPlus_SnapInterp_Interpolate(RenderTime, OutPos, OutVel, OutRot, InterpMode)) {
 		bCollideWorld = false;
@@ -9179,7 +9164,6 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			" delayMs="$int(IGPlus_SnapInterp_InterpDelay * 1000.0)$
 			" snapHz="$DebugSnapHz$
 			" ageMs="$DebugAgeMs$
-			" clockOffMs="$int(IGPlus_SnapInterp_ServerTimeOffset * 1000.0)$
 			" hardSnap="$DebugHardSnap$
 			" extrap="$DebugExtrap$
 			" interpPct="$InterpPct$
@@ -9280,7 +9264,7 @@ function IGPlus_LocationOffsetFix_TickBefore() {
 			if (P.bDeleteMe) continue;
 			if (P.Role != ROLE_SimulatedProxy) continue;
 
-			if (P.IGPlus_EnableSnapshotInterpolation)
+			if (IGPlus_ShouldUseSnapshotInterpForProxy(P))
 				P.IGPlus_LocationOffsetFix_Before();
 			else if (Settings.bEnableLocationOffsetFix)
 				P.IGPlus_LocationOffsetFix_Before();
