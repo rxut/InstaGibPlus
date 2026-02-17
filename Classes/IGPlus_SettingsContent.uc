@@ -2,6 +2,9 @@ class IGPlus_SettingsContent extends UMenuPageWindow;
 
 var ClientSettings Settings;
 
+var UWindowLabelControl Lbl_Header;
+var localized string HeaderText;
+
 var UWindowLabelControl Lbl_MoreInformation;
 var localized string MoreInformationText;
 
@@ -842,6 +845,10 @@ function Created() {
 	ControlOffset = PaddingY;
 	ControlWidth = WinWidth - 2*PaddingX;
 
+	Lbl_Header = CreateLabel(HeaderText);
+	Lbl_Header.Align = TA_Center;
+	Lbl_Header.SetFont(F_Bold);
+
 	Lbl_MoreInformation = CreateLabel(MoreInformationText);
 	Lbl_MoreInformation.Align = TA_Center;
 	Lbl_MoreInformation.SetFont(F_Bold);
@@ -1290,6 +1297,7 @@ function SaveConfigs() {
 
 defaultproperties
 {
+	HeaderText="Client Settings"
 	MoreInformationText="Right-click on settings to get more information"
 
 	GeneralText="General"
@@ -1596,31 +1604,31 @@ defaultproperties
 
 	ClientSideAnimationsText="Ping Compensation Settings"
 
-		BioUseClientSideAnimationsText="Use Client-Side Animations for Bio Rifle"
+		BioUseClientSideAnimationsText="Client-Side Animations Bio Rifle"
 		BioUseClientSideAnimationsHelp="If checked, use client-side animations for Bio Rifle"
 
-		ShockBeamUseClientSideAnimationsText="Use Client-Side Animations for Shock Beam"
+		ShockBeamUseClientSideAnimationsText="Client-Side Animations Shock Beam"
 		ShockBeamUseClientSideAnimationsHelp="If checked, use client-side animations for Shock Beam"
 
-		ShockProjectileUseClientSideAnimationsText="Use Client-Side Animations for Shock Projectile"
+		ShockProjectileUseClientSideAnimationsText="Client-Side Animations Shock Projectile"
 		ShockProjectileUseClientSideAnimationsHelp="If checked, use client-side animations for Shock Projectile"
 
-		PulseUseClientSideAnimationsText="Use Client-Side Animations for Pulse Rifle"
+		PulseUseClientSideAnimationsText="Client-Side Animations Pulse Rifle"
 		PulseUseClientSideAnimationsHelp="If checked, use client-side animations for Pulse Rifle"
 
-		RipperUseClientSideAnimationsText="Use Client-Side Animations for Ripper"
+		RipperUseClientSideAnimationsText="Client-Side Animations Ripper"
 		RipperUseClientSideAnimationsHelp="If checked, use client-side animations for Ripper"
 
-		FlakUseClientSideAnimationsText="Use Client-Side Animations for Flak Cannon"
+		FlakUseClientSideAnimationsText="Client-Side Animations Flak Cannon"
 		FlakUseClientSideAnimationsHelp="If checked, use client-side animations for Flak Cannon"
 
-		RocketUseClientSideAnimationsText="Use Client-Side Animations for Rocket Launcher"
+		RocketUseClientSideAnimationsText="Client-Side Animations Rocket Launcher"
 		RocketUseClientSideAnimationsHelp="If checked, use client-side animations for Rocket Launcher"
 
-		SniperUseClientSideAnimationsText="Use Client-Side Animations for Sniper Rifle"
+		SniperUseClientSideAnimationsText="Client-Side Animations Sniper Rifle"
 		SniperUseClientSideAnimationsHelp="If checked, use client-side animations for Sniper Rifle"
 
-		TranslocatorUseClientSideAnimationsText="Use Client-Side Animations for Translocator"
+		TranslocatorUseClientSideAnimationsText="Client-Side Animations Translocator"
 		TranslocatorUseClientSideAnimationsHelp="If checked, use client-side animations for Translocator"
 
 	PaddingX=20

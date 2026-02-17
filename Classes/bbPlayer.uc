@@ -295,6 +295,10 @@ var float IGPlus_ZoomToggle_SensitivityFactorY;
 var ReplicationInfo IGPlus_AdditionalReplicationInfo;
 var bool IGPlus_TryOpenSettingsMenu;
 var IGPlus_SettingsDialog IGPlus_SettingsMenu;
+var Object IGPlus_ServerSettingsHelper;
+var ServerSettings IGPlus_ServerSettingsMenuData;
+var bool IGPlus_ServerSettingsMenuLoaded;
+var bool IGPlus_ServerSettingsMenuCanEdit;
 
 struct IGPlus_WarpFix {
 	var vector OldLocation;
@@ -523,6 +527,9 @@ replication
 		IGPlus_ForcedSettingsInit,
 		IGPlus_ForcedSettingRegister,
 		IGPlus_ForcedSettingsApply,
+		IGPlus_ServerSettingsInit,
+		IGPlus_ServerSettingsSet,
+		IGPlus_ServerSettingsDone,
 		IGPlus_ClientReStart,
 		IGPlus_NotifyPlayerRestart,
 		ClientAddMomentum;
@@ -557,6 +564,7 @@ replication
 		PrintWeaponState,
 		IGPlus_ServerNetcodeHelp,
 		IGPlus_ServerSetNetcodeSetting,
+		IGPlus_ServerRequestSettings,
 		ServerSetDodgeSettings,
 		xxExplodeOther,
 		xxNN_AltFire,
@@ -11245,6 +11253,104 @@ function IGPlus_ApplyNetcodeSetting(string Key, string Value) {
 	zzUTPure.Settings.SaveConfig();
 	IGPlus_ApplyNetcodeSettingsToPlayers();
 	ClientMessage(NormalKey $ "=" $ zzUTPure.Settings.GetPropertyText(NormalKey));
+}
+
+simulated function ServerSettings IGPlus_GetServerSettingsObject() {
+	if (IGPlus_ServerSettingsMenuData != none)
+		return IGPlus_ServerSettingsMenuData;
+
+	IGPlus_ServerSettingsHelper = new(none, 'InstaGibPlus') class'Object';
+	IGPlus_ServerSettingsMenuData = new(IGPlus_ServerSettingsHelper, 'IGPlus_ServerSettingsMenu') class'ServerSettings';
+	return IGPlus_ServerSettingsMenuData;
+}
+
+function IGPlus_ServerSettingsInit() {
+	IGPlus_ServerSettingsMenuLoaded = false;
+	IGPlus_ServerSettingsMenuCanEdit = false;
+	IGPlus_ServerSettingsMenuData = none;
+}
+
+function IGPlus_ServerSettingsSet(string Key, string Value) {
+	local ServerSettings S;
+
+	S = IGPlus_GetServerSettingsObject();
+	if (S == none)
+		return;
+
+	S.SetPropertyText(Key, Value);
+}
+
+function IGPlus_ServerSettingsDone(bool bCanEdit) {
+	IGPlus_ServerSettingsMenuLoaded = true;
+	IGPlus_ServerSettingsMenuCanEdit = bCanEdit;
+}
+
+function IGPlus_ServerSendSetting(string Key) {
+	if (zzUTPure == none || zzUTPure.Settings == none)
+		return;
+
+	IGPlus_ServerSettingsSet(Key, zzUTPure.Settings.GetPropertyText(Key));
+}
+
+function IGPlus_ServerRequestSettings() {
+	if (bAdmin == false || zzUTPure == none || zzUTPure.Settings == none) {
+		IGPlus_ServerSettingsInit();
+		IGPlus_ServerSettingsDone(false);
+		return;
+	}
+
+	IGPlus_ServerSettingsInit();
+
+	IGPlus_ServerSendSetting("bAutoPause");
+	IGPlus_ServerSendSetting("PauseTotalTime");
+	IGPlus_ServerSendSetting("PauseTime");
+	IGPlus_ServerSendSetting("bForceDemo");
+	IGPlus_ServerSendSetting("bRestrictTrading");
+	IGPlus_ServerSendSetting("MaxTradeTimeMargin");
+	IGPlus_ServerSendSetting("TradePingMargin");
+	IGPlus_ServerSendSetting("KillCamDelay");
+	IGPlus_ServerSendSetting("KillCamDuration");
+
+	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");
+	IGPlus_ServerSendSetting("bOldLandingMomentum");
+	IGPlus_ServerSendSetting("bEnableSingleButtonDodge");
+	IGPlus_ServerSendSetting("bUseFlipAnimation");
+	IGPlus_ServerSendSetting("bEnableWallDodging");
+	IGPlus_ServerSendSetting("bDodgePreserveZMomentum");
+	IGPlus_ServerSendSetting("MaxMultiDodges");
+	IGPlus_ServerSendSetting("BrightskinMode");
+	IGPlus_ServerSendSetting("PlayerScale");
+	IGPlus_ServerSendSetting("bAlwaysRenderFlagCarrier");
+	IGPlus_ServerSendSetting("bAlwaysRenderDroppedFlags");
+
+	IGPlus_ServerSendSetting("MaxPosError");
+	IGPlus_ServerSendSetting("MaxHitError");
+	IGPlus_ServerSendSetting("MaxJitterTime");
+	IGPlus_ServerSendSetting("WarpFixDelay");
+	IGPlus_ServerSendSetting("FireTimeout");
+	IGPlus_ServerSendSetting("MinNetUpdateRate");
+	IGPlus_ServerSendSetting("MaxNetUpdateRate");
+	IGPlus_ServerSendSetting("bEnableInputReplication");
+	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
+	IGPlus_ServerSendSetting("bEnableServerPacketReordering");
+	IGPlus_ServerSendSetting("bEnableLoosePositionCheck");
+	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
+	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
+	IGPlus_ServerSendSetting("bEnableJitterBounding");
+	IGPlus_ServerSendSetting("LooseCheckCorrectionFactor");
+	IGPlus_ServerSendSetting("LooseCheckCorrectionFactorOnMover");
+	IGPlus_ServerSendSetting("bEnableSnapshotInterpolation");
+	IGPlus_ServerSendSetting("SnapshotInterpSendHz");
+	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");
+	IGPlus_ServerSendSetting("bEnableWarpFix");
+
+	IGPlus_ServerSendSetting("ShowTouchedPackage");
+	IGPlus_ServerSendSetting("HitFeedbackMode");
+	IGPlus_ServerSendSetting("bEnableDamageDebugMode");
+	IGPlus_ServerSendSetting("bEnableDamageDebugConsoleMessages");
+	IGPlus_ServerSendSetting("bEnableHitboxDebugMode");
+
+	IGPlus_ServerSettingsDone(true);
 }
 
 exec function DrawServerLocation() {
