@@ -316,6 +316,9 @@ struct IGPlus_SnapData {
 	var rotator Rotation;
 	var name AnimSequence;
 	var byte AnimFrameByte;
+	var byte AnimIntentBits;
+	var byte AnimDodgeDir;
+	var byte AnimPhysics;
 	var vector MoverLocation;
 	var int Counter;
 	var bool bHardSnap;
@@ -366,6 +369,9 @@ var float IGPlus_SnapInterp_JitterEstimate;
 var bool  IGPlus_SnapInterp_NetDebug;
 var float IGPlus_SnapInterp_NetDebugNextTime;
 var int   IGPlus_SnapInterp_LastCounter;
+var byte  IGPlus_SnapInterp_LastInterpMode;
+var int   IGPlus_SnapInterp_LastHintAgeMs;
+var string IGPlus_SnapInterp_LastHintSource;
 var float IGPlus_SnapInterp_ServerNextTime;
 var vector IGPlus_SnapInterp_ServerLastLocation;
 var float IGPlus_SnapInterp_ServerLastTime;
@@ -6463,6 +6469,9 @@ event ServerTick(float DeltaTime) {
 	local bool bSendSnapshot;
 	local bool bHardSnap;
 	local bool bOnMover;
+	local byte SnapshotIntentBits;
+	local byte SnapshotDodgeDir;
+	local byte SnapshotPhysics;
 	local float SnapshotDeltaTime;
 	local float SnapshotSendHz;
 	local float SnapshotInterval;
@@ -6500,6 +6509,50 @@ event ServerTick(float DeltaTime) {
 					IGPlus_SnapReplicatedData.Rotation.Roll = 0;
 					IGPlus_SnapReplicatedData.AnimSequence = AnimSequence;
 					IGPlus_SnapReplicatedData.AnimFrameByte = byte(FClamp(AnimFrame * 255.0, 0.0, 255.0));
+					SnapshotIntentBits = 0;
+					if (bIsCrouching || DuckFraction > 0.25)
+						SnapshotIntentBits = SnapshotIntentBits | 1;
+					if (bDodging || DodgeDir == DODGE_Active)
+						SnapshotIntentBits = SnapshotIntentBits | 2;
+
+					SnapshotDodgeDir = 0;
+					if (DodgeDir == DODGE_Left)
+						SnapshotDodgeDir = 1;
+					else if (DodgeDir == DODGE_Right)
+						SnapshotDodgeDir = 2;
+					else if (DodgeDir == DODGE_Forward)
+						SnapshotDodgeDir = 3;
+					else if (DodgeDir == DODGE_Back)
+						SnapshotDodgeDir = 4;
+					else if (DodgeDir == DODGE_Active) {
+						if (AnimSequence == 'DodgeL')
+							SnapshotDodgeDir = 1;
+						else if (AnimSequence == 'DodgeR')
+							SnapshotDodgeDir = 2;
+						else if (AnimSequence == 'DodgeB')
+							SnapshotDodgeDir = 4;
+						else if (AnimSequence == 'DodgeF' || AnimSequence == 'Flip')
+							SnapshotDodgeDir = 3;
+					}
+
+					switch (Physics) {
+						case PHYS_None: SnapshotPhysics = 0; break;
+						case PHYS_Walking: SnapshotPhysics = 1; break;
+						case PHYS_Falling: SnapshotPhysics = 2; break;
+						case PHYS_Swimming: SnapshotPhysics = 3; break;
+						case PHYS_Flying: SnapshotPhysics = 4; break;
+						case PHYS_Rotating: SnapshotPhysics = 5; break;
+						case PHYS_Projectile: SnapshotPhysics = 6; break;
+						case PHYS_Rolling: SnapshotPhysics = 7; break;
+						case PHYS_Interpolating: SnapshotPhysics = 8; break;
+						case PHYS_MovingBrush: SnapshotPhysics = 9; break;
+						case PHYS_Spider: SnapshotPhysics = 10; break;
+						case PHYS_Trailer: SnapshotPhysics = 11; break;
+						default: SnapshotPhysics = 0; break;
+					}
+					IGPlus_SnapReplicatedData.AnimIntentBits = SnapshotIntentBits;
+					IGPlus_SnapReplicatedData.AnimDodgeDir = SnapshotDodgeDir;
+					IGPlus_SnapReplicatedData.AnimPhysics = SnapshotPhysics;
 					IGPlus_SnapReplicatedData.Counter += 1;
 					IGPlus_SnapReplicatedData.bHardSnap = bHardSnap;
 					IGPlus_SnapReplicatedData.bBasedOnMover = bOnMover;
@@ -9081,6 +9134,9 @@ simulated function IGPlus_SnapInterp_Push(
 	rotator SnapRot,
 	name SnapAnimSeq,
 	byte SnapAnimFrameByte,
+	byte SnapAnimIntentBits,
+	byte SnapAnimDodgeDir,
+	byte SnapAnimPhysics,
 	float SnapTime,
 	float ArrivalTime,
 	optional bool bFromServerMoverState,
@@ -9108,6 +9164,9 @@ simulated function IGPlus_SnapInterp_Push(
 	Snap.Rot.Roll = 0;
 	Snap.AnimSeq = SnapAnimSeq;
 	Snap.AnimFrameByte = SnapAnimFrameByte;
+	Snap.AnimIntentBits = SnapAnimIntentBits;
+	Snap.AnimDodgeDir = SnapAnimDodgeDir;
+	Snap.AnimPhysics = SnapAnimPhysics;
 	Snap.Time = SnapTime;
 	if (bFromServerMoverState) {
 		Snap.bBasedOnMover = bBasedOnMover;
@@ -9199,6 +9258,10 @@ simulated function bool IGPlus_SnapInterp_Interpolate(
 	out rotator OutRot,
 	out name OutAnimSeq,
 	out byte OutAnimFrameByte,
+	out byte OutAnimIntentBits,
+	out byte OutAnimDodgeDir,
+	out byte OutAnimPhysics,
+	out float OutHintTime,
 	out byte InterpMode
 ) {
 	local int BufSize;
@@ -9212,6 +9275,10 @@ simulated function bool IGPlus_SnapInterp_Interpolate(
 	InterpMode = 0;
 	OutAnimSeq = '';
 	OutAnimFrameByte = 0;
+	OutAnimIntentBits = 0;
+	OutAnimDodgeDir = 0;
+	OutAnimPhysics = 0;
+	OutHintTime = 0.0;
 
 	if (IGPlus_SnapInterp_Count < 1)
 		return false;
@@ -9254,9 +9321,17 @@ simulated function bool IGPlus_SnapInterp_Interpolate(
 							if (Alpha < 0.5) {
 								OutAnimSeq = OlderSnap.AnimSeq;
 								OutAnimFrameByte = OlderSnap.AnimFrameByte;
+								OutAnimIntentBits = OlderSnap.AnimIntentBits;
+								OutAnimDodgeDir = OlderSnap.AnimDodgeDir;
+								OutAnimPhysics = OlderSnap.AnimPhysics;
+								OutHintTime = OlderSnap.Time;
 							} else {
 								OutAnimSeq = NewerSnap.AnimSeq;
 								OutAnimFrameByte = NewerSnap.AnimFrameByte;
+								OutAnimIntentBits = NewerSnap.AnimIntentBits;
+								OutAnimDodgeDir = NewerSnap.AnimDodgeDir;
+								OutAnimPhysics = NewerSnap.AnimPhysics;
+								OutHintTime = NewerSnap.Time;
 							}
 							InterpMode = 1;
 							return true;
@@ -9277,6 +9352,10 @@ simulated function bool IGPlus_SnapInterp_Interpolate(
 					OutRot.Roll = 0;
 					OutAnimSeq = OlderSnap.AnimSeq;
 					OutAnimFrameByte = OlderSnap.AnimFrameByte;
+					OutAnimIntentBits = OlderSnap.AnimIntentBits;
+					OutAnimDodgeDir = OlderSnap.AnimDodgeDir;
+					OutAnimPhysics = OlderSnap.AnimPhysics;
+					OutHintTime = OlderSnap.Time;
 					InterpMode = 2;
 					return true;
 				}
@@ -9301,6 +9380,10 @@ simulated function bool IGPlus_SnapInterp_Interpolate(
 			OutRot.Roll = 0;
 			OutAnimSeq = NewerSnap.AnimSeq;
 			OutAnimFrameByte = NewerSnap.AnimFrameByte;
+			OutAnimIntentBits = NewerSnap.AnimIntentBits;
+			OutAnimDodgeDir = NewerSnap.AnimDodgeDir;
+			OutAnimPhysics = NewerSnap.AnimPhysics;
+			OutHintTime = NewerSnap.Time;
 			InterpMode = 3;
 			return true;
 		}
@@ -9308,31 +9391,185 @@ simulated function bool IGPlus_SnapInterp_Interpolate(
 	return false;
 }
 
-simulated function IGPlus_SnapInterp_ApplyAnimHint(name SnapAnimSeq, byte SnapAnimFrameByte, optional byte InterpMode) {
+simulated function bool IGPlus_SnapInterp_ApplyIntentHint(
+	byte SnapAnimIntentBits,
+	byte SnapAnimDodgeDir,
+	byte SnapAnimPhysics,
+	optional byte InterpMode,
+	optional float SnapshotAgeSec
+) {
+	local name TargetSeq;
+	local float TweenTime;
+	local float MaxIntentAgeSec;
+
+	// Intent hints are only used in stressed modes.
+	if (InterpMode <= 1)
+		return false;
+
+	// Ignore stale intent under heavy loss/clamp to avoid wrong transient pose hints.
+	MaxIntentAgeSec = 0.150;
+	if (SnapshotAgeSec > MaxIntentAgeSec)
+		return false;
+
+	// Bit 1: dodging
+	if ((SnapAnimIntentBits & 2) != 0) {
+		switch (GetDodgeDir(SnapAnimDodgeDir)) {
+			case DODGE_Left:
+				TargetSeq = 'DodgeL';
+				break;
+			case DODGE_Right:
+				TargetSeq = 'DodgeR';
+				break;
+			case DODGE_Back:
+				TargetSeq = 'DodgeB';
+				break;
+			case DODGE_Forward:
+			case DODGE_Active:
+				if (bUseFlipAnimation)
+					TargetSeq = 'Flip';
+				else
+					TargetSeq = 'DodgeF';
+				break;
+			default:
+				TargetSeq = 'DodgeF';
+				break;
+		}
+
+		if (AnimSequence != TargetSeq)
+			TweenAnim(TargetSeq, 0.08);
+		return true;
+	}
+
+	// Bit 0: ducking/crouch.
+	if ((SnapAnimIntentBits & 1) != 0) {
+		if (GetAnimGroup(AnimSequence) != 'Ducking') {
+			TweenTime = 0.12;
+			if (GetPhysics(int(SnapAnimPhysics)) == PHYS_Falling)
+				TweenTime = 0.08;
+			TweenAnim('DuckWlkS', TweenTime);
+		}
+		return true;
+	}
+
+	return false;
+}
+
+simulated function bool IGPlus_SnapInterp_IsTransientAnim(name SnapAnimSeq, name SnapAnimGroup) {
+	if (SnapAnimGroup == 'Jumping' || SnapAnimGroup == 'Landing')
+		return true;
+
+	if (SnapAnimSeq == 'DodgeL' ||
+		SnapAnimSeq == 'DodgeR' ||
+		SnapAnimSeq == 'DodgeF' ||
+		SnapAnimSeq == 'DodgeB' ||
+		SnapAnimSeq == 'Flip')
+		return true;
+
+	return false;
+}
+
+simulated function float IGPlus_SnapInterp_GetAnimDurationSec(name SnapAnimSeq, name SnapAnimGroup) {
+	// Based on UT99 sequence data:
+	// - Jump/Land/Dodge are mostly 1-frame transients
+	// - Flip is 20 (male/boss) to 31 (female) frames.
+	if (SnapAnimSeq == 'Flip')
+		return 0.50;
+	if (SnapAnimSeq == 'DodgeL' ||
+		SnapAnimSeq == 'DodgeR' ||
+		SnapAnimSeq == 'DodgeF' ||
+		SnapAnimSeq == 'DodgeB')
+		return 0.10;
+	if (SnapAnimSeq == 'JumpLgFr' || SnapAnimSeq == 'JumpSmFr')
+		return 0.08;
+	if (SnapAnimSeq == 'LandLgFr' || SnapAnimSeq == 'LandSmFr')
+		return 0.06;
+
+	if (SnapAnimGroup == 'Landing')
+		return 0.08;
+	if (SnapAnimGroup == 'Jumping')
+		return 0.20;
+	if (SnapAnimGroup == 'Ducking')
+		return 1.00;
+
+	return 0.25;
+}
+
+simulated function bool IGPlus_SnapInterp_IsAnimHintFresh(
+	name SnapAnimSeq,
+	name SnapAnimGroup,
+	byte SnapAnimFrameByte,
+	float SnapshotAgeSec,
+	optional float FreshnessMarginSec
+) {
+	local float SequenceDuration;
+	local float FrameAlpha;
+	local float RemainingDuration;
+	local float FreshnessLimit;
+
+	SequenceDuration = IGPlus_SnapInterp_GetAnimDurationSec(SnapAnimSeq, SnapAnimGroup);
+	FrameAlpha = FClamp(float(SnapAnimFrameByte) / 255.0, 0.0, 1.0);
+	RemainingDuration = SequenceDuration * FClamp(1.0 - FrameAlpha, 0.0, 1.0);
+	FreshnessLimit = FMin(0.300, FMax(0.040, RemainingDuration + FreshnessMarginSec));
+
+	return SnapshotAgeSec <= FreshnessLimit;
+}
+
+simulated function bool IGPlus_SnapInterp_ApplyAnimHint(
+	name SnapAnimSeq,
+	byte SnapAnimFrameByte,
+	optional byte InterpMode,
+	optional float SnapshotAgeSec
+) {
+	local bool bTransient;
 	local float TweenTime;
 	local name SnapAnimGroup;
+	local float FreshnessMarginSec;
 
-	// Avoid touching normal high-quality interpolation path.
-	if (InterpMode <= 1)
-		return;
+	// InterpMode 0 means no usable interpolation output.
+	if (InterpMode <= 0)
+		return false;
 
 	if (SnapAnimSeq == '')
-		return;
+		return false;
+
+	SnapAnimGroup = GetAnimGroup(SnapAnimSeq);
+	bTransient = IGPlus_SnapInterp_IsTransientAnim(SnapAnimSeq, SnapAnimGroup);
+
+	// In normal interpolation mode, only allow transient sequence hints.
+	if (InterpMode == 1 && bTransient == false)
+		return false;
+
+	// Expire hints based on sequence duration + frame position.
+	FreshnessMarginSec = 0.060;
+	if (InterpMode > 1)
+		FreshnessMarginSec = 0.090;
+	if (IGPlus_SnapInterp_IsAnimHintFresh(
+		SnapAnimSeq,
+		SnapAnimGroup,
+		SnapAnimFrameByte,
+		SnapshotAgeSec,
+		FreshnessMarginSec
+	) == false)
+		return false;
+
+	// Jumping sequences are highly transient; only use while proxy is actually airborne.
+	if (SnapAnimGroup == 'Jumping') {
+		if (Physics != PHYS_Falling && Velocity.Z <= 0.0)
+			return false;
+	}
 
 	if (AnimSequence != SnapAnimSeq) {
-		SnapAnimGroup = GetAnimGroup(SnapAnimSeq);
 		TweenTime = 0.06;
 		if (SnapAnimGroup == 'Jumping')
 			TweenTime = 0.08;
 		else if (SnapAnimGroup == 'Ducking')
 			TweenTime = 0.12;
-		else if (SnapAnimGroup == 'Landing')
-			TweenTime = 0.05;
 
 		TweenAnim(SnapAnimSeq, TweenTime);
 	}
 
 	AnimFrame = FClamp(float(SnapAnimFrameByte) / 255.0, 0.0, 1.0);
+	return true;
 }
 
 simulated function IGPlus_SnapInterp_Reset() {
@@ -9355,6 +9592,8 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 	local bool bReplicatedLocation;
 	local bool bCanRecoverPrev;
 	local bool bHasInterpolated;
+	local bool bAppliedIntentHint;
+	local bool bAppliedAnimHint;
 	local int RepCounter;
 	local int PrevCounter;
 	local byte InterpMode;
@@ -9363,8 +9602,13 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 	local float SnapshotTime;
 	local float PrevSnapshotTime;
 	local float ExpectedInterval;
+	local float OutHintTime;
+	local float HintAgeSec;
 	local name OutAnimSeq;
 	local byte OutAnimFrameByte;
+	local byte OutAnimIntentBits;
+	local byte OutAnimDodgeDir;
+	local byte OutAnimPhysics;
 	local vector OutPos;
 	local vector OutVel;
 	local rotator OutRot;
@@ -9377,6 +9621,14 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 	RepCounter = IGPlus_SnapReplicatedData.Counter;
 	PrevCounter = IGPlus_SnapReplicatedDataPrev.Counter;
 	bHasInterpolated = false;
+	bAppliedIntentHint = false;
+	bAppliedAnimHint = false;
+	InterpMode = 0;
+	OutHintTime = 0.0;
+	HintAgeSec = 0.0;
+	IGPlus_SnapInterp_LastInterpMode = 0;
+	IGPlus_SnapInterp_LastHintAgeMs = 0;
+	IGPlus_SnapInterp_LastHintSource = "none";
 	bReplicatedLocation = (RepCounter > IGPlus_SnapInterp_LastCounter)
 		|| (IGPlus_SnapInterp_LastCounter == 0 && RepCounter != 0);
 
@@ -9405,6 +9657,9 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 					IGPlus_SnapReplicatedDataPrev.Rotation,
 					IGPlus_SnapReplicatedDataPrev.AnimSequence,
 					IGPlus_SnapReplicatedDataPrev.AnimFrameByte,
+					IGPlus_SnapReplicatedDataPrev.AnimIntentBits,
+					IGPlus_SnapReplicatedDataPrev.AnimDodgeDir,
+					IGPlus_SnapReplicatedDataPrev.AnimPhysics,
 					PrevSnapshotTime,
 					ArrivalTime,
 				true,
@@ -9422,6 +9677,9 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 				IGPlus_SnapReplicatedData.Rotation,
 				IGPlus_SnapReplicatedData.AnimSequence,
 				IGPlus_SnapReplicatedData.AnimFrameByte,
+				IGPlus_SnapReplicatedData.AnimIntentBits,
+				IGPlus_SnapReplicatedData.AnimDodgeDir,
+				IGPlus_SnapReplicatedData.AnimPhysics,
 				SnapshotTime,
 				ArrivalTime,
 			true,
@@ -9440,9 +9698,16 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			OutRot,
 			OutAnimSeq,
 			OutAnimFrameByte,
+			OutAnimIntentBits,
+			OutAnimDodgeDir,
+			OutAnimPhysics,
+			OutHintTime,
 			InterpMode
 		);
 		if (bHasInterpolated) {
+			IGPlus_SnapInterp_LastInterpMode = InterpMode;
+			HintAgeSec = FMax(0.0, Level.TimeSeconds - OutHintTime);
+			IGPlus_SnapInterp_LastHintAgeMs = int(HintAgeSec * 1000.0 + 0.5);
 			if (InterpMode == 1)
 				IGPlus_SnapInterp_StatInterp += 1;
 			else if (InterpMode == 2) {
@@ -9475,11 +9740,29 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			OutRot.Roll = 0;
 			SetRotation(OutRot);
 			DesiredRotation = OutRot;
-			IGPlus_SnapInterp_ApplyAnimHint(
-				IGPlus_SnapReplicatedData.AnimSequence,
-				IGPlus_SnapReplicatedData.AnimFrameByte,
-				2
+			InterpMode = 2;
+			HintAgeSec = 0.0;
+			IGPlus_SnapInterp_LastInterpMode = InterpMode;
+			IGPlus_SnapInterp_LastHintAgeMs = 0;
+			bAppliedIntentHint = IGPlus_SnapInterp_ApplyIntentHint(
+				IGPlus_SnapReplicatedData.AnimIntentBits,
+				IGPlus_SnapReplicatedData.AnimDodgeDir,
+				IGPlus_SnapReplicatedData.AnimPhysics,
+				InterpMode,
+				HintAgeSec
 			);
+			if (bAppliedIntentHint == false) {
+				bAppliedAnimHint = IGPlus_SnapInterp_ApplyAnimHint(
+					IGPlus_SnapReplicatedData.AnimSequence,
+					IGPlus_SnapReplicatedData.AnimFrameByte,
+					InterpMode,
+					HintAgeSec
+				);
+			}
+			if (bAppliedIntentHint)
+				IGPlus_SnapInterp_LastHintSource = "intent";
+			else if (bAppliedAnimHint)
+				IGPlus_SnapInterp_LastHintSource = "seq";
 		} else {
 			bCollideWorld = false;
 			SetLocation(IGPlus_LocationOffsetFix_OldLocation);
@@ -9496,7 +9779,25 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 		SetRotation(OutRot);
 		DesiredRotation = OutRot;
 		Velocity = OutVel;
-		IGPlus_SnapInterp_ApplyAnimHint(OutAnimSeq, OutAnimFrameByte, InterpMode);
+		bAppliedIntentHint = IGPlus_SnapInterp_ApplyIntentHint(
+			OutAnimIntentBits,
+			OutAnimDodgeDir,
+			OutAnimPhysics,
+			InterpMode,
+			HintAgeSec
+		);
+		if (bAppliedIntentHint == false) {
+			bAppliedAnimHint = IGPlus_SnapInterp_ApplyAnimHint(
+				OutAnimSeq,
+				OutAnimFrameByte,
+				InterpMode,
+				HintAgeSec
+			);
+		}
+		if (bAppliedIntentHint)
+			IGPlus_SnapInterp_LastHintSource = "intent";
+		else if (bAppliedAnimHint)
+			IGPlus_SnapInterp_LastHintSource = "seq";
 	} else {
 		bCollideWorld = false;
 		SetLocation(IGPlus_LocationOffsetFix_OldLocation);
@@ -11716,7 +12017,10 @@ exec simulated function SnapInterpStatus(optional string TargetFilter) {
 		" rep="$Target.IGPlus_SnapReplicatedData.Counter$
 		" last="$Target.IGPlus_SnapInterp_LastCounter$
 		" moved="$Target.IGPlus_LocationOffsetFix_Moved$
-		" delayMs="$int(Target.IGPlus_SnapInterp_InterpDelay * 1000.0)
+		" delayMs="$int(Target.IGPlus_SnapInterp_InterpDelay * 1000.0)$
+		" interpMode="$Target.IGPlus_SnapInterp_LastInterpMode$
+		" hint="$Target.IGPlus_SnapInterp_LastHintSource$
+		" hintAgeMs="$Target.IGPlus_SnapInterp_LastHintAgeMs
 	);
 }
 
