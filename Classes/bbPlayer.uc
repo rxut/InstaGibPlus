@@ -6535,8 +6535,9 @@ event ServerTick(float DeltaTime) {
 							SnapshotDodgeDir = 3;
 					}
 					// Bit 2 tags forward dodge visual intent: Flip vs DodgeF.
-					// This must come from the source player, not observer-local config.
-					if (SnapshotDodgeDir == 3 && (AnimSequence == 'Flip' || bUseFlipAnimation))
+					// Keep this strictly source-accurate: set only when the sampled
+					// sequence is actually Flip at snapshot time.
+					if (SnapshotDodgeDir == 3 && AnimSequence == 'Flip')
 						SnapshotIntentBits = SnapshotIntentBits | 4;
 
 					switch (Physics) {
