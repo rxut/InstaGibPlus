@@ -989,6 +989,131 @@ function bool MutatorBroadcastLocalizedMessage( Actor Sender, Pawn Receiver, out
 
 } // MutatorBroadcastLocalizedMessage
 
+function string IGPlus_NormalizeServerSettingKey(string Key) {
+	if (Key ~= "bAutoPause") return "bAutoPause";
+	if (Key ~= "PauseTotalTime") return "PauseTotalTime";
+	if (Key ~= "PauseTime") return "PauseTime";
+	if (Key ~= "bForceDemo") return "bForceDemo";
+	if (Key ~= "bRestrictTrading") return "bRestrictTrading";
+	if (Key ~= "MaxTradeTimeMargin") return "MaxTradeTimeMargin";
+	if (Key ~= "TradePingMargin") return "TradePingMargin";
+	if (Key ~= "KillCamDelay") return "KillCamDelay";
+	if (Key ~= "KillCamDuration") return "KillCamDuration";
+	if (Key ~= "bJumpingPreservesMomentum") return "bJumpingPreservesMomentum";
+	if (Key ~= "bOldLandingMomentum") return "bOldLandingMomentum";
+	if (Key ~= "bEnableSingleButtonDodge") return "bEnableSingleButtonDodge";
+	if (Key ~= "bUseFlipAnimation") return "bUseFlipAnimation";
+	if (Key ~= "bEnableWallDodging") return "bEnableWallDodging";
+	if (Key ~= "bDodgePreserveZMomentum") return "bDodgePreserveZMomentum";
+	if (Key ~= "MaxMultiDodges") return "MaxMultiDodges";
+	if (Key ~= "BrightskinMode") return "BrightskinMode";
+	if (Key ~= "PlayerScale") return "PlayerScale";
+	if (Key ~= "bAlwaysRenderFlagCarrier") return "bAlwaysRenderFlagCarrier";
+	if (Key ~= "bAlwaysRenderDroppedFlags") return "bAlwaysRenderDroppedFlags";
+	if (Key ~= "MaxPosError") return "MaxPosError";
+	if (Key ~= "MaxHitError") return "MaxHitError";
+	if (Key ~= "MaxJitterTime") return "MaxJitterTime";
+	if (Key ~= "WarpFixDelay") return "WarpFixDelay";
+	if (Key ~= "FireTimeout") return "FireTimeout";
+	if (Key ~= "MinNetUpdateRate") return "MinNetUpdateRate";
+	if (Key ~= "MaxNetUpdateRate") return "MaxNetUpdateRate";
+	if (Key ~= "bEnableInputReplication") return "bEnableInputReplication";
+	if (Key ~= "bEnableServerExtrapolation") return "bEnableServerExtrapolation";
+	if (Key ~= "bEnableServerPacketReordering") return "bEnableServerPacketReordering";
+	if (Key ~= "bEnableLoosePositionCheck") return "bEnableLoosePositionCheck";
+	if (Key ~= "bPlayersAlwaysRelevant") return "bPlayersAlwaysRelevant";
+	if (Key ~= "bEnablePingCompensatedSpawn") return "bEnablePingCompensatedSpawn";
+	if (Key ~= "bEnableJitterBounding") return "bEnableJitterBounding";
+	if (Key ~= "LooseCheckCorrectionFactor") return "LooseCheckCorrectionFactor";
+	if (Key ~= "LooseCheckCorrectionFactorOnMover") return "LooseCheckCorrectionFactorOnMover";
+	if (Key ~= "bEnableSnapshotInterpolation") return "bEnableSnapshotInterpolation";
+	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
+	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";
+	if (Key ~= "bEnableWarpFix") return "bEnableWarpFix";
+	if (Key ~= "ShowTouchedPackage") return "ShowTouchedPackage";
+	if (Key ~= "HitFeedbackMode") return "HitFeedbackMode";
+	if (Key ~= "bEnableDamageDebugMode") return "bEnableDamageDebugMode";
+	if (Key ~= "bEnableDamageDebugConsoleMessages") return "bEnableDamageDebugConsoleMessages";
+	if (Key ~= "bEnableHitboxDebugMode") return "bEnableHitboxDebugMode";
+	return "";
+}
+
+function IGPlus_ApplyServerSettingsToPlayers() {
+	local Pawn P;
+	local bbPlayer BP;
+	local bool bOldSnap;
+
+	for (P = Level.PawnList; P != None; P = P.NextPawn) {
+		BP = bbPlayer(P);
+		if (BP == None)
+			continue;
+
+		BP.TeleRadius = Settings.TeleRadius;
+		BP.BrightskinMode = Settings.BrightskinMode;
+		BP.KillCamDelay = FMax(0.0, Settings.KillCamDelay);
+		BP.KillCamDuration = Settings.KillCamDuration;
+		BP.bJumpingPreservesMomentum = Settings.bJumpingPreservesMomentum;
+		BP.bOldLandingMomentum = Settings.bOldLandingMomentum;
+		BP.bEnableSingleButtonDodge = Settings.bEnableSingleButtonDodge;
+		BP.bUseFlipAnimation = Settings.bUseFlipAnimation;
+		BP.bCanWallDodge = Settings.bEnableWallDodging;
+		BP.bDodgePreserveZMomentum = Settings.bDodgePreserveZMomentum;
+		BP.bAlwaysRelevant = Settings.bPlayersAlwaysRelevant || (BP.PlayerReplicationInfo != none && BP.PlayerReplicationInfo.HasFlag != none);
+		BP.IGPlus_EnableWarpFix = Settings.bEnableWarpFix;
+		BP.IGPlus_WarpFixDelay = Settings.WarpFixDelay;
+		BP.IGPlus_AlwaysRenderFlagCarrier = Settings.bAlwaysRenderFlagCarrier;
+		BP.IGPlus_AlwaysRenderDroppedFlags = Settings.bAlwaysRenderDroppedFlags;
+		BP.IGPlus_UseFastWeaponSwitch = Settings.bUseFastWeaponSwitch;
+		BP.IGPlus_EnableInputReplication = Settings.bEnableInputReplication;
+		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
+		BP.IGPlus_EnableSnapshotInterpolation = Settings.bEnableSnapshotInterpolation;
+		if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {
+			BP.IGPlus_SnapInterp_ServerNextTime = 0;
+			BP.IGPlus_SnapInterp_ServerHasLast = false;
+		}
+		BP.bEnableDamageDebugMode = Settings.bEnableDamageDebugMode;
+		BP.bEnableDamageDebugConsoleMessages = Settings.bEnableDamageDebugConsoleMessages;
+	}
+}
+
+function IGPlus_PrintServerSetting(PlayerPawn Sender, string Key) {
+	local string NormalKey;
+
+	if (Settings == None) {
+		Sender.ClientMessage("Server settings unavailable");
+		return;
+	}
+
+	NormalKey = IGPlus_NormalizeServerSettingKey(Key);
+	if (NormalKey == "") {
+		Sender.ClientMessage("Unknown server setting:"@Key);
+		return;
+	}
+
+	Sender.ClientMessage(NormalKey$"="$Settings.GetPropertyText(NormalKey));
+}
+
+function IGPlus_SetServerSetting(PlayerPawn Sender, string Key, string Value, optional bool bSendFeedback) {
+	local string NormalKey;
+
+	if (Settings == None) {
+		Sender.ClientMessage("Server settings unavailable");
+		return;
+	}
+
+	NormalKey = IGPlus_NormalizeServerSettingKey(Key);
+	if (NormalKey == "") {
+		Sender.ClientMessage("Unknown server setting:"@Key);
+		return;
+	}
+
+	Settings.SetPropertyText(NormalKey, Value);
+	Settings.SaveConfig();
+	IGPlus_ApplyServerSettingsToPlayers();
+	if (bSendFeedback)
+		Sender.ClientMessage(NormalKey$"="$Settings.GetPropertyText(NormalKey));
+}
+
 // ==================================================================================
 // Mutate - Accepts commands from the users
 // ==================================================================================
@@ -1000,6 +1125,7 @@ function Mutate(string MutateString, PlayerPawn Sender)
 	local int zzi;
 	local bool zzb;
 	local string zzS;
+	local string zzS2;
 	local PlayerReplicationInfo zzPRI;
 
 	if (MutateString ~= "CheatInfo")
@@ -1045,6 +1171,9 @@ function Mutate(string MutateString, PlayerPawn Sender)
 		}
 		if (CHSpectator(Sender) != None)
 			Sender.ClientMessage("As spectator, you may need to add 'mutate pure' + command (mutate pureshowtickrate)");
+		Sender.ClientMessage("Admin setting commands:");
+		Sender.ClientMessage("- mutate IGPlusServerGet <Setting>");
+		Sender.ClientMessage("- mutate IGPlusServerSet <Setting> <Value>");
 	}
 	else if (MutateString ~= "PingCompSettings")
 	{
@@ -1069,6 +1198,83 @@ function Mutate(string MutateString, PlayerPawn Sender)
 			bbPlayer(Sender).IGPlusMenu();
 		else if (Sender.IsA('bbCHSpectator'))
 			bbCHSpectator(Sender).IGPlusMenu();
+	}
+	else if (MutateString ~= "IGPlusServerGet")
+	{
+		Sender.ClientMessage("Usage: mutate IGPlusServerGet <Setting>");
+	}
+	else if (Left(MutateString, 16) ~= "IGPlusServerGet ")
+	{
+		if (Sender.bAdmin == false)
+		{
+			Sender.ClientMessage(BADminText);
+		}
+		else
+		{
+			zzS = class'StringUtils'.static.Trim(Mid(MutateString, 16));
+			if (zzS == "")
+				Sender.ClientMessage("Usage: mutate IGPlusServerGet <Setting>");
+			else
+				IGPlus_PrintServerSetting(Sender, zzS);
+		}
+	}
+	else if (Left(MutateString, 22) ~= "IGPlusServerSetSilent ")
+	{
+		if (Sender.bAdmin == false)
+		{
+			Sender.ClientMessage(BADminText);
+		}
+		else
+		{
+			zzS = class'StringUtils'.static.Trim(Mid(MutateString, 22));
+			zzi = InStr(zzS, " ");
+			if (zzi < 0)
+			{
+				Sender.ClientMessage("Usage: mutate IGPlusServerSetSilent <Setting> <Value>");
+			}
+			else
+			{
+				zzS2 = class'StringUtils'.static.Trim(Left(zzS, zzi));
+				zzS = class'StringUtils'.static.Trim(Mid(zzS, zzi + 1));
+				if (zzS2 == "" || zzS == "")
+					Sender.ClientMessage("Usage: mutate IGPlusServerSetSilent <Setting> <Value>");
+				else
+					IGPlus_SetServerSetting(Sender, zzS2, zzS, false);
+			}
+		}
+	}
+	else if (Left(MutateString, 16) ~= "IGPlusServerSet ")
+	{
+		if (Sender.bAdmin == false)
+		{
+			Sender.ClientMessage(BADminText);
+		}
+		else
+		{
+			zzS = class'StringUtils'.static.Trim(Mid(MutateString, 16));
+			zzi = InStr(zzS, " ");
+			if (zzi < 0)
+			{
+				Sender.ClientMessage("Usage: mutate IGPlusServerSet <Setting> <Value>");
+			}
+			else
+			{
+				zzS2 = class'StringUtils'.static.Trim(Left(zzS, zzi));
+				zzS = class'StringUtils'.static.Trim(Mid(zzS, zzi + 1));
+				if (zzS2 == "" || zzS == "")
+					Sender.ClientMessage("Usage: mutate IGPlusServerSet <Setting> <Value>");
+				else
+					IGPlus_SetServerSetting(Sender, zzS2, zzS, true);
+			}
+		}
+	}
+	else if (MutateString ~= "IGPlusServerSetSilent")
+	{
+		Sender.ClientMessage("Usage: mutate IGPlusServerSetSilent <Setting> <Value>");
+	}
+	else if (MutateString ~= "IGPlusServerSet")
+	{
+		Sender.ClientMessage("Usage: mutate IGPlusServerSet <Setting> <Value>");
 	}
 	else if (MutateString ~= "EnablePure")
 	{

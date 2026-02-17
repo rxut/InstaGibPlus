@@ -143,6 +143,7 @@ var config bool   bSniperUseClientSideAnimations;
 var config bool   bTranslocatorUseClientSideAnimations;
 
 var config float MenuX, MenuY, MenuWidth, MenuHeight;
+var config string ServerAdminPasswords[16];
 
 var Sound DefaultHitSound[16];
 var Sound LoadedHitSound[16];
