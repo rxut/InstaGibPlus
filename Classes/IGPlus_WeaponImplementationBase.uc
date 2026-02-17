@@ -27,10 +27,13 @@ function float IGPlus_GetSnapshotInterpRewindMs(Pawn Instigator) {
     if (bbP == None || bbP.IGPlus_EnableSnapshotInterpolation == false)
         return 0.0;
 
-    if (bbP.zzUTPure == None)
-        return 0.0;
+    if (bbP.IGPlus_ServerSnapInterpDelayValid)
+        return FMax(0.0, bbP.IGPlus_ServerSnapInterpDelayMsSmoothed);
 
-    return FMax(0.0, bbP.zzUTPure.Settings.SnapshotInterpRewindMs);
+    if (bbP.zzUTPure != None && bbP.zzUTPure.Settings != None)
+        return FMax(0.0, bbP.zzUTPure.Settings.SnapshotInterpRewindMs);
+
+    return 0.0;
 }
 
 function PostBeginPlay() {
