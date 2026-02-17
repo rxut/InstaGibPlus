@@ -19,6 +19,7 @@ var float CachedTickRate;
 
 function float IGPlus_GetSnapshotInterpRewindMs(Pawn Instigator) {
     local bbPlayer bbP;
+    local float AcceptedAge;
 
     if (Instigator == None)
         return 0.0;
@@ -27,8 +28,16 @@ function float IGPlus_GetSnapshotInterpRewindMs(Pawn Instigator) {
     if (bbP == None || bbP.IGPlus_EnableSnapshotInterpolation == false)
         return 0.0;
 
-    if (bbP.IGPlus_ServerSnapInterpDelayValid)
+    AcceptedAge = bbP.Level.TimeSeconds - bbP.IGPlus_ServerSnapInterpLastAcceptedTime;
+    if (AcceptedAge < 0.0)
+        AcceptedAge = 0.0;
+
+    if (bbP.IGPlus_ServerSnapInterpDelayValid &&
+        bbP.IGPlus_ServerSnapInterpTrusted &&
+        AcceptedAge <= 1.0
+    ) {
         return FMax(0.0, bbP.IGPlus_ServerSnapInterpDelayMsSmoothed);
+    }
 
     if (bbP.zzUTPure != None && bbP.zzUTPure.Settings != None)
         return FMax(0.0, bbP.zzUTPure.Settings.SnapshotInterpRewindMs);
