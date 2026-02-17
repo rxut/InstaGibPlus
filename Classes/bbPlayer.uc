@@ -6534,6 +6534,10 @@ event ServerTick(float DeltaTime) {
 						else if (AnimSequence == 'DodgeF' || AnimSequence == 'Flip')
 							SnapshotDodgeDir = 3;
 					}
+					// Bit 2 tags forward dodge visual intent: Flip vs DodgeF.
+					// This must come from the source player, not observer-local config.
+					if (SnapshotDodgeDir == 3 && (AnimSequence == 'Flip' || bUseFlipAnimation))
+						SnapshotIntentBits = SnapshotIntentBits | 4;
 
 					switch (Physics) {
 						case PHYS_None: SnapshotPhysics = 0; break;
@@ -9425,7 +9429,7 @@ simulated function bool IGPlus_SnapInterp_ApplyIntentHint(
 				break;
 			case DODGE_Forward:
 			case DODGE_Active:
-				if (bUseFlipAnimation)
+				if ((SnapAnimIntentBits & 4) != 0)
 					TargetSeq = 'Flip';
 				else
 					TargetSeq = 'DodgeF';
