@@ -52,6 +52,7 @@ simulated function PostBeginPlay() {
 			Health = WImp.WeaponSettings.ShockProjectileHealth;
 		}
 	}
+
 	Super.PostBeginPlay();
 }
 

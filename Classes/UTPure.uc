@@ -530,14 +530,9 @@ function RegisterProjectile(Projectile P) {
 function CompensateFor(int Ping, optional Pawn Instigator) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
-	local ST_MoverDummy MD;
     local Pawn DActual;
 	
 	bCompensationIsActive = true;
-
-	for (MD = MoverDummies; MD != none; MD = MD.Next) {
-		MD.CompStart(Ping, Instigator);
-	}
 
     for (D = CompDummies; D != none; D = D.Next) {
         DActual = D.Actual;

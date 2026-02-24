@@ -3839,6 +3839,169 @@ simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNorm
 	return Other;
 }
 
+function bool IGPlus_LineIntersectsCylinder(
+	vector Start,
+	vector End,
+	vector CylinderCenter,
+	float Radius,
+	float HalfHeight
+) {
+	local vector ClosestPoint, LineDelta, ToCenter;
+	local float LineLengthSq, T, DistXYSq, DistZ;
+
+	LineDelta = End - Start;
+	LineLengthSq = LineDelta dot LineDelta;
+	if (LineLengthSq < 0.000001)
+		return false;
+
+	ToCenter = CylinderCenter - Start;
+	T = (ToCenter dot LineDelta) / LineLengthSq;
+	T = FClamp(T, 0.0, 1.0);
+
+	ClosestPoint = Start + LineDelta * T;
+
+	DistXYSq =
+		(ClosestPoint.X - CylinderCenter.X) * (ClosestPoint.X - CylinderCenter.X) +
+		(ClosestPoint.Y - CylinderCenter.Y) * (ClosestPoint.Y - CylinderCenter.Y);
+	DistZ = Abs(ClosestPoint.Z - CylinderCenter.Z);
+
+	return (DistXYSq <= Radius * Radius && DistZ <= HalfHeight);
+}
+
+function bool IGPlus_PointInsideCylinder(
+	vector P,
+	vector CylinderCenter,
+	float Radius,
+	float HalfHeight
+) {
+	local float DistXYSq;
+
+	DistXYSq =
+		(P.X - CylinderCenter.X) * (P.X - CylinderCenter.X) +
+		(P.Y - CylinderCenter.Y) * (P.Y - CylinderCenter.Y);
+	return (DistXYSq <= Radius * Radius && Abs(P.Z - CylinderCenter.Z) <= HalfHeight);
+}
+
+function bool IGPlus_IsTraceBlockedByTargetMover(
+	UTPlusDummy TargetDummy,
+	vector StartTrace,
+	vector HitLocation
+) {
+	local Mover BaseMover;
+	local vector HistoricalMoverLoc;
+
+	if (TargetDummy == None || TargetDummy.Actual == None)
+		return false;
+
+	BaseMover = Mover(TargetDummy.Actual.Base);
+	if (BaseMover == None)
+		return false;
+
+	// Same-base shots should not be blocked by this protection.
+	if (Base == BaseMover)
+		return false;
+
+	HistoricalMoverLoc = BaseMover.Location;
+	IGPlus_GetHistoricalMoverLocation(BaseMover, HistoricalMoverLoc);
+
+	// Only guard "from below through mover" shots.
+	if (StartTrace.Z >= HistoricalMoverLoc.Z || HitLocation.Z <= HistoricalMoverLoc.Z)
+		return false;
+
+	return IGPlus_LineIntersectsCylinder(
+		StartTrace,
+		HitLocation,
+		HistoricalMoverLoc,
+		BaseMover.CollisionRadius,
+		BaseMover.CollisionHeight
+	);
+}
+
+function float IGPlus_GetLatencyMs(optional bool bOneWay) {
+	local float PingMs;
+
+	if (PingAverage > 0)
+		PingMs = float(PingAverage);
+	else if (PlayerReplicationInfo != None && PlayerReplicationInfo.Ping > 0)
+		PingMs = float(PlayerReplicationInfo.Ping);
+
+	if (bOneWay)
+		return FMax(0.0, 0.5 * PingMs);
+	return FMax(0.0, PingMs);
+}
+
+function float IGPlus_GetOneWayLatencyMs() {
+	return IGPlus_GetLatencyMs(true);
+}
+
+function bool IGPlus_GetHistoricalMoverLocationByLatency(
+	Mover M,
+	float SampleLatencyMs,
+	out vector HistoricalMoverLoc
+) {
+	local ST_MoverDummy MD;
+	local float TargetTimeStamp;
+
+	if (M == None || zzUTPure == None || SampleLatencyMs <= 0.0)
+		return false;
+
+	MD = zzUTPure.FindMoverDummy(M);
+	if (MD == None)
+		return false;
+
+	TargetTimeStamp = Level.TimeSeconds - 0.001 * SampleLatencyMs * Level.TimeDilation;
+	HistoricalMoverLoc = MD.GetHistoricalLocation(TargetTimeStamp);
+	return true;
+}
+
+function bool IGPlus_ShouldIgnoreOwnBaseHit(
+	vector StartTrace,
+	vector HitLocation
+) {
+	local Mover BaseMover;
+	local vector HistoricalMoverLoc;
+	local bool bHasHistorical;
+	local vector ShotDir;
+	local float SampleLatencyMs;
+
+	BaseMover = Mover(Base);
+	if (BaseMover == None)
+		return false;
+
+	// Self-base occlusion should match shooter view time (one-way latency).
+	SampleLatencyMs = IGPlus_GetOneWayLatencyMs();
+	bHasHistorical = IGPlus_GetHistoricalMoverLocationByLatency(BaseMover, SampleLatencyMs, HistoricalMoverLoc);
+	if (!bHasHistorical)
+		return false;
+
+	ShotDir = Normal(HitLocation - StartTrace);
+	if (ShotDir.Z >= 0.0 &&
+		IGPlus_PointInsideCylinder(
+			StartTrace,
+			HistoricalMoverLoc,
+			BaseMover.CollisionRadius,
+			BaseMover.CollisionHeight
+		)
+	) {
+		return true;
+	}
+
+	// Ignore a self-base hit only if the shot segment does not intersect the
+	// mover at the same historical rewind frame.
+	return !IGPlus_LineIntersectsCylinder(
+		StartTrace,
+		HitLocation,
+		HistoricalMoverLoc,
+		BaseMover.CollisionRadius,
+		BaseMover.CollisionHeight
+	);
+}
+
+function bool IGPlus_GetHistoricalMoverLocation(Mover M, out vector HistoricalMoverLoc) {
+	// Target mover blocking uses the full compensation timeline.
+	return IGPlus_GetHistoricalMoverLocationByLatency(M, IGPlus_GetLatencyMs(false), HistoricalMoverLoc);
+}
+
 function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
 {
 	local Actor A, Other;
@@ -3865,15 +4028,17 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 				continue;
 			}
 
-			if (A.IsA('UTPlusDummy')) {
-				D = UTPlusDummy(A);
-				if (D != none && D.Actual != none && D.Actual != self) {
-					if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
-						Other = D.Actual;
-						break;
+				if (A.IsA('UTPlusDummy')) {
+					D = UTPlusDummy(A);
+					if (D != none && D.Actual != none && D.Actual != self) {
+						if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+							if (IGPlus_IsTraceBlockedByTargetMover(D, StartTrace, HitLocation))
+								continue;
+							Other = D.Actual;
+							break;
+						}
 					}
 				}
-			}
 			else if (A.IsA('ST_ProjectileDummy')) {
 				PD = ST_ProjectileDummy(A);
 				if (PD.Actual != None) {
@@ -3888,12 +4053,14 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 						break;
 					}
 				}
-			} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-				if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
-					Other = A;
-					break;
+				} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+					if (A == Base && Mover(A) != None && IGPlus_ShouldIgnoreOwnBaseHit(StartTrace, HitLocation))
+						continue;
+					if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
+						Other = A;
+						break;
+					}
 				}
-			}
 			if (Other != none)
 				break;
 		}

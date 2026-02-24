@@ -218,6 +218,11 @@ function TakeDamage(
 function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float TargetTimeStamp) {
 	local vector TargetLoc;
 	local vector TargetVel;
+	local bbPlayer BP;
+	local ST_MoverDummy MD;
+	local Mover BaseMover;
+	local vector HistoricalMoverLoc;
+	local float SnapshotMoverZ;
 
 	if (Actual == None || Actual.bDeleteMe || SnapA == None || bCompActive)
 		return;
@@ -237,8 +242,29 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 		TargetVel = SnapA.Vel;
 	}
 
-	if (SnapA.bBasedOnMover && Actual.Base == SnapA.BaseMover)
-		TargetLoc.Z += Actual.Base.Location.Z - SnapA.MoverZ;
+	if (SnapA.bBasedOnMover && Actual.Base == SnapA.BaseMover) {
+		BaseMover = Mover(SnapA.BaseMover);
+		if (BaseMover != None) {
+			BP = bbPlayer(Actual);
+			if (BP != None && BP.zzUTPure != None)
+				MD = BP.zzUTPure.FindMoverDummy(BaseMover);
+
+			// If sub-tick interpolation is active and both snapshots are from the
+			// same mover base, interpolate the mover snapshot Z consistently.
+			SnapshotMoverZ = SnapA.MoverZ;
+			if (SnapB != None && SnapB.bBasedOnMover && SnapB.BaseMover == SnapA.BaseMover)
+				SnapshotMoverZ = SnapA.MoverZ + (SnapB.MoverZ - SnapA.MoverZ) * FClamp(Alpha, 0.0, 1.0);
+
+			// Use historical mover position at the same rewind timestamp.
+			// Fallback to live mover only when no history actor is available.
+			if (MD != None)
+				HistoricalMoverLoc = MD.GetHistoricalLocation(TargetTimeStamp);
+			else
+				HistoricalMoverLoc = BaseMover.Location;
+
+			TargetLoc.Z += HistoricalMoverLoc.Z - SnapshotMoverZ;
+		}
+	}
 
 	ActualWasColliding = Actual.bCollideActors;
 	ActualWasBlockingActors = Actual.bBlockActors;

@@ -633,8 +633,6 @@ simulated function SpawnClientChunk(class<ST_UTChunk> ChunkClass, vector Pos, ro
 	C.ChunkIndex = Index;
 	C.bCollideWorld = true;
 	C.SetCollision(false, false, false);
-	if (Pawn(Owner) != None && Pawn(Owner).PlayerReplicationInfo != None)
-		C.LifeSpan = Pawn(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 }
 
 simulated function SpawnClientSideChunks() {
