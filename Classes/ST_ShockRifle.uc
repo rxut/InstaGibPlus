@@ -11,10 +11,12 @@ var float yMod;
 var vector CDO;
 
 var ST_ShockProj LocalDummy;
+var vector PendingSmokeLocation;
 
 // Explicit client aim data (sent via ServerExplicitFire/AltFire)
 var vector ExplicitClientLoc;
 var rotator ExplicitClientRot;
+var Mover ExplicitClientBaseMover;
 var bool bUseExplicitData;
 var bool bClientShownVisuals;
 
@@ -90,9 +92,16 @@ function bool IsPositionReasonable(vector ClientLoc)
 }
 
 // Called by ClientFire. Sends exact Client data to server.
-function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVisuals, optional bool bIsSwitching)
+function ServerExplicitFire(
+	vector ClientLoc,
+	rotator ClientRot,
+	bool bClientVisuals,
+	optional bool bIsSwitching
+)
 {
     local PlayerPawn P;
+    local vector RawClientLoc;
+    local vector CheckLoc;
     
 	P = PlayerPawn(Owner);
     if (P == None)
@@ -100,6 +109,17 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
 
 	if (!IsPingCompEnabled())
 		return;
+
+	RawClientLoc = ClientLoc;
+	CheckLoc = RawClientLoc;
+	if (WImp != None)
+		CheckLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
+			Pawn(Owner),
+			CheckLoc,
+			WImp.IGPlus_GetOneWayLatencyMs(Pawn(Owner))
+		);
+	else if (bbPlayer(Owner) != None)
+		CheckLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	
 	// Handle Switching Fire (High Priority)
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) && (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
@@ -112,12 +132,13 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
 		LastServerFireTime = Level.TimeSeconds;
 
 		// Position validation
-		if (bbPlayer(Owner) != None)
-			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-		if (IsPositionReasonable(ClientLoc))
-			ExplicitClientLoc = ClientLoc;
-		else
+		if (IsPositionReasonable(CheckLoc)) {
+			ExplicitClientLoc = RawClientLoc;
+			ExplicitClientBaseMover = Mover(Owner.Base);
+		} else {
 			ExplicitClientLoc = Owner.Location;
+			ExplicitClientBaseMover = Mover(Owner.Base);
+		}
 		
 		ExplicitClientRot = ClientRot;
 		bUseExplicitData = true;
@@ -149,13 +170,14 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
     if (Level.TimeSeconds - LastServerFireTime < FIRE_RATE_LIMIT)
         return;
 
-    // Position validation - use server position if client position is unreasonable
-    if (bbPlayer(Owner) != None)
-        ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-    if (IsPositionReasonable(ClientLoc))
-        ExplicitClientLoc = ClientLoc;
-    else
-        ExplicitClientLoc = Owner.Location;
+	// Position validation - use server position if client position is unreasonable
+	if (IsPositionReasonable(CheckLoc)) {
+		ExplicitClientLoc = RawClientLoc;
+		ExplicitClientBaseMover = Mover(Owner.Base);
+	} else {
+		ExplicitClientLoc = Owner.Location;
+		ExplicitClientBaseMover = Mover(Owner.Base);
+	}
     
     ExplicitClientRot = ClientRot;
     bUseExplicitData = true;
@@ -185,9 +207,16 @@ function ServerExplicitFire(vector ClientLoc, rotator ClientRot, bool bClientVis
     bClientShownVisuals = false;
 }
 
-function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClientVisuals, optional bool bIsSwitching)
+function ServerExplicitAltFire(
+	vector ClientLoc,
+	rotator ClientRot,
+	bool bClientVisuals,
+	optional bool bIsSwitching
+)
 {
     local PlayerPawn P;
+    local vector RawClientLoc;
+    local vector CheckLoc;
     
 	P = PlayerPawn(Owner);
     if (P == None)
@@ -196,17 +225,29 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 	if (!IsPingCompEnabled())
 		return;
 
+	RawClientLoc = ClientLoc;
+	CheckLoc = RawClientLoc;
+	if (WImp != None)
+		CheckLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
+			Pawn(Owner),
+			CheckLoc,
+			WImp.IGPlus_GetOneWayLatencyMs(Pawn(Owner))
+		);
+	else if (bbPlayer(Owner) != None)
+		CheckLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+
 	// Handle Switching Fire (High Priority)
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) && (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
 	{
 		AmmoType.UseAmmo(1);
 		
-		if (bbPlayer(Owner) != None)
-			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-		if (IsPositionReasonable(ClientLoc))
-			ExplicitClientLoc = ClientLoc;
-		else
+		if (IsPositionReasonable(CheckLoc)) {
+			ExplicitClientLoc = RawClientLoc;
+			ExplicitClientBaseMover = Mover(Owner.Base);
+		} else {
 			ExplicitClientLoc = Owner.Location;
+			ExplicitClientBaseMover = Mover(Owner.Base);
+		}
 		
 		ExplicitClientRot = ClientRot;
 		bUseExplicitData = true;
@@ -233,13 +274,14 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 	if (bChangeWeapon || IsInState('DownWeapon'))
  		return;
 
-    // Position validation - use server position if client position is unreasonable
-    if (bbPlayer(Owner) != None)
-        ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-    if (IsPositionReasonable(ClientLoc))
-        ExplicitClientLoc = ClientLoc;
-    else
-        ExplicitClientLoc = Owner.Location;
+	// Position validation - use server position if client position is unreasonable
+	if (IsPositionReasonable(CheckLoc)) {
+		ExplicitClientLoc = RawClientLoc;
+		ExplicitClientBaseMover = Mover(Owner.Base);
+	} else {
+		ExplicitClientLoc = Owner.Location;
+		ExplicitClientBaseMover = Mover(Owner.Base);
+	}
 
     ExplicitClientRot = ClientRot;
     bUseExplicitData = true;
@@ -271,12 +313,26 @@ function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, bool bClient
 function Projectile ExplicitProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
 {
     local Vector Start, X,Y,Z;
+    local Pawn PawnOwner;
+	local vector AdjustedClientLoc;
 
-    Owner.MakeNoise(Pawn(Owner).SoundDampening);
+    PawnOwner = Pawn(Owner);
+    Owner.MakeNoise(PawnOwner.SoundDampening);
     
     // Use Explicit Client Rotation
     GetAxes(ExplicitClientRot,X,Y,Z);
-    Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
+	AdjustedClientLoc = ExplicitClientLoc;
+	if (WImp != None && IsPingCompEnabled())
+		AdjustedClientLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
+			PawnOwner,
+			AdjustedClientLoc,
+			WImp.IGPlus_GetOneWayLatencyMs(PawnOwner),
+			ExplicitClientBaseMover
+		);
+
+    // For projectile spawn, use current mover frame to avoid immediate collision
+    // with the shooter's own lift on server.
+    Start = AdjustedClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
 
     AdjustedAim = ExplicitClientRot; 
     
@@ -538,6 +594,7 @@ function TraceFire(float Accuracy) {
 	local Pawn PawnOwner;
 	local rotator AimRot;
 	local vector AimLoc;
+	local vector SmokeLocation;
 
 	PawnOwner = Pawn(Owner);
 
@@ -548,6 +605,9 @@ function TraceFire(float Accuracy) {
 	{
 		AimRot = ExplicitClientRot;
 		AimLoc = ExplicitClientLoc;
+		// ExplicitClientLoc is captured at client fire time. For hitscan beam traces,
+		// keep that origin as-is; shifting it to current mover frame skews vertical
+		// aim while riding movers.
 	}
 	else
 	{
@@ -557,6 +617,7 @@ function TraceFire(float Accuracy) {
 
 	GetAxes(AimRot,X,Y,Z);
 	StartTrace = AimLoc + CalcDrawOffset() + FireOffset.Y * Y + FireOffset.Z * Z; 
+	SmokeLocation = AimLoc + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
 
 	EndTrace = StartTrace + (Accuracy * (FRand() - 0.5 )* Y * 1000) + (Accuracy * (FRand() - 0.5 ) * Z * 1000);
 
@@ -584,6 +645,7 @@ function TraceFire(float Accuracy) {
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
 		
+	PendingSmokeLocation = SmokeLocation;
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
 }
 
@@ -610,8 +672,12 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	if (PlayerOwner != None)
 		PlayerOwner.ClientInstantFlash(-0.4, vect(450, 190, 650));
 		
+	if (PendingSmokeLocation == vect(0,0,0))
+		PendingSmokeLocation = Owner.Location + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
+
 	// Server-side beam spawning
-	SpawnEffect(HitLocation, Owner.Location + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z);
+	SpawnEffect(HitLocation, PendingSmokeLocation);
+	PendingSmokeLocation = vect(0,0,0);
 
 	if (IsPingCompEnabled() && bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false) {
 		Dummy = ST_ProjectileDummy(Other);

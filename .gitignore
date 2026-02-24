@@ -6,8 +6,7 @@
 /Build/**/*
 /System/
 
-/IG+ Extras/
-/OtherMods/
+/Extras/
 
 build_all.sh
 build.sh

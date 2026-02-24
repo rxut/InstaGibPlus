@@ -70,6 +70,24 @@ simulated function bool CheckBodyShotCompensated(UTPlusDummy D, vector HitLocati
 
 function float GetAverageTickRate();
 
+function float IGPlus_GetOneWayLatencyMs(Pawn Instigator);
+
+function float IGPlus_GetHitscanRewindMs(Pawn Instigator);
+
+function vector IGPlus_AdjustLocationToCurrentMoverFrame(
+	Pawn Instigator,
+	vector FireLoc,
+	float SampleLatencyMs,
+	optional Mover BaseMover
+);
+
+function vector IGPlus_AdjustLocationToHistoricalMoverFrame(
+	Pawn Instigator,
+	vector FireLoc,
+	float SampleLatencyMs,
+	optional Mover BaseMover
+);
+
 function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping);
 
 function SimulateProjectile(Projectile P, int Ping);

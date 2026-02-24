@@ -45,6 +45,151 @@ function float IGPlus_GetSnapshotInterpRewindMs(Pawn Instigator) {
     return 0.0;
 }
 
+function float IGPlus_GetLatencyMs(Pawn Instigator, optional bool bOneWay) {
+	local bbPlayer bbP;
+	local float PingMs;
+
+	if (Instigator == None)
+		return 0.0;
+
+	bbP = bbPlayer(Instigator);
+	if (bbP != None) {
+		if (bbP.PingAverage > 0)
+			PingMs = float(bbP.PingAverage);
+		if (PingMs <= 0.0 && bbP.PlayerReplicationInfo != None && bbP.PlayerReplicationInfo.Ping > 0)
+			PingMs = float(bbP.PlayerReplicationInfo.Ping);
+	}
+
+	if (PingMs <= 0.0 && Instigator.PlayerReplicationInfo != None && Instigator.PlayerReplicationInfo.Ping > 0)
+		PingMs = float(Instigator.PlayerReplicationInfo.Ping);
+
+	if (bOneWay)
+		return FMax(0.0, 0.5 * PingMs);
+	return FMax(0.0, PingMs);
+}
+
+function float IGPlus_GetOneWayLatencyMs(Pawn Instigator) {
+	return IGPlus_GetLatencyMs(Instigator, true);
+}
+
+function float IGPlus_GetHitscanRewindMs(Pawn Instigator) {
+	local bbPlayer bbP;
+	local float EffectivePing;
+	local float InterpMs;
+	local float BasePingMs;
+
+	if (Instigator == None)
+		return 0.0;
+
+	bbP = bbPlayer(Instigator);
+	if (bbP == None) {
+		return IGPlus_GetLatencyMs(Instigator, false);
+	}
+
+	InterpMs = IGPlus_GetSnapshotInterpRewindMs(Instigator);
+	BasePingMs = IGPlus_GetLatencyMs(Instigator, false);
+	if (InterpMs > 0.0) {
+		if (bbP.PingAverage > 0)
+			EffectivePing = (0.5 * float(bbP.PingAverage)) + InterpMs;
+		else
+			EffectivePing = (0.5 * BasePingMs) + InterpMs;
+	} else
+		EffectivePing = BasePingMs;
+
+	if (WSettingsRepl != None && EffectivePing > WSettingsRepl.PingCompensationMax)
+		EffectivePing = WSettingsRepl.PingCompensationMax;
+	if (EffectivePing < 0.0)
+		EffectivePing = 0.0;
+
+	return EffectivePing;
+}
+
+function vector IGPlus_AdjustLocationToCurrentMoverFrame(
+	Pawn Instigator,
+	vector FireLoc,
+	float SampleLatencyMs,
+	optional Mover BaseMover
+) {
+	local bbPlayer bbP;
+	local UTPure PureRef;
+	local ST_MoverDummy MD;
+	local Mover M;
+	local float SampleSeconds;
+	local float SampleTimeStamp;
+	local vector HistoricalLoc;
+
+	if (Instigator == None || SampleLatencyMs <= 0.0)
+		return FireLoc;
+
+	M = BaseMover;
+	if (M == None)
+		M = Mover(Instigator.Base);
+	if (M == None)
+		return FireLoc;
+
+	bbP = bbPlayer(Instigator);
+	if (bbP == None)
+		return FireLoc;
+
+	PureRef = bbP.zzUTPure;
+	if (PureRef == None)
+		return FireLoc;
+
+	SampleSeconds = 0.001 * SampleLatencyMs * Level.TimeDilation;
+
+	MD = PureRef.FindMoverDummy(M);
+	if (MD == None)
+		return FireLoc + M.Velocity * SampleSeconds;
+
+	SampleTimeStamp = Level.TimeSeconds - SampleSeconds;
+	HistoricalLoc = MD.GetHistoricalLocation(SampleTimeStamp);
+
+	return FireLoc + (M.Location - HistoricalLoc);
+}
+
+function vector IGPlus_AdjustLocationToHistoricalMoverFrame(
+	Pawn Instigator,
+	vector FireLoc,
+	float SampleLatencyMs,
+	optional Mover BaseMover
+) {
+	local bbPlayer bbP;
+	local UTPure PureRef;
+	local ST_MoverDummy MD;
+	local Mover M;
+	local float SampleSeconds;
+	local float SampleTimeStamp;
+	local vector HistoricalLoc;
+
+	if (Instigator == None || SampleLatencyMs <= 0.0)
+		return FireLoc;
+
+	M = BaseMover;
+	if (M == None)
+		M = Mover(Instigator.Base);
+	if (M == None)
+		return FireLoc;
+
+	bbP = bbPlayer(Instigator);
+	if (bbP == None)
+		return FireLoc;
+
+	PureRef = bbP.zzUTPure;
+	if (PureRef == None)
+		return FireLoc;
+
+	SampleSeconds = 0.001 * SampleLatencyMs * Level.TimeDilation;
+
+	MD = PureRef.FindMoverDummy(M);
+	if (MD == None)
+		return FireLoc - M.Velocity * SampleSeconds;
+
+	SampleTimeStamp = Level.TimeSeconds - SampleSeconds;
+	HistoricalLoc = MD.GetHistoricalLocation(SampleTimeStamp);
+
+	return FireLoc + (HistoricalLoc - M.Location);
+}
+
 function PostBeginPlay() {
 	super.PostBeginPlay();
 
@@ -675,6 +820,148 @@ function bool LineIntersectsCylinder(vector Start, vector End, vector CylinderCe
     return (DistXYSq <= Square(Radius) && DistZ <= HalfHeight);
 }
 
+function bool PointInsideCylinder(vector P, vector CylinderCenter, float Radius, float HalfHeight) {
+	local float DistXYSq;
+
+	DistXYSq = Square(P.X - CylinderCenter.X) + Square(P.Y - CylinderCenter.Y);
+	return (DistXYSq <= Square(Radius) && Abs(P.Z - CylinderCenter.Z) <= HalfHeight);
+}
+
+// Prevent compensated hits through a target's lift when firing from below.
+// Uses mover history at the same rewind time as pawn compensation.
+function bool IsCompensatedHitBlockedByTargetMover(
+	UTPlusDummy TargetDummy,
+	Pawn Shooter,
+	vector StartTrace,
+	vector HitLocation,
+	int RewindPing
+) {
+	local Mover BaseMover;
+	local vector HistoricalMoverLoc;
+
+	if (TargetDummy == None || TargetDummy.Actual == None || Shooter == None)
+		return false;
+
+	BaseMover = Mover(TargetDummy.Actual.Base);
+	if (BaseMover == None)
+		return false;
+
+	// Same-base shots should not be blocked by this protection.
+	if (Shooter.Base == BaseMover)
+		return false;
+
+	HistoricalMoverLoc = BaseMover.Location;
+	// Fallback stays at current mover location if history is unavailable.
+	GetHistoricalMoverLocationForRewind(Shooter, BaseMover, RewindPing, HistoricalMoverLoc);
+
+	// This guard is only for the "from below through mover" case.
+	if (StartTrace.Z >= HistoricalMoverLoc.Z || HitLocation.Z <= HistoricalMoverLoc.Z)
+		return false;
+
+	return LineIntersectsCylinder(
+		StartTrace,
+		HitLocation,
+		HistoricalMoverLoc,
+		BaseMover.CollisionRadius,
+		BaseMover.CollisionHeight
+	);
+}
+
+function bool ShouldIgnoreCompensatedSelfBaseHit(
+	Pawn Shooter,
+	vector StartTrace,
+	vector HitLocation,
+	int RewindPing
+) {
+	local Mover BaseMover;
+	local vector HistoricalMoverLoc;
+	local bool bHasHistorical;
+	local vector ShotDir;
+
+	if (Shooter == None)
+		return false;
+
+	BaseMover = Mover(Shooter.Base);
+	if (BaseMover == None)
+		return false;
+
+	HistoricalMoverLoc = BaseMover.Location;
+	bHasHistorical = GetHistoricalMoverLocationForRewind(Shooter, BaseMover, RewindPing, HistoricalMoverLoc);
+	if (!bHasHistorical)
+		return false;
+
+	// Our mover proxy is cylindrical while real movers are brush geometry. When
+	// the shooter rides an upward mover, compensated muzzle origins can land
+	// inside this proxy even when the actual shot should clear the lift.
+	ShotDir = Normal(HitLocation - StartTrace);
+	if (ShotDir.Z >= 0.0 &&
+		PointInsideCylinder(
+			StartTrace,
+			HistoricalMoverLoc,
+			BaseMover.CollisionRadius,
+			BaseMover.CollisionHeight
+		)
+	) {
+		return true;
+	}
+
+	// Ignore a self-base hit only if the shot segment does not intersect the
+	// mover at the same historical rewind frame.
+	return !LineIntersectsCylinder(
+		StartTrace,
+		HitLocation,
+		HistoricalMoverLoc,
+		BaseMover.CollisionRadius,
+		BaseMover.CollisionHeight
+	);
+}
+
+function bool GetHistoricalMoverLocationForRewind(
+	Pawn Shooter,
+	Mover M,
+	int RewindPing,
+	out vector HistoricalMoverLoc
+) {
+	local bbPlayer bbShooter;
+	local UTPure PureRef;
+	local ST_MoverDummy MD;
+	local float TargetTimeStamp;
+
+	if (M == None || Shooter == None || RewindPing <= 0)
+		return false;
+
+	bbShooter = bbPlayer(Shooter);
+	if (bbShooter == None)
+		return false;
+
+	PureRef = bbShooter.zzUTPure;
+	if (PureRef == None)
+		return false;
+
+	MD = PureRef.FindMoverDummy(M);
+	if (MD == None)
+		return false;
+
+	TargetTimeStamp = Level.TimeSeconds - 0.001 * float(RewindPing) * Level.TimeDilation;
+	HistoricalMoverLoc = MD.GetHistoricalLocation(TargetTimeStamp);
+	return true;
+}
+
+function int ResolveSelfBaseSamplePing(Pawn Shooter, int RewindPing) {
+	local int OneWayPing;
+
+	if (Shooter == None)
+		return RewindPing;
+
+	// For own-base occlusion we want the lift frame the shooter saw when firing,
+	// so use one-way latency instead of target rewind timeline.
+	OneWayPing = int(IGPlus_GetOneWayLatencyMs(Shooter));
+	if (OneWayPing > 0)
+		return OneWayPing;
+
+	return RewindPing;
+}
+
 // Check for beam weapon (PBolt/Pulse Gun) collisions during simulation
 // Returns true if the translocator was hit
 function bool CheckSimulationBeamCollisions(ST_TranslocatorTarget TTarget, float DeltaTime) {
@@ -1030,6 +1317,7 @@ simulated function Actor TraceShotInternal(
 	vector EndTrace,
 	vector StartTrace,
 	Pawn PawnOwner,
+	int RewindPing,
 	bool bWeaponShock,
 	bool bSProjBlocks,
 	bool bCompensated
@@ -1052,6 +1340,8 @@ simulated function Actor TraceShotInternal(
 				if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
 					if (CheckBodyShotCompensated(D, HitLocation, Dir) == false &&
 						CheckHeadShotCompensated(D, HitLocation, Dir) == false)
+						continue;
+					if (IsCompensatedHitBlockedByTargetMover(D, PawnOwner, StartTrace, HitLocation, RewindPing))
 						continue;
 					Other = D.Actual;
 					break;
@@ -1089,10 +1379,16 @@ simulated function Actor TraceShotInternal(
 			}
 		}
 
-		if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-			if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
-				Other = A;
-				break;
+				if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
+					// If compensated muzzle origin clips into the instigator's own mover, skip
+					// only the immediate self-base hit so the ray can continue normally.
+					if (bCompensated && A == PawnOwner.Base && Mover(A) != None) {
+						if (ShouldIgnoreCompensatedSelfBaseHit(PawnOwner, StartTrace, HitLocation, ResolveSelfBaseSamplePing(PawnOwner, RewindPing)))
+							continue;
+					}
+					if (bSProjBlocks || A.IsA('ShockProj') == false || bWeaponShock) {
+						Other = A;
+						break;
 			}
 		}
 	}
@@ -1117,12 +1413,7 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 
 		if (bbP != None) {
 			PureRef = bbP.zzUTPure;
-			EffectivePing = float(bbP.PingAverage) + IGPlus_GetSnapshotInterpRewindMs(PawnOwner);
-
-			if (EffectivePing > WSettingsRepl.PingCompensationMax)
-				EffectivePing = WSettingsRepl.PingCompensationMax;
-			if (EffectivePing < 0.0)
-				EffectivePing = 0.0;
+			EffectivePing = IGPlus_GetHitscanRewindMs(PawnOwner);
 			Ping = int(EffectivePing);
 		}
 
@@ -1133,12 +1424,32 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 
 	if (WSettingsRepl.bEnablePingCompensation && bbP != none) {
 		PureRef.CompensateFor(Ping, PawnOwner);
-		Other = TraceShotInternal(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner, bWeaponShock, bSProjBlocks, true);
+		Other = TraceShotInternal(
+			HitLocation,
+			HitNormal,
+			EndTrace,
+			StartTrace,
+			PawnOwner,
+			Ping,
+			bWeaponShock,
+			bSProjBlocks,
+			true
+		);
 		PureRef.EndCompensation();
 		return Other;
 	}
 
-	return TraceShotInternal(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner, bWeaponShock, bSProjBlocks, false);
+	return TraceShotInternal(
+		HitLocation,
+		HitNormal,
+		EndTrace,
+		StartTrace,
+		PawnOwner,
+		0,
+		bWeaponShock,
+		bSProjBlocks,
+		false
+	);
 }
 
 simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner)
@@ -1149,7 +1460,17 @@ simulated function Actor TraceShotClient(out vector HitLocation, out vector HitN
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 	bWeaponShock = (PawnOwner.Weapon != none && PawnOwner.Weapon.IsA('ShockRifle'));
 
-	return TraceShotInternal(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner, bWeaponShock, bSProjBlocks, false);
+	return TraceShotInternal(
+		HitLocation,
+		HitNormal,
+		EndTrace,
+		StartTrace,
+		PawnOwner,
+		0,
+		bWeaponShock,
+		bSProjBlocks,
+		false
+	);
 }
 
 defaultproperties {

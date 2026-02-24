@@ -154,14 +154,18 @@ function TraceFire(float Accuracy) {
 	local vector HitLocation, HitNormal, StartTrace, EndTrace, X,Y,Z;
 	local actor Other;
 	local Pawn PawnOwner;
+	local float RewindMs;
 
 	PawnOwner = Pawn(Owner);
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
 	StartTrace = Owner.Location + PawnOwner.Eyeheight * vect(0,0,1);
-	if (bbPlayer(Owner) != None && WImp.WeaponSettings.bEnablePingCompensation)
-		StartTrace.Z -= bbPlayer(Owner).GetMoverFireZOffset(true);
+	if (WImp != None && WImp.WeaponSettings.bEnablePingCompensation)
+	{
+		RewindMs = WImp.IGPlus_GetHitscanRewindMs(PawnOwner);
+		StartTrace = WImp.IGPlus_AdjustLocationToHistoricalMoverFrame(PawnOwner, StartTrace, RewindMs);
+	}
 	AdjustedAim = PawnOwner.AdjustAim(1000000, StartTrace, 2*AimError, False, False);	
 	X = vector(AdjustedAim);
 	EndTrace = StartTrace + 100000 * X;
