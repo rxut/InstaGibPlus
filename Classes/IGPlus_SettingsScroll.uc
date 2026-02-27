@@ -7,8 +7,7 @@ enum ESettingsTab {
 
 var UWindowSmallButton Btn_Close;
 var UWindowSmallButton Btn_Save;
-var UWindowSmallButton Btn_ClientTab;
-var UWindowSmallButton Btn_ServerTab;
+var UWindowSmallButton Btn_TabToggle;
 var localized string SaveButtonText;
 var localized string SaveButtonToolTip;
 var localized string ClientTabText;
@@ -24,6 +23,19 @@ var UWindowDialogClientWindow ServerTabArea;
 
 var float FixedPaddingX;
 var float FixedPaddingY;
+
+function UpdateTabToggleButton() {
+	if (Btn_TabToggle == none)
+		return;
+
+	if (ActiveTab == ST_Client) {
+		Btn_TabToggle.SetText(ServerTabText);
+		Btn_TabToggle.ToolTipString = ServerTabToolTip;
+	} else {
+		Btn_TabToggle.SetText(ClientTabText);
+		Btn_TabToggle.ToolTipString = ClientTabToolTip;
+	}
+}
 
 function EnsureServerTabArea() {
 	if (ServerTabArea != none)
@@ -59,10 +71,7 @@ function SetActiveTab(ESettingsTab NewTab) {
 		ActiveTab = ST_Client;
 	}
 
-	if (Btn_ClientTab != none)
-		Btn_ClientTab.bDisabled = (ActiveTab == ST_Client);
-	if (Btn_ServerTab != none)
-		Btn_ServerTab.bDisabled = (ActiveTab == ST_Server);
+	UpdateTabToggleButton();
 
 	Load();
 }
@@ -70,27 +79,14 @@ function SetActiveTab(ESettingsTab NewTab) {
 function Created() {
 	super.Created();
 
-	Btn_ClientTab = UWindowSmallButton(FixedArea.CreateControl(
+	Btn_TabToggle = UWindowSmallButton(FixedArea.CreateControl(
 		class'UWindowSmallButton',
 		FixedPaddingX,
 		FixedPaddingY,
 		32,
 		16
 	));
-	Btn_ClientTab.SetText(ClientTabText);
-	Btn_ClientTab.ToolTipString = ClientTabToolTip;
-	Btn_ClientTab.Register(self);
-
-	Btn_ServerTab = UWindowSmallButton(FixedArea.CreateControl(
-		class'UWindowSmallButton',
-		FixedPaddingX + 40,
-		FixedPaddingY,
-		32,
-		16
-	));
-	Btn_ServerTab.SetText(ServerTabText);
-	Btn_ServerTab.ToolTipString = ServerTabToolTip;
-	Btn_ServerTab.Register(self);
+	Btn_TabToggle.Register(self);
 
 	Btn_Save = UWindowSmallButton(FixedArea.CreateControl(
 		class'UWindowSmallButton',
@@ -116,7 +112,8 @@ function Created() {
 	ClientTabArea = ClientArea;
 	EnsureServerTabArea();
 
-	ActiveTab = ST_Client;
+	// Force first SetActiveTab call to run initialization path.
+	ActiveTab = ST_Server;
 	SetActiveTab(ST_Client);
 }
 
@@ -124,11 +121,12 @@ function Notify(UWindowDialogControl C, byte E)
 {
 	Super.Notify(C, E);
 
-	if (E == DE_Click && C == Btn_ClientTab)
-		SetActiveTab(ST_Client);
-	else if (E == DE_Click && C == Btn_ServerTab)
-		SetActiveTab(ST_Server);
-	else if (E == DE_Click && C == Btn_Save) {
+	if (E == DE_Click && C == Btn_TabToggle) {
+		if (ActiveTab == ST_Client)
+			SetActiveTab(ST_Server);
+		else
+			SetActiveTab(ST_Client);
+	} else if (E == DE_Click && C == Btn_Save) {
 		Save();
 		if (IGPlus_SettingsContent(ClientArea) != none)
 			Load();
@@ -138,11 +136,8 @@ function Notify(UWindowDialogControl C, byte E)
 function BeforePaint(Canvas C, float X, float Y) {
 	super.BeforePaint(C, X, Y);
 
-	Btn_ClientTab.AutoWidth(C);
-	Btn_ClientTab.WinLeft = FixedPaddingX;
-
-	Btn_ServerTab.AutoWidth(C);
-	Btn_ServerTab.WinLeft = FixedPaddingX + Btn_ClientTab.WinWidth + 5;
+	Btn_TabToggle.AutoWidth(C);
+	Btn_TabToggle.WinLeft = FixedPaddingX;
 
 	Btn_Close.AutoWidth(C);
 	Btn_Close.WinLeft = FixedArea.WinWidth-FixedPaddingX-Btn_Close.WinWidth;

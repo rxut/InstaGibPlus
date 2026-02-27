@@ -228,44 +228,68 @@ function bbPlayer ResolveOwnerBBPlayer() {
 	return bbPlayer(ResolveOwnerPawn());
 }
 
+function bbCHSpectator ResolveOwnerBBSpectator() {
+	return bbCHSpectator(ResolveOwnerPawn());
+}
+
 function ServerSettings FindServerSettingsObject() {
 	local bbPlayer P;
+	local bbCHSpectator S;
 
 	P = ResolveOwnerBBPlayer();
-	if (P == none)
-		return none;
+	if (P != none)
+		return P.IGPlus_GetServerSettingsObject();
 
-	return P.IGPlus_GetServerSettingsObject();
+	S = ResolveOwnerBBSpectator();
+	if (S != none)
+		return S.IGPlus_GetServerSettingsObject();
+
+	return none;
 }
 
 function ResetLocalServerSettingsCache() {
 	local bbPlayer P;
+	local bbCHSpectator S;
 
 	P = ResolveOwnerBBPlayer();
-	if (P == none)
+	if (P != none) {
+		P.IGPlus_ServerSettingsInit();
 		return;
+	}
 
-	P.IGPlus_ServerSettingsInit();
+	S = ResolveOwnerBBSpectator();
+	if (S != none)
+		S.IGPlus_ServerSettingsInit();
 }
 
 function bool AreServerSettingsLoaded() {
 	local bbPlayer P;
+	local bbCHSpectator S;
 
 	P = ResolveOwnerBBPlayer();
-	if (P == none)
-		return false;
+	if (P != none)
+		return P.IGPlus_ServerSettingsMenuLoaded;
 
-	return P.IGPlus_ServerSettingsMenuLoaded;
+	S = ResolveOwnerBBSpectator();
+	if (S != none)
+		return S.IGPlus_ServerSettingsMenuLoaded;
+
+	return false;
 }
 
 function bool HasServerAdminAccess() {
 	local bbPlayer P;
+	local bbCHSpectator S;
 
 	P = ResolveOwnerBBPlayer();
 	if (P != none)
 		return P.IGPlus_ServerSettingsMenuCanEdit;
 
-	return IsAdmin();
+	S = ResolveOwnerBBSpectator();
+	if (S != none)
+		return S.IGPlus_ServerSettingsMenuCanEdit;
+
+	return false;
 }
 
 function float GetNowTimeSeconds() {
@@ -296,6 +320,7 @@ function bool IsAdmin() {
 
 function RequestServerSettings(optional bool bForce) {
 	local bbPlayer P;
+	local bbCHSpectator S;
 	local float NowTime;
 
 	NowTime = GetNowTimeSeconds();
@@ -303,11 +328,17 @@ function RequestServerSettings(optional bool bForce) {
 		return;
 
 	P = ResolveOwnerBBPlayer();
-	if (P == none)
+	if (P != none) {
+		P.IGPlus_ServerRequestSettings();
+		NextRefreshRequestTime = NowTime + 1.0;
 		return;
+	}
 
-	P.IGPlus_ServerRequestSettings();
-	NextRefreshRequestTime = NowTime + 1.0;
+	S = ResolveOwnerBBSpectator();
+	if (S != none) {
+		S.IGPlus_ServerRequestSettings();
+		NextRefreshRequestTime = NowTime + 1.0;
+	}
 }
 
 function SetStatusText(string Text) {
