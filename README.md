@@ -27,89 +27,102 @@ An InstaGib focussed fork of TimTim's NewNet mutator for Unreal Tournament.
 These settings can be found in **InstaGibPlus.ini** under section **\[ClientSettings\]**.
 
 1. [bForceModels](#bforcemodels)
-2. [DesiredSkin](#desiredskin)
-3. [DesiredSkinFemale](#desiredskinfemale)
-4. [DesiredTeamSkin](#desiredteamskin)
-5. [DesiredTeamSkinFemale](#desiredteamskinfemale)
-6. [SkinEnemyIndexMap](#skinenemyindexmap)
-7. [SkinTeamIndexMap](#skinteamindexmap)
-8. [bSkinEnemyUseIndexMap](#bskinenemyuseindexmap)
-9. [bSkinTeamUseIndexMap](#bskinteamuseindexmap)
-10. [bUnlitSkins](#bunlitskins)
-11. [HitSound](#hitsound)
-12. [TeamHitSound](#teamhitsound)
-13. [bDisableForceHitSounds](#bdisableforcehitsounds)
-14. [bEnableHitSounds](#benablehitsounds)
-15. [bEnableTeamHitSounds](#benableteamhitsounds)
-16. [bHitSoundPitchShift](#bhitsoundpitchshift)
-17. [bHitSoundTeamPitchShift](#bhitsoundteampitchshift)
-18. [HitSoundSource](#hitsoundsource)
-19. [SelectedHitSound](#selectedhitsound)
-20. [SelectedTeamHitSound](#selectedteamhitsound)
-21. [HitSoundVolume](#hitsoundvolume)
-22. [HitSoundTeamVolume](#hitsoundteamvolume)
-23. [sHitSound](#shitsound)
-24. [bDoEndShot](#bdoendshot)
-25. [bAutoDemo](#bautodemo)
-26. [DemoMask](#demomask)
-27. [DemoPath](#demopath)
-28. [DemoChar](#demochar)
-29. [bTeamInfo](#bteaminfo)
-30. [bShootDead](#bshootdead)
-31. [cShockBeam](#cshockbeam)
-32. [bHideOwnBeam](#bhideownbeam)
-33. [BeamScale](#beamscale)
-34. [BeamFadeCurve](#beamfadecurve)
-35. [BeamDuration](#beamduration)
-36. [BeamOriginMode](#beamoriginmode)
-37. [BeamDestinationMode](#beamdestinationmode)
-38. [SSRRingType](#ssrringtype)
-39. [bNoOwnFootsteps](#bnoownfootsteps)
-40. [DesiredNetUpdateRate](#desirednetupdaterate)
-41. [DesiredNetspeed](#desirednetspeed)
-42. [FakeCAPInterval](#fakecapinterval)
-43. [bNoSmoothing](#bnosmoothing)
-44. [bLogClientMessages](#blogclientmessages)
-45. [bDebugMovement](#bdebugmovement)
-46. [bEnableKillCam](#benablekillcam)
-47. [MinDodgeClickTime](#mindodgeclicktime)
-48. [bUseOldMouseInput](#buseoldmouseinput)
-49. [SmoothVRController](#smoothvrcontroller)
-50. [bShowFPS](#bshowfps)
-51. [FPSLocationX](#fpslocationx)
-52. [FPSLocationY](#fpslocationy)
-53. [FPSDetail](#fpsdetail)
-54. [FPSCounterSmoothingStrength](#fpscountersmoothingstrength)
-55. [KillCamMinDelay](#killcammindelay)
-56. [bAllowWeaponShake](#ballowweaponshake)
-57. [bAutoReady](#bautoready)
-58. [bShowDeathReport](#bshowdeathreport)
-59. [bSmoothFOVChanges](#bsmoothfovchanges)
-60. [bEnableKillFeed](#benablekillfeed)
-61. [KillFeedX](#killfeedx)
-62. [KillFeedY](#killfeedy)
-63. [KillFeedSpeed](#killfeedspeed)
-64. [KillFeedScale](#killfeedscale)
-65. [FraggerScopeChoice](#fraggerscopechoice)
-66. [bEnableNetStats](#benablenetstats)
-67. [bNetStatsUnconfirmedTime](#bnetstatsunconfirmedtime)
-68. [bNetStatsLocationError](#bnetstatslocationerror)
-69. [bNetStatsFrameTime](#bnetstatsframetime)
-69. [NetStatsLocationX](#netstatslocationx)
-70. [NetStatsLocationY](#netstatslocationy)
-71. [NetStatsWidth](#netstatswidth)
-72. [bEnableHitMarker](#benablehitmarker)
-73. [bEnableTeamHitMarker](#benableteamhitmarker)
-74. [HitMarkerColorMode](#hitmarkercolormode)
-75. [HitMarkerColor](#hitmarkercolor)
-76. [HitMarkerTeamColor](#hitmarkerteamcolor)
-77. [HitMarkerSize](#hitmarkersize)
-78. [HitMarkerOffset](#hitmarkeroffset)
-79. [HitMarkerDuration](#hitmarkerduration)
-70. [HitMarkerDecayExponent](#hitmarkerdecayexponent)
-81. [HitMarkerSource](#hitmarkersource)
-82. [bUseCrosshairFactory](#busecrosshairfactory)
-83. [CrosshairLayers](#crosshairlayers)
+1. [DesiredSkin](#desiredskin)
+1. [DesiredSkinFemale](#desiredskinfemale)
+1. [DesiredTeamSkin](#desiredteamskin)
+1. [DesiredTeamSkinFemale](#desiredteamskinfemale)
+1. [SkinEnemyIndexMap](#skinenemyindexmap)
+1. [SkinTeamIndexMap](#skinteamindexmap)
+1. [bSkinEnemyUseIndexMap](#bskinenemyuseindexmap)
+1. [bSkinTeamUseIndexMap](#bskinteamuseindexmap)
+1. [bUnlitSkins](#bunlitskins)
+1. [HitSound](#hitsound)
+1. [TeamHitSound](#teamhitsound)
+1. [bDisableForceHitSounds](#bdisableforcehitsounds)
+1. [bEnableHitSounds](#benablehitsounds)
+1. [bEnableTeamHitSounds](#benableteamhitsounds)
+1. [bHitSoundPitchShift](#bhitsoundpitchshift)
+1. [bHitSoundTeamPitchShift](#bhitsoundteampitchshift)
+1. [HitSoundSource](#hitsoundsource)
+1. [SelectedHitSound](#selectedhitsound)
+1. [SelectedTeamHitSound](#selectedteamhitsound)
+1. [HitSoundVolume](#hitsoundvolume)
+1. [HitSoundTeamVolume](#hitsoundteamvolume)
+1. [sHitSound](#shitsound)
+1. [bDoEndShot](#bdoendshot)
+1. [bAutoDemo](#bautodemo)
+1. [DemoMask](#demomask)
+1. [DemoPath](#demopath)
+1. [DemoChar](#demochar)
+1. [bTeamInfo](#bteaminfo)
+1. [bShootDead](#bshootdead)
+1. [cShockBeam](#cshockbeam)
+1. [bHideOwnBeam](#bhideownbeam)
+1. [bBeamEnableLight](#bbeamenablelight)
+1. [BeamScale](#beamscale)
+1. [BeamFadeCurve](#beamfadecurve)
+1. [BeamDuration](#beamduration)
+1. [BeamOriginMode](#beamoriginmode)
+1. [BeamDestinationMode](#beamdestinationmode)
+1. [SSRRingType](#ssrringtype)
+1. [bNoOwnFootsteps](#bnoownfootsteps)
+1. [DesiredNetUpdateRate](#desirednetupdaterate)
+1. [DesiredNetspeed](#desirednetspeed)
+1. [FakeCAPInterval](#fakecapinterval)
+1. [bNoSmoothing](#bnosmoothing)
+1. [bLogClientMessages](#blogclientmessages)
+1. [bDemoShowClientMessages](#bdemoshowclientmessages)
+1. [bDebugMovement](#bdebugmovement)
+1. [bEnableKillCam](#benablekillcam)
+1. [MinDodgeClickTime](#mindodgeclicktime)
+1. [bUseOldMouseInput](#buseoldmouseinput)
+1. [SmoothVRController](#smoothvrcontroller)
+1. [bShowFPS](#bshowfps)
+1. [FPSLocationX](#fpslocationx)
+1. [FPSLocationY](#fpslocationy)
+1. [FPSDetail](#fpsdetail)
+1. [FPSCounterSmoothingStrength](#fpscountersmoothingstrength)
+1. [KillCamMinDelay](#killcammindelay)
+1. [bReduceEyeHeightInAir](#breduceeyeheightinair)
+1. [bAllowWeaponShake](#ballowweaponshake)
+1. [bAutoReady](#bautoready)
+1. [bShowDeathReport](#bshowdeathreport)
+1. [bSmoothFOVChanges](#bsmoothfovchanges)
+1. [bEnableLocationOffsetFix](#benablelocationoffsetfix)
+1. [bEnableKillFeed](#benablekillfeed)
+1. [KillFeedX](#killfeedx)
+1. [KillFeedY](#killfeedy)
+1. [KillFeedSpeed](#killfeedspeed)
+1. [KillFeedScale](#killfeedscale)
+1. [FraggerScopeChoice](#fraggerscopechoice)
+1. [bEnableNetStats](#benablenetstats)
+1. [bNetStatsUnconfirmedTime](#bnetstatsunconfirmedtime)
+1. [bNetStatsLocationError](#bnetstatslocationerror)
+1. [bNetStatsFrameTime](#bnetstatsframetime)
+1. [NetStatsLocationX](#netstatslocationx)
+1. [NetStatsLocationY](#netstatslocationy)
+1. [NetStatsWidth](#netstatswidth)
+1. [bEnableHitMarker](#benablehitmarker)
+1. [bEnableTeamHitMarker](#benableteamhitmarker)
+1. [HitMarkerColorMode](#hitmarkercolormode)
+1. [HitMarkerColor](#hitmarkercolor)
+1. [HitMarkerTeamColor](#hitmarkerteamcolor)
+1. [HitMarkerSize](#hitmarkersize)
+1. [HitMarkerOffset](#hitmarkeroffset)
+1. [HitMarkerDuration](#hitmarkerduration)
+1. [HitMarkerDecayExponent](#hitmarkerdecayexponent)
+1. [HitMarkerSource](#hitmarkersource)
+1. [bUseCrosshairFactory](#busecrosshairfactory)
+1. [CrosshairLayers](#crosshairlayers)
+1. [bBioUseClientSideAnimations](#bbiouseclientsideanimations)
+1. [bShockBeamUseClientSideAnimations](#bshockbeamuseclientsideanimations)
+1. [bShockProjectileUseClientSideAnimations](#bshockprojectileuseclientsideanimations)
+1. [bPulseUseClientSideAnimations](#bpulseuseclientsideanimations)
+1. [bRipperUseClientSideAnimations](#bripperuseclientsideanimations)
+1. [bFlakUseClientSideAnimations](#bflakuseclientsideanimations)
+1. [bRocketUseClientSideAnimations](#brocketuseclientsideanimations)
+1. [bSniperUseClientSideAnimations](#bsniperuseclientsideanimations)
+1. [bTranslocatorUseClientSideAnimations](#btranslocatoruseclientsideanimations)
 
 ## bForceModels
 **Type: bool**  
@@ -221,6 +234,15 @@ Whether the HitSound from hitting enemies should be pitch shifted depending on d
 
 Whether the HitSound from hitting teammates should be pitch shifted depending on damage dealt or not.
 
+## HitSoundSource
+**Type: EHitSoundSource**  
+**Default: HSSRC_Server**  
+
+Selects where hit sound events come from.
+
+* `HSSRC_Server` ➜ Use server-side hit confirmations (accurate but delayed by ping).
+* `HSSRC_Client` ➜ Use client-side hit detection (instant but can be inaccurate).
+
 ## SelectedHitSound
 **Type: int**  
 **Default: 0**  
@@ -324,6 +346,13 @@ The style of beam to use for the SuperShockRifle.
 
 If `True`, hides your own SuperShockRifle beams, no matter the value of [cShockBeam](#cshockbeam). 
 
+## bBeamEnableLight
+**Type: bool**  
+**Default: True**  
+
+If `True`, shock beams emit dynamic light.  
+If `False`, dynamic light from beams is disabled.
+
 ## BeamScale
 **Type: float**  
 **Default: 0.45**  
@@ -402,7 +431,7 @@ Higher values result in less frequent acknowledgements which can result in degra
 
 ## bNoSmoothing
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 The default mouse input smoothing algorithm always smears input over at least two frames, half the input being applied on one frame, the other half on the next frame. If set to `True`, the game will always apply all input on the current frame. If set to `False`, the default algorithm will be used.
 
@@ -413,6 +442,14 @@ This is a backport from UT99 client version 469, where the equivalent setting is
 **Default: True**  
 
 Causes all ClientMessages to be logged, if set to `True`
+
+## bDemoShowClientMessages
+**Type: bool**  
+**Default: False**  
+
+If `True`, ClientMessages are shown while playing demos.  
+If `False`, ClientMessages are hidden while playing demos.
+
 ## bDebugMovement
 **Type: bool**  
 **Default: False**  
@@ -492,6 +529,13 @@ How many samples to average FPS over.
 
 Minimum time between death and when KillCam starts rotating towards killer.
 
+## bReduceEyeHeightInAir
+**Type: bool**  
+**Default: False**  
+
+If `True`, reduces eye height while in air.  
+If `False`, uses normal eye height while in air.
+
 ## bAllowWeaponShake
 **Type: bool**  
 **Default: True**  
@@ -516,6 +560,13 @@ If `True`, show a report of damage taken that lead to death. The report starts f
 
 If `True`, smooth changes to your FOV, which can happen when spawning, teleporting or zooming.  
 If `False`, your FOV immediately changes to the desired FOV without a smooth transition.
+
+## bEnableLocationOffsetFix
+**Type: bool**  
+**Default: True**  
+
+If `True`, enables client-side location offset correction to reduce visual jitter/offset artifacts.  
+If `False`, disables that correction.
 
 ## bEnableKillFeed
 **Type: bool**  
@@ -709,6 +760,60 @@ A crosshair is made up of individual images that are drawn in a specific order p
 * `bSmooth` controls whether sharp edges should be smoothed out when `ScaleX` or `ScaleY` are greater than 1
 * `bUse` controls whether this layer should be drawn, `True` to draw, `False` to ignore
 
+## bBioUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Bio Rifle ping-compensated logic.
+
+## bShockBeamUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Shock Beam ping-compensated logic.
+
+## bShockProjectileUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Shock Projectile ping-compensated logic.
+
+## bPulseUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Pulse Gun ping-compensated logic.
+
+## bRipperUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Ripper ping-compensated logic.
+
+## bFlakUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Flak ping-compensated logic.
+
+## bRocketUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Rocket Launcher ping-compensated logic.
+
+## bSniperUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Sniper ping-compensated logic.
+
+## bTranslocatorUseClientSideAnimations
+**Type: bool**  
+**Default: False**  
+
+Enable client-side animation timing for Translocator ping-compensated logic.
+
 # Client Commands
 The following commands are additions by IG+ to the standard set of commands.
 
@@ -722,36 +827,65 @@ Types for parameters:
 Parameters marked `optional` do not have to be supplied.
 
 1. [EnableDebugData](#enabledebugdata)
-2. [EnableHitSound](#enablehitsound)
-3. [EnableTeamHitSound](#enableteamhitsound)
-4. [SetHitSound](#sethitsound)
-5. [SetTeamHitSound](#setteamhitsound)
-6. [ForceModels](#forcemodels)
-7. [ListSkins](#listskins)
-8. [SetForcedSkins](#setforcedskins)
-9. [SetForcedTeamSkins](#setforcedteamskins)
-10. [SetShockBeam](#setshockbeam)
-11. [SetBeamScale](#setbeamscale)
-12. [MyIgSettings](#myigsettings)
-13. [SetNetUpdateRate](#setnetupdaterate)
-14. [SetMouseSmoothing](#setmousesmoothing)
-15. [SetKillCamEnabled](#setkillcamenabled)
-16. [DropFlag](#dropflag)
-17. [PureLogo](#purelogo)
-18. [TeamInfo](#teaminfo)
-19. [SetMinDodgeClickTime](#setmindodgeclicktime)
-20. [mdct](#mdct)
-21. [EndShot](#endshot)
-22. [Hold](#hold)
-23. [Go](#go)
-24. [AutoDemo](#autodemo)
-25. [ShootDead](#shootdead)
-26. [SetDemoMask](#setdemomask)
-27. [DemoStart](#demostart)
-28. [ShowFPS](#showfps)
-29. [ShowOwnBeam](#showownbeam)
-30. [Ready](#ready)
-31. [ZoomToggle](#zoomtoggle)
+1. [EnableHitSound](#enablehitsound)
+1. [EnableTeamHitSound](#enableteamhitsound)
+1. [SetHitSound](#sethitsound)
+1. [SetTeamHitSound](#setteamhitsound)
+1. [ForceModels](#forcemodels)
+1. [ListSkins](#listskins)
+1. [SetForcedSkins](#setforcedskins)
+1. [SetForcedTeamSkins](#setforcedteamskins)
+1. [SetShockBeam](#setshockbeam)
+1. [SetBeamScale](#setbeamscale)
+1. [MyIgSettings](#myigsettings)
+1. [SetNetUpdateRate](#setnetupdaterate)
+1. [SetMouseSmoothing](#setmousesmoothing)
+1. [SetKillCamEnabled](#setkillcamenabled)
+1. [DropFlag](#dropflag)
+1. [PureLogo](#purelogo)
+1. [TeamInfo](#teaminfo)
+1. [SetMinDodgeClickTime](#setmindodgeclicktime)
+1. [mdct](#mdct)
+1. [EndShot](#endshot)
+1. [Hold](#hold)
+1. [Go](#go)
+1. [AutoDemo](#autodemo)
+1. [ShootDead](#shootdead)
+1. [SetDemoMask](#setdemomask)
+1. [DemoStart](#demostart)
+1. [ShowFPS](#showfps)
+1. [ShowOwnBeam](#showownbeam)
+1. [Ready](#ready)
+1. [ZoomToggle](#zoomtoggle)
+1. [IGPlusMenu](#igplusmenu)
+1. [EnableClientSideAnimations](#enableclientsideanimations)
+1. [DisableClientSideAnimations](#disableclientsideanimations)
+1. [BioClientSideAnimations](#bioclientsideanimations)
+1. [ShockBeamClientSideAnimations](#shockbeamclientsideanimations)
+1. [ShockProjectileClientSideAnimations](#shockprojectileclientsideanimations)
+1. [PulseClientSideAnimations](#pulseclientsideanimations)
+1. [RipperClientSideAnimations](#ripperclientsideanimations)
+1. [FlakClientSideAnimations](#flakclientsideanimations)
+1. [RocketClientSideAnimations](#rocketclientsideanimations)
+1. [SniperClientSideAnimations](#sniperclientsideanimations)
+1. [TranslocatorClientSideAnimations](#translocatorclientsideanimations)
+1. [NetcodeHelp](#netcodehelp)
+1. [bEnableLoosePositionCheck](#benableloosepositioncheck-command)
+1. [LooseCheckCorrectionFactor](#loosecheckcorrectionfactor-command)
+1. [LooseCheckCorrectionFactorOnMover](#loosecheckcorrectionfactoronmover-command)
+1. [bEnableInputReplication](#benableinputreplication-command)
+1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation-command)
+1. [SnapshotInterpSendHz](#snapshotinterpsendhz-command)
+1. [SnapshotInterpRewindMs](#snapshotinterprewindms-command)
+1. [MaxJitterTime](#maxjittertime-command)
+1. [bEnableJitterBounding](#benablejitterbounding-command)
+1. [SnapInterpDebug](#snapinterpdebug)
+1. [SnapInterpStatus](#snapinterpstatus)
+1. [SnapInterpNetStatus](#snapinterpnetstatus)
+1. [SnapInterpCheck](#snapinterpcheck)
+1. [SnapInterpCheckStop](#snapinterpcheckstop)
+1. [TraceInput](#traceinput)
+1. [ShowTickrate / ShowNetSpeeds](#showtickrate--shownetspeeds)
 
 ## EnableDebugData
 **Parameters: (bool b)**  
@@ -880,6 +1014,138 @@ If `SensitivityY` is not provided by the user, it is assumed to be the same as `
 - Same sensitivity as un-zoomed: `ZoomToggle 1.0`
 - Half the sensitivity as un-zoomed: `ZoomToggle 0.5`
 
+## IGPlusMenu
+Opens the IG+ settings window.
+
+## EnableClientSideAnimations
+Enables all per-weapon client-side animation toggles (unless forced by server).
+
+## DisableClientSideAnimations
+Disables all per-weapon client-side animation toggles (unless forced by server).
+
+## BioClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Bio weapon behavior.
+
+## ShockBeamClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Shock Beam behavior.
+
+## ShockProjectileClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Shock Projectile behavior.
+
+## PulseClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Pulse behavior.
+
+## RipperClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Ripper behavior.
+
+## FlakClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Flak behavior.
+
+## RocketClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Rocket behavior.
+
+## SniperClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Sniper behavior.
+
+## TranslocatorClientSideAnimations
+**Parameters: (bool b)**
+
+Enable/disable client-side animations for Translocator behavior.
+
+## NetcodeHelp
+Prints netcode runtime settings and available netcode debug commands.
+
+## bEnableLoosePositionCheck (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [bEnableLoosePositionCheck](#benableloosepositioncheck) (admin only).
+
+## LooseCheckCorrectionFactor (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [LooseCheckCorrectionFactor](#loosecheckcorrectionfactor) (admin only).
+
+## LooseCheckCorrectionFactorOnMover (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [LooseCheckCorrectionFactorOnMover](#loosecheckcorrectionfactoronmover) (admin only).
+
+## bEnableInputReplication (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [bEnableInputReplication](#benableinputreplication) (admin only).
+
+## bEnableSnapshotInterpolation (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [bEnableSnapshotInterpolation](#benablesnapshotinterpolation) (admin only).
+
+## SnapshotInterpSendHz (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [SnapshotInterpSendHz](#snapshotinterpsendhz) (admin only).
+
+## SnapshotInterpRewindMs (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [SnapshotInterpRewindMs](#snapshotinterprewindms) (admin only).
+
+## MaxJitterTime (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [MaxJitterTime](#maxjittertime) (admin only).
+
+## bEnableJitterBounding (command)
+**Parameters: (optional string Value)**
+
+Read/set server setting [bEnableJitterBounding](#benablejitterbounding) (admin only).
+
+## SnapInterpDebug
+Toggles snapshot interpolation debug reporting.
+
+## SnapInterpStatus
+**Parameters: (optional string NameFilter)**
+
+Prints one-shot proxy runtime status.
+
+## SnapInterpNetStatus
+**Parameters: (optional string NameFilter)**
+
+Prints client report + server echo + proxy status.
+
+## SnapInterpCheck
+**Parameters: (optional string Profile, optional float DurationSec, optional string NameFilter)**
+
+Runs an interpolation quality check against a simulated proxy target.
+
+## SnapInterpCheckStop
+Stops an active SnapInterpCheck run.
+
+## TraceInput
+Toggles logging of client input trace data.
+
+## ShowTickrate / ShowNetSpeeds
+These are mutate commands exposed by UTPure command handling:
+
+* `mutate PureShowTickrate`
+* `mutate PureShowNetspeeds`
+
 # Server Installation
 
 Extract the zipped files to your installation's folder.  
@@ -932,6 +1198,12 @@ When connected to the server type **'mutate playerhelp'** in the console to view
 - BanID x (Will Ban & Kick player with ID x)
 - EnablePure/DisablePure
 - ShowDemos (Will show who is recording demos)
+- mutate IGPlusServerGet \<Setting\>
+- mutate IGPlusServerSet \<Setting\> \<Value\>
+- mutate IGPlusServerSetSilent \<Setting\> \<Value\>
+- mutate PureShowTickrate
+- mutate PureShowNetspeeds
+- mutate PingCompSettings
 
 As spectator, you may need to add 'mutate pure' + command (mutate pureshowtickrate)
 
@@ -941,7 +1213,6 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [HeadshotDamage](#headshotdamage)
 1. [SniperSpeed](#sniperspeed)
 1. [SniperDamagePri](#sniperdamagepri)
-1. [SetPendingWeapon](#setpendingweapon)
 1. [NNAnnouncer](#nnannouncer)
 1. [bUTPureEnabled](#butpureenabled)
 1. [Advertise](#advertise)
@@ -958,13 +1229,16 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bAdvancedTeamSay](#badvancedteamsay)
 1. [ForceSettingsLevel](#forcesettingslevel)
 1. [bWarmup](#bwarmup)
+1. [WarmupTimeLimit](#warmuptimelimit)
 1. [bCoaches](#bcoaches)
 1. [bAutoPause](#bautopause)
 1. [PauseTotalTime](#pausetotaltime)
 1. [PauseTime](#pausetime)
+1. [Timeouts](#timeouts)
 1. [ForceModels](#forcemodels)
 1. [ImprovedHUD](#improvedhud)
 1. [bDelayedPickupSpawn](#bdelayedpickupspawn)
+1. [bUseFastWeaponSwitch](#busefastweaponswitch)
 1. [bTellSpectators](#btellspectators)
 1. [PlayerPacks](#playerpacks)
 1. [DefaultHitSound](#defaulthitsound)
@@ -989,7 +1263,6 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [PlayerScale](#playerscale)
 1. [bAlwaysRenderFlagCarrier](#balwaysrenderflagcarrier)
 1. [bAlwaysRenderDroppedFlags](#balwaysrenderdroppedflags)
-1. [MinPosError](#minposerror)
 1. [MaxPosError](#maxposerror)
 1. [MaxHitError](#maxhiterror)
 1. [MaxJitterTime](#maxjittertime)
@@ -1002,11 +1275,19 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bPlayersAlwaysRelevant](#bplayersalwaysrelevant)
 1. [bEnablePingCompensatedSpawn](#benablepingcompensatedspawn)
 1. [bEnableJitterBounding](#benablejitterbounding)
+1. [LooseCheckCorrectionFactor](#loosecheckcorrectionfactor)
+1. [LooseCheckCorrectionFactorOnMover](#loosecheckcorrectionfactoronmover)
+1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation)
+1. [SnapshotInterpSendHz](#snapshotinterpsendhz)
+1. [SnapshotInterpRewindMs](#snapshotinterprewindms)
 1. [bEnableWarpFix](#benablewarpfix)
 1. [WarpFixDelay](#warpfixdelay)
 1. [FireTimeout](#firetimeout)
 1. [bEnableCarcassCollision](#benablecarcasscollision)
 1. [ShowTouchedPackage](#showtouchedpackage)
+1. [bEnableDamageDebugMode](#benabledamagedebugmode)
+1. [bEnableDamageDebugConsoleMessages](#benabledamagedebugconsolemessages)
+1. [bEnableHitboxDebugMode](#benablehitboxdebugmode)
 1. [ExcludeMapsForKickers](#excludemapsforkickers)
 1. [HitFeedbackMode](#hitfeedbackmode)
 1. [ForcedSettings](#forcedsettings)
@@ -1032,14 +1313,10 @@ Controls sniper rifle reload time, higher values lead to less time between shots
 
 Controls damage of body hits by sniper rifle.
 
-## SetPendingWeapon
-
-**removed**
-
 ## NNAnnouncer
 
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Whether to automatically add an announcer for multi-kills, or not.
 
@@ -1176,6 +1453,14 @@ When to check that default settings for all objects are correct client-side.
 
 Whether to allow warmup in tournament games or not.
 
+## WarmupTimeLimit
+
+**Type: int**  
+**Default: 0**  
+**Unit: s**  
+
+Maximum warmup length in seconds. `0` means no explicit warmup time limit.
+
 ### bCoaches
 
 **Type: bool**  
@@ -1203,6 +1488,13 @@ Maximum time a team may pause the game for.
 **Default: 60**  
 
 Length of pause when a pause is triggered.
+
+## Timeouts
+
+**Type: int**  
+**Default: 0**  
+
+Maximum number of timeouts a team may take (used with coaches/tournament flow).
 
 ### ForceModels
 
@@ -1232,6 +1524,14 @@ Enable various HUD improvements. Depends on PureClickBoard mutator (set [bUseCli
 **Default: False**  
 
 Enable or disable delayed first pickup spawn.
+
+## bUseFastWeaponSwitch
+
+**Type: bool**  
+**Default: False**  
+
+If `True`, use the fast weapon switch path.  
+If `False`, use normal weapon switching behavior.
 
 ## bTellSpectators
 
@@ -1290,18 +1590,10 @@ Horizontal speed with which to throw weapons.
 
 Forces clients to do demos.
 
-## MinPosError
-
-**Type: float**  
-**Default: 100**  
-**Unit: uu²**  
-
-Unused. Intended to be minimum squared distance error for updating clients.
-
 ## MaxPosError
 
 **Type: float**  
-**Default: 3000**  
+**Default: 1000**  
 **Unit: uu²**
 
 Unused. Intended to be maximum squared distance error for updating clients.
@@ -1320,6 +1612,27 @@ Distance to any position over the last 500ms for hits to be counted.
 **Default: False**  
 
 Send package-names of touched actors to clients when those clients touch the actors.
+
+## bEnableDamageDebugMode
+
+**Type: bool**  
+**Default: False**  
+
+If `True`, enables server-side damage debug instrumentation.
+
+## bEnableDamageDebugConsoleMessages
+
+**Type: bool**  
+**Default: False**  
+
+If `True`, emits damage debug information to console messages.
+
+## bEnableHitboxDebugMode
+
+**Type: bool**  
+**Default: False**  
+
+If `True`, enables hitbox debug instrumentation.
 
 ## ExcludeMapsForKickers
 
@@ -1448,6 +1761,45 @@ If enabled, updates by clients over more than [MaxJitterTime](#maxjittertime) wi
 
 Disable to restore default netcode behavior.
 
+## LooseCheckCorrectionFactor
+
+**Type: float**  
+**Default: 1.0**  
+
+Multiplier for loose position check correction strength.
+
+## LooseCheckCorrectionFactorOnMover
+
+**Type: float**  
+**Default: 1.0**  
+
+Multiplier for loose position check correction strength while standing on movers.
+
+## bEnableSnapshotInterpolation
+
+**Type: bool**  
+**Default: False**  
+
+If enabled, clients use snapshot interpolation for simulated proxies.
+
+This feature is highly experimental and should be enabled only for controlled testing.
+
+## SnapshotInterpSendHz
+
+**Type: float**  
+**Default: 30.0**  
+**Unit: Hz**  
+
+Snapshot send rate used by snapshot interpolation.
+
+## SnapshotInterpRewindMs
+
+**Type: float**  
+**Default: 66.0**  
+**Unit: ms**  
+
+Interpolation rewind delay used by snapshot interpolation.
+
 ## bEnableWarpFix
 
 **Type: bool**  
@@ -1496,7 +1848,7 @@ If True, players retain the momentum of their in-air movement upon landing. If F
 ## bEnableSingleButtonDodge
 
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enables an input button clients can bind to a key, which makes the client dodge in the direction it is currently walking.
 
