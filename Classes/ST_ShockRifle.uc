@@ -137,7 +137,8 @@ function ServerExplicitFire(
 			ExplicitClientBaseMover = Mover(Owner.Base);
 		} else {
 			ExplicitClientLoc = Owner.Location;
-			ExplicitClientBaseMover = Mover(Owner.Base);
+			// Fallback already uses server-current position; skip mover re-adjust later.
+			ExplicitClientBaseMover = none;
 		}
 		
 		ExplicitClientRot = ClientRot;
@@ -176,7 +177,7 @@ function ServerExplicitFire(
 		ExplicitClientBaseMover = Mover(Owner.Base);
 	} else {
 		ExplicitClientLoc = Owner.Location;
-		ExplicitClientBaseMover = Mover(Owner.Base);
+		ExplicitClientBaseMover = none;
 	}
     
     ExplicitClientRot = ClientRot;
@@ -246,7 +247,7 @@ function ServerExplicitAltFire(
 			ExplicitClientBaseMover = Mover(Owner.Base);
 		} else {
 			ExplicitClientLoc = Owner.Location;
-			ExplicitClientBaseMover = Mover(Owner.Base);
+			ExplicitClientBaseMover = none;
 		}
 		
 		ExplicitClientRot = ClientRot;
@@ -280,7 +281,7 @@ function ServerExplicitAltFire(
 		ExplicitClientBaseMover = Mover(Owner.Base);
 	} else {
 		ExplicitClientLoc = Owner.Location;
-		ExplicitClientBaseMover = Mover(Owner.Base);
+		ExplicitClientBaseMover = none;
 	}
 
     ExplicitClientRot = ClientRot;
@@ -319,10 +320,11 @@ function Projectile ExplicitProjectileFire(class<projectile> ProjClass, float Pr
     PawnOwner = Pawn(Owner);
     Owner.MakeNoise(PawnOwner.SoundDampening);
     
-    // Use Explicit Client Rotation
-    GetAxes(ExplicitClientRot,X,Y,Z);
+	// Use Explicit Client Rotation
+	GetAxes(ExplicitClientRot,X,Y,Z);
 	AdjustedClientLoc = ExplicitClientLoc;
-	if (WImp != None && IsPingCompEnabled())
+	// Apply mover-frame conversion only for explicit data captured while riding a mover.
+	if (WImp != None && IsPingCompEnabled() && ExplicitClientBaseMover != none)
 		AdjustedClientLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
 			PawnOwner,
 			AdjustedClientLoc,
