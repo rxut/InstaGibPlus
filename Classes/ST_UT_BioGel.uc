@@ -138,7 +138,7 @@ simulated event Tick(float Delta) {
     // Stop extrapolation when bOnGround is true
     if (IsInState('Flying') && !bOnGround) {
         NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-        MoveSmooth(NewXPolDelta - ExtrapolationDelta);
+        Move(NewXPolDelta - ExtrapolationDelta);
         ExtrapolationDelta = NewXPolDelta;
     }
 }
