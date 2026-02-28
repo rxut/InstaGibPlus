@@ -15,6 +15,7 @@ var int AddVelocityId;
 var vector Momentum;
 
 var bool SavedDodging;
+var bool bDetReady;
 
 function Clear2() {
     Clear();

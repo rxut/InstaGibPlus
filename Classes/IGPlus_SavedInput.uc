@@ -31,6 +31,7 @@ var bool bFire;
 var bool bAFir;
 var bool bFFir;
 var bool bFAFr;
+var bool bDetReady;
 
 var int SerializedBits;
 
@@ -68,6 +69,7 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bAFir = (P.bAltFire != 0) || P.bJustAltFired;
 	bFFir = P.bJustFired;
 	bFAFr = P.bJustAltFired;
+	bDetReady = P.Weapon != none && P.Weapon.IsA('ST_ShockRifle') && ST_ShockRifle(P.Weapon).IsDeterministicReady();
 
 	P.bJustFired = false;
 	P.bJustAltFired = false;
@@ -94,6 +96,7 @@ function SerializeTo(IGPlus_DataBuffer B, out float DeltaError) {
 	B.AddBit(bAFir);
 	B.AddBit(bFFir);
 	B.AddBit(bFAFr);
+	B.AddBit(bDetReady);
 	Temp = SavedViewRotation.Pitch << 16 >> 16;
 	Temp = Clamp(Temp, -16384, 16383);
 	B.AddBits(15, Temp);
@@ -117,6 +120,7 @@ function DeserializeFrom(IGPlus_DataBuffer B) {
 	B.ConsumeBit(Temp); bAFir = Temp != 0;
 	B.ConsumeBit(Temp); bFFir = Temp != 0;
 	B.ConsumeBit(Temp); bFAFr = Temp != 0;
+	B.ConsumeBit(Temp); bDetReady = Temp != 0;
 	B.ConsumeBits(15, SavedViewRotation.Pitch); SavedViewRotation.Pitch = SavedViewRotation.Pitch << 17 >> 17;
 	B.ConsumeBits(16, SavedViewRotation.Yaw);
 	SavedViewRotation.Roll = 0;
@@ -137,6 +141,7 @@ function bool IsSimilarTo(IGPlus_SavedInput Other) {
 		bAFir == Other.bAFir &&
 		bFFir == Other.bFFir &&
 		bFAFr == Other.bFAFr &&
+		bDetReady == Other.bDetReady &&
 		SavedViewRotation.Pitch == Other.SavedViewRotation.Pitch &&
 		SavedViewRotation.Yaw == Other.SavedViewRotation.Yaw;
 }
@@ -145,5 +150,5 @@ defaultproperties {
 	bHidden=True
 	DrawType=DT_None
 	RemoteRole=ROLE_None
-	SerializedBits=64
+	SerializedBits=65
 }

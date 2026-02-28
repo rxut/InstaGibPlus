@@ -8,10 +8,12 @@ var vector ClientVelocity;
 var int MiscData;
 var int MiscData2;
 var int View;
+var int ViewStart;
 var Actor ClientBase;
 var int OldMoveData1;
 var int OldMoveData2;
 
+var bool bDetReady;
 var IGPlus_ServerMove Next;
 
 defaultproperties {

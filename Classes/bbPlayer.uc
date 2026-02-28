@@ -2730,6 +2730,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bAltFired;
 	local bool bForceAltFire;
 
+	local ST_ShockRifle ShockWeapon;
+	local bool bDeterministicShock;
+
 	debugServerMoveCallsReceived += 1;
 
 	if (bDeleteMe) {
@@ -2889,6 +2892,26 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	LastAddVelocityAppliedIndex = AddVelocityId;
 
+	ShockWeapon = ST_ShockRifle(Weapon);
+	if (ShockWeapon == none && SM.bDetReady)
+		ShockWeapon = ST_ShockRifle(FindInventoryType(class'ST_ShockRifle'));
+	bDeterministicShock = ShockWeapon != none && ShockWeapon.UseDeterministicInputLoop() && SM.bDetReady;
+
+	if (bDeterministicShock) {
+		ShockWeapon.IGPlus_OnInputStep(
+			SM.TimeStamp, ViewRotation,
+			bFired, bAltFired,
+			bForceFire, bForceAltFire, Location);
+		if (bFired)
+			bFire = 1;
+		else
+			bFire = 0;
+		if (bAltFired)
+			bAltFire = 1;
+		else
+			bAltFire = 0;
+	}
+
 	// Predict new position
 	if ((Level.Pauser == "") && (DeltaTime > 0) && (IGPlus_SkipMovesUntilNextTick == false)) {
 		if (zzUTPure.Settings.bEnableJitterBounding && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
@@ -2933,7 +2956,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			else
 				DoDodge = DODGE_None;
 
-			if (MoveIndex == FireIndex) {
+			if (MoveIndex == FireIndex && !bDeterministicShock) {
 				if (!IsExplicitFireWeapon()) {
 					if (bFired) {
 						if (bForceFire && (Weapon != None))
@@ -2949,7 +2972,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				}
 			}
 
-			if (MoveIndex == AltFireIndex) {
+			if (MoveIndex == AltFireIndex && !bDeterministicShock) {
 				if (!IsExplicitAltFireWeapon()) {
 					if (bAltFired) {
 						if (bForceAltFire && (Weapon != None))
@@ -3421,6 +3444,7 @@ function xxServerMove(
 	SM = IGPlus_CreateServerMove();
 
 	SM.TimeStamp = TimeStamp;
+	SM.bDetReady = (MoveDeltaTime & 0x01) != 0;
 	SM.MoveDeltaTime = (MoveDeltaTime >>> 8) * 0.0000152587890625;
 	SM.ClientAcceleration = Accel * 0.1;
 	SM.ClientLocation.X = ClientLocX;
@@ -3786,13 +3810,19 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 
 function bool IsExplicitFireWeapon() {
 	local WeaponSettingsRepl WS;
+	local ST_ShockRifle SR;
 
 	if (Weapon == None)
 		return false;
 	WS = GetWeaponSettings();
 	if (WS == None)
 		return false;
-	if (Weapon.IsA('ST_ShockRifle')) return WS.bEnablePingCompensation;
+	if (Weapon.IsA('ST_ShockRifle')) {
+		SR = ST_ShockRifle(Weapon);
+		if (SR != None)
+			return SR.UseExplicitPingCompFirePath();
+		return WS.bEnablePingCompensation;
+	}
 	if (Weapon.IsA('ST_UT_FlakCannon')) return WS.FlakCompensatePing;
 	if (Weapon.IsA('ST_ripper')) return WS.RipperCompensatePing;
 	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
@@ -3802,13 +3832,19 @@ function bool IsExplicitFireWeapon() {
 
 function bool IsExplicitAltFireWeapon() {
 	local WeaponSettingsRepl WS;
+	local ST_ShockRifle SR;
 
 	if (Weapon == None)
 		return false;
 	WS = GetWeaponSettings();
 	if (WS == None)
 		return false;
-	if (Weapon.IsA('ST_ShockRifle')) return WS.bEnablePingCompensation;
+	if (Weapon.IsA('ST_ShockRifle')) {
+		SR = ST_ShockRifle(Weapon);
+		if (SR != None)
+			return SR.UseExplicitPingCompFirePath();
+		return WS.bEnablePingCompensation;
+	}
 	if (Weapon.IsA('ST_UT_FlakCannon')) return WS.FlakCompensatePing;
 	if (Weapon.IsA('ST_ripper')) return WS.RipperCompensatePing;
 	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
@@ -4460,6 +4496,10 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local float OldMouseX, OldMouseY;
 	local float OldForward, OldStrafe, OldUp, OldLookUp, OldTurn;
 	local byte OldRun, OldDuck;
+	local bool bDebugShock;
+	local bool bDeterministicShock;
+	local string DebugPlayerName;
+	local ST_ShockRifle ShockWeapon;
 
 	OldBaseX = aBaseX;
 	OldBaseY = aBaseY;
@@ -4509,7 +4549,38 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		bPressedDodge = I.bDodg && (I.bDodg != Old.bDodg);
 	}
 
+	ViewRotation = I.SavedViewRotation;
+	ShockWeapon = ST_ShockRifle(Weapon);
+	if (ShockWeapon == none && I.bDetReady)
+		ShockWeapon = ST_ShockRifle(FindInventoryType(class'ST_ShockRifle'));
+	bDeterministicShock = ShockWeapon != none && ShockWeapon.UseDeterministicInputLoop() && I.bDetReady;
+
 	if (RemoteRole == ROLE_AutonomousProxy) {
+		if (PlayerReplicationInfo != None)
+			DebugPlayerName = PlayerReplicationInfo.PlayerName;
+		else
+			DebugPlayerName = "UnknownPlayer";
+
+		bDebugShock = bDrawDebugData && Weapon != None && Weapon.IsA('ST_ShockRifle');
+
+		if (bDebugShock && (I.bFFir || I.bFAFr || I.bFire != Old.bFire || I.bAFir != Old.bAFir)) {
+			Log("["$Level.TimeSeconds$"]"@DebugPlayerName
+				@"PBInput TS="$I.TimeStamp
+				@"CTS="$CurrentTimeStamp
+				@"State="$Weapon.GetStateName()
+				@"Det="$bDeterministicShock
+				@"I.Fire="$I.bFire
+				@"I.FFir="$I.bFFir
+				@"I.AFire="$I.bAFir
+				@"I.FAFr="$I.bFAFr
+				@"bFire="$bFire
+				@"bAltFire="$bAltFire
+				@"Key="$DebugPlayerName$":"$int(I.TimeStamp*1000)
+				@"SavedVR="$int(I.SavedViewRotation.Pitch&65535)$","$int(I.SavedViewRotation.Yaw&65535)
+				@"CurVR="$int(ViewRotation.Pitch&65535)$","$int(ViewRotation.Yaw&65535),
+			'IGPlus');
+		}
+
 		if (zzUTPure.Settings.bEnablePingCompensatedSpawn) {
 			if (bHidden && I.bLive && (IsInState('PlayerWalking') || IsInState('PlayerSwimming'))) {
 				bClientDead = false;
@@ -4525,37 +4596,81 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			DodgeClickTimer = DodgeClickTime;
 		}
 
-		// handle firing and alt-firing on server
-		if (!IsExplicitFireWeapon()) {
-			if (I.bFire) {
-				if (bFire == 0) {
-					if (I.bLive && I.bFFir && Weapon != none)
-						Weapon.ForceFire();
-					else
-						Fire(0);
-				}
+		if (bDeterministicShock && Role == ROLE_Authority) {
+			if (bDebugShock)
+				Log("["$Level.TimeSeconds$"]"@DebugPlayerName@"PBInput Deterministic ST_ShockRifle"@"TS="$I.TimeStamp, 'IGPlus');
+			ShockWeapon.IGPlus_OnInputStep(
+				I.TimeStamp,
+				I.SavedViewRotation,
+				I.bFire,
+				I.bAFir,
+				I.bFFir,
+				I.bFAFr,
+				Location
+			);
+			if (I.bFire)
 				bFire = 1;
+			else
+				bFire = 0;
+			if (I.bAFir)
+				bAltFire = 1;
+			else
+				bAltFire = 0;
+		} else if (bDeterministicShock) {
+			// Client-side replay path must not emit deterministic shots.
+			if (I.bFire)
+				bFire = 1;
+			else
+				bFire = 0;
+			if (I.bAFir)
+				bAltFire = 1;
+			else
+				bAltFire = 0;
+		} else {
+			// handle firing and alt-firing on server
+			if (!IsExplicitFireWeapon()) {
+				if (I.bFire) {
+					if (bFire == 0) {
+						if (I.bLive && I.bFFir && Weapon != none) {
+							if (bDebugShock)
+								Log("["$Level.TimeSeconds$"]"@DebugPlayerName@"PBInput ForceFire ST_ShockRifle", 'IGPlus');
+							Weapon.ForceFire();
+						}
+						else {
+							if (bDebugShock)
+								Log("["$Level.TimeSeconds$"]"@DebugPlayerName@"PBInput Fire(0) ST_ShockRifle", 'IGPlus');
+							Fire(0);
+						}
+					}
+					bFire = 1;
+				} else {
+					bFire = 0;
+				}
 			} else {
 				bFire = 0;
 			}
-		} else {
-			bFire = 0;
-		}
 
-		if (!IsExplicitAltFireWeapon()) {
-			if (I.bAFir) {
-				if (bAltFire == 0) {
-					if (I.bLive && I.bFAFr && Weapon != none)
-						Weapon.ForceAltFire();
-					else
-						AltFire(0);
+			if (!IsExplicitAltFireWeapon()) {
+				if (I.bAFir) {
+					if (bAltFire == 0) {
+						if (I.bLive && I.bFAFr && Weapon != none) {
+							if (bDebugShock)
+								Log("["$Level.TimeSeconds$"]"@DebugPlayerName@"PBInput ForceAltFire ST_ShockRifle", 'IGPlus');
+							Weapon.ForceAltFire();
+						}
+						else {
+							if (bDebugShock)
+								Log("["$Level.TimeSeconds$"]"@DebugPlayerName@"PBInput AltFire(0) ST_ShockRifle", 'IGPlus');
+							AltFire(0);
+						}
+					}
+					bAltFire = 1;
+				} else {
+					bAltFire = 0;
 				}
-				bAltFire = 1;
 			} else {
 				bAltFire = 0;
 			}
-		} else {
-			bAltFire = 0;
 		}
 	} else if (RemoteRole == ROLE_Authority) {
 		// this assumes that you always replay up until the present, otherwise
@@ -4569,8 +4684,6 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		LastTimeLeft = Old.SavedLastTimeLeft;
 		LastTimeRight = Old.SavedLastTimeRight;
 	}
-
-	ViewRotation = I.SavedViewRotation;
 
 	IGPlus_TPFix_LastTouched = none;
 	HandleWalking();
@@ -4716,6 +4829,8 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 function IGPlus_ReplicateInput(float Delta) {
 	local float RealDelta;
 	local IGPlus_SavedInput ReferenceInput;
+	local IGPlus_SavedInput NewestInput;
+	local ST_ShockRifle ShockWeapon;
 	local vector NewOffset, TargetLoc;
 	local ReplBuffer B;
 	local int i;
@@ -4735,6 +4850,24 @@ function IGPlus_ReplicateInput(float Delta) {
 	CorrectTeleporterVelocity();
 
 	IGPlus_SavedInputChain.Add(Delta, self);
+	NewestInput = IGPlus_SavedInputChain.Newest;
+	if (NewestInput != none && NewestInput.bDetReady) {
+		ShockWeapon = ST_ShockRifle(Weapon);
+		if (ShockWeapon == none)
+			ShockWeapon = ST_ShockRifle(FindInventoryType(class'ST_ShockRifle'));
+		if (ShockWeapon != none) {
+			ShockWeapon.IGPlus_OnInputStep(
+				NewestInput.TimeStamp,
+				NewestInput.SavedViewRotation,
+				NewestInput.bFire,
+				NewestInput.bAFir,
+				NewestInput.bFFir,
+				NewestInput.bFAFr,
+				Location
+			);
+		}
+	}
+
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogInput(IGPlus_SavedInputChain.Newest);
 
@@ -4791,6 +4924,7 @@ function xxReplicateMove(
 	rotator DeltaRot
 ) {
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
+	local ST_ShockRifle ShockWeapon;
 	local EPhysics OldPhys;
 	local float AdjustAlpha;
 	local float RealDelta;
@@ -4891,6 +5025,9 @@ function xxReplicateMove(
 		if (LastMove == none || LastMove.bAltFire != NewMove.bAltFire)
 			NewMove.AltFireIndex = 0;
 
+		NewMove.bDetReady = Weapon != none && Weapon.IsA('ST_ShockRifle')
+			&& ST_ShockRifle(Weapon).IsDeterministicReady();
+
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
 
@@ -4915,6 +5052,18 @@ function xxReplicateMove(
 	NewMove.IGPlus_SavedViewRotation = ViewRotation;
 	NewMove.IGPlus_SavedLocation = Location;
 	NewMove.IGPlus_SavedVelocity = Velocity;
+
+	if (NewMove.bDetReady) {
+		ShockWeapon = ST_ShockRifle(Weapon);
+		if (ShockWeapon == none)
+			ShockWeapon = ST_ShockRifle(FindInventoryType(class'ST_ShockRifle'));
+		if (ShockWeapon != none) {
+			ShockWeapon.IGPlus_OnInputStep(
+				NewMove.TimeStamp, NewMove.IGPlus_SavedViewRotation,
+				NewMove.bFire, NewMove.bAltFire,
+				NewMove.bForceFire, NewMove.bForceAltFire, Location);
+		}
+	}
 
 	// Decide whether to hold off on move
 	// send if dodge, jump, or fire unless really too soon, or if newmove.delta big enough
@@ -4978,6 +5127,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		RelLoc = Location - Base.Location;
 
 	MoveDeltaTime or_eq Clamp(int(Move.Delta * 65536), 0, 0xFFFFFF) << 8;
+	if (Move.bDetReady) MoveDeltaTime or_eq 0x01;
 
 	                   MiscData or_eq (Move.AddVelocityId & 0xF) << 28;
 	                   MiscData or_eq (TlocCounter << 26);
