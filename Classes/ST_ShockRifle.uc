@@ -5,7 +5,9 @@
 class ST_ShockRifle extends ShockRifle;
 
 var IGPlus_WeaponImplementation WImp;
+var IGPlus_WeaponImplementationBase DetEngine;
 var WeaponSettingsRepl WSettings;
+var IGPlus_DetState DetState;
 
 var float yMod;
 var vector CDO;
@@ -13,33 +15,11 @@ var vector CDO;
 var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
 const FIRE_RATE_LIMIT = 0.65;
-var int DebugClientShotSeq;
-var int DebugServerShotSeq;
-
-// Deterministic input-loop firing state (InputReplication path)
-var bool bDeterministicPrimaryHeld;
-var bool bDeterministicAltHeld;
-var float DeterministicNextPrimaryTS;
-var float DeterministicNextAltTS;
-var float DeterministicPrimaryInterval;
-var float DeterministicAltInterval;
-var int DeterministicPredPrimarySeq;
-var int DeterministicPredAltSeq;
-var int DeterministicAckPrimarySeq;
-var int DeterministicAckAltSeq;
-var int DeterministicServerPrimarySeq;
-var int DeterministicServerAltSeq;
-var bool bDeterministicRuntimeFallback;
-var float DeterministicLastShotTS;
-var float DeterministicLastShotInterval;
-var bool bDeterministicWasReady;
 
 // Deterministic shot data consumed by TraceFire
 var bool bUseDeterministicData;
 var vector DeterministicShotLoc;
 var rotator DeterministicShotRot;
-
-var transient bool bDeterministicReadyOverride;
 
 replication
 {
@@ -73,205 +53,21 @@ simulated function bool IsPingCompEnabled() {
 	return WS != None && WS.bEnablePingCompensation;
 }
 
-simulated function bool ShouldDebugShots() {
-	local bbPlayer BP;
-
-	BP = bbPlayer(Owner);
-	if (BP == none)
-		return false;
-
-	if (BP.bDrawDebugData)
-		return true;
-
-	// During deterministic bring-up, always emit ST shock debug lines, including fallback transitions.
-	if (IsPingCompEnabled() && (UseDeterministicInputLoop() || bDeterministicRuntimeFallback))
-		return true;
-
-	return false;
-}
-
-simulated function bool ShouldLogShotEvent(coerce string EventName) {
-	if (EventName ~= "DetClientPrimary")
-		return true;
-	if (EventName ~= "DetClientAlt")
-		return true;
-	if (EventName ~= "DetServerPrimary")
-		return true;
-	if (EventName ~= "DetServerAlt")
-		return true;
-	if (EventName ~= "ServerTraceFire-Deterministic")
-		return true;
-	if (EventName ~= "AckPrimary")
-		return true;
-	if (EventName ~= "AckAlt")
-		return true;
-	if (EventName ~= "DetOutOfAmmo")
-		return true;
-	if (Left(EventName, 12) ~= "DetFallback-")
-		return true;
-
-	return false;
-}
-
-simulated function DebugShotEvent(coerce string EventName, optional rotator EventRot, optional vector EventLoc) {
-	local bbPlayer BP;
-	local Pawn PawnOwner;
-	local string Msg;
-	local string PlayerName;
-	local string ModeTag;
-
-	if (!ShouldDebugShots())
-		return;
-	if (!ShouldLogShotEvent(EventName))
-		return;
-
-	BP = bbPlayer(Owner);
-	PawnOwner = Pawn(Owner);
-	if (BP == None || PawnOwner == None)
-		return;
-
-	if (UseDeterministicInputLoop())
-		ModeTag = "DET";
-	else
-		ModeTag = "STD";
-
-	Msg = "STSR"@EventName
-		@"SeqC="$DebugClientShotSeq
-		@"SeqS="$DebugServerShotSeq
-		@"Mode="$ModeTag
-		@"Key="$ModeTag$":"$DebugServerShotSeq
-		@"Pred="$DeterministicPredPrimarySeq$"/"$DeterministicPredAltSeq
-		@"Ack="$DeterministicAckPrimarySeq$"/"$DeterministicAckAltSeq
-		@"Next="$DeterministicNextPrimaryTS$"/"$DeterministicNextAltTS
-		@"LTS="$Level.TimeSeconds
-		@"CTS="$BP.CurrentTimeStamp
-		@"State="$GetStateName()
-		@"bF="$PawnOwner.bFire
-		@"bAF="$PawnOwner.bAltFire
-		@"VR="$int(EventRot.Pitch & 65535)$","$int(EventRot.Yaw & 65535)
-		@"Loc="$int(EventLoc.X)$","$int(EventLoc.Y)$","$int(EventLoc.Z);
-
-	// Use ClientMessage for both client and server contexts so local owner always sees debug lines.
-	BP.ClientMessage(Msg);
-
-	if (Level.NetMode != NM_Client) {
-		if (BP.PlayerReplicationInfo != None)
-			PlayerName = BP.PlayerReplicationInfo.PlayerName;
-		else
-			PlayerName = "UnknownPlayer";
-		Log("["$Level.TimeSeconds$"]"@PlayerName@Msg, 'IGPlus');
-	}
-}
-
-simulated function bool IsDeterministicInputLoopEnabled() {
-	return true;
-}
-
-simulated function bool UseServerMoveV4DeterministicPath() {
-	local bbPlayer BP;
-
-	BP = bbPlayer(Owner);
-	if (BP == none)
-		return false;
-	if (BP.IGPlus_EnableInputReplication)
-		return false;
-
-	return int(Level.ServerMoveVersion) >= 4;
-}
+// Thin wrappers — the generic logic lives on IGPlus_WeaponImplementationBase.
 
 simulated function bool UseDeterministicInputLoop() {
-	local bbPlayer BP;
-
-	if (!IsPingCompEnabled())
-		return false;
-	if (UseServerMoveV4DeterministicPath())
-		return true;
-	if (!IsDeterministicInputLoopEnabled())
-		return false;
-
-	BP = bbPlayer(Owner);
-	if (BP == none)
-		return false;
-
-	return !bDeterministicRuntimeFallback;
+	if (DetEngine != none)
+		return DetEngine.IGPlus_DetUsesLoop(self);
+	return false;
 }
 
 simulated function bool IsDeterministicReady() {
-	local Pawn PawnOwner;
-	local TournamentPlayer TP;
-	local bbPlayer BP;
-
-	// Server hint may bypass most guards to avoid dropping mirrored
-	// predicted shots due to transient readiness ordering differences.
-	if (bDeterministicReadyOverride)
-		return true;
-
-	if (!UseDeterministicInputLoop())
-		return false;
-	if (Owner == none)
-		return false;
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-	BP = bbPlayer(PawnOwner);
-	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
-		return false;
-	TP = TournamentPlayer(PawnOwner);
-	// Local switch intent is visible via ClientPending before server-side PendingWeapon
-	// catches up. Treat this as not-ready to avoid client-only predicted beams.
-	if (TP != none && TP.ClientPending != none && TP.ClientPending != self)
-		return false;
-	if (PawnOwner.Weapon != self)
-		return false;
-	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
-		return false;
-	if (bChangeWeapon || IsInState('Pickup') || IsInState('DownWeapon') || IsInState('ClientDown'))
-		return false;
-	if (!bCanClientFire)
-		return false;
-	return true;
+	if (DetEngine != none && DetState != none)
+		return DetEngine.IGPlus_DetIsReady(self, DetState);
+	return false;
 }
 
-simulated function ResetDeterministicState(optional bool bResetFallback) {
-	bDeterministicPrimaryHeld = false;
-	bDeterministicAltHeld = false;
-	DeterministicNextPrimaryTS = 0.0;
-	DeterministicNextAltTS = 0.0;
-	DeterministicPrimaryInterval = PrimaryShotInterval();
-	DeterministicAltInterval = AltShotInterval();
-	DeterministicLastShotTS = 0.0;
-	DeterministicLastShotInterval = 0.0;
-	bDeterministicWasReady = false;
-	DeterministicPredPrimarySeq = 0;
-	DeterministicPredAltSeq = 0;
-	DeterministicAckPrimarySeq = 0;
-	DeterministicAckAltSeq = 0;
-	DeterministicServerPrimarySeq = 0;
-	DeterministicServerAltSeq = 0;
-	bUseDeterministicData = false;
-
-	if (bResetFallback)
-		bDeterministicRuntimeFallback = false;
-}
-
-simulated function rotator QuantizeInputView(rotator InRot) {
-	local rotator Q;
-	local int PitchSigned;
-
-	PitchSigned = InRot.Pitch << 16 >> 16;
-	PitchSigned = Clamp(PitchSigned, -16384, 16383);
-
-	Q.Pitch = PitchSigned;
-	Q.Yaw = InRot.Yaw & 0xFFFF;
-	Q.Roll = 0;
-	return Q;
-}
-
-simulated function float CurrentAnimCycleDuration(float Fallback) {
-	if (AnimRate > 0.0001 && AnimLast > 0.0001)
-		return FClamp(AnimLast / AnimRate, 0.05, 2.0);
-	return Fallback;
-}
+// -- Weapon-specific callbacks for the deterministic engine -----------
 
 simulated function float PrimaryShotInterval() {
 	local float RateScale;
@@ -295,112 +91,8 @@ simulated function float AltShotInterval() {
 	return FClamp(9.0 / (24.0 * RateScale), 0.05, 2.0);
 }
 
-simulated function TriggerDeterministicRuntimeFallback(coerce string Reason, optional rotator ReasonRot, optional vector ReasonLoc) {
-	bDeterministicRuntimeFallback = true;
-	bDeterministicPrimaryHeld = false;
-	bDeterministicAltHeld = false;
-	DebugShotEvent("DetFallback-"$Reason, ReasonRot, ReasonLoc);
-}
-
-simulated function ClientAckPrimaryShot(int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
-	local int SeqDelta;
-	local int PrevPredSeq;
-	local float TargetNextTS;
-	local bool bFirstAck;
-	local bbPlayer BP;
-
-	if (Role == ROLE_Authority)
-		return;
-
-	if (!UseDeterministicInputLoop())
-		return;
-
-	PrevPredSeq = DeterministicPredPrimarySeq;
-	bFirstAck = (DeterministicAckPrimarySeq == 0 && Seq > 0);
-	SeqDelta = Seq - DeterministicPredPrimarySeq;
-
-	if (Abs(SeqDelta) > 4) {
-		TriggerDeterministicRuntimeFallback("PrimarySeq", ShotView, ShotOrigin);
-		return;
-	}
-
-	DeterministicAckPrimarySeq = Max(DeterministicAckPrimarySeq, Seq);
-	if (Seq >= DeterministicPredPrimarySeq)
-		DeterministicPredPrimarySeq = Seq;
-
-	TargetNextTS = ShotTS + FMax(0.01, DeterministicPrimaryInterval);
-	if (DeterministicNextPrimaryTS <= 0.0)
-		DeterministicNextPrimaryTS = TargetNextTS;
-	else if (TargetNextTS > DeterministicNextPrimaryTS + 0.003)
-		DeterministicNextPrimaryTS = TargetNextTS;
-	if (ShotTS + 0.0001 >= DeterministicLastShotTS) {
-		DeterministicLastShotTS = ShotTS;
-		DeterministicLastShotInterval = FMax(0.01, DeterministicPrimaryInterval);
-	}
-
-	// Bootstrap only when client has not already predicted a shot.
-	if (bFirstAck && PrevPredSeq <= 0) {
-		PlayFiring();
-		BP = bbPlayer(Owner);
-		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-			ClientTraceFire(true, ShotView, ShotOrigin);
-	}
-
-	DebugShotEvent("AckPrimary", ShotView, ShotOrigin);
-}
-
-simulated function ClientAckAltShot(int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
-	local int SeqDelta;
-	local int PrevPredSeq;
-	local float TargetNextTS;
-	local bool bFirstAck;
-	local bbPlayer BP;
-
-	if (Role == ROLE_Authority)
-		return;
-
-	if (!UseDeterministicInputLoop())
-		return;
-
-	PrevPredSeq = DeterministicPredAltSeq;
-	bFirstAck = (DeterministicAckAltSeq == 0 && Seq > 0);
-	SeqDelta = Seq - DeterministicPredAltSeq;
-
-	if (Abs(SeqDelta) > 4) {
-		TriggerDeterministicRuntimeFallback("AltSeq", ShotView, ShotOrigin);
-		return;
-	}
-
-	DeterministicAckAltSeq = Max(DeterministicAckAltSeq, Seq);
-	if (Seq >= DeterministicPredAltSeq)
-		DeterministicPredAltSeq = Seq;
-
-	TargetNextTS = ShotTS + FMax(0.01, DeterministicAltInterval);
-	if (DeterministicNextAltTS <= 0.0)
-		DeterministicNextAltTS = TargetNextTS;
-	else if (TargetNextTS > DeterministicNextAltTS + 0.003)
-		DeterministicNextAltTS = TargetNextTS;
-	if (ShotTS + 0.0001 >= DeterministicLastShotTS) {
-		DeterministicLastShotTS = ShotTS;
-		DeterministicLastShotInterval = FMax(0.01, DeterministicAltInterval);
-	}
-
-	// Bootstrap only when client has not already predicted a shot.
-	if (bFirstAck && PrevPredSeq <= 0) {
-		PlayAltFiring();
-		BP = bbPlayer(Owner);
-		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
-			ClientSpawnAltProjectileEffects(true, ShotView, ShotOrigin);
-	}
-
-	DebugShotEvent("AckAlt", ShotView, ShotOrigin);
-}
-
-simulated function bool CanDeterministicPrimaryShot(bool bServerSide) {
+simulated function bool IGPlus_DetCanFire(bool bServerSide) {
 	local Pawn PawnOwner;
-
-	if (!IsDeterministicReady())
-		return false;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -414,86 +106,41 @@ simulated function bool CanDeterministicPrimaryShot(bool bServerSide) {
 	return true;
 }
 
-simulated function bool CanDeterministicAltShot(bool bServerSide) {
-	return CanDeterministicPrimaryShot(bServerSide);
-}
-
-simulated function bool ClientDoDeterministicPrimaryShot(float ShotTS, rotator ShotView, vector ShotLoc) {
+simulated function bool IGPlus_DetDoClientFire(bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
 	local Pawn PawnOwner;
 	local bbPlayer BP;
-
-	if (!CanDeterministicPrimaryShot(false))
-		return false;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
 		return false;
-
 	BP = bbPlayer(PawnOwner);
-	DeterministicPredPrimarySeq += 1;
-	DebugClientShotSeq += 1;
-	DebugShotEvent("DetClientPrimary", ShotView, ShotLoc);
 
 	bPointing = true;
 	if (bRapidFire || (FiringSpeed > 0))
 		PawnOwner.PlayRecoil(FiringSpeed);
-	PlayFiring();
-	DeterministicPrimaryInterval = PrimaryShotInterval();
-
 	if (Affector != none)
 		Affector.FireEffect();
-
 	if (PlayerPawn(Owner) != none)
 		PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
 
-	if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-		ClientTraceFire(true, ShotView, ShotLoc);
-
+	if (bAlt) {
+		PlayAltFiring();
+		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
+			ClientSpawnAltProjectileEffects(true, ShotView, ShotLoc);
+	} else {
+		PlayFiring();
+		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+			ClientTraceFire(true, ShotView, ShotLoc);
+	}
 	return true;
 }
 
-simulated function bool ClientDoDeterministicAltShot(float ShotTS, rotator ShotView, vector ShotLoc) {
+function bool IGPlus_DetDoServerFire(bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
 	local Pawn PawnOwner;
-	local bbPlayer BP;
-
-	if (!CanDeterministicAltShot(false))
-		return false;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
 		return false;
-
-	BP = bbPlayer(PawnOwner);
-	DeterministicPredAltSeq += 1;
-	DebugClientShotSeq += 1;
-	DebugShotEvent("DetClientAlt", ShotView, ShotLoc);
-
-	bPointing = true;
-	if (bRapidFire || (FiringSpeed > 0))
-		PawnOwner.PlayRecoil(FiringSpeed);
-	PlayAltFiring();
-	DeterministicAltInterval = AltShotInterval();
-
-	if (Affector != none)
-		Affector.FireEffect();
-
-	if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
-		ClientSpawnAltProjectileEffects(true, ShotView, ShotLoc);
-
-	return true;
-}
-
-function bool ServerDoDeterministicPrimaryShot(float ShotTS, rotator ShotView, vector ShotLoc) {
-	local Pawn PawnOwner;
-
-	if (!CanDeterministicPrimaryShot(true))
-		return false;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-
-	DeterministicServerPrimarySeq += 1;
 
 	DeterministicShotRot = ShotView;
 	DeterministicShotLoc = ShotLoc;
@@ -504,21 +151,48 @@ function bool ServerDoDeterministicPrimaryShot(float ShotTS, rotator ShotView, v
 	bPointing = true;
 	if (bRapidFire || (FiringSpeed > 0))
 		PawnOwner.PlayRecoil(FiringSpeed);
-	PlayFiring();
-	DeterministicPrimaryInterval = PrimaryShotInterval();
-
 	if (Affector != none)
 		Affector.FireEffect();
 
-	TraceFire(0.0);
+	if (bAlt) {
+		PlayAltFiring();
+		DeterministicProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
+	} else {
+		PlayFiring();
+		TraceFire(0.0);
+	}
 	bUseDeterministicData = false;
-	DebugShotEvent("DetServerPrimary", ShotView, ShotLoc);
-
-	DebugShotEvent("AckPrimaryTx", ShotView, ShotLoc);
-	ClientAckPrimaryShot(DeterministicServerPrimarySeq, ShotTS, ShotView, ShotLoc);
-	HandleDeterministicServerOutOfAmmo(ShotView, ShotLoc);
-
 	return true;
+}
+
+simulated function IGPlus_DetDoAckBootstrap(bool bAlt, rotator ShotView, vector ShotOrigin) {
+	local bbPlayer BP;
+	BP = bbPlayer(Owner);
+	if (bAlt) {
+		PlayAltFiring();
+		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
+			ClientSpawnAltProjectileEffects(true, ShotView, ShotOrigin);
+	} else {
+		PlayFiring();
+		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+			ClientTraceFire(true, ShotView, ShotOrigin);
+	}
+}
+
+// -- Replicated ack stubs (logic delegated to engine) -----------------
+
+simulated function ClientAckPrimaryShot(int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
+	if (Role == ROLE_Authority)
+		return;
+	if (DetEngine != none && DetState != none)
+		DetEngine.IGPlus_DetProcessPrimaryAck(DetState, self, Seq, ShotTS, ShotView, ShotOrigin);
+}
+
+simulated function ClientAckAltShot(int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
+	if (Role == ROLE_Authority)
+		return;
+	if (DetEngine != none && DetState != none)
+		DetEngine.IGPlus_DetProcessAltAck(DetState, self, Seq, ShotTS, ShotView, ShotOrigin);
 }
 
 function Projectile DeterministicProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn) {
@@ -534,205 +208,16 @@ function Projectile DeterministicProjectileFire(class<projectile> ProjClass, flo
 	return Spawn(ProjClass, , , Start, AdjustedAim);
 }
 
-function bool ServerDoDeterministicAltShot(float ShotTS, rotator ShotView, vector ShotLoc) {
-	local Pawn PawnOwner;
-
-	if (!CanDeterministicAltShot(true))
-		return false;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-
-	DeterministicServerAltSeq += 1;
-
-	DeterministicShotRot = ShotView;
-	DeterministicShotLoc = ShotLoc;
-	bUseDeterministicData = true;
-
-	AmmoType.UseAmmo(1);
-
-	bPointing = true;
-	if (bRapidFire || (FiringSpeed > 0))
-		PawnOwner.PlayRecoil(FiringSpeed);
-	PlayAltFiring();
-	DeterministicAltInterval = AltShotInterval();
-
-	if (Affector != none)
-		Affector.FireEffect();
-
-	DeterministicProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
-	bUseDeterministicData = false;
-	DebugShotEvent("DetServerAlt", ShotView, ShotLoc);
-
-	DebugShotEvent("AckAltTx", ShotView, ShotLoc);
-	ClientAckAltShot(DeterministicServerAltSeq, ShotTS, ShotView, ShotLoc);
-	HandleDeterministicServerOutOfAmmo(ShotView, ShotLoc);
-
-	return true;
-}
-
-function HandleDeterministicServerOutOfAmmo(optional rotator EventRot, optional vector EventLoc) {
-	local Pawn PawnOwner;
-
-	if (Role < ROLE_Authority || Level.NetMode == NM_Client)
-		return;
-	if (AmmoType == none || AmmoType.AmmoAmount > 0)
-		return;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
-
-	bDeterministicPrimaryHeld = false;
-	bDeterministicAltHeld = false;
-	DeterministicNextPrimaryTS = 0.0;
-	DeterministicNextAltTS = 0.0;
-
-	if (PawnOwner.Weapon == self) {
-		PawnOwner.StopFiring();
-		if (PawnOwner.PendingWeapon == none || PawnOwner.PendingWeapon == self)
-			PawnOwner.SwitchToBestWeapon();
-	}
-
-	DebugShotEvent("DetOutOfAmmo", EventRot, EventLoc);
-}
-
-simulated function bool IGPlus_OnInputStep(
-	float InputTS,
-	rotator InputView,
-	bool bFireHeld,
-	bool bAltHeld,
-	bool bForceFire,
-	bool bForceAlt,
-	optional vector InputLoc,
-	optional bool bStepReadyHint
-) {
-	local bool bServerSide;
-	local rotator ShotView;
-	local vector ShotLoc;
-	local bool bDidShot;
-	local bool bReady;
-	local float Interval;
-
-	if (!UseDeterministicInputLoop())
-		return false;
-	if (Owner == none || Pawn(Owner) == none)
-		return false;
-
-	bServerSide = (Role == ROLE_Authority && Level.NetMode != NM_Client);
-	// Apply override on both server and client when the hint is set.
-	// bStepReadyHint carries the bDetReady sampled at input-creation time;
-	// honouring it on the client keeps the deterministic cadence in sync
-	// with the server even when the local weapon state changed between
-	// input sampling and prediction execution.
-	if (bStepReadyHint)
-		bDeterministicReadyOverride = true;
-
-	bReady = IsDeterministicReady();
-	if (!bReady) {
-		bDeterministicReadyOverride = false;
-		// Soft-pause deterministic loop during transient switch/not-ready windows.
-		// Keep timeline anchors so client/server don't reseed differently.
-		bDeterministicPrimaryHeld = false;
-		bDeterministicAltHeld = false;
-		bDeterministicWasReady = false;
-		return false;
-	}
-
-	if (!bDeterministicWasReady) {
-		bDeterministicWasReady = true;
-		// Do not reset Next*/Last* here; preserving cadence across short readiness
-		// gaps avoids client/server schedule drift under rapid switch spam.
-		bDeterministicPrimaryHeld = false;
-		bDeterministicAltHeld = false;
-	}
-
-	bServerSide = (Role == ROLE_Authority && Level.NetMode != NM_Client);
-	ShotView = QuantizeInputView(InputView);
-	ShotLoc = InputLoc;
-	if (ShotLoc == vect(0,0,0))
-		ShotLoc = Owner.Location;
-
-	if (bFireHeld || bForceFire) {
-		if (!bDeterministicPrimaryHeld) {
-			bDeterministicPrimaryHeld = true;
-			if (DeterministicNextPrimaryTS <= 0.0 || DeterministicNextPrimaryTS < InputTS)
-				DeterministicNextPrimaryTS = FMax(InputTS, DeterministicLastShotTS + FMax(0.01, DeterministicLastShotInterval));
-		}
-	} else {
-		bDeterministicPrimaryHeld = false;
-	}
-
-	if (bAltHeld || bForceAlt) {
-		if (!bDeterministicAltHeld) {
-			bDeterministicAltHeld = true;
-			if (DeterministicNextAltTS <= 0.0 || DeterministicNextAltTS < InputTS)
-				DeterministicNextAltTS = FMax(InputTS, DeterministicLastShotTS + FMax(0.01, DeterministicLastShotInterval));
-		}
-	} else {
-		bDeterministicAltHeld = false;
-	}
-
-	if (bDeterministicPrimaryHeld) {
-		if (InputTS + 0.0001 >= DeterministicNextPrimaryTS) {
-			if (bServerSide)
-				bDidShot = ServerDoDeterministicPrimaryShot(DeterministicNextPrimaryTS, ShotView, ShotLoc);
-			else
-				bDidShot = ClientDoDeterministicPrimaryShot(DeterministicNextPrimaryTS, ShotView, ShotLoc);
-
-			Interval = FMax(0.01, DeterministicPrimaryInterval);
-			if (bDidShot) {
-				DeterministicLastShotTS = DeterministicNextPrimaryTS;
-				DeterministicLastShotInterval = Interval;
-				DeterministicNextPrimaryTS += Interval;
-				if (DeterministicNextPrimaryTS < InputTS)
-					DeterministicNextPrimaryTS = InputTS + Interval;
-			} else {
-				if (bServerSide)
-					HandleDeterministicServerOutOfAmmo(ShotView, ShotLoc);
-				DeterministicNextPrimaryTS = InputTS + Interval;
-			}
-		}
-		bDeterministicReadyOverride = false;
-		return true;
-	}
-
-	if (bDeterministicAltHeld) {
-		if (InputTS + 0.0001 >= DeterministicNextAltTS) {
-			if (bServerSide)
-				bDidShot = ServerDoDeterministicAltShot(DeterministicNextAltTS, ShotView, ShotLoc);
-			else
-				bDidShot = ClientDoDeterministicAltShot(DeterministicNextAltTS, ShotView, ShotLoc);
-
-			Interval = FMax(0.01, DeterministicAltInterval);
-			if (bDidShot) {
-				DeterministicLastShotTS = DeterministicNextAltTS;
-				DeterministicLastShotInterval = Interval;
-				DeterministicNextAltTS += Interval;
-				if (DeterministicNextAltTS < InputTS)
-					DeterministicNextAltTS = InputTS + Interval;
-			} else {
-				if (bServerSide)
-					HandleDeterministicServerOutOfAmmo(ShotView, ShotLoc);
-				DeterministicNextAltTS = InputTS + Interval;
-			}
-		}
-		bDeterministicReadyOverride = false;
-		return true;
-	}
-
-	bDeterministicReadyOverride = false;
-	return false;
-}
-
 function PostBeginPlay()
 {
 	Super.PostBeginPlay();
-	ResetDeterministicState();
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;
+	DetEngine = IGPlus_WeaponImplementationBase(WImp);
+	DetState = new class'IGPlus_DetState';
+	DetState.PrimaryInterval = PrimaryShotInterval();
+	DetState.AltInterval = AltShotInterval();
 }
 
 simulated function yModInit() {
@@ -770,14 +255,16 @@ simulated function bool ClientFire(float Value) {
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
 		if (UseDeterministicInputLoop()) {
-			DebugShotEvent("ClientFire-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
+			if (DetEngine != none)
+				DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientFire-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
 			return true;
 		}
 
 		if (!Super.ClientFire(Value))
 			return false;
 
-		DebugShotEvent("ClientFire-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
+		if (DetEngine != none)
+			DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientFire-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
 		if (bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire();
 		return true;
@@ -821,8 +308,10 @@ simulated function ClientTraceFire(
 	}
 
 	GetAxes(AimRot, X, Y, Z);
-	DebugClientShotSeq += 1;
-	DebugShotEvent("ClientBeamTrace", AimRot, AimLoc);
+	if (DetState != none)
+		DetState.DebugClientSeq += 1;
+	if (DetEngine != none)
+		DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientBeamTrace", AimRot, AimLoc);
 
 	StartTrace = AimLoc + CDO + yMod * Y + FireOffset.Z * Z;
 
@@ -901,14 +390,16 @@ simulated function bool ClientAltFire(float Value) {
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
 		if (UseDeterministicInputLoop()) {
-			DebugShotEvent("ClientAlt-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
+			if (DetEngine != none)
+				DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientAlt-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
 			return true;
 		}
 
 		if (!Super.ClientAltFire(Value))
 			return false;
 
-		DebugShotEvent("ClientAlt-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
+		if (DetEngine != none)
+			DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientAlt-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
 		if (bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects();
 		return true;
@@ -992,11 +483,14 @@ function TraceFire(float Accuracy) {
 	Owner.MakeNoise(PawnOwner.SoundDampening);
 
 	if (Role == ROLE_Authority && Level.NetMode != NM_Client) {
-		DebugServerShotSeq += 1;
-		if (bUseDeterministicData)
-			DebugShotEvent("ServerTraceFire-Deterministic", DeterministicShotRot, DeterministicShotLoc);
-		else
-			DebugShotEvent("ServerTraceFire-Standard", PawnOwner.ViewRotation, Owner.Location);
+		if (DetState != none)
+			DetState.DebugServerSeq += 1;
+		if (DetEngine != none) {
+			if (bUseDeterministicData)
+				DetEngine.IGPlus_DetLogEvent(self, DetState, "ServerTraceFire-Deterministic", DeterministicShotRot, DeterministicShotLoc);
+			else
+				DetEngine.IGPlus_DetLogEvent(self, DetState, "ServerTraceFire-Standard", PawnOwner.ViewRotation, Owner.Location);
+		}
 	}
 
 	if (bUseDeterministicData)
@@ -1187,11 +681,13 @@ function bool PutDown()
 
 	// Invalidate deterministic readiness immediately when switch is requested.
 	bCanClientFire = false;
-	bDeterministicPrimaryHeld = false;
-	bDeterministicAltHeld = false;
-	DeterministicNextPrimaryTS = 0.0;
-	DeterministicNextAltTS = 0.0;
-	bDeterministicWasReady = false;
+	if (DetState != none) {
+		DetState.bPrimaryHeld = false;
+		DetState.bAltHeld = false;
+		DetState.NextPrimaryTS = 0.0;
+		DetState.NextAltTS = 0.0;
+		DetState.bWasReady = false;
+	}
 	return Super.PutDown();
 }
 
@@ -1203,10 +699,13 @@ simulated function PlaySelect() {
 	if (UseDeterministicInputLoop()) {
 		// Keep seq/timestamps across select transitions. Resetting here causes
 		// client/server schedule re-seed while holding fire during switch.
-		bDeterministicPrimaryHeld = false;
-		bDeterministicAltHeld = false;
+		if (DetState != none) {
+			DetState.bPrimaryHeld = false;
+			DetState.bAltHeld = false;
+		}
 	} else {
-		ResetDeterministicState(true);
+		if (DetEngine != none && DetState != none)
+			DetEngine.IGPlus_DetResetState(DetState, self);
 	}
 
 	if ( !IsAnimating() || (AnimSequence != 'Select') )
