@@ -14,6 +14,7 @@ var int OldMoveData1;
 var int OldMoveData2;
 
 var bool bDetReady;
+var bool bUseV4;
 var IGPlus_ServerMove Next;
 
 defaultproperties {

@@ -32,6 +32,7 @@ var bool bAFir;
 var bool bFFir;
 var bool bFAFr;
 var bool bDetReady;
+var bool bDetPredictedLocal;
 
 var int SerializedBits;
 
@@ -70,6 +71,7 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bFFir = P.bJustFired;
 	bFAFr = P.bJustAltFired;
 	bDetReady = P.Weapon != none && P.Weapon.IsA('ST_ShockRifle') && ST_ShockRifle(P.Weapon).IsDeterministicReady();
+	bDetPredictedLocal = false;
 
 	P.bJustFired = false;
 	P.bJustAltFired = false;

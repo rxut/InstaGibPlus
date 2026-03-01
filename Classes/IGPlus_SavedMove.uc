@@ -4,6 +4,7 @@ class IGPlus_SavedMove extends SavedMove;
 var vector IGPlus_SavedLocation;
 var vector IGPlus_SavedVelocity;
 var rotator IGPlus_SavedViewRotation;
+var rotator IGPlus_SavedViewRotationStart;
 var int IGPlus_MergeCount;
 var int JumpIndex;
 var int DodgeIndex;
@@ -16,9 +17,11 @@ var vector Momentum;
 
 var bool SavedDodging;
 var bool bDetReady;
+var bool bUseServerMoveV4;
 
 function Clear2() {
     Clear();
+    IGPlus_SavedViewRotationStart = rot(0,0,0);
     IGPlus_MergeCount = 0;
     JumpIndex = -1;
     DodgeIndex = -1;
@@ -27,6 +30,7 @@ function Clear2() {
     FireIndex = -1;
     AltFireIndex = -1;
     Momentum = vect(0,0,0);
+    bUseServerMoveV4 = false;
 }
 
 defaultproperties

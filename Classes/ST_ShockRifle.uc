@@ -12,21 +12,7 @@ var vector CDO;
 
 var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
-
-// Explicit client aim data (sent via ServerExplicitFire/AltFire)
-var vector ExplicitClientLoc;
-var rotator ExplicitClientRot;
-var Mover ExplicitClientBaseMover;
-var bool bUseExplicitData;
-var bool bClientShownVisuals;
-
-// Server-side rate limiting and position validation
-var float LastServerFireTime;
 const FIRE_RATE_LIMIT = 0.65;
-const MAX_POSITION_ERROR_SQ = 1250.0;
-
-// Client-side rate limiting
-var float LastClientFireTime;
 var int DebugClientShotSeq;
 var int DebugServerShotSeq;
 
@@ -46,19 +32,17 @@ var int DeterministicServerAltSeq;
 var bool bDeterministicRuntimeFallback;
 var float DeterministicLastShotTS;
 var float DeterministicLastShotInterval;
-var float LastDeterministicClientShotTime;
+var bool bDeterministicWasReady;
 
 // Deterministic shot data consumed by TraceFire
 var bool bUseDeterministicData;
 var vector DeterministicShotLoc;
 var rotator DeterministicShotRot;
 
+var transient bool bDeterministicReadyOverride;
+
 replication
 {
-    // Replicate the explicit fire function to the server
-    reliable if(Role < ROLE_Authority)
-        ServerExplicitFire, ServerExplicitAltFire;
-
 	// Replicate deterministic shot acknowledgments to clients that have this weapon actor.
 	// bNetOwner proved too strict for some switch/hold-fire cases and dropped owner acks.
 	reliable if (Role == ROLE_Authority)
@@ -117,8 +101,6 @@ simulated function bool ShouldLogShotEvent(coerce string EventName) {
 		return true;
 	if (EventName ~= "ServerTraceFire-Deterministic")
 		return true;
-	if (EventName ~= "ServerTraceFire-Explicit")
-		return true;
 	if (EventName ~= "AckPrimary")
 		return true;
 	if (EventName ~= "AckAlt")
@@ -148,9 +130,7 @@ simulated function DebugShotEvent(coerce string EventName, optional rotator Even
 	if (BP == None || PawnOwner == None)
 		return;
 
-	if (UseExplicitPingCompFirePath())
-		ModeTag = "EXP";
-	else if (UseDeterministicInputLoop())
+	if (UseDeterministicInputLoop())
 		ModeTag = "DET";
 	else
 		ModeTag = "STD";
@@ -183,29 +163,20 @@ simulated function DebugShotEvent(coerce string EventName, optional rotator Even
 	}
 }
 
-simulated function bool UseExplicitPingCompFirePath() {
-	local bbPlayer BP;
+simulated function bool IsDeterministicInputLoopEnabled() {
+	return true;
+}
 
-	if (!IsPingCompEnabled())
-		return false;
+simulated function bool UseServerMoveV4DeterministicPath() {
+	local bbPlayer BP;
 
 	BP = bbPlayer(Owner);
 	if (BP == none)
-		return true;
+		return false;
+	if (BP.IGPlus_EnableInputReplication)
+		return false;
 
-	// Deterministic input-loop currently relies on InputReplication timestamps.
-	// Keep explicit RPC path for non-InputReplication sessions.
-	if (!BP.IGPlus_EnableInputReplication)
-		return true;
-	if (!IsDeterministicInputLoopEnabled())
-		return true;
-	if (bDeterministicRuntimeFallback)
-		return true;
-	return false;
-}
-
-simulated function bool IsDeterministicInputLoopEnabled() {
-	return true;
+	return int(Level.ServerMoveVersion) >= 4;
 }
 
 simulated function bool UseDeterministicInputLoop() {
@@ -213,8 +184,8 @@ simulated function bool UseDeterministicInputLoop() {
 
 	if (!IsPingCompEnabled())
 		return false;
-	if (UseExplicitPingCompFirePath())
-		return false;
+	if (UseServerMoveV4DeterministicPath())
+		return true;
 	if (!IsDeterministicInputLoopEnabled())
 		return false;
 
@@ -227,17 +198,34 @@ simulated function bool UseDeterministicInputLoop() {
 
 simulated function bool IsDeterministicReady() {
 	local Pawn PawnOwner;
+	local TournamentPlayer TP;
+	local bbPlayer BP;
+
+	if (bDeterministicReadyOverride)
+		return true;
 
 	if (!UseDeterministicInputLoop())
 		return false;
-	if (IsInState('DownWeapon') || IsInState('ClientDown'))
+	if (Owner == none)
 		return false;
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
 		return false;
-	// Deterministic input-loop is only valid when this weapon is actually equipped
-	// on the local machine that is generating the input step.
+	BP = bbPlayer(PawnOwner);
+	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
+		return false;
+	TP = TournamentPlayer(PawnOwner);
+	// Local switch intent is visible via ClientPending before server-side PendingWeapon
+	// catches up. Treat this as not-ready to avoid client-only predicted beams.
+	if (TP != none && TP.ClientPending != none && TP.ClientPending != self)
+		return false;
 	if (PawnOwner.Weapon != self)
+		return false;
+	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		return false;
+	if (bChangeWeapon || IsInState('Pickup') || IsInState('DownWeapon') || IsInState('ClientDown'))
+		return false;
+	if (!bCanClientFire)
 		return false;
 	return true;
 }
@@ -251,7 +239,7 @@ simulated function ResetDeterministicState(optional bool bResetFallback) {
 	DeterministicAltInterval = AltShotInterval();
 	DeterministicLastShotTS = 0.0;
 	DeterministicLastShotInterval = 0.0;
-	LastDeterministicClientShotTime = 0.0;
+	bDeterministicWasReady = false;
 	DeterministicPredPrimarySeq = 0;
 	DeterministicPredAltSeq = 0;
 	DeterministicAckPrimarySeq = 0;
@@ -351,7 +339,6 @@ simulated function ClientAckPrimaryShot(int Seq, float ShotTS, rotator ShotView,
 	// Bootstrap only when client has not already predicted a shot.
 	if (bFirstAck && PrevPredSeq <= 0) {
 		PlayFiring();
-		LastDeterministicClientShotTime = Level.TimeSeconds;
 		BP = bbPlayer(Owner);
 		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire(true, ShotView, ShotOrigin);
@@ -399,7 +386,6 @@ simulated function ClientAckAltShot(int Seq, float ShotTS, rotator ShotView, vec
 	// Bootstrap only when client has not already predicted a shot.
 	if (bFirstAck && PrevPredSeq <= 0) {
 		PlayAltFiring();
-		LastDeterministicClientShotTime = Level.TimeSeconds;
 		BP = bbPlayer(Owner);
 		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects(true, ShotView, ShotOrigin);
@@ -411,19 +397,12 @@ simulated function ClientAckAltShot(int Seq, float ShotTS, rotator ShotView, vec
 simulated function bool CanDeterministicPrimaryShot(bool bServerSide) {
 	local Pawn PawnOwner;
 
+	if (!IsDeterministicReady())
+		return false;
+
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
 		return false;
-
-	if (!bServerSide) {
-		// Client prediction must stay strict to local weapon state.
-		if (bChangeWeapon || IsInState('DownWeapon') || IsInState('ClientDown'))
-			return false;
-		if (PawnOwner.Weapon != self)
-			return false;
-		if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
-			return false;
-	}
 
 	if ((AmmoType == none) && (AmmoName != none) && bServerSide)
 		GiveAmmo(PawnOwner);
@@ -450,7 +429,6 @@ simulated function bool ClientDoDeterministicPrimaryShot(float ShotTS, rotator S
 
 	BP = bbPlayer(PawnOwner);
 	DeterministicPredPrimarySeq += 1;
-	LastDeterministicClientShotTime = Level.TimeSeconds;
 	DebugClientShotSeq += 1;
 	DebugShotEvent("DetClientPrimary", ShotView, ShotLoc);
 
@@ -485,7 +463,6 @@ simulated function bool ClientDoDeterministicAltShot(float ShotTS, rotator ShotV
 
 	BP = bbPlayer(PawnOwner);
 	DeterministicPredAltSeq += 1;
-	LastDeterministicClientShotTime = Level.TimeSeconds;
 	DebugClientShotSeq += 1;
 	DebugShotEvent("DetClientAlt", ShotView, ShotLoc);
 
@@ -521,7 +498,6 @@ function bool ServerDoDeterministicPrimaryShot(float ShotTS, rotator ShotView, v
 	bUseDeterministicData = true;
 
 	AmmoType.UseAmmo(1);
-	LastServerFireTime = Level.TimeSeconds;
 
 	bPointing = true;
 	if (bRapidFire || (FiringSpeed > 0))
@@ -627,18 +603,43 @@ simulated function bool IGPlus_OnInputStep(
 	bool bAltHeld,
 	bool bForceFire,
 	bool bForceAlt,
-	optional vector InputLoc
+	optional vector InputLoc,
+	optional bool bStepReadyHint
 ) {
 	local bool bServerSide;
 	local rotator ShotView;
 	local vector ShotLoc;
 	local bool bDidShot;
+	local bool bReady;
 	local float Interval;
 
 	if (!UseDeterministicInputLoop())
 		return false;
 	if (Owner == none || Pawn(Owner) == none)
 		return false;
+
+	bServerSide = (Role == ROLE_Authority && Level.NetMode != NM_Client);
+	if (bServerSide && bStepReadyHint)
+		bDeterministicReadyOverride = true;
+
+	bReady = IsDeterministicReady();
+	if (!bReady) {
+		bDeterministicReadyOverride = false;
+		// Soft-pause deterministic loop during transient switch/not-ready windows.
+		// Keep timeline anchors so client/server don't reseed differently.
+		bDeterministicPrimaryHeld = false;
+		bDeterministicAltHeld = false;
+		bDeterministicWasReady = false;
+		return false;
+	}
+
+	if (!bDeterministicWasReady) {
+		bDeterministicWasReady = true;
+		// Do not reset Next*/Last* here; preserving cadence across short readiness
+		// gaps avoids client/server schedule drift under rapid switch spam.
+		bDeterministicPrimaryHeld = false;
+		bDeterministicAltHeld = false;
+	}
 
 	bServerSide = (Role == ROLE_Authority && Level.NetMode != NM_Client);
 	ShotView = QuantizeInputView(InputView);
@@ -667,11 +668,6 @@ simulated function bool IGPlus_OnInputStep(
 	}
 
 	if (bDeterministicPrimaryHeld) {
-		if (!bServerSide && (DeterministicPredPrimarySeq - DeterministicAckPrimarySeq) > 4) {
-			TriggerDeterministicRuntimeFallback("PrimaryAhead", ShotView, ShotLoc);
-			return true;
-		}
-
 		if (InputTS + 0.0001 >= DeterministicNextPrimaryTS) {
 			if (bServerSide)
 				bDidShot = ServerDoDeterministicPrimaryShot(DeterministicNextPrimaryTS, ShotView, ShotLoc);
@@ -691,15 +687,11 @@ simulated function bool IGPlus_OnInputStep(
 				DeterministicNextPrimaryTS = InputTS + Interval;
 			}
 		}
+		bDeterministicReadyOverride = false;
 		return true;
 	}
 
 	if (bDeterministicAltHeld) {
-		if (!bServerSide && (DeterministicPredAltSeq - DeterministicAckAltSeq) > 4) {
-			TriggerDeterministicRuntimeFallback("AltAhead", ShotView, ShotLoc);
-			return true;
-		}
-
 		if (InputTS + 0.0001 >= DeterministicNextAltTS) {
 			if (bServerSide)
 				bDidShot = ServerDoDeterministicAltShot(DeterministicNextAltTS, ShotView, ShotLoc);
@@ -719,9 +711,11 @@ simulated function bool IGPlus_OnInputStep(
 				DeterministicNextAltTS = InputTS + Interval;
 			}
 		}
+		bDeterministicReadyOverride = false;
 		return true;
 	}
 
+	bDeterministicReadyOverride = false;
 	return false;
 }
 
@@ -747,281 +741,10 @@ simulated function yModInit() {
 	CDO = CalcDrawOffsetClient();
 }
 
-function bool IsPositionReasonable(vector ClientLoc)
-{
-    local vector Diff;
-
-    if (IsPingCompEnabled() && Mover(Owner.Base) != None)
-        return true;
-
-    Diff = ClientLoc - Owner.Location;
-    return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
-}
-
-// Called by ClientFire. Sends exact Client data to server.
-function ServerExplicitFire(
-	vector ClientLoc,
-	rotator ClientRot,
-	bool bClientVisuals,
-	optional bool bIsSwitching
-)
-{
-    local PlayerPawn P;
-    local vector RawClientLoc;
-    local vector CheckLoc;
-    
-	P = PlayerPawn(Owner);
-    if (P == None)
-        return;
-
-	if (!IsPingCompEnabled())
-		return;
-
-	if (!UseExplicitPingCompFirePath())
-		return;
-
-	DebugShotEvent("ServerExplicitFire-Rx", ClientRot, ClientLoc);
-
-	RawClientLoc = ClientLoc;
-	CheckLoc = RawClientLoc;
-	if (WImp != None)
-		CheckLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
-			Pawn(Owner),
-			CheckLoc,
-			WImp.IGPlus_GetOneWayLatencyMs(Pawn(Owner))
-		);
-	else if (bbPlayer(Owner) != None)
-		CheckLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	
-	// Handle Switching Fire (High Priority)
-	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) && (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
-	{
-		// Rate limit check
-		if (Level.TimeSeconds - LastServerFireTime < FIRE_RATE_LIMIT)
-			return;
-
-		AmmoType.UseAmmo(1);
-		LastServerFireTime = Level.TimeSeconds;
-
-		// Position validation
-		if (IsPositionReasonable(CheckLoc)) {
-			ExplicitClientLoc = RawClientLoc;
-			ExplicitClientBaseMover = Mover(Owner.Base);
-		} else {
-			ExplicitClientLoc = Owner.Location;
-			// Fallback already uses server-current position; skip mover re-adjust later.
-			ExplicitClientBaseMover = none;
-		}
-		
-		ExplicitClientRot = ClientRot;
-		bUseExplicitData = true;
-		bClientShownVisuals = bClientVisuals;
-
-		if ( bRapidFire || (FiringSpeed > 0) )
-			P.PlayRecoil(FiringSpeed);
-		
-		PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
-
-		if (Affector != None) {
-			Affector.FireEffect();
-		}
-
-		TraceFire(0.0);
-		
-		bUseExplicitData = false;
-		bClientShownVisuals = false;
-
-		bChangeWeapon = true;
-		GotoState('DownWeapon'); // Manually trigger the transition
-		return;
-	}
-
-	if (bChangeWeapon || IsInState('DownWeapon'))
- 		return;
-
-    // Rate limit check (anti-cheat)
-    if (Level.TimeSeconds - LastServerFireTime < FIRE_RATE_LIMIT)
-        return;
-
-	// Position validation - use server position if client position is unreasonable
-	if (IsPositionReasonable(CheckLoc)) {
-		ExplicitClientLoc = RawClientLoc;
-		ExplicitClientBaseMover = Mover(Owner.Base);
-	} else {
-		ExplicitClientLoc = Owner.Location;
-		ExplicitClientBaseMover = none;
-	}
-    
-    ExplicitClientRot = ClientRot;
-    bUseExplicitData = true;
-    bClientShownVisuals = bClientVisuals;
-
-    if (AmmoType != None && AmmoType.AmmoAmount > 0)
-    {
-        AmmoType.UseAmmo(1);
-        LastServerFireTime = Level.TimeSeconds;
-        
-		bPointing = true;
-		GotoState('NormalFire');
-		
-		if ( bRapidFire || (FiringSpeed > 0) )
-			P.PlayRecoil(FiringSpeed);
-		
-		PlayFiring();
-
-		if (Affector != None) {
-			Affector.FireEffect();
-		}
-
-		TraceFire(0.0);
-    }
-
-    bUseExplicitData = false;
-    bClientShownVisuals = false;
-}
-
-function ServerExplicitAltFire(
-	vector ClientLoc,
-	rotator ClientRot,
-	bool bClientVisuals,
-	optional bool bIsSwitching
-)
-{
-    local PlayerPawn P;
-    local vector RawClientLoc;
-    local vector CheckLoc;
-    
-	P = PlayerPawn(Owner);
-    if (P == None)
-        return;
-
-	if (!IsPingCompEnabled())
-		return;
-
-	if (!UseExplicitPingCompFirePath())
-		return;
-
-	DebugShotEvent("ServerExplicitAlt-Rx", ClientRot, ClientLoc);
-
-	RawClientLoc = ClientLoc;
-	CheckLoc = RawClientLoc;
-	if (WImp != None)
-		CheckLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
-			Pawn(Owner),
-			CheckLoc,
-			WImp.IGPlus_GetOneWayLatencyMs(Pawn(Owner))
-		);
-	else if (bbPlayer(Owner) != None)
-		CheckLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-
-	// Handle Switching Fire (High Priority)
-	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) && (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
-	{
-		AmmoType.UseAmmo(1);
-		
-		if (IsPositionReasonable(CheckLoc)) {
-			ExplicitClientLoc = RawClientLoc;
-			ExplicitClientBaseMover = Mover(Owner.Base);
-		} else {
-			ExplicitClientLoc = Owner.Location;
-			ExplicitClientBaseMover = none;
-		}
-		
-		ExplicitClientRot = ClientRot;
-		bUseExplicitData = true;
-		bClientShownVisuals = bClientVisuals;
-
-		if ( bRapidFire || (FiringSpeed > 0) )
-			P.PlayRecoil(FiringSpeed);
-			
-		PlayOwnedSound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
-		
-		if (Affector != None)
-			Affector.FireEffect();
-
-		ExplicitProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
-
-		bUseExplicitData = false;
-		bClientShownVisuals = false;
-		
-		bChangeWeapon = true;
-		GotoState('DownWeapon');
-		return;
-	}
-
-	if (bChangeWeapon || IsInState('DownWeapon'))
- 		return;
-
-	// Position validation - use server position if client position is unreasonable
-	if (IsPositionReasonable(CheckLoc)) {
-		ExplicitClientLoc = RawClientLoc;
-		ExplicitClientBaseMover = Mover(Owner.Base);
-	} else {
-		ExplicitClientLoc = Owner.Location;
-		ExplicitClientBaseMover = none;
-	}
-
-    ExplicitClientRot = ClientRot;
-    bUseExplicitData = true;
-    bClientShownVisuals = bClientVisuals;
-
-    if (AmmoType != None && AmmoType.AmmoAmount > 0)
-    {
-        AmmoType.UseAmmo(1);
-        
-		bPointing = true;
-		GotoState('AltFiring');
-		
-		if ( bRapidFire || (FiringSpeed > 0) )
-			P.PlayRecoil(FiringSpeed);
-			
-		PlayAltFiring();
-		
-		if (Affector != None) {
-			Affector.FireEffect();
-		}
-
-		ExplicitProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
-    }
-
-    bUseExplicitData = false;
-    bClientShownVisuals = false;
-}
-
-function Projectile ExplicitProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
-{
-    local Vector Start, X,Y,Z;
-    local Pawn PawnOwner;
-	local vector AdjustedClientLoc;
-
-    PawnOwner = Pawn(Owner);
-    Owner.MakeNoise(PawnOwner.SoundDampening);
-    
-	// Use Explicit Client Rotation
-	GetAxes(ExplicitClientRot,X,Y,Z);
-	AdjustedClientLoc = ExplicitClientLoc;
-	// Apply mover-frame conversion only for explicit data captured while riding a mover.
-	if (WImp != None && IsPingCompEnabled() && ExplicitClientBaseMover != none)
-		AdjustedClientLoc = WImp.IGPlus_AdjustLocationToCurrentMoverFrame(
-			PawnOwner,
-			AdjustedClientLoc,
-			WImp.IGPlus_GetOneWayLatencyMs(PawnOwner),
-			ExplicitClientBaseMover
-		);
-
-    // For projectile spawn, use current mover frame to avoid immediate collision
-    // with the shooter's own lift on server.
-    Start = AdjustedClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
-
-    AdjustedAim = ExplicitClientRot; 
-    
-    return Spawn(ProjClass,,, Start, AdjustedAim);  
-}
-
 simulated function bool ClientFire(float Value) {
 	local Pawn PawnOwner;
 	local bbPlayer bbP;
-	local bool bVisualsPlayed;
+	local TournamentPlayer TP;
 
 	if (!bCanClientFire)
 		return false;
@@ -1030,85 +753,27 @@ simulated function bool ClientFire(float Value) {
 	
 	if (PawnOwner == None) 
 		return false;
+	TP = TournamentPlayer(PawnOwner);
+	if (bChangeWeapon
+		|| (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		|| (TP != none && TP.ClientPending != none && TP.ClientPending != self))
+		return false;
 
 	bbP = bbPlayer(PawnOwner);
 
-	if (IsPingCompEnabled() && !UseExplicitPingCompFirePath())
-	{
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
-		{
-			if (UseDeterministicInputLoop()) {
-				DebugShotEvent("ClientFire-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
-				return true;
-			}
-
-			if (!Super.ClientFire(Value))
-				return false;
-
-			DebugShotEvent("ClientFire-NoRPC", PawnOwner.ViewRotation, PawnOwner.Location);
-
-			if (bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-				ClientTraceFire();
+	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
+		if (UseDeterministicInputLoop()) {
+			DebugShotEvent("ClientFire-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
 			return true;
 		}
-	}
 
-	if (IsPingCompEnabled())
-	{
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
-		{
-			// Client-side rate limiting
-			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
-				return false;
+		if (!Super.ClientFire(Value))
+			return false;
 
-			if ((AmmoType == None) && (AmmoName != None)) {
-				GiveAmmo(PawnOwner);
-			}
-			
-			if (AmmoType != None && AmmoType.AmmoAmount > 0)
-			{
-				LastClientFireTime = Level.TimeSeconds;
-				Instigator = PawnOwner;
-
-				if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-				{
-					// Still send RPC (server will handle it correctly), but don't show visuals
-					DebugShotEvent("ClientFire-RPC-Switch", PawnOwner.ViewRotation, PawnOwner.Location);
-					ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation, false, true);
-					return true;
-				}
-
-				GotoState('ClientFiring');
-				bPointing = True;
-
-				bVisualsPlayed = false;
-				
-				// Always play weapon animations to keep state machine working
-				if (bRapidFire || (FiringSpeed > 0))
-					PawnOwner.PlayRecoil(FiringSpeed);
-				PlayFiring();
-
-				if ( Affector != None )
-					Affector.FireEffect();
-
-				if (PlayerPawn(Owner) != None)
-					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
-
-				// Spawn beam effect ONLY if setting is enabled
-				if (bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-				{
-					ClientTraceFire();
-					bVisualsPlayed = true;
-				}
-
-				// ALWAYS send the exact aim to server if compensation is on
-				DebugShotEvent("ClientFire-RPC", PawnOwner.ViewRotation, PawnOwner.Location);
-				ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation, bVisualsPlayed);
-
-				return true;
-			}
-			return false; // No ammo
-		}
+		DebugShotEvent("ClientFire-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
+		if (bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+			ClientTraceFire();
+		return true;
 	}
 	
 	return Super.ClientFire(Value);
@@ -1210,7 +875,7 @@ simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
 simulated function bool ClientAltFire(float Value) {
 	local Pawn PawnOwner;
 	local bbPlayer bbP;
-	local bool bVisualsPlayed;
+	local TournamentPlayer TP;
 
 	if (!bCanClientFire)
 		return false;
@@ -1219,73 +884,27 @@ simulated function bool ClientAltFire(float Value) {
 	
 	if (PawnOwner == None)
 		return false;
+	TP = TournamentPlayer(PawnOwner);
+	if (bChangeWeapon
+		|| (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		|| (TP != none && TP.ClientPending != none && TP.ClientPending != self))
+		return false;
 
 	bbP = bbPlayer(PawnOwner);
 
-	if (IsPingCompEnabled() && !UseExplicitPingCompFirePath())
-	{
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
-		{
-			if (UseDeterministicInputLoop()) {
-				DebugShotEvent("ClientAlt-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
-				return true;
-			}
-
-			if (!Super.ClientAltFire(Value))
-				return false;
-
-			DebugShotEvent("ClientAlt-NoRPC", PawnOwner.ViewRotation, PawnOwner.Location);
-
-			if (bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
-				ClientSpawnAltProjectileEffects();
+	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
+		if (UseDeterministicInputLoop()) {
+			DebugShotEvent("ClientAlt-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
 			return true;
 		}
-	}
 
-	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None)
-	{
-		if ((AmmoType == None && AmmoName != None)) {
-			GiveAmmo(PawnOwner);
-		}
-		
-		if (AmmoType != None && AmmoType.AmmoAmount > 0) {
-			Instigator = PawnOwner;
-			
-				if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-				{
-					DebugShotEvent("ClientAlt-RPC-Switch", PawnOwner.ViewRotation, PawnOwner.Location);
-					ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation, false, true);
-					return true;
-				}
-			
-			bPointing = True;
+		if (!Super.ClientAltFire(Value))
+			return false;
 
-			GotoState('ClientAltFiring');
-
-			bVisualsPlayed = false;
-
-			// Always play weapon animations to keep state machine working
-			if (bRapidFire || (FiringSpeed > 0))
-				PawnOwner.PlayRecoil(FiringSpeed);
-			PlayAltFiring();
-
-			if ( Affector != None )
-				Affector.FireEffect();
-
-			// Spawn projectile effect ONLY if setting is enabled
-			if (bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
-			{
-				ClientSpawnAltProjectileEffects();
-				bVisualsPlayed = true;
-			}
-
-			// ALWAYS Send the exact aim to server
-			DebugShotEvent("ClientAlt-RPC", PawnOwner.ViewRotation, PawnOwner.Location);
-			ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation, bVisualsPlayed);
-
-			return true;
-		}
-		return false; // No ammo
+		DebugShotEvent("ClientAlt-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
+		if (bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
+			ClientSpawnAltProjectileEffects();
+		return true;
 	}
 	
 	return Super.ClientAltFire(Value); 
@@ -1350,29 +969,29 @@ function TraceFire(float Accuracy) {
 	local vector SmokeLocation;
 
 	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return;
+
+	// Deterministic path is authoritative for server primary shots.
+	// If legacy fire state slips through (NormalFire/Finish), drop that trace
+	// so we never spawn duplicate server beams.
+	if (Role == ROLE_Authority
+		&& Level.NetMode != NM_Client
+		&& UseDeterministicInputLoop()
+		&& !bUseDeterministicData)
+		return;
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
 
 	if (Role == ROLE_Authority && Level.NetMode != NM_Client) {
 		DebugServerShotSeq += 1;
-		if (bUseExplicitData)
-			DebugShotEvent("ServerTraceFire-Explicit", ExplicitClientRot, ExplicitClientLoc);
-		else if (bUseDeterministicData)
+		if (bUseDeterministicData)
 			DebugShotEvent("ServerTraceFire-Deterministic", DeterministicShotRot, DeterministicShotLoc);
 		else
 			DebugShotEvent("ServerTraceFire-Standard", PawnOwner.ViewRotation, Owner.Location);
 	}
 
-	// Use Explicit Client Data if provided, otherwise fallback to standard
-	if (bUseExplicitData)
-	{
-		AimRot = ExplicitClientRot;
-		AimLoc = ExplicitClientLoc;
-		// ExplicitClientLoc is captured at client fire time. For hitscan beam traces,
-		// keep that origin as-is; shifting it to current mover frame skews vertical
-		// aim while riding movers.
-	}
-	else if (bUseDeterministicData)
+	if (bUseDeterministicData)
 	{
 		AimRot = DeterministicShotRot;
 		AimLoc = DeterministicShotLoc;
@@ -1396,8 +1015,8 @@ function TraceFire(float Accuracy) {
 	) {
 		EndTrace += 10000 * Normal(Tracked.Location - StartTrace);
 	} else {
-		// Only allow auto-aim helper for bots or legacy mode.
-		if (!bUseExplicitData && !(IsPingCompEnabled() && PlayerPawn(Owner) != None))
+		// Keep bot/legacy auto-aim only when ping comp deterministic view is not in effect.
+		if (!(IsPingCompEnabled() && PlayerPawn(Owner) != None))
 			AdjustedAim = PawnOwner.AdjustAim(1000000, StartTrace, 2.75*AimError, False, False);
 		else
 			AdjustedAim = AimRot;
@@ -1496,12 +1115,7 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 
 	bbP = bbPlayer(Owner);
 
-	// Hide server beam from owner when client-side visuals are already shown.
-	if (IsPingCompEnabled() && (
-			bClientShownVisuals ||
-			(!UseExplicitPingCompFirePath() && bbP != None && bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-		)
-	) {
+	if (IsPingCompEnabled() && bbP != None && bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations) {
 
 		ServerBeamHidden = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
 		ServerBeamHidden.bOwnerNoSee = true;
@@ -1550,6 +1164,24 @@ function SetSwitchPriority(pawn Other)
 	}		
 }
 
+function bool PutDown()
+{
+	local bbPlayer BP;
+
+	BP = bbPlayer(Owner);
+	if (BP != none)
+		BP.IGPlus_MarkDeterministicSwitchGuard();
+
+	// Invalidate deterministic readiness immediately when switch is requested.
+	bCanClientFire = false;
+	bDeterministicPrimaryHeld = false;
+	bDeterministicAltHeld = false;
+	DeterministicNextPrimaryTS = 0.0;
+	DeterministicNextAltTS = 0.0;
+	bDeterministicWasReady = false;
+	return Super.PutDown();
+}
+
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
@@ -1573,6 +1205,10 @@ simulated function TweenDown() {
 	local float TweenTime;
 
 	TweenTime = 0.05;
+	// Clear fire-ready latch as soon as we start switching away to avoid stale
+	// ready state bleeding into the next rapid switch-in epoch.
+	bCanClientFire = false;
+
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
 
@@ -1592,54 +1228,6 @@ simulated function PlayAltFiring()
 {
 	PlayOwnedSound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
 	LoopAnim('Fire2', 0.4 + 0.4 * FireAdjust, 0.05);
-}
-
-state NormalFire
-{
-    function AnimEnd()
-    {
-        Finish();
-    }
-    
-    function Timer()
-    {
-        // Fallback if AnimEnd doesn't fire
-        Finish();
-    }
-    
-    function BeginState()
-    {
-        // Safety net: if AnimEnd doesn't fire within expected time, Timer will
-        SetTimer(0.5, false);
-    }
-    
-    function EndState()
-    {
-        SetTimer(0.0, false);
-    }
-}
-
-state AltFiring
-{
-    function AnimEnd()
-    {
-        Finish();
-    }
-    
-    function Timer()
-    {
-        Finish();
-    }
-    
-    function BeginState()
-    {
-        SetTimer(0.6, false);
-    }
-    
-    function EndState()
-    {
-        SetTimer(0.0, false);
-    }
 }
 
 state ClientFiring {
@@ -1742,105 +1330,22 @@ simulated function vector CalcDrawOffsetClient() {
 	return DrawOffset;
 }
 
-state ClientActive
+function Fire(float Value)
 {
-	simulated function AnimEnd()
-	{
-		bCanClientFire = true;
-		Super.AnimEnd();
-	}
+	// Deterministic/v4 path owns authoritative server shots for this weapon.
+	// Block legacy Fire() entry to prevent duplicate server traces.
+	if (UseDeterministicInputLoop() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+		return;
+	Super.Fire(Value);
 }
 
-state Idle
+function AltFire(float Value)
 {
-
-	function BeginState()
-	{	
-		if (IsPingCompEnabled() && PlayerPawn(Owner) != None && UseExplicitPingCompFirePath())
-		{
-			if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
-	        {
-	            GotoState('DownWeapon');
-	            return;
-	        }
-
-			bPointing = false;
-			SetTimer(0.5 + 2 * FRand(), false);
-
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
-				Pawn(Owner).SwitchToBestWeapon();
-
-			Disable('AnimEnd');
-			PlayIdleAnim();
-		}
-		else
-		{
-			Super.BeginState();
-		}
-	}
-
-	function AnimEnd()
-	{
-		if (IsPingCompEnabled() && PlayerPawn(Owner) != None && UseExplicitPingCompFirePath())
-			PlayIdleAnim();
-		else
-			Super.AnimEnd();
-	}
-
-	function EndState()
-	{
-		SetTimer(0.0, false);
-		Super.EndState();
-	}
-	
-	function bool PutDown()
-	{
-		GotoState('DownWeapon');
-		return True;
-	}
-}
-
-function Finish()
-{
-	if (Owner != None && Pawn(Owner) != None)
-		DebugShotEvent("Finish", Pawn(Owner).ViewRotation, Owner.Location);
-
-    if (IsPingCompEnabled() && PlayerPawn(Owner) != None && (UseExplicitPingCompFirePath() || UseDeterministicInputLoop()))
-    {
-        if (bChangeWeapon)
-            GotoState('DownWeapon');
-        else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
-        {
-            Pawn(Owner).StopFiring();
-            Pawn(Owner).SwitchToBestWeapon();
-            if (bChangeWeapon)
-                GotoState('DownWeapon');
-        }
-        else
-            GotoState('Idle');
-        return;
-    }
-    Super.Finish();
-}
-
-function Fire( float Value )
-{
-	if (Owner != None && Pawn(Owner) != None)
-		DebugShotEvent("FireCalled", Pawn(Owner).ViewRotation, Owner.Location);
-
-    if (IsPingCompEnabled() && PlayerPawn(Owner) != None && (UseExplicitPingCompFirePath() || UseDeterministicInputLoop()))
-        return;
-    Super.Fire(Value);
-}
-
-function AltFire( float Value )
-{
-	if (Owner != None && Pawn(Owner) != None)
-		DebugShotEvent("AltFireCalled", Pawn(Owner).ViewRotation, Owner.Location);
-
-    if (IsPingCompEnabled() && PlayerPawn(Owner) != None && (UseExplicitPingCompFirePath() || UseDeterministicInputLoop()))
-        return;
-    Super.AltFire(Value);
+	// Deterministic/v4 path owns authoritative server shots for this weapon.
+	// Block legacy AltFire() entry to prevent duplicate server traces.
+	if (UseDeterministicInputLoop() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+		return;
+	Super.AltFire(Value);
 }
 
 defaultproperties {

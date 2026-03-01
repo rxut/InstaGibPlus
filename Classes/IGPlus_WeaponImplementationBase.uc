@@ -1473,6 +1473,233 @@ simulated function Actor TraceShotClient(out vector HitLocation, out vector HitN
 	);
 }
 
+simulated function int IGPlus_V4DecodeSigned16(int Value) {
+	return (Value << 16) >> 16;
+}
+
+simulated function int IGPlus_V4YawDelta16(int StartYaw, int EndYaw) {
+	local int Delta;
+
+	Delta = (EndYaw & 0xFFFF) - (StartYaw & 0xFFFF);
+	if (Delta > 32767)
+		Delta -= 65536;
+	else if (Delta < -32768)
+		Delta += 65536;
+	return Delta;
+}
+
+simulated function float IGPlus_V4ComputeStepTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount) {
+	local float StartTS;
+	local float StepT;
+
+	if (MergeCount <= 0 || MoveDelta <= 0.0)
+		return MoveTS;
+
+	StartTS = MoveTS - MoveDelta;
+	StepT = FClamp(float(MoveIndex) / float(MergeCount), 0.0, 1.0);
+	return StartTS + StepT * MoveDelta;
+}
+
+simulated function rotator IGPlus_V4InterpolateStepView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount) {
+	local rotator R;
+	local float T;
+	local int StartPitch;
+	local int EndPitch;
+	local int StartYaw;
+	local int EndYaw;
+	local int PitchSigned;
+	local int YawUnwrapped;
+
+	StartPitch = IGPlus_V4DecodeSigned16((ViewStartPacked >>> 16) & 0xFFFF);
+	EndPitch = IGPlus_V4DecodeSigned16((ViewEndPacked >>> 16) & 0xFFFF);
+	StartYaw = ViewStartPacked & 0xFFFF;
+	EndYaw = ViewEndPacked & 0xFFFF;
+
+	if (MergeCount <= 0)
+		T = 1.0;
+	else
+		T = FClamp(float(MoveIndex) / float(MergeCount), 0.0, 1.0);
+
+	PitchSigned = StartPitch + int(float(EndPitch - StartPitch) * T);
+	YawUnwrapped = StartYaw + int(float(IGPlus_V4YawDelta16(StartYaw, EndYaw)) * T);
+
+	R.Pitch = PitchSigned & 0xFFFF;
+	R.Yaw = YawUnwrapped & 0xFFFF;
+	R.Roll = 0;
+	return R;
+}
+
+simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
+	return W != none && W.IsA('ST_ShockRifle');
+}
+
+simulated function bool IGPlus_V4IsShockStepReady(
+	ST_ShockRifle ShockWeapon,
+	Pawn P,
+	bool bServerSide
+) {
+	local TournamentPlayer TP;
+
+	if (ShockWeapon == none || P == none)
+		return false;
+	if (!ShockWeapon.UseDeterministicInputLoop())
+		return false;
+	if (!ShockWeapon.IsDeterministicReady())
+		return false;
+	if (P.Weapon != ShockWeapon)
+		return false;
+	if (P.PendingWeapon != none && P.PendingWeapon != ShockWeapon)
+		return false;
+	if (ShockWeapon.bChangeWeapon)
+		return false;
+	if (ShockWeapon.IsInState('Pickup') || ShockWeapon.IsInState('DownWeapon') || ShockWeapon.IsInState('ClientDown'))
+		return false;
+	if (!ShockWeapon.bCanClientFire)
+		return false;
+
+	// On client prediction, be strict about local pending-switch intent.
+	if (!bServerSide) {
+		TP = TournamentPlayer(P);
+		if (TP != none && TP.ClientPending != none)
+			return false;
+	}
+
+	return true;
+}
+
+simulated function bool IGPlus_V4AllowShockClientPrediction(
+	ST_ShockRifle ShockWeapon,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt
+) {
+	if (ShockWeapon == none)
+		return false;
+	// Readiness gating is authoritative; do not apply additional ack-based
+	// throttles here because they suppress valid client prediction and cause
+	// visible server-only beams.
+	return true;
+}
+
+simulated function bool IGPlus_V4IsWeaponStepReady(
+	Weapon W,
+	Pawn P,
+	bool bServerSide
+) {
+	local ST_ShockRifle ShockWeapon;
+
+	ShockWeapon = ST_ShockRifle(W);
+	if (ShockWeapon != none)
+		return IGPlus_V4IsShockStepReady(ShockWeapon, P, bServerSide);
+
+	return false;
+}
+
+simulated function bool IGPlus_V4AllowClientPredictionForStep(
+	Weapon W,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt
+) {
+	local ST_ShockRifle ShockWeapon;
+
+	ShockWeapon = ST_ShockRifle(W);
+	if (ShockWeapon != none)
+		return IGPlus_V4AllowShockClientPrediction(ShockWeapon, bFireHeld, bAltHeld, bForceFire, bForceAlt);
+
+	return false;
+}
+
+simulated function bool IGPlus_V4DispatchWeaponStep(
+	Weapon W,
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	optional bool bStepReadyHint
+) {
+	local ST_ShockRifle ShockWeapon;
+
+	ShockWeapon = ST_ShockRifle(W);
+	if (ShockWeapon != none)
+		return ShockWeapon.IGPlus_OnInputStep(
+			StepTS,
+			StepView,
+			bFireHeld,
+			bAltHeld,
+			bForceFire,
+			bForceAlt,
+			StepLoc,
+			bStepReadyHint
+		);
+
+	return false;
+}
+
+simulated function bool IGPlus_V4ProcessWeaponStep(
+	Weapon W,
+	Pawn P,
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bStepReadyHint
+) {
+	local bool bReady;
+	local ST_ShockRifle ShockWeapon;
+
+	if (W == none || !IGPlus_V4SupportsWeapon(W))
+		return false;
+
+	// Server should honor step-ready hints carried by input/move payloads.
+	// This avoids dropping mirrored predicted shots due transient local
+	// readiness ordering differences while switching weapons.
+	ShockWeapon = ST_ShockRifle(W);
+	if (bServerSide && bStepReadyHint && ShockWeapon != none && ShockWeapon.UseDeterministicInputLoop())
+		bReady = true;
+	else
+		bReady = IGPlus_V4IsWeaponStepReady(W, P, bServerSide);
+	if (!bReady) {
+		// Keep deterministic epoch state in sync across readiness transitions.
+		IGPlus_V4DispatchWeaponStep(
+			W,
+			StepTS,
+			StepView,
+			StepLoc,
+			false,
+			false,
+			false,
+			false,
+			bStepReadyHint
+		);
+		return true;
+	}
+
+	if (!bServerSide && !IGPlus_V4AllowClientPredictionForStep(W, bFireHeld, bAltHeld, bForceFire, bForceAlt))
+		return true;
+
+	return IGPlus_V4DispatchWeaponStep(
+		W,
+		StepTS,
+		StepView,
+		StepLoc,
+		bFireHeld,
+		bAltHeld,
+		bForceFire,
+		bForceAlt,
+		bStepReadyHint
+	);
+}
+
 defaultproperties {
 
 }

@@ -104,6 +104,26 @@ function Actor TraceShot(
 
 simulated function Actor TraceShotClient(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn PawnOwner);
 
+simulated function bool IGPlus_V4SupportsWeapon(Weapon W);
+
+simulated function bool IGPlus_V4ProcessWeaponStep(
+	Weapon W,
+	Pawn P,
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bStepReadyHint
+);
+
+simulated function float IGPlus_V4ComputeStepTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount);
+
+simulated function rotator IGPlus_V4InterpolateStepView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount);
+
 defaultproperties {
 	RemoteRole=ROLE_SimulatedProxy
 	bAlwaysRelevant=True
