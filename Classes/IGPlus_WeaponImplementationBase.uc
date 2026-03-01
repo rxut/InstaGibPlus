@@ -1530,115 +1530,34 @@ simulated function rotator IGPlus_V4InterpolateStepView(int ViewStartPacked, int
 }
 
 // =====================================================================
-// Deterministic weapon support — generic engine
+// V4 weapon step support — server-authoritative approach
 //
-// IGPlus_DetState holds per-weapon state (owned by each weapon instance).
-// The functions below implement the cadence engine, readiness checks,
-// ack processing, debug logging, and weapon-callback dispatch.
-// Weapon classes provide thin callbacks:
-//   IGPlus_DetCanFire(bServerSide) -> bool
-//   IGPlus_DetDoClientFire(bAlt, TS, View, Loc) -> bool
-//   IGPlus_DetDoServerFire(bAlt, TS, View, Loc) -> bool
-//   IGPlus_DetDoAckBootstrap(bAlt, View, Origin) -> void
-//   PrimaryShotInterval() -> float
-//   AltShotInterval() -> float
+// The server fires when it processes the V4 step where fire input is
+// detected, using the interpolated client view from that exact sub-step.
+// The client predicts only visual effects (beam/projectile).
+// Fire-rate enforcement uses a single NextV4FireTS timestamp per weapon.
 // =====================================================================
 
-// -- V4 weapon support dispatch (extend per weapon type) --------------
+// -- V4 weapon type dispatch (extend per weapon type) -----------------
 
 simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
 	return W != none && W.IsA('ST_ShockRifle');
 }
 
-simulated function bool IGPlus_V4AllowClientPredictionForStep(
-	Weapon W,
-	bool bFireHeld,
-	bool bAltHeld,
-	bool bForceFire,
-	bool bForceAlt
-) {
-	// Readiness gating is authoritative; no additional ack-based throttles.
-	if (W == none || !IGPlus_V4SupportsWeapon(W))
-		return false;
-	return true;
-}
-
-// -- DetState accessor (extend per weapon type) -----------------------
-
-simulated function IGPlus_DetState IGPlus_DetGetState(Weapon W) {
+// Used by bbPlayer.IGPlus_IsV4DetReady to sample readiness on inputs/moves.
+simulated function bool IGPlus_V4IsWeaponStepReady(Weapon W, Pawn P, bool bServerSide) {
 	local ST_ShockRifle SR;
 	SR = ST_ShockRifle(W);
-	if (SR != none) return SR.DetState;
-	return none;
+	if (SR != none) return SR.IsDeterministicReady();
+	return false;
 }
 
-// -- Readiness --------------------------------------------------------
+// -- View quantization ------------------------------------------------
+// Quantizes a view rotator to 16-bit precision, matching the packed
+// format used by ServerMove_v4.  Both client and server use this so
+// predicted client beams match the server trace direction exactly.
 
-simulated function bool IGPlus_DetUsesLoop(Weapon W) {
-	local bbPlayer BP;
-	local IGPlus_DetState DS;
-
-	if (W == none)
-		return false;
-	if (WSettingsRepl == none || !WSettingsRepl.bEnablePingCompensation)
-		return false;
-
-	BP = bbPlayer(W.Owner);
-	if (BP == none)
-		return false;
-
-	// ServerMove v4 deterministic path (non-InputReplication)
-	if (!BP.IGPlus_EnableInputReplication && int(Level.ServerMoveVersion) >= 4)
-		return true;
-
-	// InputReplication deterministic path
-	DS = IGPlus_DetGetState(W);
-	if (DS != none && DS.bRuntimeFallback)
-		return false;
-
-	return true;
-}
-
-simulated function bool IGPlus_DetIsReady(Weapon W, IGPlus_DetState DS) {
-	local Pawn PawnOwner;
-	local TournamentPlayer TP;
-	local bbPlayer BP;
-
-	if (DS != none && DS.bReadyOverride)
-		return true;
-
-	if (!IGPlus_DetUsesLoop(W))
-		return false;
-	if (W == none || W.Owner == none)
-		return false;
-	PawnOwner = Pawn(W.Owner);
-	if (PawnOwner == none)
-		return false;
-	BP = bbPlayer(PawnOwner);
-	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
-		return false;
-	TP = TournamentPlayer(PawnOwner);
-	if (TP != none && TP.ClientPending != none && TP.ClientPending != W)
-		return false;
-	if (PawnOwner.Weapon != W)
-		return false;
-	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != W)
-		return false;
-	if (W.bChangeWeapon || W.IsInState('Pickup') || W.IsInState('DownWeapon') || W.IsInState('ClientDown'))
-		return false;
-	if (TournamentWeapon(W) != none && !TournamentWeapon(W).bCanClientFire)
-		return false;
-	return true;
-}
-
-// Used by bbPlayer.IGPlus_IsV4DetReady to sample bDetReady on inputs/moves.
-simulated function bool IGPlus_V4IsWeaponStepReady(Weapon W, Pawn P, bool bServerSide) {
-	return IGPlus_DetIsReady(W, IGPlus_DetGetState(W));
-}
-
-// -- Utility ----------------------------------------------------------
-
-simulated function rotator IGPlus_DetQuantizeView(rotator InRot) {
+simulated function rotator IGPlus_V4QuantizeView(rotator InRot) {
 	local rotator Q;
 	local int PitchSigned;
 	PitchSigned = InRot.Pitch << 16 >> 16;
@@ -1649,440 +1568,24 @@ simulated function rotator IGPlus_DetQuantizeView(rotator InRot) {
 	return Q;
 }
 
-simulated function IGPlus_DetResetState(IGPlus_DetState DS, Weapon W) {
-	if (DS == none) return;
-	DS.Reset(true);
-	DS.PrimaryInterval = IGPlus_DetGetInterval(W, false);
-	DS.AltInterval = IGPlus_DetGetInterval(W, true);
-}
+// -- Out of ammo (server only) ----------------------------------------
 
-simulated function IGPlus_DetTriggerFallback(IGPlus_DetState DS, Weapon W, coerce string Reason, optional rotator R, optional vector L) {
-	if (DS == none) return;
-	DS.bRuntimeFallback = true;
-	DS.bPrimaryHeld = false;
-	DS.bAltHeld = false;
-	IGPlus_DetLogEvent(W, DS, "DetFallback-"$Reason, R, L);
-}
-
-// -- Weapon callback dispatch (extend per weapon type) ----------------
-
-simulated function float IGPlus_DetGetInterval(Weapon W, bool bAlt) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) {
-		if (bAlt) return SR.AltShotInterval();
-		return SR.PrimaryShotInterval();
-	}
-	return 0.5;
-}
-
-simulated function bool IGPlus_DetCanFire(Weapon W, bool bServerSide) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) return SR.IGPlus_DetCanFire(bServerSide);
-	return false;
-}
-
-simulated function bool IGPlus_DetDoClientFire(Weapon W, bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) return SR.IGPlus_DetDoClientFire(bAlt, ShotTS, ShotView, ShotLoc);
-	return false;
-}
-
-function bool IGPlus_DetDoServerFire(Weapon W, bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) return SR.IGPlus_DetDoServerFire(bAlt, ShotTS, ShotView, ShotLoc);
-	return false;
-}
-
-simulated function IGPlus_DetDoAckBootstrap(Weapon W, bool bAlt, rotator ShotView, vector ShotOrigin) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) SR.IGPlus_DetDoAckBootstrap(bAlt, ShotView, ShotOrigin);
-}
-
-function IGPlus_DetSendAck(Weapon W, IGPlus_DetState DS, bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) {
-		if (bAlt) {
-			IGPlus_DetLogEvent(W, DS, "AckAltTx", ShotView, ShotLoc);
-			SR.ClientAckAltShot(DS.ServerAltSeq, ShotTS, ShotView, ShotLoc);
-		} else {
-			IGPlus_DetLogEvent(W, DS, "AckPrimaryTx", ShotView, ShotLoc);
-			SR.ClientAckPrimaryShot(DS.ServerPrimarySeq, ShotTS, ShotView, ShotLoc);
-		}
-	}
-}
-
-// -- Debug logging ----------------------------------------------------
-
-simulated function bool IGPlus_DetShouldLog(Weapon W, IGPlus_DetState DS) {
-	local bbPlayer BP;
-
-	if (W == none || W.Owner == none)
-		return false;
-	BP = bbPlayer(W.Owner);
-	if (BP == none)
-		return false;
-	if (BP.bDrawDebugData)
-		return true;
-	if (WSettingsRepl != none && WSettingsRepl.bEnablePingCompensation
-		&& (IGPlus_DetUsesLoop(W) || (DS != none && DS.bRuntimeFallback)))
-		return true;
-	return false;
-}
-
-simulated function bool IGPlus_DetShouldLogEvent(coerce string EventName) {
-	if (EventName ~= "DetClientPrimary") return true;
-	if (EventName ~= "DetClientAlt") return true;
-	if (EventName ~= "DetServerPrimary") return true;
-	if (EventName ~= "DetServerAlt") return true;
-	if (EventName ~= "ServerTraceFire-Deterministic") return true;
-	if (EventName ~= "AckPrimary") return true;
-	if (EventName ~= "AckAlt") return true;
-	if (EventName ~= "DetOutOfAmmo") return true;
-	if (Left(EventName, 12) ~= "DetFallback-") return true;
-	return false;
-}
-
-simulated function IGPlus_DetLogEvent(
-	Weapon W,
-	IGPlus_DetState DS,
-	coerce string EventName,
-	optional rotator EventRot,
-	optional vector EventLoc
-) {
-	local bbPlayer BP;
-	local Pawn PawnOwner;
-	local string Msg;
-	local string PlayerName;
-	local string ModeTag;
-
-	if (!IGPlus_DetShouldLog(W, DS))
-		return;
-	if (!IGPlus_DetShouldLogEvent(EventName))
-		return;
-
-	BP = bbPlayer(W.Owner);
-	PawnOwner = Pawn(W.Owner);
-	if (BP == none || PawnOwner == none)
-		return;
-
-	if (IGPlus_DetUsesLoop(W))
-		ModeTag = "DET";
-	else
-		ModeTag = "STD";
-
-	Msg = "STSR"@EventName
-		@"SeqC="$DS.DebugClientSeq
-		@"SeqS="$DS.DebugServerSeq
-		@"Mode="$ModeTag
-		@"Key="$ModeTag$":"$DS.DebugServerSeq
-		@"Pred="$DS.PredPrimarySeq$"/"$DS.PredAltSeq
-		@"Ack="$DS.AckPrimarySeq$"/"$DS.AckAltSeq
-		@"Next="$DS.NextPrimaryTS$"/"$DS.NextAltTS
-		@"LTS="$Level.TimeSeconds
-		@"CTS="$BP.CurrentTimeStamp
-		@"State="$W.GetStateName()
-		@"bF="$PawnOwner.bFire
-		@"bAF="$PawnOwner.bAltFire
-		@"VR="$int(EventRot.Pitch & 65535)$","$int(EventRot.Yaw & 65535)
-		@"Loc="$int(EventLoc.X)$","$int(EventLoc.Y)$","$int(EventLoc.Z);
-
-	BP.ClientMessage(Msg);
-
-	if (Level.NetMode != NM_Client) {
-		if (BP.PlayerReplicationInfo != none)
-			PlayerName = BP.PlayerReplicationInfo.PlayerName;
-		else
-			PlayerName = "UnknownPlayer";
-		Log("["$Level.TimeSeconds$"]"@PlayerName@Msg, 'IGPlus');
-	}
-}
-
-// -- Out of ammo handling ---------------------------------------------
-
-function IGPlus_DetHandleOutOfAmmo(IGPlus_DetState DS, Weapon W, optional rotator EventRot, optional vector EventLoc) {
-	local Pawn PawnOwner;
-
+function IGPlus_V4HandleOutOfAmmo(Weapon W, Pawn P) {
 	if (W == none || W.Role < ROLE_Authority || Level.NetMode == NM_Client)
 		return;
 	if (W.AmmoType == none || W.AmmoType.AmmoAmount > 0)
 		return;
-
-	PawnOwner = Pawn(W.Owner);
-	if (PawnOwner == none)
+	if (P == none)
 		return;
 
-	DS.bPrimaryHeld = false;
-	DS.bAltHeld = false;
-	DS.NextPrimaryTS = 0.0;
-	DS.NextAltTS = 0.0;
-
-	if (PawnOwner.Weapon == W) {
-		PawnOwner.StopFiring();
-		if (PawnOwner.PendingWeapon == none || PawnOwner.PendingWeapon == W)
-			PawnOwner.SwitchToBestWeapon();
-	}
-
-	IGPlus_DetLogEvent(W, DS, "DetOutOfAmmo", EventRot, EventLoc);
-}
-
-// -- Ack processing ---------------------------------------------------
-
-simulated function IGPlus_DetProcessPrimaryAck(IGPlus_DetState DS, Weapon W, int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
-	local int SeqDelta;
-	local int PrevPredSeq;
-	local float TargetNextTS;
-	local bool bFirstAck;
-
-	if (DS == none) return;
-	if (!IGPlus_DetUsesLoop(W)) return;
-
-	PrevPredSeq = DS.PredPrimarySeq;
-	bFirstAck = (DS.AckPrimarySeq == 0 && Seq > 0);
-	SeqDelta = Seq - DS.PredPrimarySeq;
-
-	if (Abs(SeqDelta) > 4) {
-		IGPlus_DetTriggerFallback(DS, W, "PrimarySeq", ShotView, ShotOrigin);
-		return;
-	}
-
-	DS.AckPrimarySeq = Max(DS.AckPrimarySeq, Seq);
-	if (Seq >= DS.PredPrimarySeq)
-		DS.PredPrimarySeq = Seq;
-
-	TargetNextTS = ShotTS + FMax(0.01, DS.PrimaryInterval);
-	if (DS.NextPrimaryTS <= 0.0)
-		DS.NextPrimaryTS = TargetNextTS;
-	else if (TargetNextTS > DS.NextPrimaryTS + 0.003)
-		DS.NextPrimaryTS = TargetNextTS;
-	if (ShotTS + 0.0001 >= DS.LastShotTS) {
-		DS.LastShotTS = ShotTS;
-		DS.LastShotInterval = FMax(0.01, DS.PrimaryInterval);
-	}
-
-	if (bFirstAck && PrevPredSeq <= 0)
-		IGPlus_DetDoAckBootstrap(W, false, ShotView, ShotOrigin);
-
-	IGPlus_DetLogEvent(W, DS, "AckPrimary", ShotView, ShotOrigin);
-}
-
-simulated function IGPlus_DetProcessAltAck(IGPlus_DetState DS, Weapon W, int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
-	local int SeqDelta;
-	local int PrevPredSeq;
-	local float TargetNextTS;
-	local bool bFirstAck;
-
-	if (DS == none) return;
-	if (!IGPlus_DetUsesLoop(W)) return;
-
-	PrevPredSeq = DS.PredAltSeq;
-	bFirstAck = (DS.AckAltSeq == 0 && Seq > 0);
-	SeqDelta = Seq - DS.PredAltSeq;
-
-	if (Abs(SeqDelta) > 4) {
-		IGPlus_DetTriggerFallback(DS, W, "AltSeq", ShotView, ShotOrigin);
-		return;
-	}
-
-	DS.AckAltSeq = Max(DS.AckAltSeq, Seq);
-	if (Seq >= DS.PredAltSeq)
-		DS.PredAltSeq = Seq;
-
-	TargetNextTS = ShotTS + FMax(0.01, DS.AltInterval);
-	if (DS.NextAltTS <= 0.0)
-		DS.NextAltTS = TargetNextTS;
-	else if (TargetNextTS > DS.NextAltTS + 0.003)
-		DS.NextAltTS = TargetNextTS;
-	if (ShotTS + 0.0001 >= DS.LastShotTS) {
-		DS.LastShotTS = ShotTS;
-		DS.LastShotInterval = FMax(0.01, DS.AltInterval);
-	}
-
-	if (bFirstAck && PrevPredSeq <= 0)
-		IGPlus_DetDoAckBootstrap(W, true, ShotView, ShotOrigin);
-
-	IGPlus_DetLogEvent(W, DS, "AckAlt", ShotView, ShotOrigin);
-}
-
-// -- Cadence engine ---------------------------------------------------
-// This is the heart of deterministic firing.  It tracks held-fire
-// state, enforces fire-rate intervals, and dispatches to weapon
-// callbacks for the actual fire effects.  Both server and client
-// run the same logic to keep DeterministicNext*TS in sync.
-
-simulated function bool IGPlus_DetOnInputStep(
-	IGPlus_DetState DS,
-	Weapon W,
-	Pawn P,
-	float InputTS,
-	rotator InputView,
-	bool bFireHeld,
-	bool bAltHeld,
-	bool bForceFire,
-	bool bForceAlt,
-	bool bServerSide,
-	optional bool bStepReadyHint,
-	optional vector InputLoc
-) {
-	local rotator ShotView;
-	local vector ShotLoc;
-	local bool bDidShot;
-	local float Interval;
-
-	if (DS == none || W == none)
-		return false;
-	if (!IGPlus_DetUsesLoop(W))
-		return false;
-
-	// Apply readiness override from bDetReady hint (both server and client).
-	if (bStepReadyHint)
-		DS.bReadyOverride = true;
-
-	if (!IGPlus_DetIsReady(W, DS)) {
-		DS.bReadyOverride = false;
-		DS.bPrimaryHeld = false;
-		DS.bAltHeld = false;
-		DS.bWasReady = false;
-		return false;
-	}
-
-	if (!DS.bWasReady) {
-		DS.bWasReady = true;
-		// Preserve Next*/Last* across short readiness gaps to avoid
-		// client/server schedule drift under rapid switch spam.
-		DS.bPrimaryHeld = false;
-		DS.bAltHeld = false;
-	}
-
-	ShotView = IGPlus_DetQuantizeView(InputView);
-	ShotLoc = InputLoc;
-	if (ShotLoc == vect(0,0,0))
-		ShotLoc = W.Owner.Location;
-
-	// -- Track held state --
-	if (bFireHeld || bForceFire) {
-		if (!DS.bPrimaryHeld) {
-			DS.bPrimaryHeld = true;
-			if (DS.NextPrimaryTS <= 0.0 || DS.NextPrimaryTS < InputTS)
-				DS.NextPrimaryTS = FMax(InputTS, DS.LastShotTS + FMax(0.01, DS.LastShotInterval));
-		}
-	} else {
-		DS.bPrimaryHeld = false;
-	}
-
-	if (bAltHeld || bForceAlt) {
-		if (!DS.bAltHeld) {
-			DS.bAltHeld = true;
-			if (DS.NextAltTS <= 0.0 || DS.NextAltTS < InputTS)
-				DS.NextAltTS = FMax(InputTS, DS.LastShotTS + FMax(0.01, DS.LastShotInterval));
-		}
-	} else {
-		DS.bAltHeld = false;
-	}
-
-	// -- Primary fire --
-	if (DS.bPrimaryHeld) {
-		if (InputTS + 0.0001 >= DS.NextPrimaryTS) {
-			if (!IGPlus_DetCanFire(W, bServerSide)) {
-				Interval = FMax(0.01, DS.PrimaryInterval);
-				if (bServerSide)
-					IGPlus_DetHandleOutOfAmmo(DS, W, ShotView, ShotLoc);
-				DS.NextPrimaryTS = InputTS + Interval;
-			} else {
-				if (bServerSide) {
-					DS.ServerPrimarySeq += 1;
-					DS.DebugServerSeq += 1;
-					bDidShot = IGPlus_DetDoServerFire(W, false, DS.NextPrimaryTS, ShotView, ShotLoc);
-				} else {
-					DS.PredPrimarySeq += 1;
-					DS.DebugClientSeq += 1;
-					bDidShot = IGPlus_DetDoClientFire(W, false, DS.NextPrimaryTS, ShotView, ShotLoc);
-				}
-
-				DS.PrimaryInterval = IGPlus_DetGetInterval(W, false);
-				Interval = FMax(0.01, DS.PrimaryInterval);
-				if (bDidShot) {
-					DS.LastShotTS = DS.NextPrimaryTS;
-					DS.LastShotInterval = Interval;
-					DS.NextPrimaryTS += Interval;
-					if (DS.NextPrimaryTS < InputTS)
-						DS.NextPrimaryTS = InputTS + Interval;
-					if (bServerSide) {
-						IGPlus_DetLogEvent(W, DS, "DetServerPrimary", ShotView, ShotLoc);
-						IGPlus_DetSendAck(W, DS, false, DS.LastShotTS, ShotView, ShotLoc);
-						IGPlus_DetHandleOutOfAmmo(DS, W, ShotView, ShotLoc);
-					} else {
-						IGPlus_DetLogEvent(W, DS, "DetClientPrimary", ShotView, ShotLoc);
-					}
-				} else {
-					if (bServerSide)
-						IGPlus_DetHandleOutOfAmmo(DS, W, ShotView, ShotLoc);
-					DS.NextPrimaryTS = InputTS + Interval;
-				}
-			}
-		}
-		DS.bReadyOverride = false;
-		return true;
-	}
-
-	// -- Alt fire --
-	if (DS.bAltHeld) {
-		if (InputTS + 0.0001 >= DS.NextAltTS) {
-			if (!IGPlus_DetCanFire(W, bServerSide)) {
-				Interval = FMax(0.01, DS.AltInterval);
-				if (bServerSide)
-					IGPlus_DetHandleOutOfAmmo(DS, W, ShotView, ShotLoc);
-				DS.NextAltTS = InputTS + Interval;
-			} else {
-				if (bServerSide) {
-					DS.ServerAltSeq += 1;
-					DS.DebugServerSeq += 1;
-					bDidShot = IGPlus_DetDoServerFire(W, true, DS.NextAltTS, ShotView, ShotLoc);
-				} else {
-					DS.PredAltSeq += 1;
-					DS.DebugClientSeq += 1;
-					bDidShot = IGPlus_DetDoClientFire(W, true, DS.NextAltTS, ShotView, ShotLoc);
-				}
-
-				DS.AltInterval = IGPlus_DetGetInterval(W, true);
-				Interval = FMax(0.01, DS.AltInterval);
-				if (bDidShot) {
-					DS.LastShotTS = DS.NextAltTS;
-					DS.LastShotInterval = Interval;
-					DS.NextAltTS += Interval;
-					if (DS.NextAltTS < InputTS)
-						DS.NextAltTS = InputTS + Interval;
-					if (bServerSide) {
-						IGPlus_DetLogEvent(W, DS, "DetServerAlt", ShotView, ShotLoc);
-						IGPlus_DetSendAck(W, DS, true, DS.LastShotTS, ShotView, ShotLoc);
-						IGPlus_DetHandleOutOfAmmo(DS, W, ShotView, ShotLoc);
-					} else {
-						IGPlus_DetLogEvent(W, DS, "DetClientAlt", ShotView, ShotLoc);
-					}
-				} else {
-					if (bServerSide)
-						IGPlus_DetHandleOutOfAmmo(DS, W, ShotView, ShotLoc);
-					DS.NextAltTS = InputTS + Interval;
-				}
-			}
-		}
-		DS.bReadyOverride = false;
-		return true;
-	}
-
-	DS.bReadyOverride = false;
-	return false;
+	P.StopFiring();
+	if (P.PendingWeapon == none || P.PendingWeapon == W)
+		P.SwitchToBestWeapon();
 }
 
 // -- Main entry point from bbPlayer -----------------------------------
-// Replaces the old ProcessWeaponStep + DispatchWeaponStep chain.
 // Returns true when the weapon is supported (suppresses legacy fire),
-// regardless of whether a shot was actually produced this step.
+// regardless of whether a shot is actually produced this step.
 
 simulated function bool IGPlus_V4ProcessWeaponStep(
 	Weapon W,
@@ -2097,25 +1600,61 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	bool bServerSide,
 	optional bool bStepReadyHint
 ) {
-	local IGPlus_DetState DS;
+	local ST_ShockRifle SR;
 
 	if (W == none || !IGPlus_V4SupportsWeapon(W))
 		return false;
 
-	DS = IGPlus_DetGetState(W);
-	if (DS == none)
+	SR = ST_ShockRifle(W);
+	if (SR == none)
 		return false;
 
-	if (!bServerSide && !IGPlus_V4AllowClientPredictionForStep(W, bFireHeld, bAltHeld, bForceFire, bForceAlt))
+	// Weapon must be in a ready state to fire.
+	// bStepReadyHint overrides readiness — the client sampled the weapon as
+	// ready when this input was created, so the server must honor that to
+	// match the client's predicted visuals (fire-and-switch case).
+	// Fire-rate enforcement (NextV4FireTS) prevents extra beams even when
+	// the hint is true, so no additional weapon-state guard is needed.
+	if (!bStepReadyHint && !SR.IsDeterministicReady())
 		return true;
 
-	IGPlus_DetOnInputStep(
-		DS, W, P,
-		StepTS, StepView,
-		bFireHeld, bAltHeld, bForceFire, bForceAlt,
-		bServerSide, bStepReadyHint, StepLoc
-	);
-	// Always return true for supported weapons to suppress legacy fire.
+	// Quantize view to 16-bit to match packed ServerMove precision.
+	StepView = IGPlus_V4QuantizeView(StepView);
+
+	// Primary fire
+	if (bFireHeld || bForceFire) {
+		if (StepTS + 0.0001 >= SR.NextV4FireTS) {
+			if (SR.AmmoType != none && SR.AmmoType.AmmoAmount > 0) {
+				if (bServerSide)
+					SR.HandleV4ServerFire(false, StepView, StepLoc);
+				else
+					SR.HandleV4ClientFire(false, StepView, StepLoc);
+				SR.NextV4FireTS = StepTS + SR.PrimaryShotInterval();
+			} else if (bServerSide) {
+				IGPlus_V4HandleOutOfAmmo(W, P);
+				SR.NextV4FireTS = StepTS + SR.PrimaryShotInterval();
+			}
+		}
+		return true;
+	}
+
+	// Alt fire
+	if (bAltHeld || bForceAlt) {
+		if (StepTS + 0.0001 >= SR.NextV4FireTS) {
+			if (SR.AmmoType != none && SR.AmmoType.AmmoAmount > 0) {
+				if (bServerSide)
+					SR.HandleV4ServerFire(true, StepView, StepLoc);
+				else
+					SR.HandleV4ClientFire(true, StepView, StepLoc);
+				SR.NextV4FireTS = StepTS + SR.AltShotInterval();
+			} else if (bServerSide) {
+				IGPlus_V4HandleOutOfAmmo(W, P);
+				SR.NextV4FireTS = StepTS + SR.AltShotInterval();
+			}
+		}
+		return true;
+	}
+
 	return true;
 }
 

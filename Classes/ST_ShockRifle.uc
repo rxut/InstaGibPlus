@@ -5,29 +5,23 @@
 class ST_ShockRifle extends ShockRifle;
 
 var IGPlus_WeaponImplementation WImp;
-var IGPlus_WeaponImplementationBase DetEngine;
+var IGPlus_WeaponImplementationBase WImpBase;
 var WeaponSettingsRepl WSettings;
-var IGPlus_DetState DetState;
 
 var float yMod;
 var vector CDO;
 
 var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
-const FIRE_RATE_LIMIT = 0.65;
 
-// Deterministic shot data consumed by TraceFire
+// V4 step fire timing — earliest timestamp the weapon may fire next.
+var float NextV4FireTS;
+
+// Server TraceFire uses these when the V4 step captures the client's
+// exact view/location from the movement packet.
 var bool bUseDeterministicData;
 var vector DeterministicShotLoc;
 var rotator DeterministicShotRot;
-
-replication
-{
-	// Replicate deterministic shot acknowledgments to clients that have this weapon actor.
-	// bNetOwner proved too strict for some switch/hold-fire cases and dropped owner acks.
-	reliable if (Role == ROLE_Authority)
-		ClientAckPrimaryShot, ClientAckAltShot;
-}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -53,21 +47,48 @@ simulated function bool IsPingCompEnabled() {
 	return WS != None && WS.bEnablePingCompensation;
 }
 
-// Thin wrappers — the generic logic lives on IGPlus_WeaponImplementationBase.
-
-simulated function bool UseDeterministicInputLoop() {
-	if (DetEngine != none)
-		return DetEngine.IGPlus_DetUsesLoop(self);
-	return false;
+// True when the V4 step-processing path handles fire for this weapon.
+// When true, ClientFire/ClientAltFire suppress themselves and let
+// IGPlus_V4ProcessWeaponStep drive both server fire and client visuals.
+simulated function bool IsV4Active() {
+	if (!IsPingCompEnabled())
+		return false;
+	if (bbPlayer(Owner) == none)
+		return false;
+	return true;
 }
 
+// Readiness check consumed by IGPlus_SavedInput (bDetReady) and by
+// WImpBase.IGPlus_V4IsWeaponStepReady / IGPlus_V4ProcessWeaponStep.
 simulated function bool IsDeterministicReady() {
-	if (DetEngine != none && DetState != none)
-		return DetEngine.IGPlus_DetIsReady(self, DetState);
-	return false;
-}
+	local Pawn PawnOwner;
+	local TournamentPlayer TP;
+	local bbPlayer BP;
 
-// -- Weapon-specific callbacks for the deterministic engine -----------
+	if (!IsV4Active())
+		return false;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return false;
+
+	BP = bbPlayer(PawnOwner);
+	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
+		return false;
+
+	TP = TournamentPlayer(PawnOwner);
+	if (TP != none && TP.ClientPending != none && TP.ClientPending != self)
+		return false;
+	if (PawnOwner.Weapon != self)
+		return false;
+	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		return false;
+	if (bChangeWeapon || IsInState('Pickup') || IsInState('DownWeapon') || IsInState('ClientDown'))
+		return false;
+	if (!bCanClientFire)
+		return false;
+	return true;
+}
 
 simulated function float PrimaryShotInterval() {
 	local float RateScale;
@@ -76,7 +97,7 @@ simulated function float PrimaryShotInterval() {
 	// Fire1 NUMFRAMES=10, RATE=21, LoopAnim scale=(0.30 + 0.30 * FireAdjust)
 	RateScale = 0.30 + 0.30 * FireAdjust;
 	if (RateScale <= 0.001)
-		return FIRE_RATE_LIMIT;
+		return 0.65;
 	return FClamp(9.0 / (21.0 * RateScale), 0.05, 2.0);
 }
 
@@ -87,32 +108,21 @@ simulated function float AltShotInterval() {
 	// Fire2 NUMFRAMES=10, RATE=24, LoopAnim scale=(0.40 + 0.40 * FireAdjust)
 	RateScale = 0.40 + 0.40 * FireAdjust;
 	if (RateScale <= 0.001)
-		return FIRE_RATE_LIMIT;
+		return 0.65;
 	return FClamp(9.0 / (24.0 * RateScale), 0.05, 2.0);
 }
 
-simulated function bool IGPlus_DetCanFire(bool bServerSide) {
-	local Pawn PawnOwner;
+// -- V4 step fire handlers -------------------------------------------
+// Called from WImpBase.IGPlus_V4ProcessWeaponStep when fire input is
+// detected at a sub-step and the weapon is ready + has ammo.
 
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-
-	if ((AmmoType == none) && (AmmoName != none) && bServerSide)
-		GiveAmmo(PawnOwner);
-	if (AmmoType != none && AmmoType.AmmoAmount <= 0)
-		return false;
-
-	return true;
-}
-
-simulated function bool IGPlus_DetDoClientFire(bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
+simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 	local bbPlayer BP;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
-		return false;
+		return;
 	BP = bbPlayer(PawnOwner);
 
 	bPointing = true;
@@ -126,24 +136,23 @@ simulated function bool IGPlus_DetDoClientFire(bool bAlt, float ShotTS, rotator 
 	if (bAlt) {
 		PlayAltFiring();
 		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
-			ClientSpawnAltProjectileEffects(true, ShotView, ShotLoc);
+			ClientSpawnAltProjectileEffects(true, StepView, StepLoc);
 	} else {
 		PlayFiring();
 		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-			ClientTraceFire(true, ShotView, ShotLoc);
+			ClientTraceFire(true, StepView, StepLoc);
 	}
-	return true;
 }
 
-function bool IGPlus_DetDoServerFire(bool bAlt, float ShotTS, rotator ShotView, vector ShotLoc) {
+function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
-		return false;
+		return;
 
-	DeterministicShotRot = ShotView;
-	DeterministicShotLoc = ShotLoc;
+	DeterministicShotRot = StepView;
+	DeterministicShotLoc = StepLoc;
 	bUseDeterministicData = true;
 
 	AmmoType.UseAmmo(1);
@@ -162,37 +171,6 @@ function bool IGPlus_DetDoServerFire(bool bAlt, float ShotTS, rotator ShotView, 
 		TraceFire(0.0);
 	}
 	bUseDeterministicData = false;
-	return true;
-}
-
-simulated function IGPlus_DetDoAckBootstrap(bool bAlt, rotator ShotView, vector ShotOrigin) {
-	local bbPlayer BP;
-	BP = bbPlayer(Owner);
-	if (bAlt) {
-		PlayAltFiring();
-		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
-			ClientSpawnAltProjectileEffects(true, ShotView, ShotOrigin);
-	} else {
-		PlayFiring();
-		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-			ClientTraceFire(true, ShotView, ShotOrigin);
-	}
-}
-
-// -- Replicated ack stubs (logic delegated to engine) -----------------
-
-simulated function ClientAckPrimaryShot(int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
-	if (Role == ROLE_Authority)
-		return;
-	if (DetEngine != none && DetState != none)
-		DetEngine.IGPlus_DetProcessPrimaryAck(DetState, self, Seq, ShotTS, ShotView, ShotOrigin);
-}
-
-simulated function ClientAckAltShot(int Seq, float ShotTS, rotator ShotView, vector ShotOrigin) {
-	if (Role == ROLE_Authority)
-		return;
-	if (DetEngine != none && DetState != none)
-		DetEngine.IGPlus_DetProcessAltAck(DetState, self, Seq, ShotTS, ShotView, ShotOrigin);
 }
 
 function Projectile DeterministicProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn) {
@@ -214,10 +192,7 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;
-	DetEngine = IGPlus_WeaponImplementationBase(WImp);
-	DetState = new class'IGPlus_DetState';
-	DetState.PrimaryInterval = PrimaryShotInterval();
-	DetState.AltInterval = AltShotInterval();
+	WImpBase = IGPlus_WeaponImplementationBase(WImp);
 }
 
 simulated function yModInit() {
@@ -254,17 +229,14 @@ simulated function bool ClientFire(float Value) {
 	bbP = bbPlayer(PawnOwner);
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
-		if (UseDeterministicInputLoop()) {
-			if (DetEngine != none)
-				DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientFire-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
+		if (IsV4Active()) {
+			// V4 step processing handles fire prediction.
 			return true;
 		}
 
 		if (!Super.ClientFire(Value))
 			return false;
 
-		if (DetEngine != none)
-			DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientFire-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
 		if (bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire();
 		return true;
@@ -308,10 +280,6 @@ simulated function ClientTraceFire(
 	}
 
 	GetAxes(AimRot, X, Y, Z);
-	if (DetState != none)
-		DetState.DebugClientSeq += 1;
-	if (DetEngine != none)
-		DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientBeamTrace", AimRot, AimLoc);
 
 	StartTrace = AimLoc + CDO + yMod * Y + FireOffset.Z * Z;
 
@@ -389,17 +357,14 @@ simulated function bool ClientAltFire(float Value) {
 	bbP = bbPlayer(PawnOwner);
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
-		if (UseDeterministicInputLoop()) {
-			if (DetEngine != none)
-				DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientAlt-DetInput", PawnOwner.ViewRotation, PawnOwner.Location);
+		if (IsV4Active()) {
+			// V4 step processing handles alt fire prediction.
 			return true;
 		}
 
 		if (!Super.ClientAltFire(Value))
 			return false;
 
-		if (DetEngine != none)
-			DetEngine.IGPlus_DetLogEvent(self, DetState, "ClientAlt-NoDet", PawnOwner.ViewRotation, PawnOwner.Location);
 		if (bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects();
 		return true;
@@ -471,27 +436,16 @@ function TraceFire(float Accuracy) {
 	if (PawnOwner == none)
 		return;
 
-	// Deterministic path is authoritative for server primary shots.
-	// If legacy fire state slips through (NormalFire/Finish), drop that trace
-	// so we never spawn duplicate server beams.
+	// V4 path is authoritative for server shots.  If legacy fire state
+	// slips through (NormalFire/Finish), drop that trace so we never
+	// spawn duplicate server beams.
 	if (Role == ROLE_Authority
 		&& Level.NetMode != NM_Client
-		&& UseDeterministicInputLoop()
+		&& IsV4Active()
 		&& !bUseDeterministicData)
 		return;
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
-
-	if (Role == ROLE_Authority && Level.NetMode != NM_Client) {
-		if (DetState != none)
-			DetState.DebugServerSeq += 1;
-		if (DetEngine != none) {
-			if (bUseDeterministicData)
-				DetEngine.IGPlus_DetLogEvent(self, DetState, "ServerTraceFire-Deterministic", DeterministicShotRot, DeterministicShotLoc);
-			else
-				DetEngine.IGPlus_DetLogEvent(self, DetState, "ServerTraceFire-Standard", PawnOwner.ViewRotation, Owner.Location);
-		}
-	}
 
 	if (bUseDeterministicData)
 	{
@@ -671,6 +625,26 @@ function SetSwitchPriority(pawn Other)
 	}		
 }
 
+function Finish()
+{
+	if (IsV4Active() && PlayerPawn(Owner) != None)
+	{
+		if (bChangeWeapon)
+			GotoState('DownWeapon');
+		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
+		{
+			Pawn(Owner).StopFiring();
+			Pawn(Owner).SwitchToBestWeapon();
+			if (bChangeWeapon)
+				GotoState('DownWeapon');
+		}
+		else
+			GotoState('Idle');
+		return;
+	}
+	Super.Finish();
+}
+
 function bool PutDown()
 {
 	local bbPlayer BP;
@@ -679,15 +653,9 @@ function bool PutDown()
 	if (BP != none)
 		BP.IGPlus_MarkDeterministicSwitchGuard();
 
-	// Invalidate deterministic readiness immediately when switch is requested.
 	bCanClientFire = false;
-	if (DetState != none) {
-		DetState.bPrimaryHeld = false;
-		DetState.bAltHeld = false;
-		DetState.NextPrimaryTS = 0.0;
-		DetState.NextAltTS = 0.0;
-		DetState.bWasReady = false;
-	}
+	// Keep NextV4FireTS intact — the fire-rate cooldown must survive weapon
+	// switches to prevent extra-beam exploits via rapid switch cycling.
 	return Super.PutDown();
 }
 
@@ -695,30 +663,18 @@ simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
-
-	if (UseDeterministicInputLoop()) {
-		// Keep seq/timestamps across select transitions. Resetting here causes
-		// client/server schedule re-seed while holding fire during switch.
-		if (DetState != none) {
-			DetState.bPrimaryHeld = false;
-			DetState.bAltHeld = false;
-		}
-	} else {
-		if (DetEngine != none && DetState != none)
-			DetEngine.IGPlus_DetResetState(DetState, self);
-	}
+	// Keep NextV4FireTS intact — the fire-rate cooldown must survive weapon
+	// select to prevent extra beams when rapidly switching back and firing.
 
 	if ( !IsAnimating() || (AnimSequence != 'Select') )
 		PlayAnim('Select',GetWeaponSettings().ShockSelectAnimSpeed(),0.0);
-	Owner.PlaySound(SelectSound, SLOT_Misc, Pawn(Owner).SoundDampening);
+	Owner.PlaySound(SelectSound, SLOT_Misc, Pawn(Owner).SoundDampening);	
 }
 
 simulated function TweenDown() {
 	local float TweenTime;
 
 	TweenTime = 0.05;
-	// Clear fire-ready latch as soon as we start switching away to avoid stale
-	// ready state bleeding into the next rapid switch-in epoch.
 	bCanClientFire = false;
 
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
@@ -754,7 +710,7 @@ state ClientFiring {
 
 	simulated function AnimEnd()
 	{
-		if (UseDeterministicInputLoop()) {
+		if (IsV4Active()) {
 			PlayIdleAnim();
 			GotoState('');
 			return;
@@ -790,7 +746,7 @@ state ClientAltFiring {
 
 	simulated function AnimEnd()
     {
-		if (UseDeterministicInputLoop()) {
+		if (IsV4Active()) {
 			PlayIdleAnim();
 			GotoState('');
 			return;
@@ -844,18 +800,18 @@ simulated function vector CalcDrawOffsetClient() {
 
 function Fire(float Value)
 {
-	// Deterministic/v4 path owns authoritative server shots for this weapon.
+	// V4 path owns authoritative server shots for this weapon.
 	// Block legacy Fire() entry to prevent duplicate server traces.
-	if (UseDeterministicInputLoop() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.Fire(Value);
 }
 
 function AltFire(float Value)
 {
-	// Deterministic/v4 path owns authoritative server shots for this weapon.
+	// V4 path owns authoritative server shots for this weapon.
 	// Block legacy AltFire() entry to prevent duplicate server traces.
-	if (UseDeterministicInputLoop() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.AltFire(Value);
 }
