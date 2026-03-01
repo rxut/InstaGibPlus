@@ -1529,34 +1529,7 @@ simulated function rotator IGPlus_V4InterpolateStepView(int ViewStartPacked, int
 	return R;
 }
 
-// =====================================================================
-// V4 weapon step support — server-authoritative approach
-//
-// The server fires when it processes the V4 step where fire input is
-// detected, using the interpolated client view from that exact sub-step.
-// The client predicts only visual effects (beam/projectile).
-// Fire-rate enforcement uses a single NextV4FireTS timestamp per weapon.
-// =====================================================================
-
-// -- V4 weapon type dispatch (extend per weapon type) -----------------
-
-simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
-	return W != none && W.IsA('ST_ShockRifle');
-}
-
-// Used by bbPlayer.IGPlus_IsV4DetReady to sample readiness on inputs/moves.
-simulated function bool IGPlus_V4IsWeaponStepReady(Weapon W, Pawn P, bool bServerSide) {
-	local ST_ShockRifle SR;
-	SR = ST_ShockRifle(W);
-	if (SR != none) return SR.IsDeterministicReady();
-	return false;
-}
-
-// -- View quantization ------------------------------------------------
-// Quantizes a view rotator to 16-bit precision, matching the packed
-// format used by ServerMove_v4.  Both client and server use this so
-// predicted client beams match the server trace direction exactly.
-
+// Quantize view to 16-bit to match ServerMove_v4 packed format.
 simulated function rotator IGPlus_V4QuantizeView(rotator InRot) {
 	local rotator Q;
 	local int PitchSigned;
@@ -1566,96 +1539,6 @@ simulated function rotator IGPlus_V4QuantizeView(rotator InRot) {
 	Q.Yaw = InRot.Yaw & 0xFFFF;
 	Q.Roll = 0;
 	return Q;
-}
-
-// -- Out of ammo (server only) ----------------------------------------
-
-function IGPlus_V4HandleOutOfAmmo(Weapon W, Pawn P) {
-	if (W == none || W.Role < ROLE_Authority || Level.NetMode == NM_Client)
-		return;
-	if (W.AmmoType == none || W.AmmoType.AmmoAmount > 0)
-		return;
-	if (P == none)
-		return;
-
-	P.StopFiring();
-	if (P.PendingWeapon == none || P.PendingWeapon == W)
-		P.SwitchToBestWeapon();
-}
-
-// -- Main entry point from bbPlayer -----------------------------------
-// Returns true when the weapon is supported (suppresses legacy fire),
-// regardless of whether a shot is actually produced this step.
-
-simulated function bool IGPlus_V4ProcessWeaponStep(
-	Weapon W,
-	Pawn P,
-	float StepTS,
-	rotator StepView,
-	vector StepLoc,
-	bool bFireHeld,
-	bool bAltHeld,
-	bool bForceFire,
-	bool bForceAlt,
-	bool bServerSide,
-	optional bool bStepReadyHint
-) {
-	local ST_ShockRifle SR;
-
-	if (W == none || !IGPlus_V4SupportsWeapon(W))
-		return false;
-
-	SR = ST_ShockRifle(W);
-	if (SR == none)
-		return false;
-
-	// Weapon must be in a ready state to fire.
-	// bStepReadyHint overrides readiness — the client sampled the weapon as
-	// ready when this input was created, so the server must honor that to
-	// match the client's predicted visuals (fire-and-switch case).
-	// Fire-rate enforcement (NextV4FireTS) prevents extra beams even when
-	// the hint is true, so no additional weapon-state guard is needed.
-	if (!bStepReadyHint && !SR.IsDeterministicReady())
-		return true;
-
-	// Quantize view to 16-bit to match packed ServerMove precision.
-	StepView = IGPlus_V4QuantizeView(StepView);
-
-	// Primary fire
-	if (bFireHeld || bForceFire) {
-		if (StepTS + 0.0001 >= SR.NextV4FireTS) {
-			if (SR.AmmoType != none && SR.AmmoType.AmmoAmount > 0) {
-				if (bServerSide)
-					SR.HandleV4ServerFire(false, StepView, StepLoc);
-				else
-					SR.HandleV4ClientFire(false, StepView, StepLoc);
-				SR.NextV4FireTS = StepTS + SR.PrimaryShotInterval();
-			} else if (bServerSide) {
-				IGPlus_V4HandleOutOfAmmo(W, P);
-				SR.NextV4FireTS = StepTS + SR.PrimaryShotInterval();
-			}
-		}
-		return true;
-	}
-
-	// Alt fire
-	if (bAltHeld || bForceAlt) {
-		if (StepTS + 0.0001 >= SR.NextV4FireTS) {
-			if (SR.AmmoType != none && SR.AmmoType.AmmoAmount > 0) {
-				if (bServerSide)
-					SR.HandleV4ServerFire(true, StepView, StepLoc);
-				else
-					SR.HandleV4ClientFire(true, StepView, StepLoc);
-				SR.NextV4FireTS = StepTS + SR.AltShotInterval();
-			} else if (bServerSide) {
-				IGPlus_V4HandleOutOfAmmo(W, P);
-				SR.NextV4FireTS = StepTS + SR.AltShotInterval();
-			}
-		}
-		return true;
-	}
-
-	return true;
 }
 
 defaultproperties {

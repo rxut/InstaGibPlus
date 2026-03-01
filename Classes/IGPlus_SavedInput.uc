@@ -70,7 +70,7 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bAFir = (P.bAltFire != 0) || P.bJustAltFired;
 	bFFir = P.bJustFired;
 	bFAFr = P.bJustAltFired;
-	bDetReady = P.Weapon != none && P.Weapon.IsA('ST_ShockRifle') && ST_ShockRifle(P.Weapon).IsDeterministicReady();
+	bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
 	bDetPredictedLocal = false;
 
 	P.bJustFired = false;

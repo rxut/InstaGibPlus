@@ -2923,18 +2923,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	V4Weapon = none;
 	if (SM.bDetReady) {
-		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon, WImpBase);
+		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		if (V4Weapon == none)
-			V4Weapon = IGPlus_FindV4SupportedWeapon(none, WImpBase);
+			V4Weapon = IGPlus_FindV4SupportedWeapon();
 	}
-	bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && WImpBase.IGPlus_V4SupportsWeapon(V4Weapon);
+	bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 
-	bDeterministicShock = SM.bDetReady && !bV4WeaponSupported && WImpBase != none && V4Weapon != none && WImpBase.IGPlus_V4SupportsWeapon(V4Weapon);
+	bDeterministicShock = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 
 	if (bDeterministicShock) {
-		WImpBase.IGPlus_V4ProcessWeaponStep(
+		IGPlus_V4ProcessWeaponStep(
 			V4Weapon,
-			self,
 			SM.TimeStamp,
 			ViewRotation,
 			Location,
@@ -3004,9 +3003,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				bStepAltHeld = bAltFired && (AltFireIndex < 0 || MoveIndex >= AltFireIndex);
 				bStepForceFire = bForceFire && (MoveIndex == FireIndex);
 				bStepForceAltFire = bForceAltFire && (MoveIndex == AltFireIndex);
-				bV4HandledStep = WImpBase.IGPlus_V4ProcessWeaponStep(
+				bV4HandledStep = IGPlus_V4ProcessWeaponStep(
 					V4Weapon,
-					self,
 					StepTS,
 					StepView,
 					StepLoc,
@@ -4609,7 +4607,6 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local bool bDebugShock;
 	local bool bDeterministicShock;
 	local string DebugPlayerName;
-	local IGPlus_WeaponImplementationBase WImpBase;
 	local ST_ShockRifle ShockWeapon;
 
 	OldBaseX = aBaseX;
@@ -4661,10 +4658,9 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	}
 
 	ViewRotation = I.SavedViewRotation;
-	WImpBase = IGPlus_GetWeaponImplementationBase();
-	ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(Weapon, WImpBase));
+	ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(Weapon));
 	if (ShockWeapon == none && I.bDetReady)
-		ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(none, WImpBase));
+		ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon());
 	bDeterministicShock = ShockWeapon != none && I.bDetReady;
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
@@ -4711,9 +4707,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			if (bDeterministicShock && Role == ROLE_Authority) {
 				if (bDebugShock)
 					Log("["$Level.TimeSeconds$"]"@DebugPlayerName@"PBInput Deterministic ST_ShockRifle"@"TS="$I.TimeStamp, 'IGPlus');
-				WImpBase.IGPlus_V4ProcessWeaponStep(
+				IGPlus_V4ProcessWeaponStep(
 					ShockWeapon,
-					self,
 					I.TimeStamp,
 					I.SavedViewRotation,
 					Location,
@@ -4846,25 +4841,63 @@ function IGPlus_SavedMove xxGetFreeMove() {
 	}
 }
 
-simulated function Weapon IGPlus_FindV4SupportedWeapon(
-	optional Weapon Preferred,
-	optional IGPlus_WeaponImplementationBase WImpBase
+// V4 Weapon Dispatch — add one cast block per weapon to each function.
+simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
+	if (W == none)
+		return false;
+	if (ST_ShockRifle(W) != none)
+		return true;
+	return false;
+}
+
+simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
+	local ST_ShockRifle SR;
+	SR = ST_ShockRifle(W);
+	if (SR != none)
+		return SR.IsDeterministicReady();
+	return false;
+}
+
+simulated function bool IGPlus_V4ProcessWeaponStep(
+	Weapon W,
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bStepReadyHint
 ) {
+	local ST_ShockRifle SR;
+	local IGPlus_WeaponImplementationBase WImpBase;
+
+	if (W == none)
+		return false;
+
+	WImpBase = IGPlus_GetWeaponImplementationBase();
+	if (WImpBase != none)
+		StepView = WImpBase.IGPlus_V4QuantizeView(StepView);
+
+	SR = ST_ShockRifle(W);
+	if (SR != none)
+		return SR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
+
+	return false;
+}
+
+simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred) {
 	local Inventory Inv;
 	local Weapon Candidate;
 
-	if (WImpBase == none)
-		WImpBase = IGPlus_GetWeaponImplementationBase();
-	if (WImpBase == none)
-		return none;
-
 	Candidate = Preferred;
-	if (Candidate != none && WImpBase.IGPlus_V4SupportsWeapon(Candidate))
+	if (Candidate != none && IGPlus_V4SupportsWeapon(Candidate))
 		return Candidate;
 
 	for (Inv = Inventory; Inv != none; Inv = Inv.Inventory) {
 		Candidate = Weapon(Inv);
-		if (Candidate != none && WImpBase.IGPlus_V4SupportsWeapon(Candidate))
+		if (Candidate != none && IGPlus_V4SupportsWeapon(Candidate))
 			return Candidate;
 	}
 
@@ -4886,19 +4919,14 @@ simulated function bool IGPlus_IsDeterministicSwitchGuardActive() {
 	return Level != none && Level.TimeSeconds < IGPlus_DeterministicSwitchGuardUntil;
 }
 
-simulated function bool IGPlus_IsV4DetReady(optional Weapon Preferred, optional bool bServerSide) {
-	local IGPlus_WeaponImplementationBase WImpBase;
+simulated function bool IGPlus_IsV4DetReady(optional Weapon Preferred) {
 	local Weapon Candidate;
 
-	WImpBase = IGPlus_GetWeaponImplementationBase();
-	if (WImpBase == none)
-		return false;
-
-	Candidate = IGPlus_FindV4SupportedWeapon(Preferred, WImpBase);
+	Candidate = IGPlus_FindV4SupportedWeapon(Preferred);
 	if (Candidate == none)
 		return false;
 
-	return WImpBase.IGPlus_V4IsWeaponStepReady(Candidate, self, bServerSide);
+	return IGPlus_V4IsWeaponReady(Candidate);
 }
 
 function IGPlus_SavedMove PickRedundantMove(IGPlus_SavedMove Old, IGPlus_SavedMove M, vector Accel, EDodgeDir DodgeMove) {
@@ -4924,7 +4952,7 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 	// ready<->not-ready transition can produce client-only predicted shock shots
 	// when switching away during fire spam.
 	if (Pending.bDetReady || IGPlus_FindV4SupportedWeapon(Weapon) != none) {
-		bCurrentDetReady = IGPlus_IsV4DetReady(Weapon, false);
+		bCurrentDetReady = IGPlus_IsV4DetReady(Weapon);
 		if (bCurrentDetReady != Pending.bDetReady)
 			return false;
 	}
@@ -5003,7 +5031,7 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	PendMove.bForceAltFire = PendMove.bForceAltFire || bJustAltFired;
 
 	// Maintain deterministic-ready based on current merged slice state.
-	PendMove.bDetReady = IGPlus_IsV4DetReady(Weapon, false);
+	PendMove.bDetReady = IGPlus_IsV4DetReady(Weapon);
 
 	PendMove.Delta = TotalTime;
 }
@@ -5017,7 +5045,6 @@ function IGPlus_ReplicateInput(float Delta) {
 	local vector NewOffset, TargetLoc;
 	local ReplBuffer B;
 	local int i;
-	local IGPlus_WeaponImplementationBase WImpBase;
 
 	// Higor: process smooth adjustment.
 	if (VSize(IGPlus_AdjustLocationOffset) > 0) {
@@ -5055,16 +5082,14 @@ function IGPlus_ReplicateInput(float Delta) {
 	// Run deterministic local prediction only for inputs that are actually
 	// Serialized/sent. This prevents client-only predicted shots from unsent
 	// local slices during rapid switch/fire races.
-	WImpBase = IGPlus_GetWeaponImplementationBase();
-	ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(Weapon, WImpBase));
+	ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(Weapon));
 	if (ShockWeapon == none && ReferenceInput != none && ReferenceInput.bDetReady)
-		ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(none, WImpBase));
-	if (WImpBase != none && ShockWeapon != none && WImpBase.IGPlus_V4SupportsWeapon(ShockWeapon) && ReferenceInput != none) {
+		ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon());
+	if (ShockWeapon != none && IGPlus_V4SupportsWeapon(ShockWeapon) && ReferenceInput != none) {
 		for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
 			if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
-				WImpBase.IGPlus_V4ProcessWeaponStep(
+				IGPlus_V4ProcessWeaponStep(
 					ShockWeapon,
-					self,
 					SerializedInput.TimeStamp,
 					SerializedInput.SavedViewRotation,
 					SerializedInput.SavedLocation,
@@ -5125,7 +5150,6 @@ function xxReplicateMove(
 	local float RealDelta;
 	local vector PrevVelocity;
 	local vector OldAccel;
-	local IGPlus_WeaponImplementationBase WImpBase;
 	local Weapon V4LocalWeapon;
 
 	// Higor: process smooth adjustment.
@@ -5224,7 +5248,7 @@ function xxReplicateMove(
 		if (LastMove == none || LastMove.bAltFire != NewMove.bAltFire)
 			NewMove.AltFireIndex = 0;
 
-		NewMove.bDetReady = IGPlus_IsV4DetReady(Weapon, false);
+		NewMove.bDetReady = IGPlus_IsV4DetReady(Weapon);
 
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
@@ -5264,14 +5288,12 @@ function xxReplicateMove(
 
 	// Process local deterministic/v4 fire only for moves that will be queued/sent.
 	// This prevents client-only provisional predictions from unsent merged slices.
-	WImpBase = IGPlus_GetWeaponImplementationBase();
 	V4LocalWeapon = none;
 	if (NewMove.bDetReady)
-		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon, WImpBase);
-	if (NewMove.bDetReady && WImpBase != none && V4LocalWeapon != none && WImpBase.IGPlus_V4SupportsWeapon(V4LocalWeapon))
-		WImpBase.IGPlus_V4ProcessWeaponStep(
+		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
+	if (NewMove.bDetReady && V4LocalWeapon != none && IGPlus_V4SupportsWeapon(V4LocalWeapon))
+		IGPlus_V4ProcessWeaponStep(
 			V4LocalWeapon,
-			self,
 			NewMove.TimeStamp,
 			NewMove.IGPlus_SavedViewRotation,
 			Location,

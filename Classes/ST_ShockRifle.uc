@@ -14,11 +14,7 @@ var vector CDO;
 var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
 
-// V4 step fire timing — earliest timestamp the weapon may fire next.
 var float NextV4FireTS;
-
-// Server TraceFire uses these when the V4 step captures the client's
-// exact view/location from the movement packet.
 var bool bUseDeterministicData;
 var vector DeterministicShotLoc;
 var rotator DeterministicShotRot;
@@ -47,9 +43,6 @@ simulated function bool IsPingCompEnabled() {
 	return WS != None && WS.bEnablePingCompensation;
 }
 
-// True when the V4 step-processing path handles fire for this weapon.
-// When true, ClientFire/ClientAltFire suppress themselves and let
-// IGPlus_V4ProcessWeaponStep drive both server fire and client visuals.
 simulated function bool IsV4Active() {
 	if (!IsPingCompEnabled())
 		return false;
@@ -58,8 +51,6 @@ simulated function bool IsV4Active() {
 	return true;
 }
 
-// Readiness check consumed by IGPlus_SavedInput (bDetReady) and by
-// WImpBase.IGPlus_V4IsWeaponStepReady / IGPlus_V4ProcessWeaponStep.
 simulated function bool IsDeterministicReady() {
 	local Pawn PawnOwner;
 	local TournamentPlayer TP;
@@ -92,9 +83,6 @@ simulated function bool IsDeterministicReady() {
 
 simulated function float PrimaryShotInterval() {
 	local float RateScale;
-
-	// Stock ShockRifle primary:
-	// Fire1 NUMFRAMES=10, RATE=21, LoopAnim scale=(0.30 + 0.30 * FireAdjust)
 	RateScale = 0.30 + 0.30 * FireAdjust;
 	if (RateScale <= 0.001)
 		return 0.65;
@@ -103,18 +91,72 @@ simulated function float PrimaryShotInterval() {
 
 simulated function float AltShotInterval() {
 	local float RateScale;
-
-	// Stock ShockRifle alt:
-	// Fire2 NUMFRAMES=10, RATE=24, LoopAnim scale=(0.40 + 0.40 * FireAdjust)
 	RateScale = 0.40 + 0.40 * FireAdjust;
 	if (RateScale <= 0.001)
 		return 0.65;
 	return FClamp(9.0 / (24.0 * RateScale), 0.05, 2.0);
 }
 
-// -- V4 step fire handlers -------------------------------------------
-// Called from WImpBase.IGPlus_V4ProcessWeaponStep when fire input is
-// detected at a sub-step and the weapon is ready + has ammo.
+simulated function float V4FireInterval(bool bAlt) {
+	if (bAlt)
+		return AltShotInterval();
+	return PrimaryShotInterval();
+}
+
+function V4HandleOutOfAmmo() {
+	local Pawn P;
+	P = Pawn(Owner);
+	if (P == none)
+		return;
+	P.StopFiring();
+	if (P.PendingWeapon == none || P.PendingWeapon == self)
+		P.SwitchToBestWeapon();
+}
+
+// V4 step processing — called from bbPlayer.IGPlus_V4ProcessWeaponStep.
+// Returns true to suppress legacy fire, even if no shot is produced.
+simulated function bool V4ProcessStep(
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bStepReadyHint
+) {
+	local bool bWantsPrimary, bWantsAlt, bAlt;
+	local float Interval;
+
+	// bStepReadyHint: client saw weapon ready at input time, honor it
+	// for fire-and-switch. NextV4FireTS prevents extra beams.
+	if (!bStepReadyHint && !IsDeterministicReady())
+		return true;
+
+	bWantsPrimary = bFireHeld || bForceFire;
+	bWantsAlt = bAltHeld || bForceAlt;
+	if (!bWantsPrimary && !bWantsAlt)
+		return true;
+
+	if (StepTS + 0.0001 < NextV4FireTS)
+		return true;
+
+	bAlt = bWantsAlt && !bWantsPrimary;
+	Interval = V4FireInterval(bAlt);
+
+	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+		if (bServerSide)
+			HandleV4ServerFire(bAlt, StepView, StepLoc);
+		else
+			HandleV4ClientFire(bAlt, StepView, StepLoc);
+	} else if (bServerSide) {
+		V4HandleOutOfAmmo();
+	}
+
+	NextV4FireTS = StepTS + Interval;
+	return true;
+}
 
 simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
@@ -230,7 +272,6 @@ simulated function bool ClientFire(float Value) {
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
 		if (IsV4Active()) {
-			// V4 step processing handles fire prediction.
 			return true;
 		}
 
@@ -358,7 +399,6 @@ simulated function bool ClientAltFire(float Value) {
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
 		if (IsV4Active()) {
-			// V4 step processing handles alt fire prediction.
 			return true;
 		}
 
@@ -436,9 +476,6 @@ function TraceFire(float Accuracy) {
 	if (PawnOwner == none)
 		return;
 
-	// V4 path is authoritative for server shots.  If legacy fire state
-	// slips through (NormalFire/Finish), drop that trace so we never
-	// spawn duplicate server beams.
 	if (Role == ROLE_Authority
 		&& Level.NetMode != NM_Client
 		&& IsV4Active()
@@ -654,8 +691,6 @@ function bool PutDown()
 		BP.IGPlus_MarkDeterministicSwitchGuard();
 
 	bCanClientFire = false;
-	// Keep NextV4FireTS intact — the fire-rate cooldown must survive weapon
-	// switches to prevent extra-beam exploits via rapid switch cycling.
 	return Super.PutDown();
 }
 
@@ -663,8 +698,6 @@ simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
-	// Keep NextV4FireTS intact — the fire-rate cooldown must survive weapon
-	// select to prevent extra beams when rapidly switching back and firing.
 
 	if ( !IsAnimating() || (AnimSequence != 'Select') )
 		PlayAnim('Select',GetWeaponSettings().ShockSelectAnimSpeed(),0.0);
@@ -771,7 +804,6 @@ state ClientAltFiring {
     }
 }
 
-// Compatibility between client and server logic
 simulated function vector CalcDrawOffsetClient() {
 	local vector DrawOffset;
 	local Pawn PawnOwner;
@@ -800,8 +832,6 @@ simulated function vector CalcDrawOffsetClient() {
 
 function Fire(float Value)
 {
-	// V4 path owns authoritative server shots for this weapon.
-	// Block legacy Fire() entry to prevent duplicate server traces.
 	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.Fire(Value);
@@ -809,8 +839,6 @@ function Fire(float Value)
 
 function AltFire(float Value)
 {
-	// V4 path owns authoritative server shots for this weapon.
-	// Block legacy AltFire() entry to prevent duplicate server traces.
 	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.AltFire(Value);
