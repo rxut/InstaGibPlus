@@ -201,6 +201,8 @@ simulated function bool IsDeterministicReady() {
 	local TournamentPlayer TP;
 	local bbPlayer BP;
 
+	// Server hint may bypass most guards to avoid dropping mirrored
+	// predicted shots due to transient readiness ordering differences.
 	if (bDeterministicReadyOverride)
 		return true;
 
@@ -619,7 +621,12 @@ simulated function bool IGPlus_OnInputStep(
 		return false;
 
 	bServerSide = (Role == ROLE_Authority && Level.NetMode != NM_Client);
-	if (bServerSide && bStepReadyHint)
+	// Apply override on both server and client when the hint is set.
+	// bStepReadyHint carries the bDetReady sampled at input-creation time;
+	// honouring it on the client keeps the deterministic cadence in sync
+	// with the server even when the local weapon state changed between
+	// input sampling and prediction execution.
+	if (bStepReadyHint)
 		bDeterministicReadyOverride = true;
 
 	bReady = IsDeterministicReady();
@@ -967,6 +974,7 @@ function TraceFire(float Accuracy) {
 	local rotator AimRot;
 	local vector AimLoc;
 	local vector SmokeLocation;
+	local vector DrawOffsetLoc;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -995,16 +1003,21 @@ function TraceFire(float Accuracy) {
 	{
 		AimRot = DeterministicShotRot;
 		AimLoc = DeterministicShotLoc;
+		if (PawnOwner != none)
+			DrawOffsetLoc = PawnOwner.BaseEyeHeight * vect(0,0,1) + (PlayerViewOffset >> AimRot);
+		else
+			DrawOffsetLoc = CalcDrawOffset();
 	}
 	else
 	{
 		AimRot = PawnOwner.ViewRotation;
 		AimLoc = Owner.Location;
+		DrawOffsetLoc = CalcDrawOffset();
 	}
 
 	GetAxes(AimRot,X,Y,Z);
-	StartTrace = AimLoc + CalcDrawOffset() + FireOffset.Y * Y + FireOffset.Z * Z; 
-	SmokeLocation = AimLoc + CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	StartTrace = AimLoc + DrawOffsetLoc + FireOffset.Y * Y + FireOffset.Z * Z; 
+	SmokeLocation = AimLoc + DrawOffsetLoc + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
 
 	EndTrace = StartTrace + (Accuracy * (FRand() - 0.5 )* Y * 1000) + (Accuracy * (FRand() - 0.5 ) * Z * 1000);
 

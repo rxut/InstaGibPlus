@@ -5053,10 +5053,12 @@ function IGPlus_ReplicateInput(float Delta) {
 	ReferenceInput = IGPlus_SavedInputChain.SerializeNodes(10, IGPlus_InputReplicationBuffer);
 
 	// Run deterministic local prediction only for inputs that are actually
-	// serialized/sent. This prevents client-only predicted shots from unsent
+	// Serialized/sent. This prevents client-only predicted shots from unsent
 	// local slices during rapid switch/fire races.
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(Weapon, WImpBase));
+	if (ShockWeapon == none && ReferenceInput != none && ReferenceInput.bDetReady)
+		ShockWeapon = ST_ShockRifle(IGPlus_FindV4SupportedWeapon(none, WImpBase));
 	if (WImpBase != none && ShockWeapon != none && WImpBase.IGPlus_V4SupportsWeapon(ShockWeapon) && ReferenceInput != none) {
 		for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
 			if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
@@ -5070,7 +5072,8 @@ function IGPlus_ReplicateInput(float Delta) {
 					SerializedInput.bAFir,
 					SerializedInput.bFFir,
 					SerializedInput.bFAFr,
-					false
+					false,
+					SerializedInput.bDetReady
 				);
 			}
 			SerializedInput.bDetPredictedLocal = true;
@@ -5276,7 +5279,8 @@ function xxReplicateMove(
 			NewMove.bAltFire,
 			NewMove.bForceFire,
 			NewMove.bForceAltFire,
-			false
+			false,
+			NewMove.bDetReady
 		);
 
 	bForcePacketSplit = false;

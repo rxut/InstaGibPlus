@@ -1660,11 +1660,15 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	if (W == none || !IGPlus_V4SupportsWeapon(W))
 		return false;
 
-	// Server should honor step-ready hints carried by input/move payloads.
-	// This avoids dropping mirrored predicted shots due transient local
-	// readiness ordering differences while switching weapons.
+	// Honor step-ready hints on both server and client to keep deterministic
+	// state machines in sync.  bStepReadyHint reflects bDetReady sampled at
+	// input-creation time (when the weapon WAS ready).  If only the server
+	// uses the override, a weapon-switch between input sampling and client
+	// prediction causes the client to pause its state machine while the
+	// server advances, drifting DeterministicNextPrimaryTS and producing
+	// phantom client-only beams on subsequent shots.
 	ShockWeapon = ST_ShockRifle(W);
-	if (bServerSide && bStepReadyHint && ShockWeapon != none && ShockWeapon.UseDeterministicInputLoop())
+	if (bStepReadyHint && ShockWeapon != none && ShockWeapon.UseDeterministicInputLoop())
 		bReady = true;
 	else
 		bReady = IGPlus_V4IsWeaponStepReady(W, P, bServerSide);
