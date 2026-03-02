@@ -77,6 +77,9 @@ simulated function PostNetBeginPlay()
 			TL = ST_Translocator(InstigatingPlayer.Weapon);
 			if (TL != none && TL.TTarget_Client != none && TL.TTarget_Client.bDeleteMe == false)
 			{
+				// Merge: teleport server disc to where client disc is for seamless hand-off
+				SetLocation(TL.TTarget_Client.Location);
+
 				TL.TTarget_Client.Destroy();
 				TL.TTarget_Client = None;
 			}
