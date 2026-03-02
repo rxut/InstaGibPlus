@@ -3947,7 +3947,7 @@ function bool IsExplicitFireWeapon() {
 		return false;
 	if (Weapon.IsA('ST_ShockRifle')) return false;
 	if (Weapon.IsA('ST_ripper')) return false;
-	if (Weapon.IsA('ST_UT_FlakCannon')) return WS.FlakCompensatePing;
+	if (Weapon.IsA('ST_UT_FlakCannon')) return false;
 	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
 	if (Weapon.IsA('ST_ut_biorifle')) return WS.BioCompensatePing;
 	return false;
@@ -3963,7 +3963,7 @@ function bool IsExplicitAltFireWeapon() {
 		return false;
 	if (Weapon.IsA('ST_ShockRifle')) return false;
 	if (Weapon.IsA('ST_ripper')) return false;
-	if (Weapon.IsA('ST_UT_FlakCannon')) return WS.FlakCompensatePing;
+	if (Weapon.IsA('ST_UT_FlakCannon')) return false;
 	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
 	return false;
 }
@@ -4828,6 +4828,8 @@ simulated function int IGPlus_GetV4WeaponIndex(Weapon W) {
 		return 1;
 	if (ST_ripper(W) != none)
 		return 2;
+	if (ST_UT_FlakCannon(W) != none)
+		return 3;
 	return 0;
 }
 
@@ -4841,6 +4843,8 @@ simulated function Weapon IGPlus_V4WeaponByIndex(int Index) {
 			return Weapon(Inv);
 		if (Index == 2 && ST_ripper(Inv) != none)
 			return Weapon(Inv);
+		if (Index == 3 && ST_UT_FlakCannon(Inv) != none)
+			return Weapon(Inv);
 	}
 	return none;
 }
@@ -4852,18 +4856,24 @@ simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
 		return true;
 	if (ST_ripper(W) != none)
 		return true;
+	if (ST_UT_FlakCannon(W) != none)
+		return true;
 	return false;
 }
 
 simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 	local ST_ShockRifle SR;
 	local ST_ripper RP;
+	local ST_UT_FlakCannon FC;
 	SR = ST_ShockRifle(W);
 	if (SR != none)
 		return SR.IsDeterministicReady();
 	RP = ST_ripper(W);
 	if (RP != none)
 		return RP.IsDeterministicReady();
+	FC = ST_UT_FlakCannon(W);
+	if (FC != none)
+		return FC.IsDeterministicReady();
 	return false;
 }
 
@@ -4881,6 +4891,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 ) {
 	local ST_ShockRifle SR;
 	local ST_ripper RP;
+	local ST_UT_FlakCannon FC;
 	local IGPlus_WeaponImplementationBase WImpBase;
 
 	if (W == none)
@@ -4897,6 +4908,10 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	RP = ST_ripper(W);
 	if (RP != none)
 		return RP.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
+
+	FC = ST_UT_FlakCannon(W);
+	if (FC != none)
+		return FC.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
 
 	return false;
 }
