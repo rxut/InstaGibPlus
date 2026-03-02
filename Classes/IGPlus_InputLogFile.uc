@@ -63,3 +63,24 @@ function LogCAP(float TimeStamp, vector Loc, vector Vel, Actor NewBase) {
 function LogInputReplay(IGPlus_SavedInput I) {
 	LogInputGeneric("Replay", I);
 }
+
+function LogSavedMove(IGPlus_SavedMove M) {
+	local string Row;
+
+	if (bStarted == false)
+		StartLog();
+
+		Row =
+			++Line$"|SavedMove|"$M.TimeStamp$"|"$M.Delta$
+			"|||||"$M.bRun$"|"$M.bDuck$"|"$M.bPressedJump$
+			"|"$M.DodgeMove$"|"$M.bFire$"|"$M.bAltFire$
+			"|"$M.bForceFire$"|"$M.bForceAltFire$
+		"|"$(M.IGPlus_SavedViewRotation.Pitch & 0xFFFF)$","$(M.IGPlus_SavedViewRotation.Yaw & 0xFFFF)$
+		"|"$M.IGPlus_SavedLocation$
+		"|"$M.IGPlus_SavedVelocity$
+		"|"$M.SavedDodging$
+		"|"$M.DodgeMove$
+		"|";
+
+	FileLog(Row);
+}

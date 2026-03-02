@@ -9,12 +9,14 @@ var int MiscData;
 var int MiscData2;
 var int View;
 var int ViewStart;
+var int V4Flags;
 var Actor ClientBase;
 var int OldMoveData1;
 var int OldMoveData2;
 
 var bool bDetReady;
 var int V4WeaponIndex;
+var int V4ChargeData;
 var bool bUseV4;
 var IGPlus_ServerMove Next;
 

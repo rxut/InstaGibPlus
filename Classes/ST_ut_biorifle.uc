@@ -21,6 +21,11 @@ var bool bUseExplicitData;
 // Server-side position validation
 const MAX_POSITION_ERROR_SQ = 1250.0;
 
+// V4 deterministic fire
+var float NextV4FireTS;
+var bool bV4WasAltHeld;
+var int V4CachedChargeData;
+
 replication
 {
 	reliable if(Role < ROLE_Authority)
@@ -68,6 +73,215 @@ function bool IsPositionReasonable(vector ClientLoc)
 
 	Diff = ClientLoc - Owner.Location;
 	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
+}
+
+// =========================================================================
+// V4 Deterministic Fire — Primary (Interval) + Alt (Charge)
+// =========================================================================
+
+simulated function bool IsV4Active() {
+	if (!IsPingCompEnabled())
+		return false;
+	if (bbPlayer(Owner) == none)
+		return false;
+	return true;
+}
+
+simulated function bool IsDeterministicReady() {
+	local Pawn PawnOwner;
+
+	if (!IsV4Active())
+		return false;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return false;
+	if (bbPlayer(PawnOwner).IGPlus_IsDeterministicSwitchGuardActive())
+		return false;
+	if (TournamentPlayer(PawnOwner) != none
+		&& TournamentPlayer(PawnOwner).ClientPending != none
+		&& TournamentPlayer(PawnOwner).ClientPending != self)
+		return false;
+	if (PawnOwner.Weapon != self)
+		return false;
+	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		return false;
+	if (bChangeWeapon)
+		return false;
+	if (IsInState('Pickup'))
+		return false;
+	if (IsInState('DownWeapon'))
+		return false;
+	if (IsInState('ClientDown'))
+		return false;
+	if (!bCanClientFire)
+		return false;
+	return true;
+}
+
+// Primary fire interval: Fire anim = 9 frames at 30fps base, PlayRate = 0.65+0.4*FireAdjust.
+simulated function float PrimaryShotInterval() {
+	return 9.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
+}
+
+simulated function bool V4ProcessStep(
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bStepReadyHint,
+	optional int V4ChargeData
+) {
+	local bool bWantsAlt, bWantsPrimary;
+	local float CS;
+	local int AmmoToConsume, ActualCharge;
+
+	if (!bStepReadyHint && !IsDeterministicReady())
+		return true;
+
+	bWantsAlt = bAltHeld || bForceAlt;
+	bWantsPrimary = bFireHeld || bForceFire;
+
+	// --- Alt fire charge tracking (higher priority during active charge) ---
+	if (bV4WasAltHeld) {
+		if (!bWantsAlt) {
+			// Falling edge: alt released → fire charged glob
+			bV4WasAltHeld = false;
+			if (bServerSide) {
+				ActualCharge = V4ChargeData;
+				AmmoToConsume = ActualCharge + 1;
+				if (AmmoType != none) {
+					AmmoToConsume = Min(AmmoToConsume, AmmoType.AmmoAmount);
+					ActualCharge = Max(AmmoToConsume - 1, 0);
+				}
+				CS = float(ActualCharge) * 0.5;
+				if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+					AmmoType.UseAmmo(AmmoToConsume);
+					HandleV4ServerAltFire(StepView, StepLoc, CS);
+				} else {
+					V4HandleOutOfAmmo();
+				}
+			}
+			NextV4FireTS = StepTS + 0.25;
+			return true;
+		}
+		// Still charging
+		return true;
+	}
+
+	// Alt rising edge: start charging
+	if (bWantsAlt) {
+		bV4WasAltHeld = true;
+		return true;
+	}
+
+	// --- Primary fire (interval-based) ---
+	if (!bWantsPrimary)
+		return true;
+
+	if (StepTS + 0.0001 < NextV4FireTS)
+		return true;
+
+	if (bServerSide) {
+		if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+			AmmoType.UseAmmo(1);
+			HandleV4ServerFire(StepView, StepLoc);
+		} else {
+			V4HandleOutOfAmmo();
+		}
+	} else {
+		HandleV4ClientFire(StepView, StepLoc);
+	}
+
+	NextV4FireTS = StepTS + PrimaryShotInterval();
+	return true;
+}
+
+function HandleV4ServerFire(rotator StepView, vector StepLoc) {
+	local PlayerPawn P;
+
+	P = PlayerPawn(Owner);
+	if (P == none)
+		return;
+
+	ExplicitClientLoc = StepLoc;
+	if (bbPlayer(Owner) != none)
+		ExplicitClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	ExplicitClientRot = StepView;
+	bUseExplicitData = true;
+
+	bCanClientFire = true;
+	bPointing = true;
+
+	P.PlayRecoil(FiringSpeed);
+	PlayFiring();
+	if (Affector != none)
+		Affector.FireEffect();
+	ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget);
+	GoToState('NormalFire');
+
+	bUseExplicitData = false;
+}
+
+function HandleV4ServerAltFire(rotator StepView, vector StepLoc, float CS) {
+	local PlayerPawn P;
+	local Projectile Gel;
+
+	P = PlayerPawn(Owner);
+	if (P == none)
+		return;
+
+	ExplicitClientLoc = StepLoc;
+	if (bbPlayer(Owner) != none)
+		ExplicitClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	ExplicitClientRot = StepView;
+	bUseExplicitData = true;
+
+	Owner.MakeNoise(P.SoundDampening);
+	Gel = ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
+	if (Gel != none)
+		Gel.DrawScale = 1.0 + 0.8 * CS;
+	if (Affector != none)
+		Affector.FireEffect();
+	PlayAltBurst();
+	GotoState('NormalFire');
+
+	bUseExplicitData = false;
+}
+
+simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
+	local Pawn PawnOwner;
+	local bbPlayer BP;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return;
+	BP = bbPlayer(PawnOwner);
+
+	bPointing = true;
+	if (FiringSpeed > 0)
+		PawnOwner.PlayRecoil(FiringSpeed);
+	PlayFiring();
+	if (Affector != none)
+		Affector.FireEffect();
+	if (PlayerPawn(Owner) != none)
+		PlayerPawn(Owner).ClientInstantFlash(InstFlash, InstFog);
+	if (BP != none && BP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
+		SpawnClientDummyBioGel();
+}
+
+function V4HandleOutOfAmmo() {
+	local Pawn P;
+	P = Pawn(Owner);
+	if (P == none)
+		return;
+	P.StopFiring();
+	if (P.PendingWeapon == none || P.PendingWeapon == self)
+		P.SwitchToBestWeapon();
 }
 
 // Server function called by client when firing
@@ -217,10 +431,20 @@ function Finish()
 
 function Fire( float Value )
 {
+	if (Role == ROLE_Authority && IsV4Active())
+		return;
 	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
 		return;
 
 	Super.Fire(Value);
+}
+
+function AltFire( float Value )
+{
+	if (Role == ROLE_Authority && IsV4Active())
+		return;
+
+	Super.AltFire(Value);
 }
 
 function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
@@ -261,6 +485,10 @@ simulated function bool ClientFire(float Value)
 {
 	local Pawn PawnOwner;
 	local bbPlayer bbP;
+
+	// V4 handles primary fire visuals through HandleV4ClientFire.
+	if (IsV4Active())
+		return true;
 
 	if (!bCanClientFire)
 		return false;
@@ -454,6 +682,9 @@ state ClientAltFiring
 			}
 		}
 
+		// Update V4 charge data every tick for tick-order-safe capture.
+		V4CachedChargeData = Clamp(int(FMin(ChargeSize, 4.1) * 2.0), 0, 7);
+
 		if (PawnOwner.bAltFire == 0) {
 			ChargeSize = FMin(ChargeSize, 4.1);
 
@@ -461,7 +692,9 @@ state ClientAltFiring
 			if (bbP != None && bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
 				SpawnClientDummyBioGlob(ChargeSize);
 
-			ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation, ChargeSize);
+			// V4 handles alt fire deterministically; skip RPC.
+			if (!IsV4Active())
+				ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation, ChargeSize);
 
 			if (Affector != None)
 				Affector.FireEffect();
@@ -492,6 +725,7 @@ state ClientAltFiring
 	{
 		ChargeSize = 0.0;
 		Count = 0.0;
+		V4CachedChargeData = 0;
 	}
 }
 

@@ -12,12 +12,21 @@ var int RunChangeIndex;
 var int DuckChangeIndex;
 var int FireIndex;
 var int AltFireIndex;
+var int V4FirePressIndex;
+var int V4FireReleaseIndex;
+var int V4AltPressIndex;
+var int V4AltReleaseIndex;
 var int AddVelocityId;
 var vector Momentum;
 
 var bool SavedDodging;
+var bool bV4FireStartHeld;
+var bool bV4FireEndHeld;
+var bool bV4AltStartHeld;
+var bool bV4AltEndHeld;
 var bool bDetReady;
 var int V4WeaponIndex;
+var int V4ChargeData;
 var bool bUseServerMoveV4;
 
 function Clear2() {
@@ -30,6 +39,14 @@ function Clear2() {
     DuckChangeIndex = -1;
     FireIndex = -1;
     AltFireIndex = -1;
+    V4FirePressIndex = -1;
+    V4FireReleaseIndex = -1;
+    V4AltPressIndex = -1;
+    V4AltReleaseIndex = -1;
+    bV4FireStartHeld = false;
+    bV4FireEndHeld = false;
+    bV4AltStartHeld = false;
+    bV4AltEndHeld = false;
     Momentum = vect(0,0,0);
     bUseServerMoveV4 = false;
 }
@@ -44,4 +61,8 @@ defaultproperties
      DuckChangeIndex=-1
      FireIndex=-1
      AltFireIndex=-1
+     V4FirePressIndex=-1
+     V4FireReleaseIndex=-1
+     V4AltPressIndex=-1
+     V4AltReleaseIndex=-1
 }

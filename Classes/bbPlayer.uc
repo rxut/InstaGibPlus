@@ -268,6 +268,20 @@ var IGPlus_WeaponImplementationBase IGPlus_WImpBase;
 var int IGPlus_V4MovesReceived;
 var int IGPlus_V4StepsHandled;
 var int IGPlus_V4StepsFallbackLegacy;
+const IGPLUS_V4FLAG_FIRE_START_HELD = 0x00000001;
+const IGPLUS_V4FLAG_FIRE_END_HELD = 0x00000002;
+const IGPLUS_V4FLAG_ALT_START_HELD = 0x00000004;
+const IGPLUS_V4FLAG_ALT_END_HELD = 0x00000008;
+const IGPLUS_V4FLAG_HAS_FIRE_PRESS = 0x00000010;
+const IGPLUS_V4FLAG_HAS_FIRE_RELEASE = 0x00000020;
+const IGPLUS_V4FLAG_HAS_ALT_PRESS = 0x00000040;
+const IGPLUS_V4FLAG_HAS_ALT_RELEASE = 0x00000080;
+const IGPLUS_V4FLAG_FIRE_PRESS_SHIFT = 8;
+const IGPLUS_V4FLAG_FIRE_RELEASE_SHIFT = 13;
+const IGPLUS_V4FLAG_ALT_PRESS_SHIFT = 18;
+const IGPLUS_V4FLAG_ALT_RELEASE_SHIFT = 23;
+const IGPLUS_V4FLAG_INDEX_MASK = 0x1F;
+const IGPLUS_V4FLAG_TIMELINE_VALID = 0x10000000;
 
 var Utilities Utils;
 var StringUtils StringUtils;
@@ -612,6 +626,7 @@ replication
 		DropFlag,
 		Go,
 		Hold,
+		ServerSetTraceInput,
 		IGPlus_ForcedSettingsRetry,
 		IGPlus_ForcedSettingsOK,
 		IGPlus_ForcedSettings_InitOK,
@@ -2738,15 +2753,19 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	local int FireIndex;
 	local float FirePos;
+	local float V4FirePressPos;
+	local float V4FireReleasePos;
 	local bool bFired;
 	local bool bForceFire;
 
 	local int AltFireIndex;
 	local float AltFirePos;
+	local float V4AltPressPos;
+	local float V4AltReleasePos;
 	local bool bAltFired;
 	local bool bForceAltFire;
 
-	local bool bDeterministicShock;
+	local bool bDetFallback;
 	local IGPlus_WeaponImplementationBase WImpBase;
 	local bool bV4WeaponSupported;
 	local bool bV4HandledStep;
@@ -2758,6 +2777,16 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local rotator StepView;
 	local vector StepLoc;
 	local Weapon V4Weapon;
+	local int V4Flags;
+	local bool bV4HasEdgeTimeline;
+	local bool bV4FireStartHeld;
+	local bool bV4FireEndHeld;
+	local bool bV4AltStartHeld;
+	local bool bV4AltEndHeld;
+	local int V4FirePressIndex;
+	local int V4FireReleaseIndex;
+	local int V4AltPressIndex;
+	local int V4AltReleaseIndex;
 
 	debugServerMoveCallsReceived += 1;
 	if (SM.bUseV4)
@@ -2926,10 +2955,69 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4Weapon = IGPlus_FindV4SupportedWeapon();
 	}
 	bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+	bV4HasEdgeTimeline = false;
+	bV4FireStartHeld = bFired && FireIndex < 0;
+	bV4FireEndHeld = bFired;
+	bV4AltStartHeld = bAltFired && AltFireIndex < 0;
+	bV4AltEndHeld = bAltFired;
+	V4FirePressIndex = -1;
+	V4FireReleaseIndex = -1;
+	V4AltPressIndex = -1;
+	V4AltReleaseIndex = -1;
+	if (bFired && FireIndex >= 0)
+		V4FirePressIndex = FireIndex;
+	if (bAltFired && AltFireIndex >= 0)
+		V4AltPressIndex = AltFireIndex;
 
-	bDeterministicShock = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+	if (SM.bUseV4) {
+		V4Flags = SM.V4Flags;
+		bV4HasEdgeTimeline = (V4Flags & IGPLUS_V4FLAG_TIMELINE_VALID) != 0;
+		if (bV4HasEdgeTimeline) {
+			bV4FireStartHeld = (V4Flags & IGPLUS_V4FLAG_FIRE_START_HELD) != 0;
+			bV4FireEndHeld = (V4Flags & IGPLUS_V4FLAG_FIRE_END_HELD) != 0;
+			bV4AltStartHeld = (V4Flags & IGPLUS_V4FLAG_ALT_START_HELD) != 0;
+			bV4AltEndHeld = (V4Flags & IGPLUS_V4FLAG_ALT_END_HELD) != 0;
 
-	if (bDeterministicShock) {
+			V4FirePressIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_FIRE_PRESS, IGPLUS_V4FLAG_FIRE_PRESS_SHIFT);
+			V4FireReleaseIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_FIRE_RELEASE, IGPLUS_V4FLAG_FIRE_RELEASE_SHIFT);
+			V4AltPressIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_PRESS, IGPLUS_V4FLAG_ALT_PRESS_SHIFT);
+			V4AltReleaseIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_RELEASE, IGPLUS_V4FLAG_ALT_RELEASE_SHIFT);
+		}
+	}
+
+	if (bTraceInput && SM.bUseV4 && SM.bDetReady && ST_UT_Eightball(V4Weapon) != none) {
+		Log(
+			"[EB] [MV] TS="$SM.TimeStamp$
+			" MoveDelta="$SM.MoveDeltaTime$
+			" Merge="$MergeCount$
+			" Flags="$SM.V4Flags$
+			" Timeline="$bV4HasEdgeTimeline$
+			" FireStart="$bV4FireStartHeld$
+			" FireEnd="$bV4FireEndHeld$
+			" FirePress="$V4FirePressIndex$
+			" FireRelease="$V4FireReleaseIndex$
+			" FireBit="$bFired$
+			" FireIndex="$FireIndex$
+			" ForceFire="$bForceFire
+			);
+	}
+
+	if (SM.bUseV4 && SM.bDetReady && ST_UT_Eightball(V4Weapon) != none && DeltaTime > 0.06) {
+		Log(
+			"[EB] [SRV-HITCH] TS="$SM.TimeStamp$
+			" Delta="$DeltaTime$
+			" MoveDelta="$SM.MoveDeltaTime$
+			" Merge="$(MergeCount + 1)$
+			" Fire="$bFired$
+			" Alt="$bAltFired$
+			" FireIndex="$FireIndex$
+			" AltIndex="$AltFireIndex
+		);
+	}
+
+	bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+
+	if (bDetFallback) {
 		IGPlus_V4ProcessWeaponStep(
 			V4Weapon,
 			SM.TimeStamp,
@@ -2940,7 +3028,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			bForceFire,
 			bForceAltFire,
 			true,
-			SM.bDetReady
+			SM.bDetReady,
+			SM.V4ChargeData
 		);
 		// Deterministic weapons execute shots directly from step processing.
 		// Keep fire latches cleared to avoid legacy state-machine refire.
@@ -2975,6 +3064,14 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			DuckChangePos = float(DuckChangeIndex) / float(MergeCount);
 			FirePos = float(FireIndex) / float(MergeCount);
 			AltFirePos = float(AltFireIndex) / float(MergeCount);
+			if (V4FirePressIndex >= 0)
+				V4FirePressPos = float(V4FirePressIndex) / float(MergeCount);
+			if (V4FireReleaseIndex >= 0)
+				V4FireReleasePos = float(V4FireReleaseIndex) / float(MergeCount);
+			if (V4AltPressIndex >= 0)
+				V4AltPressPos = float(V4AltPressIndex) / float(MergeCount);
+			if (V4AltReleaseIndex >= 0)
+				V4AltReleasePos = float(V4AltReleaseIndex) / float(MergeCount);
 
 			MergeCount = int(DeltaTime * 100) + 1;
 			SimStep = DeltaTime / float(MergeCount);
@@ -2985,6 +3082,14 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			DuckChangeIndex = int(DuckChangePos * MergeCount);
 			FireIndex = int(FirePos * MergeCount);
 			AltFireIndex = int(AltFirePos * MergeCount);
+			if (V4FirePressIndex >= 0)
+				V4FirePressIndex = int(V4FirePressPos * MergeCount);
+			if (V4FireReleaseIndex >= 0)
+				V4FireReleaseIndex = int(V4FireReleasePos * MergeCount);
+			if (V4AltPressIndex >= 0)
+				V4AltPressIndex = int(V4AltPressPos * MergeCount);
+			if (V4AltReleaseIndex >= 0)
+				V4AltReleaseIndex = int(V4AltReleasePos * MergeCount);
 		}
 
 		for (MoveIndex = 0; MoveIndex < MergeCount; MoveIndex++) {
@@ -3003,10 +3108,31 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				StepTS = WImpBase.IGPlus_V4ComputeStepTimestamp(SM.TimeStamp, DeltaTime, MoveIndex, MergeCount);
 				StepView = WImpBase.IGPlus_V4InterpolateStepView(SM.ViewStart, SM.View, MoveIndex, MergeCount);
 				StepLoc = Location;
-				bStepFireHeld = bFired && (FireIndex < 0 || MoveIndex >= FireIndex);
-				bStepAltHeld = bAltFired && (AltFireIndex < 0 || MoveIndex >= AltFireIndex);
-				bStepForceFire = bForceFire && (MoveIndex == FireIndex);
-				bStepForceAltFire = bForceAltFire && (MoveIndex == AltFireIndex);
+				if (bV4HasEdgeTimeline) {
+					bStepFireHeld = IGPlus_V4HeldAtStep(
+						bV4FireStartHeld,
+						V4FirePressIndex,
+						V4FireReleaseIndex,
+						MoveIndex
+					);
+					bStepAltHeld = IGPlus_V4HeldAtStep(
+						bV4AltStartHeld,
+						V4AltPressIndex,
+						V4AltReleaseIndex,
+						MoveIndex
+					);
+					bStepForceFire = bForceFire
+						&& ((V4FirePressIndex >= 0 && MoveIndex == V4FirePressIndex)
+							|| (V4FirePressIndex < 0 && MoveIndex == FireIndex));
+					bStepForceAltFire = bForceAltFire
+						&& ((V4AltPressIndex >= 0 && MoveIndex == V4AltPressIndex)
+							|| (V4AltPressIndex < 0 && MoveIndex == AltFireIndex));
+				} else {
+					bStepFireHeld = bFired && (FireIndex < 0 || MoveIndex >= FireIndex);
+					bStepAltHeld = bAltFired && (AltFireIndex < 0 || MoveIndex >= AltFireIndex);
+					bStepForceFire = bForceFire && (MoveIndex == FireIndex);
+					bStepForceAltFire = bForceAltFire && (MoveIndex == AltFireIndex);
+				}
 				bV4HandledStep = IGPlus_V4ProcessWeaponStep(
 					V4Weapon,
 					StepTS,
@@ -3017,7 +3143,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					bStepForceFire,
 					bStepForceAltFire,
 					true,
-					SM.bDetReady
+					SM.bDetReady,
+					SM.V4ChargeData
 				);
 				if (bV4HandledStep) {
 					IGPlus_V4StepsHandled++;
@@ -3030,7 +3157,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				}
 			}
 
-			if (!bV4HandledStep && MoveIndex == FireIndex && !bDeterministicShock) {
+			if (!bV4HandledStep && MoveIndex == FireIndex && !bDetFallback) {
 				if (!IsExplicitFireWeapon()) {
 					if (bFired) {
 						if (bForceFire && (Weapon != None))
@@ -3046,7 +3173,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				}
 			}
 
-			if (!bV4HandledStep && MoveIndex == AltFireIndex && !bDeterministicShock) {
+			if (!bV4HandledStep && MoveIndex == AltFireIndex && !bDetFallback) {
 				if (!IsExplicitAltFireWeapon()) {
 					if (bAltFired) {
 						if (bForceAltFire && (Weapon != None))
@@ -3519,7 +3646,8 @@ function xxServerMove(
 
 	SM.TimeStamp = TimeStamp;
 	SM.bDetReady = (MoveDeltaTime & 0x01) != 0;
-	SM.V4WeaponIndex = (MoveDeltaTime & 0x06) >> 1;
+	SM.V4WeaponIndex = (MoveDeltaTime & 0x0E) >> 1;
+	SM.V4ChargeData = (MoveDeltaTime & 0x70) >> 4;
 	SM.MoveDeltaTime = (MoveDeltaTime >>> 8) * 0.0000152587890625;
 	SM.ClientAcceleration = Accel * 0.1;
 	SM.ClientLocation.X = ClientLocX;
@@ -3530,6 +3658,7 @@ function xxServerMove(
 	SM.MiscData2 = MiscData2;
 	SM.View = View;
 	SM.ViewStart = View;
+	SM.V4Flags = 0;
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
@@ -3568,7 +3697,8 @@ function xxServerMove_v4(
 
 	SM.TimeStamp = TimeStamp;
 	SM.bDetReady = (MoveDeltaTime & 0x01) != 0;
-	SM.V4WeaponIndex = (MoveDeltaTime & 0x06) >> 1;
+	SM.V4WeaponIndex = (MoveDeltaTime & 0x0E) >> 1;
+	SM.V4ChargeData = (MoveDeltaTime & 0x70) >> 4;
 	SM.MoveDeltaTime = (MoveDeltaTime >>> 8) * 0.0000152587890625;
 	SM.ClientAcceleration = Accel * 0.1;
 	SM.ClientLocation.X = ClientLocX;
@@ -3579,6 +3709,7 @@ function xxServerMove_v4(
 	SM.MiscData2 = MiscData2;
 	SM.View = View;
 	SM.ViewStart = ViewStart;
+	SM.V4Flags = V4Flags;
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
@@ -3945,26 +4076,11 @@ function bool IsExplicitFireWeapon() {
 	WS = GetWeaponSettings();
 	if (WS == None)
 		return false;
-	if (Weapon.IsA('ST_ShockRifle')) return false;
-	if (Weapon.IsA('ST_ripper')) return false;
-	if (Weapon.IsA('ST_UT_FlakCannon')) return false;
-	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
 	if (Weapon.IsA('ST_ut_biorifle')) return WS.BioCompensatePing;
 	return false;
 }
 
 function bool IsExplicitAltFireWeapon() {
-	local WeaponSettingsRepl WS;
-
-	if (Weapon == None)
-		return false;
-	WS = GetWeaponSettings();
-	if (WS == None)
-		return false;
-	if (Weapon.IsA('ST_ShockRifle')) return false;
-	if (Weapon.IsA('ST_ripper')) return false;
-	if (Weapon.IsA('ST_UT_FlakCannon')) return false;
-	if (Weapon.IsA('ST_UT_Eightball')) return WS.RocketCompensatePing;
 	return false;
 }
 
@@ -4613,7 +4729,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local float OldMouseX, OldMouseY;
 	local float OldForward, OldStrafe, OldUp, OldLookUp, OldTurn;
 	local byte OldRun, OldDuck;
-	local bool bDeterministicShock;
+	local bool bDetFallback;
 	local Weapon V4Weapon;
 
 	OldBaseX = aBaseX;
@@ -4672,7 +4788,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 	if (V4Weapon == none && I.bDetReady)
 		V4Weapon = IGPlus_FindV4SupportedWeapon();
-	bDeterministicShock = V4Weapon != none && I.bDetReady;
+	bDetFallback = V4Weapon != none && I.bDetReady;
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -4691,7 +4807,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			DodgeClickTimer = DodgeClickTime;
 		}
 
-			if (bDeterministicShock && Role == ROLE_Authority) {
+			if (bDetFallback && Role == ROLE_Authority) {
 				IGPlus_V4ProcessWeaponStep(
 					V4Weapon,
 					I.TimeStamp,
@@ -4702,13 +4818,14 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 					I.bFFir,
 					I.bFAFr,
 					true,
-					I.bDetReady
+					I.bDetReady,
+					I.V4ChargeData
 				);
 				// Deterministic step path is authoritative; keep legacy fire latches
 				// clear to prevent duplicate server-side refire.
 				bFire = 0;
 				bAltFire = 0;
-			} else if (bDeterministicShock) {
+			} else if (bDetFallback) {
 			// Client-side replay path must not emit deterministic shots.
 			if (I.bFire)
 				bFire = 1;
@@ -4830,7 +4947,58 @@ simulated function int IGPlus_GetV4WeaponIndex(Weapon W) {
 		return 2;
 	if (ST_UT_FlakCannon(W) != none)
 		return 3;
+	if (ST_ut_biorifle(W) != none)
+		return 4;
+	if (ST_UT_Eightball(W) != none)
+		return 5;
 	return 0;
+}
+
+// Return charge/load state for current weapon (3 bits, 0-7).
+// Eightball: ClientRocketsLoaded (1-6).
+// BioRifle: quantized ChargeSize (0-7 → 0.0-3.5 in 0.5 steps).
+simulated function int IGPlus_GetV4ChargeData() {
+	local ST_UT_Eightball EB;
+	local ST_ut_biorifle BR;
+	EB = ST_UT_Eightball(Weapon);
+	if (EB != none)
+		return EB.V4CachedChargeData;
+	BR = ST_ut_biorifle(Weapon);
+	if (BR != none)
+		return BR.V4CachedChargeData;
+	return 0;
+}
+
+// Returns the effective held state used for ServerMove_v4 fire timeline.
+// For Eightball, include ClientReload queued refire intent (bForceFire/
+// bForceAltFire) so server and client both fire when cooldown expires,
+// even if the physical button was released before that exact frame.
+simulated function bool IGPlus_V4EffectiveFireHeld() {
+	local ST_UT_Eightball EB;
+
+	if (bFire != 0)
+		return true;
+	if (IGPlus_EnableInputReplication || int(Level.ServerMoveVersion) < 4)
+		return false;
+
+	EB = ST_UT_Eightball(Weapon);
+	if (EB == none || !EB.IsV4Active() || !EB.IsInState('ClientReload'))
+		return false;
+	return EB.bForceFire;
+}
+
+simulated function bool IGPlus_V4EffectiveAltHeld() {
+	local ST_UT_Eightball EB;
+
+	if (bAltFire != 0)
+		return true;
+	if (IGPlus_EnableInputReplication || int(Level.ServerMoveVersion) < 4)
+		return false;
+
+	EB = ST_UT_Eightball(Weapon);
+	if (EB == none || !EB.IsV4Active() || !EB.IsInState('ClientReload'))
+		return false;
+	return EB.bForceAltFire;
 }
 
 // Decode V4 weapon index back to the actual weapon in inventory.
@@ -4845,6 +5013,10 @@ simulated function Weapon IGPlus_V4WeaponByIndex(int Index) {
 			return Weapon(Inv);
 		if (Index == 3 && ST_UT_FlakCannon(Inv) != none)
 			return Weapon(Inv);
+		if (Index == 4 && ST_ut_biorifle(Inv) != none)
+			return Weapon(Inv);
+		if (Index == 5 && ST_UT_Eightball(Inv) != none)
+			return Weapon(Inv);
 	}
 	return none;
 }
@@ -4858,6 +5030,10 @@ simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
 		return true;
 	if (ST_UT_FlakCannon(W) != none)
 		return true;
+	if (ST_ut_biorifle(W) != none)
+		return true;
+	if (ST_UT_Eightball(W) != none)
+		return true;
 	return false;
 }
 
@@ -4865,6 +5041,8 @@ simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 	local ST_ShockRifle SR;
 	local ST_ripper RP;
 	local ST_UT_FlakCannon FC;
+	local ST_ut_biorifle BR;
+	local ST_UT_Eightball EB;
 	SR = ST_ShockRifle(W);
 	if (SR != none)
 		return SR.IsDeterministicReady();
@@ -4874,6 +5052,12 @@ simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 	FC = ST_UT_FlakCannon(W);
 	if (FC != none)
 		return FC.IsDeterministicReady();
+	BR = ST_ut_biorifle(W);
+	if (BR != none)
+		return BR.IsDeterministicReady();
+	EB = ST_UT_Eightball(W);
+	if (EB != none)
+		return EB.IsDeterministicReady();
 	return false;
 }
 
@@ -4887,11 +5071,14 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	bool bForceFire,
 	bool bForceAlt,
 	bool bServerSide,
-	optional bool bStepReadyHint
+	optional bool bStepReadyHint,
+	optional int V4ChargeData
 ) {
 	local ST_ShockRifle SR;
 	local ST_ripper RP;
 	local ST_UT_FlakCannon FC;
+	local ST_ut_biorifle BR;
+	local ST_UT_Eightball EB;
 	local IGPlus_WeaponImplementationBase WImpBase;
 
 	if (W == none)
@@ -4913,7 +5100,56 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	if (FC != none)
 		return FC.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
 
+	BR = ST_ut_biorifle(W);
+	if (BR != none)
+		return BR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint, V4ChargeData);
+
+	EB = ST_UT_Eightball(W);
+	if (EB != none)
+		return EB.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint, V4ChargeData);
+
 	return false;
+}
+
+simulated function int IGPlus_V4FlagDecodeIndex(int V4Flags, int PresenceMask, int Shift) {
+	if ((V4Flags & PresenceMask) == 0)
+		return -1;
+	return (V4Flags >>> Shift) & IGPLUS_V4FLAG_INDEX_MASK;
+}
+
+simulated function bool IGPlus_V4HeldAtStep(
+	bool bStartHeld,
+	int PressIndex,
+	int ReleaseIndex,
+	int MoveIndex
+) {
+	local bool bHeld;
+
+	bHeld = bStartHeld;
+
+	if (PressIndex >= 0 && ReleaseIndex >= 0) {
+		if (PressIndex < ReleaseIndex) {
+			if (MoveIndex >= PressIndex && MoveIndex < ReleaseIndex)
+				return true;
+			if (MoveIndex >= ReleaseIndex)
+				return false;
+			return bHeld;
+		}
+		if (ReleaseIndex < PressIndex) {
+			if (MoveIndex >= ReleaseIndex && MoveIndex < PressIndex)
+				return false;
+			if (MoveIndex >= PressIndex)
+				return true;
+			return bHeld;
+		}
+		return bHeld;
+	}
+
+	if (PressIndex >= 0 && MoveIndex >= PressIndex)
+		bHeld = true;
+	if (ReleaseIndex >= 0 && MoveIndex >= ReleaseIndex)
+		bHeld = false;
+	return bHeld;
 }
 
 simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred) {
@@ -4973,6 +5209,8 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 	local vector OldAccel, NewAccel;
 	local vector OldAccelNorm, NewAccelNorm;
 	local bool bCurrentDetReady;
+	local bool bCurrentFireHeld;
+	local bool bCurrentAltHeld;
 
 	if (Pending.IGPlus_MergeCount >= 31)
 		return false;
@@ -4983,6 +5221,34 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 	if (Pending.bDetReady || IGPlus_FindV4SupportedWeapon(Weapon) != none) {
 		bCurrentDetReady = IGPlus_IsV4DetReady(Weapon);
 		if (bCurrentDetReady != Pending.bDetReady)
+			return false;
+	}
+
+	// V4 step processing requires accurate fire/alt hold intervals. Allow at
+	// most two transitions per merged move (press and release). Split before a
+	// third transition would make edge timing ambiguous.
+	if (Pending.bUseServerMoveV4 && Pending.bDetReady) {
+		bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
+		bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
+
+		// Eightball timing is edge-sensitive (load start/release fire).
+		// Never merge across a hold-state transition so edge timestamps are
+		// quantized to a single frame instead of an arbitrarily long merged move.
+		if (Pending.V4WeaponIndex == 5) {
+			if (Pending.bV4FireEndHeld != bCurrentFireHeld)
+				return false;
+			if (Pending.bV4AltEndHeld != bCurrentAltHeld)
+				return false;
+		}
+
+		if (Pending.bV4FireEndHeld != bCurrentFireHeld
+			&& Pending.V4FirePressIndex >= 0
+			&& Pending.V4FireReleaseIndex >= 0)
+			return false;
+
+		if (Pending.bV4AltEndHeld != bCurrentAltHeld
+			&& Pending.V4AltPressIndex >= 0
+			&& Pending.V4AltReleaseIndex >= 0)
 			return false;
 	}
 
@@ -5005,6 +5271,9 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	local float TotalTime;
 	local bool bFireNew;
 	local bool bAltFireNew;
+	local bool bCurrentFireHeld;
+	local bool bCurrentAltHeld;
+	local int EdgeIndex;
 
 	PendMove.TimeStamp = Level.TimeSeconds;
 	PendMove.IGPlus_MergeCount += 1;
@@ -5059,12 +5328,43 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	PendMove.bAltFire = bAltFireNew;
 	PendMove.bForceAltFire = PendMove.bForceAltFire || bJustAltFired;
 
+	bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
+	bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
+	EdgeIndex = PendMove.IGPlus_MergeCount;
+
+	if (PendMove.bUseServerMoveV4) {
+		if (PendMove.bV4FireEndHeld != bCurrentFireHeld) {
+			if (PendMove.bV4FireEndHeld) {
+				if (PendMove.V4FireReleaseIndex < 0)
+					PendMove.V4FireReleaseIndex = EdgeIndex;
+			} else {
+				if (PendMove.V4FirePressIndex < 0)
+					PendMove.V4FirePressIndex = EdgeIndex;
+			}
+			PendMove.bV4FireEndHeld = bCurrentFireHeld;
+		}
+
+		if (PendMove.bV4AltEndHeld != bCurrentAltHeld) {
+			if (PendMove.bV4AltEndHeld) {
+				if (PendMove.V4AltReleaseIndex < 0)
+					PendMove.V4AltReleaseIndex = EdgeIndex;
+			} else {
+				if (PendMove.V4AltPressIndex < 0)
+					PendMove.V4AltPressIndex = EdgeIndex;
+			}
+			PendMove.bV4AltEndHeld = bCurrentAltHeld;
+		}
+	}
+
 	// Maintain deterministic-ready based on current merged slice state.
 	PendMove.bDetReady = IGPlus_IsV4DetReady(Weapon);
-	if (PendMove.bDetReady)
+	if (PendMove.bDetReady) {
 		PendMove.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
-	else
+		PendMove.V4ChargeData = IGPlus_GetV4ChargeData();
+	} else {
 		PendMove.V4WeaponIndex = 0;
+		PendMove.V4ChargeData = 0;
+	}
 
 	PendMove.Delta = TotalTime;
 }
@@ -5140,7 +5440,8 @@ function IGPlus_ReplicateInput(float Delta) {
 						SerializedInput.bFFir,
 						SerializedInput.bFAFr,
 						false,
-						SerializedInput.bDetReady
+						SerializedInput.bDetReady,
+						SerializedInput.V4ChargeData
 					);
 				}
 			}
@@ -5194,6 +5495,8 @@ function xxReplicateMove(
 	local vector PrevVelocity;
 	local vector OldAccel;
 	local Weapon V4LocalWeapon;
+	local bool bMoveFireHeld;
+	local bool bMoveAltHeld;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -5281,21 +5584,52 @@ function xxReplicateMove(
 		if (bPressedJump)
 			NewMove.JumpIndex = 0;
 
-		NewMove.bFire = (bJustFired || (bFire != 0));
-		NewMove.bForceFire = bJustFired;
-		if (LastMove == none || LastMove.bFire != NewMove.bFire)
-			NewMove.FireIndex = 0;
+			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
+			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
 
-		NewMove.bAltFire = (bJustAltFired || (bAltFire != 0));
-		NewMove.bForceAltFire = bJustAltFired;
-		if (LastMove == none || LastMove.bAltFire != NewMove.bAltFire)
-			NewMove.AltFireIndex = 0;
+			NewMove.bFire = (bJustFired || bMoveFireHeld);
+			NewMove.bForceFire = bJustFired;
+			if (LastMove == none || LastMove.bFire != NewMove.bFire)
+				NewMove.FireIndex = 0;
+
+			NewMove.bAltFire = (bJustAltFired || bMoveAltHeld);
+			NewMove.bForceAltFire = bJustAltFired;
+			if (LastMove == none || LastMove.bAltFire != NewMove.bAltFire)
+				NewMove.AltFireIndex = 0;
+
+			if (LastMove != none) {
+				NewMove.bV4FireStartHeld = LastMove.bV4FireEndHeld;
+				NewMove.bV4AltStartHeld = LastMove.bV4AltEndHeld;
+			} else {
+				NewMove.bV4FireStartHeld = bMoveFireHeld;
+				NewMove.bV4AltStartHeld = bMoveAltHeld;
+			}
+			if (bJustFired)
+				NewMove.bV4FireStartHeld = false;
+			if (bJustAltFired)
+				NewMove.bV4AltStartHeld = false;
+
+			NewMove.bV4FireEndHeld = bMoveFireHeld;
+			NewMove.bV4AltEndHeld = bMoveAltHeld;
+
+		if (!NewMove.bV4FireStartHeld && NewMove.bV4FireEndHeld)
+			NewMove.V4FirePressIndex = 0;
+		else if (NewMove.bV4FireStartHeld && !NewMove.bV4FireEndHeld)
+			NewMove.V4FireReleaseIndex = 0;
+
+		if (!NewMove.bV4AltStartHeld && NewMove.bV4AltEndHeld)
+			NewMove.V4AltPressIndex = 0;
+		else if (NewMove.bV4AltStartHeld && !NewMove.bV4AltEndHeld)
+			NewMove.V4AltReleaseIndex = 0;
 
 		NewMove.bDetReady = IGPlus_IsV4DetReady(Weapon);
-		if (NewMove.bDetReady)
+		if (NewMove.bDetReady) {
 			NewMove.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
-		else
+			NewMove.V4ChargeData = IGPlus_GetV4ChargeData();
+		} else {
 			NewMove.V4WeaponIndex = 0;
+			NewMove.V4ChargeData = 0;
+		}
 
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
@@ -5349,7 +5683,8 @@ function xxReplicateMove(
 			NewMove.bForceFire,
 			NewMove.bForceAltFire,
 			false,
-			NewMove.bDetReady
+			NewMove.bDetReady,
+			NewMove.V4ChargeData
 		);
 
 	bForcePacketSplit = false;
@@ -5396,6 +5731,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local int OldMoveData1, OldMoveData2;
 	local int ViewPacked;
 	local int ViewStartPacked;
+	local int V4Flags;
 
 	if (Move.bPressedJump) bJumpStatus = !bJumpStatus;
 
@@ -5406,7 +5742,8 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 
 	MoveDeltaTime or_eq Clamp(int(Move.Delta * 65536), 0, 0xFFFFFF) << 8;
 	if (Move.bDetReady) MoveDeltaTime or_eq 0x01;
-	MoveDeltaTime or_eq (Move.V4WeaponIndex & 0x03) << 1;
+	MoveDeltaTime or_eq (Move.V4WeaponIndex & 0x07) << 1;
+	MoveDeltaTime or_eq (Move.V4ChargeData & 0x07) << 4;
 
 	                   MiscData or_eq (Move.AddVelocityId & 0xF) << 28;
 	                   MiscData or_eq (TlocCounter << 26);
@@ -5443,6 +5780,61 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 
 	ViewPacked = ((Move.IGPlus_SavedViewRotation.Pitch & 0xFFFF) << 16) | (Move.IGPlus_SavedViewRotation.Yaw & 0xFFFF);
 	ViewStartPacked = ((Move.IGPlus_SavedViewRotationStart.Pitch & 0xFFFF) << 16) | (Move.IGPlus_SavedViewRotationStart.Yaw & 0xFFFF);
+	V4Flags = 0;
+	if (bTraceInput && IGPlus_InputLogFile != none)
+		IGPlus_InputLogFile.LogSavedMove(Move);
+	if (Move.bUseServerMoveV4) {
+		V4Flags or_eq IGPLUS_V4FLAG_TIMELINE_VALID;
+		if (Move.bV4FireStartHeld) V4Flags or_eq IGPLUS_V4FLAG_FIRE_START_HELD;
+		if (Move.bV4FireEndHeld) V4Flags or_eq IGPLUS_V4FLAG_FIRE_END_HELD;
+		if (Move.bV4AltStartHeld) V4Flags or_eq IGPLUS_V4FLAG_ALT_START_HELD;
+		if (Move.bV4AltEndHeld) V4Flags or_eq IGPLUS_V4FLAG_ALT_END_HELD;
+
+		if (Move.V4FirePressIndex >= 0) {
+			V4Flags or_eq IGPLUS_V4FLAG_HAS_FIRE_PRESS;
+			V4Flags or_eq (Move.V4FirePressIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_FIRE_PRESS_SHIFT;
+		}
+		if (Move.V4FireReleaseIndex >= 0) {
+			V4Flags or_eq IGPLUS_V4FLAG_HAS_FIRE_RELEASE;
+			V4Flags or_eq (Move.V4FireReleaseIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_FIRE_RELEASE_SHIFT;
+		}
+		if (Move.V4AltPressIndex >= 0) {
+			V4Flags or_eq IGPLUS_V4FLAG_HAS_ALT_PRESS;
+			V4Flags or_eq (Move.V4AltPressIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_ALT_PRESS_SHIFT;
+		}
+		if (Move.V4AltReleaseIndex >= 0) {
+			V4Flags or_eq IGPLUS_V4FLAG_HAS_ALT_RELEASE;
+			V4Flags or_eq (Move.V4AltReleaseIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_ALT_RELEASE_SHIFT;
+		}
+	}
+
+	if (bTraceInput && Move.bUseServerMoveV4 && Move.V4WeaponIndex == 5) {
+		Log(
+			"[EB] [CLI-MV] TS="$Move.TimeStamp$
+			" Delta="$Move.Delta$
+			" Merge="$(Move.IGPlus_MergeCount + 1)$
+			" Flags="$V4Flags$
+			" FireStart="$Move.bV4FireStartHeld$
+			" FireEnd="$Move.bV4FireEndHeld$
+			" FirePress="$Move.V4FirePressIndex$
+			" FireRelease="$Move.V4FireReleaseIndex$
+			" FireBit="$Move.bFire$
+			" FireIndex="$Move.FireIndex$
+			" ForceFire="$Move.bForceFire
+			);
+	}
+
+	if (Move.bUseServerMoveV4 && Move.V4WeaponIndex == 5 && Move.Delta > 0.06) {
+		Log(
+			"[EB] [CLI-HITCH] TS="$Move.TimeStamp$
+			" Delta="$Move.Delta$
+			" Merge="$(Move.IGPlus_MergeCount + 1)$
+			" Fire="$Move.bFire$
+			" Alt="$Move.bAltFire$
+			" ForceFire="$Move.bForceFire$
+			" ForceAlt="$Move.bForceAltFire
+		);
+	}
 
 	if (Move.bUseServerMoveV4) {
 		xxServerMove_v4(
@@ -5458,7 +5850,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 			ViewPacked,
 			ViewStartPacked,
 			Base,
-			0,
+			V4Flags,
 			OldMoveData1,
 			OldMoveData2
 		);
@@ -13067,6 +13459,12 @@ exec function TraceInput() {
 		IGPlus_InputLogFile.StartLog();
 	}
 	bTraceInput = !bTraceInput;
+	if (Role < ROLE_Authority)
+		ServerSetTraceInput(bTraceInput);
+}
+
+function ServerSetTraceInput(bool bEnable) {
+	bTraceInput = bEnable;
 }
 
 function PreCacheReferences() {
