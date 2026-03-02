@@ -17,6 +17,7 @@ var vector Momentum;
 
 var bool SavedDodging;
 var bool bDetReady;
+var int V4WeaponIndex;
 var bool bUseServerMoveV4;
 
 function Clear2() {

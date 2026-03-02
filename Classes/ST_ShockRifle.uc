@@ -86,7 +86,7 @@ simulated function float PrimaryShotInterval() {
 	RateScale = 0.30 + 0.30 * FireAdjust;
 	if (RateScale <= 0.001)
 		return 0.65;
-	return FClamp(9.0 / (21.0 * RateScale), 0.05, 2.0);
+	return FClamp(10.0 / (21.0 * RateScale), 0.05, 2.0);
 }
 
 simulated function float AltShotInterval() {
@@ -94,7 +94,7 @@ simulated function float AltShotInterval() {
 	RateScale = 0.40 + 0.40 * FireAdjust;
 	if (RateScale <= 0.001)
 		return 0.65;
-	return FClamp(9.0 / (24.0 * RateScale), 0.05, 2.0);
+	return FClamp(10.0 / (24.0 * RateScale), 0.05, 2.0);
 }
 
 simulated function float V4FireInterval(bool bAlt) {
@@ -129,8 +129,9 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// bStepReadyHint: client saw weapon ready at input time, honor it
-	// for fire-and-switch. NextV4FireTS prevents extra beams.
+	// bStepReadyHint: client told us this weapon was ready at input time.
+	// Trusted unconditionally — the caller uses the weapon index from the
+	// move data to dispatch to the exact weapon the client was using.
 	if (!bStepReadyHint && !IsDeterministicReady())
 		return true;
 

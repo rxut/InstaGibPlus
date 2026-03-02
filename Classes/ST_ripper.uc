@@ -1,31 +1,19 @@
 // ===============================================================
-// UTPureStats7A.ST_ripper: put your comment here
-//
-// Created by UClasses - (C) 2000-2001 by meltdown@thirdtower.com
+// UTPureStats7A.ST_ripper: Ripper with V4 deterministic fire
 // ===============================================================
 
 class ST_ripper extends ripper;
 
 var IGPlus_WeaponImplementation WImp;
-
 var WeaponSettingsRepl WSettings;
 
 var ST_Razor2 LocalRazor2Dummy;
 var ST_Razor2Alt LocalRazor2AltDummy;
 
-// Explicit client aim data (sent via ServerExplicitFire/AltFire)
-var vector ExplicitClientLoc;
-var rotator ExplicitClientRot;
-var bool bUseExplicitData;
-
-// Server-side position validation
-const MAX_POSITION_ERROR_SQ = 1250.0;
-
-replication
-{
-	reliable if(Role < ROLE_Authority)
-		ServerExplicitFire, ServerExplicitAltFire;
-}
+var float NextV4FireTS;
+var bool bUseDeterministicData;
+var vector DeterministicShotLoc;
+var rotator DeterministicShotRot;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -51,6 +39,182 @@ simulated function bool IsPingCompEnabled() {
 	return WS != None && WS.RipperCompensatePing;
 }
 
+simulated function bool IsV4Active() {
+	if (!IsPingCompEnabled())
+		return false;
+	if (bbPlayer(Owner) == none)
+		return false;
+	return true;
+}
+
+simulated function bool IsDeterministicReady() {
+	local Pawn PawnOwner;
+	local TournamentPlayer TP;
+	local bbPlayer BP;
+
+	if (!IsV4Active())
+		return false;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return false;
+
+	BP = bbPlayer(PawnOwner);
+	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
+		return false;
+
+	TP = TournamentPlayer(PawnOwner);
+	if (TP != none && TP.ClientPending != none && TP.ClientPending != self)
+		return false;
+	if (PawnOwner.Weapon != self)
+		return false;
+	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		return false;
+	if (bChangeWeapon || IsInState('Pickup') || IsInState('DownWeapon') || IsInState('ClientDown'))
+		return false;
+	if (!bCanClientFire)
+		return false;
+	return true;
+}
+
+// Ripper 'Fire' anim: NumFrames=15, Rate=30fps (default)
+// Duration = NumFrames / (Rate * PlayRate)
+simulated function float PrimaryShotInterval() {
+	local float RateScale;
+	RateScale = 0.7 + 0.6 * FireAdjust;
+	if (RateScale <= 0.001)
+		return 0.50;
+	return FClamp(15.0 / (30.0 * RateScale), 0.05, 2.0);
+}
+
+simulated function float AltShotInterval() {
+	local float RateScale;
+	RateScale = 0.4 + 0.3 * FireAdjust;
+	if (RateScale <= 0.001)
+		return 0.50;
+	return FClamp(15.0 / (30.0 * RateScale), 0.05, 2.0);
+}
+
+simulated function float V4FireInterval(bool bAlt) {
+	if (bAlt)
+		return AltShotInterval();
+	return PrimaryShotInterval();
+}
+
+function V4HandleOutOfAmmo() {
+	local Pawn P;
+	P = Pawn(Owner);
+	if (P == none)
+		return;
+	P.StopFiring();
+	if (P.PendingWeapon == none || P.PendingWeapon == self)
+		P.SwitchToBestWeapon();
+}
+
+simulated function bool V4ProcessStep(
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bStepReadyHint
+) {
+	local bool bWantsPrimary, bWantsAlt, bAlt;
+	local float Interval;
+
+	// bStepReadyHint: client told us this weapon was ready at input time.
+	// Trusted unconditionally — the caller uses the weapon index from the
+	// move data to dispatch to the exact weapon the client was using.
+	if (!bStepReadyHint && !IsDeterministicReady())
+		return true;
+
+	bWantsPrimary = bFireHeld || bForceFire;
+	bWantsAlt = bAltHeld || bForceAlt;
+	if (!bWantsPrimary && !bWantsAlt)
+		return true;
+
+	if (StepTS + 0.0001 < NextV4FireTS)
+		return true;
+
+	bAlt = bWantsAlt && !bWantsPrimary;
+	Interval = V4FireInterval(bAlt);
+
+	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+		if (bServerSide)
+			HandleV4ServerFire(bAlt, StepView, StepLoc);
+		else
+			HandleV4ClientFire(bAlt, StepView, StepLoc);
+	} else if (bServerSide) {
+		V4HandleOutOfAmmo();
+	}
+
+	NextV4FireTS = StepTS + Interval;
+	return true;
+}
+
+simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
+	local Pawn PawnOwner;
+	local bbPlayer BP;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return;
+	BP = bbPlayer(PawnOwner);
+
+	bPointing = true;
+	if (bRapidFire || (FiringSpeed > 0))
+		PawnOwner.PlayRecoil(FiringSpeed);
+	if (Affector != none)
+		Affector.FireEffect();
+	if (PlayerPawn(Owner) != none)
+		PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
+
+	if (bAlt) {
+		PlayAltFiring();
+		if (BP != none && BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
+			SpawnClientSideRazorAlt(true, StepView, StepLoc);
+	} else {
+		PlayFiring();
+		if (BP != none && BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
+			SpawnClientSideRazor(true, StepView, StepLoc);
+	}
+}
+
+function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
+	local Pawn PawnOwner;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return;
+
+	DeterministicShotRot = StepView;
+	DeterministicShotLoc = StepLoc;
+	bUseDeterministicData = true;
+
+	AmmoType.UseAmmo(1);
+
+	bPointing = true;
+	if (bRapidFire || (FiringSpeed > 0))
+		PawnOwner.PlayRecoil(FiringSpeed);
+	if (Affector != none)
+		Affector.FireEffect();
+
+	if (bAlt) {
+		PlayAltFiring();
+		PlayOwnedSound(class'Razor2Alt'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+		SpawnServerRazorAlt();
+	} else {
+		PlayFiring();
+		PlayOwnedSound(class'Razor2'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+		SpawnServerRazor();
+	}
+
+	bUseDeterministicData = false;
+}
+
 function PostBeginPlay()
 {
 	Super.PostBeginPlay();
@@ -59,168 +223,6 @@ function PostBeginPlay()
 		break;
 }
 
-function bool IsPositionReasonable(vector ClientLoc)
-{
-	local vector Diff;
-
-	if (IsPingCompEnabled() && Mover(Owner.Base) != None)
-		return true;
-
-	Diff = ClientLoc - Owner.Location;
-	return (Diff dot Diff) < MAX_POSITION_ERROR_SQ;
-}
-
-// Server function called by client when firing
-function ServerExplicitFire(vector ClientLoc, rotator ClientRot, optional bool bIsSwitching)
-{
-	local PlayerPawn P;
-	
-	P = PlayerPawn(Owner);
-	if (P == None)
-		return;
-
-	if (!IsPingCompEnabled())
-		return;
-	
-	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) &&
-         (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
-	{
-		AmmoType.UseAmmo(1);
-
-		// Position validation - use server position if client position is unreasonable
-		if (bbPlayer(Owner) != None)
-			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-		if (IsPositionReasonable(ClientLoc))
-			ExplicitClientLoc = ClientLoc;
-		else
-			ExplicitClientLoc = Owner.Location;
-		
-		ExplicitClientRot = ClientRot;
-		bUseExplicitData = true;
-
-		P.PlayRecoil(FiringSpeed);
-		PlayOwnedSound(class'Razor2'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
-		if (Affector != None)
-			Affector.FireEffect();
-		SpawnServerRazor();
-		
-		bUseExplicitData = false;
-		bChangeWeapon = true;
-		GotoState('DownWeapon');
-		return;
-	}
-
-	if (bChangeWeapon || IsInState('DownWeapon'))
- 		return;
-
-	// Position validation - use server position if client position is unreasonable
-	if (bbPlayer(Owner) != None)
-		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	if (IsPositionReasonable(ClientLoc))
-		ExplicitClientLoc = ClientLoc;
-	else
-		ExplicitClientLoc = Owner.Location;
-	
-	ExplicitClientRot = ClientRot;
-	bUseExplicitData = true;
-
-	if (AmmoType == None)
-		GiveAmmo(P);
-
-	if (AmmoType != None && AmmoType.AmmoAmount > 0)
-	{
-		AmmoType.UseAmmo(1);
-		
-		bCanClientFire = true;
-		bPointing = True;
-		
-		P.PlayRecoil(FiringSpeed);
-		PlayFiring();
-		if (Affector != None)
-			Affector.FireEffect();
-		SpawnServerRazor();
-		GoToState('NormalFire');
-	}
-
-	bUseExplicitData = false;
-}
-
-// Server function called by client when alt firing
-function ServerExplicitAltFire(vector ClientLoc, rotator ClientRot, optional bool bIsSwitching)
-{
-	local PlayerPawn P;
-	
-	P = PlayerPawn(Owner);
-	if (P == None)
-		return;
-
-	if (!IsPingCompEnabled())
-		return;
-	
-	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) &&
-         (bIsSwitching || (P.PendingWeapon != None && P.PendingWeapon != self) || P.Weapon != self) )
-	{
-		AmmoType.UseAmmo(1);
-
-		// Position validation - use server position if client position is unreasonable
-		if (bbPlayer(Owner) != None)
-			ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-		if (IsPositionReasonable(ClientLoc))
-			ExplicitClientLoc = ClientLoc;
-		else
-			ExplicitClientLoc = Owner.Location;
-		
-		ExplicitClientRot = ClientRot;
-		bUseExplicitData = true;
-
-		P.PlayRecoil(FiringSpeed);
-		PlayOwnedSound(class'Razor2Alt'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
-		if (Affector != None)
-			Affector.FireEffect();
-		SpawnServerRazorAlt();
-		
-		bUseExplicitData = false;
-		bChangeWeapon = true;
-		GotoState('DownWeapon');
-		return;
-	}
-
-	if (bChangeWeapon || IsInState('DownWeapon'))
- 		return;
-
-	// Position validation - use server position if client position is unreasonable
-	if (bbPlayer(Owner) != None)
-		ClientLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	if (IsPositionReasonable(ClientLoc))
-		ExplicitClientLoc = ClientLoc;
-	else
-		ExplicitClientLoc = Owner.Location;
-
-	ExplicitClientRot = ClientRot;
-	bUseExplicitData = true;
-
-	if (AmmoType == None)
-		GiveAmmo(P);
-
-	if (AmmoType != None && AmmoType.AmmoAmount > 0)
-	{
-		AmmoType.UseAmmo(1);
-		
-		bCanClientFire = true;
-		bPointing = True;
-		
-		P.PlayRecoil(FiringSpeed);
-		PlayAltFiring();
-		if (Affector != None)
-			Affector.FireEffect();
-		SpawnServerRazorAlt();
-		GoToState('AltFiring');
-	}
-
-	bUseExplicitData = false;
-}
-
-// Server-side razor spawning (uses explicit client data when available)
 function SpawnServerRazor()
 {
 	local Vector Start, X, Y, Z;
@@ -233,10 +235,9 @@ function SpawnServerRazor()
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
 
-	// Use explicit client data if available
-	if (bUseExplicitData)
+	if (bUseDeterministicData)
 	{
-		AimRot = ExplicitClientRot;
+		AimRot = DeterministicShotRot;
 		if (Owner.IsA('PlayerPawn'))
 			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
 		else
@@ -244,9 +245,9 @@ function SpawnServerRazor()
 
 		GetAxes(AimRot, X, Y, Z);
 		if (bHideWeapon)
-			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
+			Start = DeterministicShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = DeterministicShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 	}
 	else
 	{
@@ -267,13 +268,11 @@ function SpawnServerRazor()
 
 	Razor = Spawn(class'ST_Razor2', Owner,, Start, AimRot);
 
-	// Apply ping compensation if enabled
 	if (bbP != None && IsPingCompEnabled()) {
 		WImp.SimulateProjectile(Razor, bbP.PingAverage);
 	}
 }
 
-// Server-side razor alt spawning (uses explicit client data when available)
 function SpawnServerRazorAlt()
 {
 	local Vector Start, X, Y, Z;
@@ -286,10 +285,9 @@ function SpawnServerRazorAlt()
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
 
-	// Use explicit client data if available
-	if (bUseExplicitData)
+	if (bUseDeterministicData)
 	{
-		AimRot = ExplicitClientRot;
+		AimRot = DeterministicShotRot;
 		if (Owner.IsA('PlayerPawn'))
 			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
 		else
@@ -297,9 +295,9 @@ function SpawnServerRazorAlt()
 
 		GetAxes(AimRot, X, Y, Z);
 		if (bHideWeapon)
-			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
+			Start = DeterministicShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = DeterministicShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 	}
 	else
 	{
@@ -320,7 +318,6 @@ function SpawnServerRazorAlt()
 
 	RazorAlt = Spawn(class'ST_Razor2Alt', Owner,, Start, AimRot);
 
-	// Apply ping compensation if enabled
 	if (bbP != None && IsPingCompEnabled()) {
 		WImp.SimulateProjectile(RazorAlt, bbP.PingAverage);
 	}
@@ -328,7 +325,7 @@ function SpawnServerRazorAlt()
 
 function Finish()
 {
-	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+	if (IsV4Active() && PlayerPawn(Owner) != None)
 	{
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
@@ -352,7 +349,7 @@ function Fire(float Value)
 
 	PawnOwner = Pawn(Owner);
 
-	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 
 	if (AmmoType == None)
@@ -376,7 +373,7 @@ function AltFire(float Value)
 
 	PawnOwner = Pawn(Owner);
 
-	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 
 	if (AmmoType == None)
@@ -394,134 +391,33 @@ function AltFire(float Value)
 	}
 }
 
-simulated function bool ClientFire(float Value)
-{
-	local Pawn PawnOwner;
-	local bbPlayer bbP;
-
+simulated function bool ClientFire(float Value) {
 	if (!bCanClientFire)
 		return false;
-
-	PawnOwner = Pawn(Owner);
-	
-	if (PawnOwner == None) 
+	if (Pawn(Owner) == none)
 		return false;
-
-	// if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-	//	return false;
-
-	if (IsPingCompEnabled())
-	{
-		bbP = bbPlayer(PawnOwner);
-
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
-		{
-			if (AmmoType == None && AmmoName != None)
-				GiveAmmo(PawnOwner);
-			
-			if (AmmoType != None && AmmoType.AmmoAmount > 0)
-			{
-				Instigator = PawnOwner;
-				
-				if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-				{
-					ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation, true);
-					return true;
-				}
-
-				GotoState('ClientFiring');
-				bPointing = True;
-
-				PawnOwner.PlayRecoil(FiringSpeed);
-				PlayFiring();
-
-				if (Affector != None)
-					Affector.FireEffect();
-
-				if (PlayerPawn(Owner) != None)
-					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
-
-				// Spawn client-side visuals if setting enabled
-				if (bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
-				{
-					SpawnClientSideRazor();
-				}
-
-				// Send explicit fire data to server
-				ServerExplicitFire(PawnOwner.Location, PawnOwner.ViewRotation);
-
-				return true;
-			}
-			return false;
-		}
-	}
-	
+	if (IsV4Active())
+		return true;
 	return Super.ClientFire(Value);
 }
 
-simulated function bool ClientAltFire(float Value)
-{
-	local Pawn PawnOwner;
-	local bbPlayer bbP;
-
+simulated function bool ClientAltFire(float Value) {
 	if (!bCanClientFire)
 		return false;
-
-	PawnOwner = Pawn(Owner);
-	
-	if (PawnOwner == None)
+	if (Pawn(Owner) == none)
 		return false;
-
-	// if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-	//	return false;
-
-	if (IsPingCompEnabled())
-	{
-		bbP = bbPlayer(PawnOwner);
-
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
-		{
-			if (AmmoType == None && AmmoName != None)
-				GiveAmmo(PawnOwner);
-			
-			if (AmmoType != None && AmmoType.AmmoAmount > 0)
-			{
-				Instigator = PawnOwner;
-				
-				if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-				{
-					ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation, true);
-					return true;
-				}
-
-				GotoState('ClientAltFiring');
-				bPointing = True;
-
-				PawnOwner.PlayRecoil(FiringSpeed);
-				PlayAltFiring();
-
-				if (Affector != None)
-					Affector.FireEffect();
-
-				if (PlayerPawn(Owner) != None)
-					PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
-
-				// Spawn client-side visuals if setting enabled
-				if (bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
-				{
-					SpawnClientSideRazorAlt();
-				}
-
-				// Send explicit fire data to server
-				ServerExplicitAltFire(PawnOwner.Location, PawnOwner.ViewRotation);
-
-				return true;
-			}
-			return false;
-		}
-	}
-	
+	if (IsV4Active())
+		return true;
 	return Super.ClientAltFire(Value);
+}
+
+function bool PutDown() {
+	local bbPlayer BP;
+	BP = bbPlayer(Owner);
+	if (BP != none)
+		BP.IGPlus_MarkDeterministicSwitchGuard();
+	bCanClientFire = false;
+	return Super.PutDown();
 }
 
 state ClientActive
@@ -533,13 +429,45 @@ state ClientActive
 	}
 }
 
-simulated function SpawnClientSideRazor()
+state ClientFiring
+{
+	simulated function AnimEnd()
+	{
+		if (IsV4Active()) {
+			PlayIdleAnim();
+			GotoState('');
+			return;
+		}
+		Super.AnimEnd();
+	}
+}
+
+state ClientAltFiring
+{
+	simulated function AnimEnd()
+	{
+		if (IsV4Active()) {
+			PlayIdleAnim();
+			GotoState('');
+			return;
+		}
+		Super.AnimEnd();
+	}
+}
+
+simulated function SpawnClientSideRazor(
+	optional bool bUseShotData,
+	optional rotator ShotView,
+	optional vector ShotLoc
+)
 {
 	local Pawn PawnOwner;
 	local vector X, Y, Z;
 	local vector Start;
 	local float Hand;
 	local bbPlayer bbP;
+	local rotator AimRot;
+	local vector AimLoc;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
@@ -551,15 +479,23 @@ simulated function SpawnClientSideRazor()
 		else
 			Hand = 1.0;
 
-		GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+		if (bUseShotData) {
+			AimRot = ShotView;
+			AimLoc = ShotLoc;
+		} else {
+			AimRot = PawnOwner.ViewRotation;
+			AimLoc = Owner.Location;
+		}
+
+		GetAxes(AimRot, X, Y, Z);
 		if (bHideWeapon)
-			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 		if (bbP != None)
 			Start.Z += bbP.GetMoverFireZOffset();
 
-		LocalRazor2Dummy = Spawn(class'ST_Razor2', Owner,, Start, PawnOwner.ViewRotation);
+		LocalRazor2Dummy = Spawn(class'ST_Razor2', Owner,, Start, AimRot);
 		LocalRazor2Dummy.RemoteRole = ROLE_None;
 		LocalRazor2Dummy.bClientVisualOnly = true;
 		LocalRazor2Dummy.SetCollision(false, false, false);
@@ -567,13 +503,19 @@ simulated function SpawnClientSideRazor()
 	}
 }
 
-simulated function SpawnClientSideRazorAlt()
+simulated function SpawnClientSideRazorAlt(
+	optional bool bUseShotData,
+	optional rotator ShotView,
+	optional vector ShotLoc
+)
 {
 	local Pawn PawnOwner;
 	local vector X, Y, Z;
 	local vector Start;
 	local float Hand;
 	local bbPlayer bbP;
+	local rotator AimRot;
+	local vector AimLoc;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
@@ -585,15 +527,23 @@ simulated function SpawnClientSideRazorAlt()
 		else
 			Hand = 1.0;
 
-		GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+		if (bUseShotData) {
+			AimRot = ShotView;
+			AimLoc = ShotLoc;
+		} else {
+			AimRot = PawnOwner.ViewRotation;
+			AimLoc = Owner.Location;
+		}
+
+		GetAxes(AimRot, X, Y, Z);
 		if (bHideWeapon)
-			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 		if (bbP != None)
 			Start.Z += bbP.GetMoverFireZOffset();
 
-		LocalRazor2AltDummy = Spawn(class'ST_Razor2Alt', Owner,, Start, PawnOwner.ViewRotation);
+		LocalRazor2AltDummy = Spawn(class'ST_Razor2Alt', Owner,, Start, AimRot);
 		LocalRazor2AltDummy.RemoteRole = ROLE_None;
 		LocalRazor2AltDummy.bClientVisualOnly = true;
 		LocalRazor2AltDummy.SetCollision(false, false, false);
@@ -601,7 +551,6 @@ simulated function SpawnClientSideRazorAlt()
 	}
 }
 
-// Idle state - prevents server from auto-firing when client is in control
 state Idle
 {
 	function BeginState()
@@ -612,10 +561,10 @@ state Idle
 			return;
 		}
 
-		if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
-		{
-			bPointing = false;
+		bPointing = false;
 
+		if (IsV4Active())
+		{
 			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
 				Pawn(Owner).SwitchToBestWeapon();
 
@@ -624,7 +573,6 @@ state Idle
 		}
 		else
 		{
-			bPointing = False;
 			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
 				Pawn(Owner).SwitchToBestWeapon();
 			if ( Pawn(Owner).bFire != 0 ) Fire(0.0);
@@ -636,7 +584,7 @@ state Idle
 
 	function AnimEnd()
 	{
-		if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+		if (IsV4Active())
 			PlayIdleAnim();
 		else
 			Super.AnimEnd();
@@ -649,7 +597,6 @@ state Idle
 	}
 }
 
-// Compatibility between client and server logic
 simulated function vector CalcDrawOffsetClient() {
 	local vector DrawOffset;
 	local Pawn PawnOwner;
@@ -661,13 +608,10 @@ simulated function vector CalcDrawOffsetClient() {
 
 	DrawOffset = CalcDrawOffset();
 	
-	// On client, make adjustments to match server
 	if (Level.NetMode == NM_Client) {
-		// Correct for EyeHeight differences
 		DrawOffset -= (PawnOwner.EyeHeight * vect(0,0,1));
 		DrawOffset += (PawnOwner.BaseEyeHeight * vect(0,0,1));
 	
-		// Remove WeaponBob, not applied on server
 		WeaponBob = BobDamping * PawnOwner.WalkBob;
 		WeaponBob.Z = (0.45 + 0.55 * BobDamping) * PawnOwner.WalkBob.Z;
 		DrawOffset -= WeaponBob;
