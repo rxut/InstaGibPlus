@@ -77,6 +77,8 @@ simulated function PostNetBeginPlay()
 			TL = ST_Translocator(InstigatingPlayer.Weapon);
 			if (TL != none && TL.TTarget_Client != none && TL.TTarget_Client.bDeleteMe == false)
 			{
+				SetLocation(TL.TTarget_Client.Location);
+
 				TL.TTarget_Client.Destroy();
 				TL.TTarget_Client = None;
 			}

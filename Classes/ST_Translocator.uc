@@ -148,9 +148,9 @@ simulated function ClientThrowTarget()
 	{
 		TTarget_Client.Master = self;
 		TTarget_Client.RemoteRole = ROLE_None;
-		TTarget_Client.Throw(bbP, MaxTossForce, Start);
 		TTarget_Client.bCollideWorld = false;
 		TTarget_Client.SetCollision(false, false, false);
+		TTarget_Client.Throw(bbP, MaxTossForce, Start);
 
 		// Backup removal of client disc
 		TTarget_Client.LifeSpan = Pawn(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
