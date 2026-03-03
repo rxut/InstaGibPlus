@@ -32,6 +32,16 @@ var bool bV4WasAltHeld;
 var bool bV4MoveInstantValid;
 var bool bV4MoveInstant;
 var int V4CachedChargeData;
+var bool bV4PrimaryTightWad;
+var bool bV4PrimaryCycleInstant;
+var int V4PrimaryCycleCharge;
+var int V4AltCycleCharge;
+var int V4PrimaryCycleAmmoBudget;
+var int V4AltCycleAmmoBudget;
+var bool bV4PrimaryReleaseArmed;
+var bool bV4AltReleaseArmed;
+var float V4PrimaryReleaseTS;
+var float V4AltReleaseTS;
 
 
 // Client-side offset correction
@@ -53,6 +63,79 @@ simulated function bool V4ShouldDebug() {
 simulated function V4SetMoveInstantMode(bool bValid, bool bInstant) {
 	bV4MoveInstantValid = bValid;
 	bV4MoveInstant = bInstant;
+}
+
+simulated function int V4HintCharge(optional int ChargeHint) {
+	return Clamp(ChargeHint, 0, 6);
+}
+
+simulated function int V4ResolveShotCharge(int CycleCharge, int ChargeHint) {
+	local int Hint;
+	Hint = V4HintCharge(ChargeHint);
+	if (CycleCharge > Hint)
+		Hint = CycleCharge;
+	return Clamp(Hint, 1, 6);
+}
+
+simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
+	if (bClearHeld)
+		bV4WasFireHeld = false;
+	bV4PrimaryCycleInstant = false;
+	V4PrimaryCycleCharge = 0;
+	V4PrimaryCycleAmmoBudget = 0;
+	bV4PrimaryTightWad = false;
+	bV4PrimaryReleaseArmed = false;
+	V4PrimaryReleaseTS = 0.0;
+}
+
+simulated function V4ResetAltCycle(optional bool bClearHeld) {
+	if (bClearHeld)
+		bV4WasAltHeld = false;
+	V4AltCycleCharge = 0;
+	V4AltCycleAmmoBudget = 0;
+	bV4AltReleaseArmed = false;
+	V4AltReleaseTS = 0.0;
+}
+
+simulated function int V4GetChargeDataForMove() {
+	local int Charge;
+	Charge = Clamp(V4CachedChargeData, 0, 7);
+	if ((IsInState('ClientFiring') || IsInState('ClientAltFiring')) && ClientRocketsLoaded > Charge)
+		Charge = Clamp(ClientRocketsLoaded, 0, 7);
+	return Charge;
+}
+
+simulated function bool V4ConsumeClientAmmo(int Amount) {
+	if (Amount <= 0)
+		return true;
+	if (AmmoType == none)
+		return false;
+	if (AmmoType.AmmoAmount <= 0) {
+		AmmoType.AmmoAmount = 0;
+		return false;
+	}
+	AmmoType.AmmoAmount = Max(0, AmmoType.AmmoAmount - Amount);
+	return true;
+}
+
+simulated function V4EnsureClientLoadState(bool bAltLoad) {
+	if (Role == ROLE_Authority || !IsV4Active())
+		return;
+	if (!bCanClientFire || Pawn(Owner) == none)
+		return;
+
+	if (bAltLoad) {
+		if (!IsInState('ClientAltFiring')) {
+			V4Log("[CLI] Kick ClientAltFiring Time="$Level.TimeSeconds);
+			GotoState('ClientAltFiring');
+		}
+		return;
+	}
+
+	if (!IsInState('ClientFiring')) {
+		V4Log("[CLI] Kick ClientFiring Time="$Level.TimeSeconds);
+		GotoState('ClientFiring');
+	}
 }
 
 replication
@@ -220,24 +303,33 @@ simulated function bool V4ProcessStep(
 	optional int V4ChargeData
 ) {
 	local int NumRockets;
+	local int MaxCycleRockets;
+	local bool bMoveInstant;
 
 	if (!bStepReadyHint && !IsDeterministicReady())
 		return true;
 
-	if (bV4MoveInstantValid)
-		bInstantRocket = bV4MoveInstant;
-	else if (TournamentPlayer(Owner) != none)
-		bInstantRocket = TournamentPlayer(Owner).bInstantRocket;
+	if (TournamentPlayer(Owner) != none)
+		bMoveInstant = TournamentPlayer(Owner).bInstantRocket;
+	else if (bV4MoveInstantValid)
+		bMoveInstant = bV4MoveInstant;
+	else
+		bMoveInstant = bInstantRocket;
+	if (bV4MoveInstantValid && TournamentPlayer(Owner) != none && bMoveInstant != bV4MoveInstant && V4ShouldDebug())
+		V4Log("[DBG] Instant mismatch move="$bV4MoveInstant$" owner="$bMoveInstant$" StepTS="$StepTS);
+	bInstantRocket = bMoveInstant;
 
 	// ── PRIMARY FIRE ──
 
-	// Rate limit: don't start a new fire cycle during cooldown
 	if (bFireHeld && !bV4WasFireHeld && StepTS + 0.0001 < NextV4FireTS)
 		return true;
 
-	// Rising edge: fire pressed
 	if (bFireHeld && !bV4WasFireHeld) {
-		if (bInstantRocket) {
+		V4ResetPrimaryCycle(false);
+		bV4WasAltHeld = false;
+		bV4PrimaryCycleInstant = bMoveInstant;
+		if (bV4PrimaryCycleInstant) {
+			V4PrimaryCycleCharge = 1;
 			if (bServerSide) {
 				V4Log("[SRV] Rising INSTANT fire StepTS="$StepTS$" View="$StepView.Pitch$","$StepView.Yaw$" NextV4Fire="$NextV4FireTS$" Ammo="$AmmoType.AmmoAmount);
 				if (AmmoType != none && AmmoType.AmmoAmount > 0)
@@ -248,19 +340,29 @@ simulated function bool V4ProcessStep(
 				HandleV4ClientFire();
 			}
 			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(1));
-		} else {
-			if (bServerSide) {
-				V4Log("[SRV] Rising LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData);
-				SetTimer(0, false);
+			} else {
+				if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
+					if (bServerSide)
+						V4HandleOutOfAmmo();
+					V4ResetPrimaryCycle(false);
+					return true;
+				}
 				V4LoadStartTS = StepTS;
+				V4PrimaryCycleAmmoBudget = Clamp(AmmoType.AmmoAmount, 0, 6);
+				V4PrimaryCycleCharge = V4ResolveShotCharge(0, V4ChargeData);
+				bV4PrimaryTightWad = bAltHeld;
+				if (!bServerSide)
+					V4EnsureClientLoadState(false);
+				if (bServerSide) {
+					V4Log("[SRV] Rising LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData$" Budget="$V4PrimaryCycleAmmoBudget);
+					SetTimer(0, false);
+				}
 			}
-		}
 		bV4WasFireHeld = true;
 		return true;
 	}
 
-	// Held instant: re-fire at intervals (both sides)
-	if (bFireHeld && bV4WasFireHeld && bInstantRocket) {
+	if (bFireHeld && bV4WasFireHeld && bV4PrimaryCycleInstant) {
 		if (StepTS + 0.0001 < NextV4FireTS)
 			return true;
 		if (bServerSide) {
@@ -276,88 +378,215 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	// Held loaded: auto-fire at 6 rockets
-	if (bFireHeld && bV4WasFireHeld && !bInstantRocket
-		&& V4ChargeData >= 6 && (StepTS - V4LoadStartTS) > 3.0) {
-		NumRockets = 6;
-		if (AmmoType != none)
-			NumRockets = Min(6, AmmoType.AmmoAmount);
-		if (bServerSide) {
-			V4Log("[SRV] Auto-fire 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4LoadStartTS$" elapsed="$(StepTS - V4LoadStartTS)$" rockets="$NumRockets);
-			if (NumRockets > 0)
-				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-			else
-				V4HandleOutOfAmmo();
-		} else {
-			HandleV4ClientLoadedFire(false, NumRockets);
+	if (bFireHeld && bV4WasFireHeld && !bV4PrimaryCycleInstant) {
+		if (!bServerSide)
+			V4EnsureClientLoadState(false);
+		if (bV4PrimaryReleaseArmed)
+			bV4PrimaryReleaseArmed = false;
+
+		if (bAltHeld)
+			bV4PrimaryTightWad = true;
+		if (V4HintCharge(V4ChargeData) > V4PrimaryCycleCharge)
+			V4PrimaryCycleCharge = V4HintCharge(V4ChargeData);
+		bV4WasAltHeld = false;
+
+		MaxCycleRockets = Clamp(V4PrimaryCycleAmmoBudget, 0, 6);
+		if (MaxCycleRockets <= 0 && AmmoType != none)
+			MaxCycleRockets = Clamp(AmmoType.AmmoAmount, 0, 6);
+
+		if (MaxCycleRockets <= 0) {
+			NumRockets = V4ResolveShotCharge(V4PrimaryCycleCharge, V4ChargeData);
+			if (bServerSide) {
+				V4Log("[SRV] Auto-fire EMPTY StepTS="$StepTS$" V4Charge="$V4ChargeData$" rockets="$NumRockets$" tight="$bV4PrimaryTightWad);
+				if (NumRockets > 0)
+					HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightWad);
+				else
+					V4HandleOutOfAmmo();
+			} else {
+				HandleV4ClientLoadedFire(false, NumRockets, bV4PrimaryTightWad);
+			}
+			V4ResetPrimaryCycle(true);
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			return true;
 		}
-		bV4WasFireHeld = false;
-		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+
+		if (MaxCycleRockets < 6 && V4PrimaryCycleCharge >= MaxCycleRockets) {
+			NumRockets = MaxCycleRockets;
+			if (bServerSide) {
+				V4Log("[SRV] Auto-fire CAP StepTS="$StepTS$" cap="$MaxCycleRockets$" V4Charge="$V4ChargeData$" rockets="$NumRockets$" tight="$bV4PrimaryTightWad);
+				if (NumRockets > 0)
+					HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightWad);
+				else
+					V4HandleOutOfAmmo();
+			} else {
+				HandleV4ClientLoadedFire(false, NumRockets, bV4PrimaryTightWad);
+			}
+			V4ResetPrimaryCycle(true);
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			return true;
+		}
+
+			if ((V4PrimaryCycleCharge >= 6 || V4HintCharge(V4ChargeData) >= 6)
+				&& (StepTS - V4LoadStartTS) > 3.0) {
+				NumRockets = 6;
+				if (MaxCycleRockets > 0)
+					NumRockets = Min(6, MaxCycleRockets);
+				if (bServerSide) {
+					V4Log("[SRV] Auto-fire 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4LoadStartTS$" elapsed="$(StepTS - V4LoadStartTS)$" rockets="$NumRockets$" tight="$bV4PrimaryTightWad);
+					if (NumRockets > 0)
+						HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightWad);
+				else
+					V4HandleOutOfAmmo();
+			} else {
+				HandleV4ClientLoadedFire(false, NumRockets, bV4PrimaryTightWad);
+			}
+			V4ResetPrimaryCycle(true);
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			return true;
+		}
 		return true;
 	}
 
-	// Falling edge: fire released → fire loaded rockets
 	if (!bFireHeld && bV4WasFireHeld) {
-		bV4WasFireHeld = false;
-		if (bInstantRocket)
+		if (bV4PrimaryCycleInstant) {
+			// Instant release should end held-edge tracking so a later
+			// release frame cannot execute non-instant falling-edge fire.
+			V4ResetPrimaryCycle(true);
 			return true;
-		NumRockets = Clamp(V4ChargeData, 1, 6);
+		}
+		// Ignore single-step held-input dips.
+		if (!bV4PrimaryReleaseArmed) {
+			bV4PrimaryReleaseArmed = true;
+			V4PrimaryReleaseTS = StepTS;
+			return true;
+		}
+		if (StepTS <= V4PrimaryReleaseTS + 0.0001)
+			return true;
+		bV4PrimaryReleaseArmed = false;
+		bV4WasFireHeld = false;
+		NumRockets = V4ResolveShotCharge(V4PrimaryCycleCharge, V4ChargeData);
+		if (V4PrimaryCycleAmmoBudget > 0)
+			NumRockets = Min(NumRockets, Clamp(V4PrimaryCycleAmmoBudget, 1, 6));
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 				NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
-				V4Log("[SRV] Falling edge FIRE StepTS="$StepTS$" V4Charge="$V4ChargeData$" rockets="$NumRockets$" View="$StepView.Pitch$","$StepView.Yaw);
-				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
+				V4Log("[SRV] Falling edge FIRE StepTS="$StepTS$" V4Charge="$V4ChargeData$" rockets="$NumRockets$" tight="$bV4PrimaryTightWad$" View="$StepView.Pitch$","$StepView.Yaw);
+				HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightWad);
 			} else {
 				V4HandleOutOfAmmo();
 			}
 		} else {
-			HandleV4ClientLoadedFire(false, NumRockets);
+			HandleV4ClientLoadedFire(false, NumRockets, bV4PrimaryTightWad);
 		}
+		V4ResetPrimaryCycle(false);
 		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
 		return true;
 	}
 
 	// ── ALT FIRE (GRENADES) ──
 
-	// Rate limit: don't start a new alt cycle during cooldown
 	if (bAltHeld && !bV4WasAltHeld && StepTS + 0.0001 < NextV4FireTS)
 		return true;
 
-	// Rising edge: alt pressed → start loading
 	if (bAltHeld && !bV4WasAltHeld) {
+		V4ResetAltCycle(false);
+		if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
+			if (bServerSide)
+				V4HandleOutOfAmmo();
+			V4ResetAltCycle(false);
+			return true;
+		}
+		V4AltLoadStartTS = StepTS;
+		V4AltCycleAmmoBudget = Clamp(AmmoType.AmmoAmount, 0, 6);
+		V4AltCycleCharge = V4ResolveShotCharge(0, V4ChargeData);
+		if (!bServerSide)
+			V4EnsureClientLoadState(true);
 		if (bServerSide) {
-			V4Log("[SRV] Rising ALT LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData);
+			V4Log("[SRV] Rising ALT LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData$" Budget="$V4AltCycleAmmoBudget);
 			SetTimer(0, false);
-			V4AltLoadStartTS = StepTS;
 		}
 		bV4WasAltHeld = true;
 		return true;
 	}
 
-	// Held alt: auto-fire at 6 grenades
-	if (bAltHeld && bV4WasAltHeld
-		&& V4ChargeData >= 6 && (StepTS - V4AltLoadStartTS) > 3.0) {
-		NumRockets = 6;
-		if (AmmoType != none)
-			NumRockets = Min(6, AmmoType.AmmoAmount);
-		if (bServerSide) {
-			V4Log("[SRV] Auto-fire ALT 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4AltLoadStartTS$" elapsed="$(StepTS - V4AltLoadStartTS)$" grenades="$NumRockets);
-			if (NumRockets > 0)
-				HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
-			else
-				V4HandleOutOfAmmo();
-		} else {
-			HandleV4ClientLoadedFire(true, NumRockets);
+	if (bAltHeld && bV4WasAltHeld) {
+		if (!bServerSide)
+			V4EnsureClientLoadState(true);
+		if (bV4AltReleaseArmed)
+			bV4AltReleaseArmed = false;
+		if (V4HintCharge(V4ChargeData) > V4AltCycleCharge)
+			V4AltCycleCharge = V4HintCharge(V4ChargeData);
+
+		MaxCycleRockets = Clamp(V4AltCycleAmmoBudget, 0, 6);
+		if (MaxCycleRockets <= 0 && AmmoType != none)
+			MaxCycleRockets = Clamp(AmmoType.AmmoAmount, 0, 6);
+
+		if (MaxCycleRockets <= 0) {
+			NumRockets = V4ResolveShotCharge(V4AltCycleCharge, V4ChargeData);
+			if (bServerSide) {
+				V4Log("[SRV] Auto-fire ALT EMPTY StepTS="$StepTS$" V4Charge="$V4ChargeData$" grenades="$NumRockets);
+				if (NumRockets > 0)
+					HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
+				else
+					V4HandleOutOfAmmo();
+			} else {
+				HandleV4ClientLoadedFire(true, NumRockets, false);
+			}
+			V4ResetAltCycle(true);
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			return true;
 		}
-		bV4WasAltHeld = false;
-		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+
+		if (MaxCycleRockets < 6 && V4AltCycleCharge >= MaxCycleRockets) {
+			NumRockets = MaxCycleRockets;
+			if (bServerSide) {
+				V4Log("[SRV] Auto-fire ALT CAP StepTS="$StepTS$" cap="$MaxCycleRockets$" V4Charge="$V4ChargeData$" grenades="$NumRockets);
+				if (NumRockets > 0)
+					HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
+				else
+					V4HandleOutOfAmmo();
+			} else {
+				HandleV4ClientLoadedFire(true, NumRockets, false);
+			}
+			V4ResetAltCycle(true);
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			return true;
+		}
+
+		if ((V4AltCycleCharge >= 6 || V4HintCharge(V4ChargeData) >= 6)
+			&& (StepTS - V4AltLoadStartTS) > 3.0) {
+			NumRockets = 6;
+			if (MaxCycleRockets > 0)
+				NumRockets = Min(6, MaxCycleRockets);
+			if (bServerSide) {
+				V4Log("[SRV] Auto-fire ALT 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4AltLoadStartTS$" elapsed="$(StepTS - V4AltLoadStartTS)$" grenades="$NumRockets);
+				if (NumRockets > 0)
+					HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
+				else
+					V4HandleOutOfAmmo();
+			} else {
+				HandleV4ClientLoadedFire(true, NumRockets, false);
+			}
+			V4ResetAltCycle(true);
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			return true;
+		}
 		return true;
 	}
 
-	// Falling edge: alt released → fire loaded grenades
 	if (!bAltHeld && bV4WasAltHeld) {
+		if (!bV4AltReleaseArmed) {
+			bV4AltReleaseArmed = true;
+			V4AltReleaseTS = StepTS;
+			return true;
+		}
+		if (StepTS <= V4AltReleaseTS + 0.0001)
+			return true;
+		bV4AltReleaseArmed = false;
 		bV4WasAltHeld = false;
-		NumRockets = Clamp(V4ChargeData, 1, 6);
+		NumRockets = V4ResolveShotCharge(V4AltCycleCharge, V4ChargeData);
+		if (V4AltCycleAmmoBudget > 0)
+			NumRockets = Min(NumRockets, Clamp(V4AltCycleAmmoBudget, 1, 6));
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 				NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
@@ -367,8 +596,9 @@ simulated function bool V4ProcessStep(
 				V4HandleOutOfAmmo();
 			}
 		} else {
-			HandleV4ClientLoadedFire(true, NumRockets);
+			HandleV4ClientLoadedFire(true, NumRockets, false);
 		}
+		V4ResetAltCycle(false);
 		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
 		return true;
 	}
@@ -383,7 +613,9 @@ simulated function bool V4ProcessStep(
 simulated function HandleV4ClientFire() {
 	local bbPlayer bbP;
 
-	if (AmmoType != None)
+	if (IsV4Active())
+		V4ConsumeClientAmmo(1);
+	else if (AmmoType != None)
 		AmmoType.AmmoAmount--;
 
 	V4CachedChargeData = 1;
@@ -405,13 +637,16 @@ simulated function HandleV4ClientFire() {
 // Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
 // Syncs ClientRocketsLoaded to the server's count before firing so both
 // sides agree on the number of rockets/grenades spawned.
-simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets) {
+simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
 	ClientRocketsLoaded = NumRockets;
 	V4CachedChargeData = NumRockets;
-	if (!bAlt && Pawn(Owner) != None && Pawn(Owner).bAltFire != 0)
-		bTightWad = true;
-	V4Log("[CLI] V4LoadedFire alt="$bAlt$" rockets="$NumRockets$" tight="$bTightWad$" Time="$Level.TimeSeconds);
+
+	// Use the same tightwad edge decision as the server step.
+	bTightWad = !bAlt && bTight;
+
+	V4Log("[CLI] V4LoadedFire alt="$bAlt$" rockets="$NumRockets$" tight="$bTightWad$" stepTight="$bTight$" Time="$Level.TimeSeconds);
 	FiringRockets();
+	bTightWad = false;
 }
 
 // Spawn rockets on the server using the deterministic data path in FireRockets.BeginState.
@@ -436,6 +671,12 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc, int NumRockets, bo
 		if (AmmoType.AmmoAmount < NumRockets)
 			NumRockets = AmmoType.AmmoAmount;
 		AmmoType.UseAmmo(NumRockets);
+	}
+	if (NumRockets <= 0) {
+		bUseV4ServerFireData = false;
+		bTightWad = false;
+		RocketsLoaded = 0;
+		return;
 	}
 
 	RocketsLoaded = NumRockets;
@@ -479,6 +720,12 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 		if (AmmoType.AmmoAmount < NumRockets)
 			NumRockets = AmmoType.AmmoAmount;
 		AmmoType.UseAmmo(NumRockets);
+	}
+	if (NumRockets <= 0) {
+		bUseV4ServerFireData = false;
+		bTightWad = false;
+		RocketsLoaded = 0;
+		return;
 	}
 
 	RocketsLoaded = NumRockets;
@@ -526,6 +773,9 @@ function ServerPlayLoadSound(int RocketNum, bool bIsRotate)
 
 function Finish()
 {
+	V4ResetPrimaryCycle(true);
+	V4ResetAltCycle(true);
+
 	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
 	{
 		if (bChangeWeapon)
@@ -800,11 +1050,25 @@ state FireRockets
 		local bool bUseStepFireData;
 
 		if (bCanClientFire == false)
+		{
+			bUseV4ServerFireData = false;
+			bTightWad = false;
+			RocketsLoaded = 0;
+			V4ResetPrimaryCycle(false);
+			V4ResetAltCycle(false);
 			return;
+		}
 			
 		PawnOwner = Pawn(Owner);
 		if (PawnOwner == None)
+		{
+			bUseV4ServerFireData = false;
+			bTightWad = false;
+			RocketsLoaded = 0;
+			V4ResetPrimaryCycle(false);
+			V4ResetAltCycle(false);
 			return;
+		}
 		
 		bbP = bbPlayer(PawnOwner);
 
@@ -1234,6 +1498,11 @@ simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
+	V4ResetPrimaryCycle(true);
+	V4ResetAltCycle(true);
+	bTightWad = false;
+	V4CachedChargeData = 0;
+	ClientRocketsLoaded = 0;
 	if ( !IsAnimating() || (AnimSequence != 'Select') )
 		PlayAnim('Select',GetWeaponSettings().EightballSelectAnimSpeed(),0.0);
 	Owner.PlaySound(SelectSound, SLOT_Misc, Pawn(Owner).SoundDampening);	
@@ -1341,6 +1610,7 @@ state ClientFiring
 			PlayLoading(1.1, ClientRocketsLoaded);
 			bRotated = false;
 			ClientRocketsLoaded++;
+			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 		}
 		else
 		{
@@ -1354,10 +1624,16 @@ state ClientFiring
 				FiringRockets();
 				return;
 			}
+			if (IsV4Active()) {
+				if (!V4ConsumeClientAmmo(1))
+					return;
+				if (AmmoType != None && AmmoType.AmmoAmount <= 0)
+					return;
+			}
 			Enable('Tick');
 			PlayRotating(ClientRocketsLoaded - 1);
 			bRotated = true;
-			if (AmmoType != None)
+			if (!IsV4Active() && AmmoType != None)
 				AmmoType.AmmoAmount--;
 		}
 	}
@@ -1377,8 +1653,16 @@ state ClientFiring
 		if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
 			ServerStartedLoading();
 
-		if (AmmoType != None)
+		if (IsV4Active()) {
+			if (!V4ConsumeClientAmmo(1)) {
+				ClientRocketsLoaded = 0;
+				V4CachedChargeData = 0;
+				GotoState('');
+				return;
+			}
+		} else if (AmmoType != None) {
 			AmmoType.AmmoAmount--;
+		}
 		
 		if ( bInstantRocket )
 		{
@@ -1399,6 +1683,7 @@ state ClientFiring
 	{
 		V4Log("[CLI] ClientFiring.End V4Cached was "$V4CachedChargeData$" -> 0 Time="$Level.TimeSeconds);
 		V4CachedChargeData = 0;
+		ClientRocketsLoaded = 0;
 		bClientDone = false;
 		bRotated = false;
 	}
@@ -1433,6 +1718,7 @@ state ClientAltFiring
 			PlayLoading(1.1, ClientRocketsLoaded);
 			bRotated = false;
 			ClientRocketsLoaded++;
+			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 		}
 		else
 		{
@@ -1444,10 +1730,16 @@ state ClientAltFiring
 				FiringRockets();
 				return;
 			}
+			if (IsV4Active()) {
+				if (!V4ConsumeClientAmmo(1))
+					return;
+				if (AmmoType != None && AmmoType.AmmoAmount <= 0)
+					return;
+			}
 			Enable('Tick');
 			PlayRotating(ClientRocketsLoaded - 1);
 			bRotated = true;
-			if (AmmoType != None)
+			if (!IsV4Active() && AmmoType != None)
 				AmmoType.AmmoAmount--;
 		}
 	}
@@ -1459,8 +1751,16 @@ state ClientAltFiring
 		if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
 			ServerStartedLoading();
 		
-		if (AmmoType != None)
+		if (IsV4Active()) {
+			if (!V4ConsumeClientAmmo(1)) {
+				ClientRocketsLoaded = 0;
+				V4CachedChargeData = 0;
+				GotoState('');
+				return;
+			}
+		} else if (AmmoType != None) {
 			AmmoType.AmmoAmount--;
+		}
 
 		ClientRocketsLoaded = 1;
 		V4CachedChargeData = 1;
@@ -1471,6 +1771,7 @@ state ClientAltFiring
 	simulated function EndState()
 	{
 		V4CachedChargeData = 0;
+		ClientRocketsLoaded = 0;
 		bClientDone = false;
 		bRotated = false;
 	}

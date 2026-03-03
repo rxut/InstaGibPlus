@@ -5236,7 +5236,7 @@ simulated function int IGPlus_GetV4ChargeData() {
 	local ST_ut_biorifle BR;
 	EB = ST_UT_Eightball(Weapon);
 	if (EB != none)
-		return EB.V4CachedChargeData;
+		return EB.V4GetChargeDataForMove();
 	BR = ST_ut_biorifle(Weapon);
 	if (BR != none)
 		return BR.V4CachedChargeData;
