@@ -14,6 +14,17 @@ var int V4PulseData;
 var Actor ClientBase;
 var int OldMoveData1;
 var int OldMoveData2;
+var bool bV4EightballShotPack;
+var int V4ShotSeq;
+var int V4ShotSliceIndex;
+var int V4ShotKind;
+var int V4ShotCharge;
+var bool bV4ShotInstant;
+var bool bV4ShotTight;
+var rotator V4ShotView;
+var int V4ShotDX;
+var int V4ShotDY;
+var int V4ShotDZ;
 
 var bool bDetReady;
 var int V4WeaponIndex;

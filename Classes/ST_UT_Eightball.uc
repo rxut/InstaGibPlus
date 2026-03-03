@@ -1,7 +1,10 @@
 // ===============================================================
-// Stats.ST_UT_Eightball: put your comment here
-//
-// Created by UClasses - (C) 2000-2001 by meltdown@thirdtower.com
+// Stats.ST_UT_Eightball
+// V4 deterministic fire for Eightball rocket launcher.
+// Edge-only design: server spawns rockets from rising/falling edge
+// detection in sub-steps; client runs the same edge logic as a
+// cooldown calculator (shared NextV4FireTS) while the legacy
+// ClientFiring state machine handles animations.
 // ===============================================================
 
 class ST_UT_Eightball extends UT_Eightball;
@@ -15,43 +18,21 @@ var rotator V4ServerFireRot;
 var bool bUseV4ServerFireData;
 
 const V4_PHASELOCK_MAX_OVERSHOOT = 0.060;
-const V4_PULSE_READY_EPSILON = 0.012;
-const V4_FIRE_PULSE_QUEUE_SIZE = 8;
 
 // Rate limiting to prevent rapid fire exploits
 var float LastClientFireTime;
 const FIRE_RATE_LIMIT = 0.25;
 
-
-// V4 deterministic fire
+// V4 deterministic fire — shared between client and server
 var float NextV4FireTS;
 var float V4LoadStartTS;
 var float V4AltLoadStartTS;
 var bool bV4WasFireHeld;
 var bool bV4WasAltHeld;
-var int V4QueuedFireHead;
-var int V4QueuedFireCount;
-var float V4QueuedFireTS[V4_FIRE_PULSE_QUEUE_SIZE];
-var int V4QueuedFireChargeData[V4_FIRE_PULSE_QUEUE_SIZE];
-var rotator V4QueuedFireView[V4_FIRE_PULSE_QUEUE_SIZE];
-var vector V4QueuedFireLoc[V4_FIRE_PULSE_QUEUE_SIZE];
-var byte V4QueuedFireTight[V4_FIRE_PULSE_QUEUE_SIZE];
-var bool bV4PendingFireSample;
-var bool bV4PendingAltSample;
-var float V4PendingFireSampleTS;
-var float V4PendingAltSampleTS;
-var rotator V4PendingFireSampleView;
-var rotator V4PendingAltSampleView;
-var vector V4PendingFireSampleLoc;
-var vector V4PendingAltSampleLoc;
-var int V4PendingFireSampleCycle;
-var int V4PendingAltSampleCycle;
-var int V4FireLoadCycle;
-var int V4AltLoadCycle;
 var bool bV4MoveInstantValid;
 var bool bV4MoveInstant;
 var int V4CachedChargeData;
-var float NextClientFireTS;
+
 
 // Client-side offset correction
 var float yMod;
@@ -121,25 +102,6 @@ simulated function bool UsesServerMoveV4() {
 	return !P.IGPlus_EnableInputReplication && int(Level.ServerMoveVersion) >= 4;
 }
 
-// Mark a deterministic fire pulse exactly when a client-side shot is executed.
-// This keeps ServerMove_v4 fire events tied to real shot time instead of
-// animation/input transitions that may not actually fire.
-simulated function V4MarkClientShot(bool bAlt) {
-	local bbPlayer P;
-	local int WeaponIndex;
-
-	if (Role == ROLE_Authority || !IsV4Active())
-		return;
-
-	P = bbPlayer(Owner);
-	if (P == none)
-		return;
-
-	WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
-	V4Log("[CLI] ShotPulse emitted alt="$bAlt$" Time="$Level.TimeSeconds$" WeaponIndex="$WeaponIndex$" State="$GetStateName());
-	P.IGPlus_MarkEightballShotPulse(bAlt);
-}
-
 simulated function bool IsDeterministicReady() {
 	local Pawn PawnOwner;
 
@@ -172,6 +134,13 @@ simulated function bool IsDeterministicReady() {
 	return true;
 }
 
+// No-op stub: bbPlayer still calls this when decoding shot-packs from moves.
+// Eightball no longer uses the auth-shot queue; edge detection handles fire.
+simulated function V4QueueAuthoritativeShot(
+	int Seq, int ShotKind, float ShotTS, rotator ShotView,
+	vector ShotLoc, int Charge, bool bInstant, bool bTight
+) {}
+
 function PostBeginPlay()
 {
 	Super.PostBeginPlay();
@@ -184,24 +153,18 @@ function PostBeginPlay()
 // V4 Deterministic Fire — Primary + Alt (Rockets + Grenades)
 // =========================================================================
 
-// Charge weapon pattern: server tracks held/falling edges for both fire modes.
-// Primary and alt both load then emit on release (or max-load auto-fire).
-// bInstantRocket affects primary only.
-
 // Post-fire cooldown matching the client's animation-driven cycle:
 // PlayRFiring tween (0.05s) + fire anim + PlayLoading tween (0.05s) + Load1 reload.
 //
 // From execPlayAnim: AnimEnd fires at AnimLast = 1.0 - 1.0/NumFrames.
 // Play duration = (NumFrames - 1) / (PlayAnimRate * Seq->Rate).
-// Tween duration = TweenTime (always exactly, per engine source).
 //
-// Fire frame counts from FireAnim[] → MESH SEQUENCE declarations:
+// Fire frame counts from FireAnim[] mesh sequences:
 //   [0]=Fire1(8f), [1]=Fire2(11f), [2]=Fire3(10f), [3]=Fire4(11f), [4]=Fire2(11f), [5]=Fire3(10f)
-//   All Fire anims: default Rate=30 (no RATE in MESH SEQUENCE).
-//   PlayRFiring TweenTime=0.05, PlayRate=0.54 (instant) / 0.6 (normal).
+//   All Fire anims: Rate=30. PlayRFiring TweenTime=0.05, PlayRate=0.54 (instant) / 0.6 (normal).
 //
 // Load1 reload: 7 frames, RATE=15, PlayAnimRate=1.0, TweenTime=0.05.
-//   Play duration = (7-1)/15 = 0.4s.  Total = 0.05 + 0.4 = 0.45s.
+//   Play duration = (7-1)/15 = 0.4s.
 simulated function float V4PostFireInterval(int NumRockets) {
 	local float FireFrames;
 	local float FirePlayRate;
@@ -215,12 +178,11 @@ simulated function float V4PostFireInterval(int NumRockets) {
 	else
 		FirePlayRate = 0.6;
 
-	// fire tween + fire play + load tween + load play
 	return 0.05 + (FireFrames - 1) / (30.0 * FirePlayRate) + 0.05 + 6.0 / 15.0;
 }
 
-// Keep cadence only when overshoot is tiny (sub-step/frame jitter).
-// Larger overshoots are real delays and must reset cooldown from fire time.
+// Advance cooldown with phase-lock for small overshoots (sub-step jitter).
+// Larger overshoots reset cooldown from the actual fire time.
 simulated function float V4AdvanceCooldown(float PrevNextTS, float FireTS, float Interval) {
 	local float Overshoot;
 
@@ -237,269 +199,14 @@ simulated function float V4AdvanceCooldown(float PrevNextTS, float FireTS, float
 	return FireTS + Interval;
 }
 
-simulated function string V4AimSource(bool bUsePulseAim) {
-	if (bUsePulseAim)
-		return "pulse";
-	return "fallback";
-}
-
-simulated function V4ClearQueuedPulses(optional string Reason) {
-	local int i;
-	local int idx;
-
-	if (Reason != "") {
-		for (i = 0; i < V4QueuedFireCount; i++) {
-			idx = (V4QueuedFireHead + i) % V4_FIRE_PULSE_QUEUE_SIZE;
-			V4Log("[SRV] Pulse dropped FIRE reason="$Reason$" queuedTS="$V4QueuedFireTS[idx]);
-		}
-	}
-
-	for (i = 0; i < V4_FIRE_PULSE_QUEUE_SIZE; i++) {
-		V4QueuedFireTS[i] = 0.0;
-		V4QueuedFireChargeData[i] = 0;
-		V4QueuedFireView[i] = rot(0,0,0);
-		V4QueuedFireLoc[i] = vect(0,0,0);
-		V4QueuedFireTight[i] = 0;
-	}
-	V4QueuedFireHead = 0;
-	V4QueuedFireCount = 0;
-}
-
-simulated function V4ClearPendingFireSample(optional string Reason) {
-	if (bV4PendingFireSample && Reason != "")
-		V4Log("[SRV] Pulse dropped FIRE reason="$Reason$" cycle="$V4PendingFireSampleCycle$" sampleTS="$V4PendingFireSampleTS);
-
-	bV4PendingFireSample = false;
-	V4PendingFireSampleTS = 0.0;
-	V4PendingFireSampleView = rot(0,0,0);
-	V4PendingFireSampleLoc = vect(0,0,0);
-	V4PendingFireSampleCycle = 0;
-}
-
-simulated function V4ClearPendingAltSample(optional string Reason) {
-	if (bV4PendingAltSample && Reason != "")
-		V4Log("[SRV] Pulse dropped ALT reason="$Reason$" cycle="$V4PendingAltSampleCycle$" sampleTS="$V4PendingAltSampleTS);
-
-	bV4PendingAltSample = false;
-	V4PendingAltSampleTS = 0.0;
-	V4PendingAltSampleView = rot(0,0,0);
-	V4PendingAltSampleLoc = vect(0,0,0);
-	V4PendingAltSampleCycle = 0;
-}
-
-simulated function V4ClearPendingSamples(optional string Reason) {
-	V4ClearPendingFireSample(Reason);
-	V4ClearPendingAltSample(Reason);
-}
-
-simulated function V4DropQueuedFireHead(string Reason, float StepTS) {
-	local int QIdx;
-
-	if (V4QueuedFireCount <= 0)
-		return;
-
-	QIdx = V4QueuedFireHead;
-	V4Log("[SRV] Pulse dropped FIRE reason="$Reason$" StepTS="$StepTS$" queuedTS="$V4QueuedFireTS[QIdx]$" NextV4FireTS="$NextV4FireTS$" depth="$V4QueuedFireCount);
-	V4QueuedFireTS[QIdx] = 0.0;
-	V4QueuedFireChargeData[QIdx] = 0;
-	V4QueuedFireView[QIdx] = rot(0,0,0);
-	V4QueuedFireLoc[QIdx] = vect(0,0,0);
-	V4QueuedFireTight[QIdx] = 0;
-	V4QueuedFireHead = (V4QueuedFireHead + 1) % V4_FIRE_PULSE_QUEUE_SIZE;
-	V4QueuedFireCount--;
-}
-
-simulated function V4QueuePulse(float StepTS, rotator StepView, vector StepLoc, int ChargeData, optional bool bTight) {
-	local int TailIdx;
-	local int DropIdx;
-	local int StoredCharge;
-
-	StoredCharge = Clamp(ChargeData, 1, 6);
-
-	if (V4QueuedFireCount >= V4_FIRE_PULSE_QUEUE_SIZE) {
-		DropIdx = V4QueuedFireHead;
-		V4Log("[SRV] Pulse dropped FIRE reason=queue-overflow dropTS="$V4QueuedFireTS[DropIdx]$" newTS="$StepTS);
-		V4QueuedFireHead = (V4QueuedFireHead + 1) % V4_FIRE_PULSE_QUEUE_SIZE;
-		V4QueuedFireCount--;
-	}
-
-	TailIdx = (V4QueuedFireHead + V4QueuedFireCount) % V4_FIRE_PULSE_QUEUE_SIZE;
-	V4QueuedFireTS[TailIdx] = StepTS;
-	V4QueuedFireChargeData[TailIdx] = StoredCharge;
-	V4QueuedFireView[TailIdx] = StepView;
-	V4QueuedFireLoc[TailIdx] = StepLoc;
-	if (bTight)
-		V4QueuedFireTight[TailIdx] = 1;
-	else
-		V4QueuedFireTight[TailIdx] = 0;
-	V4QueuedFireCount++;
-
-	V4Log("[SRV] Pulse queued FIRE StepTS="$StepTS$" NextV4FireTS="$NextV4FireTS$" charge="$StoredCharge$" tight="$bTight$" depth="$V4QueuedFireCount);
-}
-
-simulated function V4QueueReleaseSample(
-	bool bAlt,
-	float StepTS,
-	rotator StepView,
-	vector StepLoc,
-	int LoadCycle,
-	bool bLoadActive,
-	bool bHeldNow,
-	bool bAllowHeldPulse
-) {
-	if (bAlt) {
-		if (!bLoadActive || LoadCycle <= 0) {
-			V4Log("[SRV] Pulse ignored ALT reason=invalid StepTS="$StepTS$" cycle="$LoadCycle$" held="$bHeldNow);
-			return;
-		}
-		if (bHeldNow && !bAllowHeldPulse) {
-			V4Log("[SRV] Pulse ignored ALT reason=held StepTS="$StepTS$" cycle="$LoadCycle);
-			return;
-		}
-		if (bV4PendingAltSample)
-			V4Log("[SRV] Pulse dropped ALT reason=replace oldCycle="$V4PendingAltSampleCycle$" newCycle="$LoadCycle$" oldTS="$V4PendingAltSampleTS$" newTS="$StepTS);
-		bV4PendingAltSample = true;
-		V4PendingAltSampleTS = StepTS;
-		V4PendingAltSampleView = StepView;
-		V4PendingAltSampleLoc = StepLoc;
-		V4PendingAltSampleCycle = LoadCycle;
-		V4Log("[SRV] Pulse queued ALT StepTS="$StepTS$" cycle="$LoadCycle$" held="$bHeldNow);
-		return;
-	}
-
-	if (!bLoadActive || LoadCycle <= 0) {
-		V4Log("[SRV] Pulse ignored FIRE reason=invalid StepTS="$StepTS$" cycle="$LoadCycle$" held="$bHeldNow);
-		return;
-	}
-	if (bHeldNow && !bAllowHeldPulse) {
-		V4Log("[SRV] Pulse ignored FIRE reason=held StepTS="$StepTS$" cycle="$LoadCycle);
-		return;
-	}
-	if (bV4PendingFireSample)
-		V4Log("[SRV] Pulse dropped FIRE reason=replace oldCycle="$V4PendingFireSampleCycle$" newCycle="$LoadCycle$" oldTS="$V4PendingFireSampleTS$" newTS="$StepTS);
-	bV4PendingFireSample = true;
-	V4PendingFireSampleTS = StepTS;
-	V4PendingFireSampleView = StepView;
-	V4PendingFireSampleLoc = StepLoc;
-	V4PendingFireSampleCycle = LoadCycle;
-	V4Log("[SRV] Pulse queued FIRE StepTS="$StepTS$" cycle="$LoadCycle$" held="$bHeldNow);
-}
-
-simulated function bool V4TryConsumeReleaseSample(
-	bool bAlt,
-	int ExpectedCycle,
-	out rotator OutView,
-	out vector OutLoc,
-	out float OutSampleTS
-) {
-	OutSampleTS = 0.0;
-
-	if (bAlt) {
-		if (!bV4PendingAltSample)
-			return false;
-		if (V4PendingAltSampleCycle != ExpectedCycle) {
-			V4Log("[SRV] Pulse ignored ALT reason=stale-cycle expected="$ExpectedCycle$" got="$V4PendingAltSampleCycle$" sampleTS="$V4PendingAltSampleTS);
-			V4ClearPendingAltSample("stale-cycle");
-			return false;
-		}
-		OutView = V4PendingAltSampleView;
-		OutLoc = V4PendingAltSampleLoc;
-		OutSampleTS = V4PendingAltSampleTS;
-		V4Log("[SRV] Pulse consumed ALT cycle="$ExpectedCycle$" sampleTS="$V4PendingAltSampleTS);
-		V4ClearPendingAltSample();
-		return true;
-	}
-
-	if (!bV4PendingFireSample)
-		return false;
-	if (V4PendingFireSampleCycle != ExpectedCycle) {
-		V4Log("[SRV] Pulse ignored FIRE reason=stale-cycle expected="$ExpectedCycle$" got="$V4PendingFireSampleCycle$" sampleTS="$V4PendingFireSampleTS);
-		V4ClearPendingFireSample("stale-cycle");
-		return false;
-	}
-	OutView = V4PendingFireSampleView;
-	OutLoc = V4PendingFireSampleLoc;
-	OutSampleTS = V4PendingFireSampleTS;
-	V4Log("[SRV] Pulse consumed FIRE cycle="$ExpectedCycle$" sampleTS="$V4PendingFireSampleTS);
-	V4ClearPendingFireSample();
-	return true;
-}
-
-simulated function V4ConsumeQueuedFire(float StepTS) {
-	local int NumRockets;
-	local float CooldownAnchorTS;
-	local int QIdx;
-
-	if (V4QueuedFireCount <= 0)
-		return;
-
-	QIdx = V4QueuedFireHead;
-	NumRockets = Clamp(V4QueuedFireChargeData[QIdx], 1, 6);
-	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
-		NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
-		V4Log("[SRV] Pulse consumed FIRE StepTS="$StepTS$" queuedTS="$V4QueuedFireTS[QIdx]$" charge="$V4QueuedFireChargeData[QIdx]$" rockets="$NumRockets$" NextV4FireTS="$NextV4FireTS$" depth="$V4QueuedFireCount);
-		HandleV4ServerFire(V4QueuedFireView[QIdx], V4QueuedFireLoc[QIdx], NumRockets, V4QueuedFireTight[QIdx] != 0);
-		CooldownAnchorTS = StepTS;
-		if (V4QueuedFireTS[QIdx] > 0.0)
-			CooldownAnchorTS = V4QueuedFireTS[QIdx];
-		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, CooldownAnchorTS, V4PostFireInterval(NumRockets));
-		V4Log("[SRV] NextV4FireTS set to "$NextV4FireTS$" (interval="$V4PostFireInterval(NumRockets)$" anchor="$CooldownAnchorTS$")");
-	} else {
-		V4Log("[SRV] Pulse dropped FIRE reason=no-ammo StepTS="$StepTS$" queuedTS="$V4QueuedFireTS[QIdx]);
-		V4HandleOutOfAmmo();
-	}
-
-	V4QueuedFireTS[QIdx] = 0.0;
-	V4QueuedFireChargeData[QIdx] = 0;
-	V4QueuedFireView[QIdx] = rot(0,0,0);
-	V4QueuedFireLoc[QIdx] = vect(0,0,0);
-	V4QueuedFireTight[QIdx] = 0;
-	V4QueuedFireHead = (V4QueuedFireHead + 1) % V4_FIRE_PULSE_QUEUE_SIZE;
-	V4QueuedFireCount--;
-	bV4WasFireHeld = false;
-}
-
-simulated function bool V4HandleQueuedPrimaryPulse(float StepTS) {
-	local bool bCooldownReady;
-	local float ReadyGap;
-	local int QIdx;
-
-	if (V4QueuedFireCount <= 0)
-		return false;
-
-	// Instant primary: consume pulse shots first, but drop delayed stale pulses
-	// that have already missed their cooldown slot (fallback held-fire may have
-	// produced the authoritative shot for that slot already).
-	if (bInstantRocket) {
-		while (V4QueuedFireCount > 0) {
-			QIdx = V4QueuedFireHead;
-			if (NextV4FireTS > 0.0
-				&& V4QueuedFireTS[QIdx] > 0.0
-				&& (V4QueuedFireTS[QIdx] + V4_PULSE_READY_EPSILON < NextV4FireTS)) {
-				V4DropQueuedFireHead("stale-instant", StepTS);
-				continue;
-			}
-
-			V4ConsumeQueuedFire(StepTS);
-			return true;
-		}
-		return false;
-	}
-
-	QIdx = V4QueuedFireHead;
-	bCooldownReady = (StepTS + V4_PULSE_READY_EPSILON >= NextV4FireTS);
-	if (!bCooldownReady && V4QueuedFireTS[QIdx] > 0.0)
-		bCooldownReady = (V4QueuedFireTS[QIdx] + V4_PULSE_READY_EPSILON >= NextV4FireTS);
-	if (!bCooldownReady) {
-		ReadyGap = NextV4FireTS - StepTS;
-		V4Log("[SRV] Pulse queued wait StepTS="$StepTS$" queuedTS="$V4QueuedFireTS[QIdx]$" NextV4FireTS="$NextV4FireTS$" gap="$ReadyGap$" eps="$V4_PULSE_READY_EPSILON$" depth="$V4QueuedFireCount);
-		return false;
-	}
-
-	V4ConsumeQueuedFire(StepTS);
-	return true;
-}
-
+// =========================================================================
+// V4ProcessStep — runs on BOTH client and server
+//
+// Server (bServerSide=true): spawns authoritative rockets via HandleV4ServerFire.
+// Client (bServerSide=false): only tracks edge state and sets NextV4FireTS.
+//   The client state machine (ClientFiring/ClientReload) handles animations
+//   and visual rockets. NextV4FireTS gates re-fire in ClientReload.
+// =========================================================================
 simulated function bool V4ProcessStep(
 	float StepTS,
 	rotator StepView,
@@ -512,30 +219,9 @@ simulated function bool V4ProcessStep(
 	optional bool bStepReadyHint,
 	optional int V4ChargeData
 ) {
-	local bool bWantsFire;
-	local bool bWantsAlt;
-	local bool bPulseConsumed;
-	local bool bUsePulseAim;
-	local rotator FireAimView;
-	local vector FireAimLoc;
 	local int NumRockets;
-	local bool bAllowHeldPulse;
-	local bool bHandledNoCyclePulse;
-	local float PulseSampleTS;
-	local float CooldownAnchorTS;
 
-	if (!bStepReadyHint && !IsDeterministicReady()) {
-		V4ClearQueuedPulses("not-ready");
-		V4ClearPendingSamples("not-ready");
-		return true;
-	}
-
-	// Client state machine (ClientFiring) handles all client-side fire
-	// visuals and animation timing. V4 only controls server-side fire.
-	// Running V4 on both sides causes timestamp divergence because the
-	// server fires at sub-step granularity while the client fires at
-	// move-end granularity, compounding a ~22ms drift per fire cycle.
-	if (!bServerSide)
+	if (!bStepReadyHint && !IsDeterministicReady())
 		return true;
 
 	if (bV4MoveInstantValid)
@@ -543,247 +229,189 @@ simulated function bool V4ProcessStep(
 	else if (TournamentPlayer(Owner) != none)
 		bInstantRocket = TournamentPlayer(Owner).bInstantRocket;
 
-	if (bForceFire) {
+	// ── PRIMARY FIRE ──
+
+	// Rate limit: don't start a new fire cycle during cooldown
+	if (bFireHeld && !bV4WasFireHeld && StepTS + 0.0001 < NextV4FireTS)
+		return true;
+
+	// Rising edge: fire pressed
+	if (bFireHeld && !bV4WasFireHeld) {
 		if (bInstantRocket) {
-			V4QueuePulse(StepTS, StepView, StepLoc, V4ChargeData, bAltHeld);
-		} else {
-			if (bV4WasFireHeld || bFireHeld) {
-				bAllowHeldPulse = (V4ChargeData >= 6) && ((StepTS - V4LoadStartTS) > 3.0);
-				V4QueueReleaseSample(false, StepTS, StepView, StepLoc, V4FireLoadCycle, true, bFireHeld, bAllowHeldPulse);
-			} else {
-				// Collapsed quick-tap/reload-queued shot: release pulse can arrive
-				// without an observable held interval in the move timeline.
-				NumRockets = Clamp(Max(1, V4ChargeData), 1, 6);
-				if (StepTS + 0.0001 < NextV4FireTS) {
-					V4Log("[SRV] Pulse queued FIRE reason=no-cycle-cooldown StepTS="$StepTS$" charge="$NumRockets$" NextV4FireTS="$NextV4FireTS);
-					V4QueuePulse(StepTS, StepView, StepLoc, NumRockets, bAltHeld);
-				} else {
-					V4Log("[SRV] Pulse fire FIRE reason=no-cycle-release StepTS="$StepTS$" charge="$NumRockets$" NextV4FireTS="$NextV4FireTS);
-					if (AmmoType != none && AmmoType.AmmoAmount > 0) {
-						NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
-						HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-						NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
-					} else {
-						V4HandleOutOfAmmo();
-					}
-					bV4WasFireHeld = false;
-					bHandledNoCyclePulse = true;
-				}
-			}
-		}
-	}
-	if (bForceAlt) {
-		if (bV4WasAltHeld || bAltHeld) {
-			bAllowHeldPulse = (V4ChargeData >= 6) && ((StepTS - V4AltLoadStartTS) > 3.0);
-			V4QueueReleaseSample(true, StepTS, StepView, StepLoc, V4AltLoadCycle, true, bAltHeld, bAllowHeldPulse);
-		} else {
-			NumRockets = Clamp(Max(1, V4ChargeData), 1, 6);
-			if (StepTS + 0.0001 < NextV4FireTS) {
-				V4Log("[SRV] Pulse ignored ALT reason=no-cycle-cooldown StepTS="$StepTS$" charge="$NumRockets$" NextV4FireTS="$NextV4FireTS);
-			} else {
-				V4Log("[SRV] Pulse fire ALT reason=no-cycle-release StepTS="$StepTS$" charge="$NumRockets$" NextV4FireTS="$NextV4FireTS);
-				if (AmmoType != none && AmmoType.AmmoAmount > 0) {
-					NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
-					HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
-					NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
-				} else {
+			if (bServerSide) {
+				V4Log("[SRV] Rising INSTANT fire StepTS="$StepTS$" View="$StepView.Pitch$","$StepView.Yaw$" NextV4Fire="$NextV4FireTS$" Ammo="$AmmoType.AmmoAmount);
+				if (AmmoType != none && AmmoType.AmmoAmount > 0)
+					HandleV4ServerFire(StepView, StepLoc, 1, bAltHeld);
+				else
 					V4HandleOutOfAmmo();
-				}
-				bV4WasAltHeld = false;
-				bHandledNoCyclePulse = true;
+			} else {
+				HandleV4ClientFire();
+			}
+			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(1));
+		} else {
+			if (bServerSide) {
+				V4Log("[SRV] Rising LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData);
+				SetTimer(0, false);
+				V4LoadStartTS = StepTS;
 			}
 		}
+		bV4WasFireHeld = true;
+		return true;
 	}
-	if (bHandledNoCyclePulse)
-		return true;
 
-	bPulseConsumed = V4HandleQueuedPrimaryPulse(StepTS);
-	if (bPulseConsumed || V4QueuedFireCount > 0)
-		return true;
-
-	// Instant mode: keep held-fire fallback active so base hold behavior
-	// (continuous refire) still works if pulse events are missing/delayed.
-	// Pulse shots are still prioritized above via V4HandleQueuedPrimaryPulse().
-	if (bInstantRocket)
-		bWantsFire = bFireHeld;
-	else
-		bWantsFire = bFireHeld;
-	bWantsAlt = bAltHeld;
-
-	// Rate limit: prevent re-fire during cooldown.
-	// Don't log here — this fires on every sub-step while the player
-	// holds fire during cooldown, producing 80-100 Log() calls per
-	// cycle and causing server-side I/O stalls (movement rubber-banding).
-	if (bWantsFire && !bV4WasFireHeld && StepTS + 0.0001 < NextV4FireTS)
-		return true;
-	if (bWantsAlt && !bV4WasAltHeld && StepTS + 0.0001 < NextV4FireTS)
-		return true;
-
-	// Rising edge: fire button pressed
-	if (bWantsFire && !bV4WasFireHeld) {
-		if (bInstantRocket) {
-			// Instant mode: fire 1 rocket immediately
-			V4Log("[SRV] Rising INSTANT fire StepTS="$StepTS$" View="$StepView.Pitch$","$StepView.Yaw$" NextV4Fire="$NextV4FireTS$" Ammo="$AmmoType.AmmoAmount);
+	// Held instant: re-fire at intervals (both sides)
+	if (bFireHeld && bV4WasFireHeld && bInstantRocket) {
+		if (StepTS + 0.0001 < NextV4FireTS)
+			return true;
+		if (bServerSide) {
+			V4Log("[SRV] Held INSTANT fire StepTS="$StepTS$" View="$StepView.Pitch$","$StepView.Yaw$" Ammo="$AmmoType.AmmoAmount);
 			if (AmmoType != none && AmmoType.AmmoAmount > 0)
 				HandleV4ServerFire(StepView, StepLoc, 1, bAltHeld);
 			else
 				V4HandleOutOfAmmo();
-			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(1));
-			V4Log("[SRV] NextV4FireTS set to "$NextV4FireTS$" (interval="$V4PostFireInterval(1)$")");
-			} else {
-				// Normal mode: stop acquiring new lock-on targets, record load start.
-				// NextV4FireTS is set at the falling edge (when rockets fire), not
-				// here, so it uses the actual rocket count for the interval and
-				// anchors at the same point as the client's FiringRockets().
-				V4Log("[SRV] Rising LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData);
-				SetTimer(0, false);
-				V4LoadStartTS = StepTS;
-				V4FireLoadCycle++;
-				V4ClearPendingFireSample("new-cycle");
-			}
-			bV4WasFireHeld = true;
-			return true;
-	}
-
-	// Held fire: re-fire at intervals for instant rockets
-	if (bWantsFire && bV4WasFireHeld && bInstantRocket) {
-		if (StepTS + 0.0001 < NextV4FireTS)
-			return true;
-		V4Log("[SRV] Held INSTANT fire StepTS="$StepTS$" View="$StepView.Pitch$","$StepView.Yaw$" Ammo="$AmmoType.AmmoAmount);
-		if (AmmoType != none && AmmoType.AmmoAmount > 0)
-			HandleV4ServerFire(StepView, StepLoc, 1, bAltHeld);
-		else
-			V4HandleOutOfAmmo();
+		} else {
+			HandleV4ClientFire();
+		}
 		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(1));
-		V4Log("[SRV] NextV4FireTS set to "$NextV4FireTS);
 		return true;
 	}
 
-	// Held fire: non-instant, auto-fire when max rockets loaded.
-	// Client auto-fires via AnimEnd when ClientRocketsLoaded==6 even
-	// while fire is still held, so the server must also fire when
-	// V4ChargeData signals a full load.
-	// Timestamp guard: loading 6 rockets takes ~4.4s on the client
-	// (9 rotate/load anims at 0.45s each + Load6 at 0.38s).
-	// Require at least 3.0s since the rising edge to reject stale
-	// V4ChargeData left over from a previous fire cycle.
-		if (bWantsFire && bV4WasFireHeld && !bInstantRocket
-			&& V4ChargeData >= 6 && (StepTS - V4LoadStartTS) > 3.0) {
-				NumRockets = 6;
-				if (AmmoType != none)
-					NumRockets = Min(6, AmmoType.AmmoAmount);
-				FireAimView = Pawn(Owner).ViewRotation;
-				FireAimLoc = StepLoc;
-				bUsePulseAim = V4TryConsumeReleaseSample(false, V4FireLoadCycle, FireAimView, FireAimLoc, PulseSampleTS);
-				V4Log("[SRV] Auto-fire 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4LoadStartTS$" elapsed="$(StepTS - V4LoadStartTS)$" rockets="$NumRockets$" AimSrc="$V4AimSource(bUsePulseAim)$" cycle="$V4FireLoadCycle);
-				if (NumRockets > 0)
-					HandleV4ServerFire(FireAimView, FireAimLoc, NumRockets, bAltHeld);
-				else
-					V4HandleOutOfAmmo();
-				bV4WasFireHeld = false;
-				CooldownAnchorTS = StepTS;
-				if (bUsePulseAim && PulseSampleTS > 0.0)
-					CooldownAnchorTS = PulseSampleTS;
-				NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, CooldownAnchorTS, V4PostFireInterval(NumRockets));
-				return true;
-			}
-
-	// Falling edge: fire button released → fire loaded rockets
-	if (!bWantsFire && bV4WasFireHeld) {
-		bV4WasFireHeld = false;
-		// Instant mode already fired on press
-		if (bInstantRocket) {
-			V4Log("[SRV] Falling edge INSTANT (skip) StepTS="$StepTS);
-			return true;
-		}
-
-			NumRockets = Clamp(V4ChargeData, 1, 6);
-			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
-					NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
-					FireAimView = Pawn(Owner).ViewRotation;
-					FireAimLoc = StepLoc;
-					bUsePulseAim = V4TryConsumeReleaseSample(false, V4FireLoadCycle, FireAimView, FireAimLoc, PulseSampleTS);
-				// Use the move's end-of-frame ViewRotation instead of the
-				// interpolated sub-step view.  The falling edge fires at
-				// the first sub-step (T=0 → ViewStart = previous move's
-			// end view), but the client fires at Tick time using the
-				// current frame's ViewRotation (≈ move's end view).
-				// Pawn.ViewRotation is set to SM.View before sub-step
-				// processing, so it matches the client's fire-time view.
-					V4Log("[SRV] Falling edge FIRE StepTS="$StepTS$" V4Charge="$V4ChargeData$" rockets="$NumRockets$" View="$FireAimView.Pitch$","$FireAimView.Yaw$" StepV="$StepView.Pitch$","$StepView.Yaw$" AimSrc="$V4AimSource(bUsePulseAim)$" cycle="$V4FireLoadCycle);
-					HandleV4ServerFire(FireAimView, FireAimLoc, NumRockets, bAltHeld);
-					// Set cooldown using the actual rocket count. This matches
-					// the client's FiringRockets(ClientRocketsLoaded) interval.
-					CooldownAnchorTS = StepTS;
-					if (bUsePulseAim && PulseSampleTS > 0.0)
-						CooldownAnchorTS = PulseSampleTS;
-					NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, CooldownAnchorTS, V4PostFireInterval(NumRockets));
-				V4Log("[SRV] NextV4FireTS set to "$NextV4FireTS$" (interval="$V4PostFireInterval(NumRockets)$" anchor="$CooldownAnchorTS$")");
-			} else {
-				V4Log("[SRV] Falling edge NO AMMO StepTS="$StepTS);
+	// Held loaded: auto-fire at 6 rockets
+	if (bFireHeld && bV4WasFireHeld && !bInstantRocket
+		&& V4ChargeData >= 6 && (StepTS - V4LoadStartTS) > 3.0) {
+		NumRockets = 6;
+		if (AmmoType != none)
+			NumRockets = Min(6, AmmoType.AmmoAmount);
+		if (bServerSide) {
+			V4Log("[SRV] Auto-fire 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4LoadStartTS$" elapsed="$(StepTS - V4LoadStartTS)$" rockets="$NumRockets);
+			if (NumRockets > 0)
+				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
+			else
 				V4HandleOutOfAmmo();
+		} else {
+			HandleV4ClientLoadedFire(false, NumRockets);
 		}
-			return true;
-		}
+		bV4WasFireHeld = false;
+		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+		return true;
+	}
 
-	// Rising edge: alt fire button pressed
-	if (bWantsAlt && !bV4WasAltHeld) {
-		V4Log("[SRV] Rising ALT LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData);
-		SetTimer(0, false);
-		V4AltLoadStartTS = StepTS;
-		V4AltLoadCycle++;
-		V4ClearPendingAltSample("new-cycle");
+	// Falling edge: fire released → fire loaded rockets
+	if (!bFireHeld && bV4WasFireHeld) {
+		bV4WasFireHeld = false;
+		if (bInstantRocket)
+			return true;
+		NumRockets = Clamp(V4ChargeData, 1, 6);
+		if (bServerSide) {
+			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+				NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
+				V4Log("[SRV] Falling edge FIRE StepTS="$StepTS$" V4Charge="$V4ChargeData$" rockets="$NumRockets$" View="$StepView.Pitch$","$StepView.Yaw);
+				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
+			} else {
+				V4HandleOutOfAmmo();
+			}
+		} else {
+			HandleV4ClientLoadedFire(false, NumRockets);
+		}
+		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+		return true;
+	}
+
+	// ── ALT FIRE (GRENADES) ──
+
+	// Rate limit: don't start a new alt cycle during cooldown
+	if (bAltHeld && !bV4WasAltHeld && StepTS + 0.0001 < NextV4FireTS)
+		return true;
+
+	// Rising edge: alt pressed → start loading
+	if (bAltHeld && !bV4WasAltHeld) {
+		if (bServerSide) {
+			V4Log("[SRV] Rising ALT LOAD start StepTS="$StepTS$" V4Charge="$V4ChargeData);
+			SetTimer(0, false);
+			V4AltLoadStartTS = StepTS;
+		}
 		bV4WasAltHeld = true;
 		return true;
 	}
 
-	// Held alt: auto-fire when max grenades are loaded.
-	if (bWantsAlt && bV4WasAltHeld
+	// Held alt: auto-fire at 6 grenades
+	if (bAltHeld && bV4WasAltHeld
 		&& V4ChargeData >= 6 && (StepTS - V4AltLoadStartTS) > 3.0) {
 		NumRockets = 6;
 		if (AmmoType != none)
 			NumRockets = Min(6, AmmoType.AmmoAmount);
-		FireAimView = Pawn(Owner).ViewRotation;
-		FireAimLoc = StepLoc;
-		bUsePulseAim = V4TryConsumeReleaseSample(true, V4AltLoadCycle, FireAimView, FireAimLoc, PulseSampleTS);
-		V4Log("[SRV] Auto-fire ALT 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4AltLoadStartTS$" elapsed="$(StepTS - V4AltLoadStartTS)$" grenades="$NumRockets$" AimSrc="$V4AimSource(bUsePulseAim)$" cycle="$V4AltLoadCycle);
-		if (NumRockets > 0)
-			HandleV4ServerAltFire(FireAimView, FireAimLoc, NumRockets);
-		else
-			V4HandleOutOfAmmo();
+		if (bServerSide) {
+			V4Log("[SRV] Auto-fire ALT 6pack StepTS="$StepTS$" V4Charge="$V4ChargeData$" LoadStart="$V4AltLoadStartTS$" elapsed="$(StepTS - V4AltLoadStartTS)$" grenades="$NumRockets);
+			if (NumRockets > 0)
+				HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
+			else
+				V4HandleOutOfAmmo();
+		} else {
+			HandleV4ClientLoadedFire(true, NumRockets);
+		}
 		bV4WasAltHeld = false;
-		CooldownAnchorTS = StepTS;
-		if (bUsePulseAim && PulseSampleTS > 0.0)
-			CooldownAnchorTS = PulseSampleTS;
-		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, CooldownAnchorTS, V4PostFireInterval(NumRockets));
+		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
 		return true;
 	}
 
-	// Falling edge: alt released -> fire loaded grenades.
-	if (!bWantsAlt && bV4WasAltHeld) {
+	// Falling edge: alt released → fire loaded grenades
+	if (!bAltHeld && bV4WasAltHeld) {
 		bV4WasAltHeld = false;
 		NumRockets = Clamp(V4ChargeData, 1, 6);
-		if (AmmoType != none && AmmoType.AmmoAmount > 0) {
-			NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
-			FireAimView = Pawn(Owner).ViewRotation;
-			FireAimLoc = StepLoc;
-			bUsePulseAim = V4TryConsumeReleaseSample(true, V4AltLoadCycle, FireAimView, FireAimLoc, PulseSampleTS);
-			V4Log("[SRV] Falling edge ALT FIRE StepTS="$StepTS$" V4Charge="$V4ChargeData$" grenades="$NumRockets$" View="$FireAimView.Pitch$","$FireAimView.Yaw$" StepV="$StepView.Pitch$","$StepView.Yaw$" AimSrc="$V4AimSource(bUsePulseAim)$" cycle="$V4AltLoadCycle);
-			HandleV4ServerAltFire(FireAimView, FireAimLoc, NumRockets);
-			CooldownAnchorTS = StepTS;
-			if (bUsePulseAim && PulseSampleTS > 0.0)
-				CooldownAnchorTS = PulseSampleTS;
-			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, CooldownAnchorTS, V4PostFireInterval(NumRockets));
-			V4Log("[SRV] NextV4FireTS set to "$NextV4FireTS$" (interval="$V4PostFireInterval(NumRockets)$" anchor="$CooldownAnchorTS$")");
+		if (bServerSide) {
+			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+				NumRockets = Min(NumRockets, AmmoType.AmmoAmount);
+				V4Log("[SRV] Falling edge ALT FIRE StepTS="$StepTS$" V4Charge="$V4ChargeData$" grenades="$NumRockets$" View="$StepView.Pitch$","$StepView.Yaw);
+				HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
+			} else {
+				V4HandleOutOfAmmo();
+			}
 		} else {
-			V4Log("[SRV] Falling edge ALT NO AMMO StepTS="$StepTS);
-			V4HandleOutOfAmmo();
+			HandleV4ClientLoadedFire(true, NumRockets);
 		}
+		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
 		return true;
 	}
 
-	// Held or idle — no action
 	return true;
+}
+
+// Client-side instant rocket fire driven by V4ProcessStep.
+// Plays the fire animation and spawns visual-only rockets, then the
+// ClientV4InstantFire state handles the reload anim before going idle.
+// V4ProcessStep calls this again when the next cooldown expires.
+simulated function HandleV4ClientFire() {
+	local bbPlayer bbP;
+
+	if (AmmoType != None)
+		AmmoType.AmmoAmount--;
+
+	V4CachedChargeData = 1;
+	ClientRocketsLoaded = 1;
+	bFireLoad = true;
+	PlayRFiring(0);
+	bClientDone = true;
+	bRotated = false;
+
+	bbP = bbPlayer(Owner);
+	if (bbP != None && IsPingCompEnabled()
+		&& !bLockedOn && bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
+		SpawnClientSideRockets(1);
+
+	if (!IsInState('ClientV4InstantFire'))
+		GotoState('ClientV4InstantFire');
+}
+
+// Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
+// Syncs ClientRocketsLoaded to the server's count before firing so both
+// sides agree on the number of rockets/grenades spawned.
+simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets) {
+	ClientRocketsLoaded = NumRockets;
+	V4CachedChargeData = NumRockets;
+	if (!bAlt && Pawn(Owner) != None && Pawn(Owner).bAltFire != 0)
+		bTightWad = true;
+	V4Log("[CLI] V4LoadedFire alt="$bAlt$" rockets="$NumRockets$" tight="$bTightWad$" Time="$Level.TimeSeconds);
+	FiringRockets();
 }
 
 // Spawn rockets on the server using the deterministic data path in FireRockets.BeginState.
@@ -796,7 +424,6 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc, int NumRockets, bo
 
 	V4Log("[SRV] HandleV4ServerFire rockets="$NumRockets$" tight="$bTight$" View="$StepView.Pitch$","$StepView.Yaw$" Loc="$int(StepLoc.X)$","$int(StepLoc.Y)$","$int(StepLoc.Z));
 
-	// Feed FireRockets.BeginState with deterministic step loc/view.
 	V4ServerFireLoc = StepLoc;
 	if (bbPlayer(Owner) != none)
 		V4ServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
@@ -882,8 +509,6 @@ function V4HandleOutOfAmmo() {
 // Called by client when loading starts to stop server lock-on checks
 function ServerStartedLoading()
 {
-	// Only stop the timer to prevent acquiring NEW locks
-	// Don't clear existing lock - player may have locked before pressing fire
 	SetTimer(0, false);
 }
 
@@ -921,8 +546,6 @@ function Finish()
 
 function Fire( float Value )
 {
-	// V4 handles primary fire (rockets) on server via deterministic step processing.
-	// Client still needs standard Fire logic to set bCanClientFire and enter ClientFiring.
 	if (Role == ROLE_Authority && IsV4Active() && UsesServerMoveV4())
 		return;
 		
@@ -945,27 +568,18 @@ simulated function bool ClientFire( float Value )
 	if (PawnOwner == None)
 		return false;
 
-	// if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-	//	return false;
-
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
 	{
-		// Update bInstantRocket from owner on client to ensure correct firing mode
 		if ( TournamentPlayer(Owner) != None )
 			bInstantRocket = TournamentPlayer(Owner).bInstantRocket;
 
 		if ( IsPingCompEnabled() && PlayerPawn(Owner) != None )
 		{
-			// Deterministic instant mode must honor the same cooldown chain
-			// used by server-side pulse consumption. Without this gate,
-			// rapid tap/hold mixes can outpace NextClientFireTS and create
-			// accumulating queue lag on server.
-			if (IsV4Active() && bInstantRocket && Level.TimeSeconds + 0.001 < NextClientFireTS) {
-				V4Log("[CLI] ClientFire blocked by cooldown need="$(NextClientFireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
-				return false;
-			}
+			// Instant rockets: V4ProcessStep drives fire timing via
+			// HandleV4ClientFire. Don't enter ClientFiring.
+			if (IsV4Active() && bInstantRocket)
+				return true;
 
-			// Client-side rate limiting
 			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
 				return false;
 
@@ -988,18 +602,13 @@ simulated function bool ClientAltFire( float Value )
 	if (PawnOwner == None)
 		return false;
 
-	// if (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
-	//	return false;
-
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
 	{
-		// Update bInstantRocket from owner on client to ensure correct firing mode
 		if ( TournamentPlayer(Owner) != None )
 			bInstantRocket = TournamentPlayer(Owner).bInstantRocket;
 
 		if ( IsPingCompEnabled() && PlayerPawn(Owner) != None )
 		{
-			// Client-side rate limiting
 			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
 				return false;
 
@@ -1020,46 +629,31 @@ state ClientActive
 	}
 }
 
-// Hook into the client-side release trigger
 simulated function FiringRockets()
 {
-    local bbPlayer bbP;
-    local bool bAlt;
-    local float CInterval;
-    
-    // Determine fire mode based on current state
-    if (IsInState('ClientAltFiring'))
-        bAlt = true;
-    else
-        bAlt = false;
+	local bbPlayer bbP;
+	local bool bAlt;
+
+	if (IsInState('ClientAltFiring'))
+		bAlt = true;
+	else
+		bAlt = false;
 
 	if (Role < ROLE_Authority)
 		V4Log("[CLI] FiringRockets: rockets="$ClientRocketsLoaded$" alt="$bAlt$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
 
-	// Emit one fire pulse for movement serialization at the exact shot moment.
-	V4MarkClientShot(bAlt);
+	// NextV4FireTS is set by V4ProcessStep from StepTS (both sides).
+	// No Level.TimeSeconds-based cooldown here.
 
-    // Set client-side cooldown with self-correcting anchor.
-    // This mirrors the server's NextV4FireTS logic so both sides
-    // derive fire timing from the same deterministic cooldown chain
-    // instead of the client relying on animation-boundary timing.
-    if (Role < ROLE_Authority && IsV4Active()) {
-        CInterval = V4PostFireInterval(ClientRocketsLoaded);
-        NextClientFireTS = V4AdvanceCooldown(NextClientFireTS, Level.TimeSeconds, CInterval);
-        V4Log("[CLI] NextClientFireTS="$NextClientFireTS$" (interval="$CInterval$")");
-    }
-
-    // Call super to handle animations and cleanup
-    Super.FiringRockets();
+	Super.FiringRockets();
 
 	bbP = bbPlayer(Owner);
 	if (Role < ROLE_Authority && bbP != None && IsPingCompEnabled())
 	{
-			// Spawn client-side visuals only for Primary Fire (Rockets)
-			if (!bAlt && !bLockedOn && bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
-			{
-				SpawnClientSideRockets(ClientRocketsLoaded);
-			}
+		if (!bAlt && !bLockedOn && bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
+		{
+			SpawnClientSideRockets(ClientRocketsLoaded);
+		}
 	}
 }
 
@@ -1076,7 +670,6 @@ simulated function yModInit() {
 	CDO = CalcDrawOffsetClient();
 }
 
-// Compatibility between client and server logic
 simulated function vector CalcDrawOffsetClient() {
 	local vector DrawOffset;
 	local Pawn PawnOwner;
@@ -1088,13 +681,10 @@ simulated function vector CalcDrawOffsetClient() {
 
 	DrawOffset = CalcDrawOffset();
 	
-	// On client, make adjustments to match server
 	if (Level.NetMode == NM_Client) {
-		// Correct for EyeHeight differences
 		DrawOffset -= (PawnOwner.EyeHeight * vect(0,0,1));
 		DrawOffset += (PawnOwner.BaseEyeHeight * vect(0,0,1));
 	
-		// Remove WeaponBob, not applied on server
 		WeaponBob = BobDamping * PawnOwner.WalkBob;
 		WeaponBob.Z = (0.45 + 0.55 * BobDamping) * PawnOwner.WalkBob.Z;
 		DrawOffset -= WeaponBob;
@@ -1112,28 +702,20 @@ simulated function SpawnClientSideRockets(int NumRockets)
 	local pawn PawnOwner;
 	local float Spread;
 	local int i;
-	local bool bTightWad;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None) return;
 
-	// Update offset calculations
 	yModInit();
 
-	// Calculate aim
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
 	
-	// Use CDO and yMod for correct positioning (especially when hidden)
 	StartLoc = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
 	if (bbPlayer(Owner) != None)
 		StartLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	AimRot = PawnOwner.ViewRotation;
 
 	Angle = 0;
-	// Calculate bTightWad client-side
-	if ( PawnOwner.bAltFire != 0 )
-		bTightWad = true;
-	
 	if (bTightWad || NumRockets == 1) 
 		RocketRad = 7;
 	else
@@ -1212,10 +794,10 @@ state FireRockets
 		local float Spread;
 		local int i;
 		local bbPlayer bbP;
-			local Projectile SpawnedRockets[6];
-			local int NumSpawnedRockets;
-			local rotator AimRot;
-			local bool bUseStepFireData;
+		local Projectile SpawnedRockets[6];
+		local int NumSpawnedRockets;
+		local rotator AimRot;
+		local bool bUseStepFireData;
 
 		if (bCanClientFire == false)
 			return;
@@ -1228,43 +810,38 @@ state FireRockets
 
 		PawnOwner.PlayRecoil(FiringSpeed);
 		PlayerOwner = PlayerPawn(Owner);
-			Angle = 0;
-			DupRockets = RocketsLoaded - 1;
-			if (DupRockets < 0) DupRockets = 0;
-			if ( PlayerOwner == None )
-				bTightWad = ( FRand() * 4 < PawnOwner.skill );
+		Angle = 0;
+		DupRockets = RocketsLoaded - 1;
+		if (DupRockets < 0) DupRockets = 0;
+		if ( PlayerOwner == None )
+			bTightWad = ( FRand() * 4 < PawnOwner.skill );
 
-			bUseStepFireData = bUseV4ServerFireData;
-			if ( !bUseStepFireData && PawnOwner.bAltFire != 0 )
-				bTightWad = true;
+		bUseStepFireData = bUseV4ServerFireData;
+		if ( !bUseStepFireData && PawnOwner.bAltFire != 0 )
+			bTightWad = true;
 
-			// --- DETERMINISTIC STEP DATA ---
-			if (bUseStepFireData)
-			{
-				// Use server step rotation/location from v4 move processing.
-				AimRot = V4ServerFireRot;
-				StartLoc = V4ServerFireLoc + CalcDrawOffset();
-				GetAxes(AimRot, X, Y, Z);
-				// Apply FireOffset relative to the step aim.
-				StartLoc = StartLoc + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
-				AdjustedAim = AimRot;
-			}
-			else
-			{
-				// Standard Server Logic
-				GetAxes(PawnOwner.ViewRotation,X,Y,Z);
-				StartLoc = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
+		if (bUseStepFireData)
+		{
+			AimRot = V4ServerFireRot;
+			StartLoc = V4ServerFireLoc + CalcDrawOffset();
+			GetAxes(AimRot, X, Y, Z);
+			StartLoc = StartLoc + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+			AdjustedAim = AimRot;
+		}
+		else
+		{
+			GetAxes(PawnOwner.ViewRotation,X,Y,Z);
+			StartLoc = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z; 
 
-				if ( bFireLoad ) 		
-					AdjustedAim = PawnOwner.AdjustAim(ProjectileSpeed, StartLoc, AimError, True, bWarnTarget);
-				else 
-					AdjustedAim = PawnOwner.AdjustToss(AltProjectileSpeed, StartLoc, AimError, True, bAltWarnTarget);	
+			if ( bFireLoad ) 		
+				AdjustedAim = PawnOwner.AdjustAim(ProjectileSpeed, StartLoc, AimError, True, bWarnTarget);
+			else 
+				AdjustedAim = PawnOwner.AdjustToss(AltProjectileSpeed, StartLoc, AimError, True, bAltWarnTarget);	
 				
-				if ( PlayerOwner != None )
-					AdjustedAim = PawnOwner.ViewRotation;
-			}
-			bUseV4ServerFireData = false;
-			// ------------------------------
+			if ( PlayerOwner != None )
+				AdjustedAim = PawnOwner.ViewRotation;
+		}
+		bUseV4ServerFireData = false;
 		
 		PlayRFiring(RocketsLoaded-1);		
 		Owner.MakeNoise(PawnOwner.SoundDampening);
@@ -1314,7 +891,6 @@ state FireRockets
 					FireRot.Yaw = AdjustedAim.Yaw + Spread*WSettings.RocketSpreadSpacingDegrees*(65536.0/360.0);
 				}
 
-				// Spawn rockets and collect them for batch simulation
 				if (LockedTarget != None)
 				{
 					s = Spawn(class'ST_UT_SeekingRocket',, '', FireLocation, FireRot);
@@ -1334,13 +910,12 @@ state FireRockets
 					NumSpawnedRockets++;
 				}
 			}
-			else // Grenades
+			else
 			{
 				g = Spawn(class'ST_UT_Grenade',, '', FireLocation, AdjustedAim);
 				g.WImp = WImp;
 				g.NumExtraGrenades = DupRockets;
 				
-				// Apply randomization for multiple grenades
 				if (DupRockets > 0)
 				{
 					RandRot.Pitch = FRand() * 1500 - 750;
@@ -1349,17 +924,15 @@ state FireRockets
 					g.Velocity = g.Velocity >> RandRot;
 				}
 
-				// Add to batch simulation
 				SpawnedRockets[NumSpawnedRockets] = g;
 				NumSpawnedRockets++;
 			}
 
-			Angle += 1.04719755; //2*Pi/6;
+			Angle += 1.04719755;
 		}
 		
 		RocketsLoaded = 0;
 
-		// Apply ping compensation to all rockets at once if enabled
 		if (bbP != none && IsPingCompEnabled() && NumSpawnedRockets > 0)
 		{
 			WImp.BatchSimulateProjectiles(SpawnedRockets, NumSpawnedRockets, bbP.PingAverage);
@@ -1371,19 +944,15 @@ state FireRockets
 
 	function AnimEnd()
 	{
-
 		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
 		{
 			LockedTarget = None;
 			GotoState('DownWeapon');
 			return;
 		}
-		// We do NOT want to start loading a new rocket automatically on the server.
 		if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
 		{
 			LockedTarget = None;
-			// Use GotoState('Idle') instead of Finish() because Finish() might call Fire(),
-			// which is empty/returns in our override, causing the server to get stuck in FireRockets state.
 			GotoState('Idle');
 			return;
 		}
@@ -1402,19 +971,18 @@ Begin:
 }
 
 function SetSwitchPriority(pawn Other)
-{	// Make sure "old" priorities are kept.
+{
 	local int i;
 	local name temp, carried;
 
 	if ( PlayerPawn(Other) != None )
 	{
 		for ( i=0; i<ArrayCount(PlayerPawn(Other).WeaponPriority); i++)
-			if ( IsA(PlayerPawn(Other).WeaponPriority[i]) )		// <- The fix...
+			if ( IsA(PlayerPawn(Other).WeaponPriority[i]) )
 			{
 				AutoSwitchPriority = i;
 				return;
 			}
-		// else, register this weapon
 		carried = 'UT_Eightball';
 		for ( i=AutoSwitchPriority; i<ArrayCount(PlayerPawn(Other).WeaponPriority); i++ )
 		{
@@ -1435,7 +1003,6 @@ function SetSwitchPriority(pawn Other)
 
 state NormalFire
 {
-
 	function bool SplashJump()
 	{
 		return true;
@@ -1470,7 +1037,6 @@ state NormalFire
 			RocketsLoaded++;
 			AmmoType.UseAmmo(1);
 			if (pawn(Owner).bAltFire!=0) bTightWad=True;
-			// Lock-on check removed: you should only lock on before you fire or load
 			bPointing = true;
 			Owner.MakeNoise(0.6 * Pawn(Owner).SoundDampening);		
 			RotateRocket();
@@ -1568,7 +1134,6 @@ Begin:
 	bLockedOn = False;
 }
 
-// Idle state - prevents server from auto-firing when client is in control
 state Idle
 {
 	function BeginState()
@@ -1581,10 +1146,8 @@ state Idle
 		
 		if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
 		{
-			// Don't check for bFire/bAltFire to trigger server-side firing
 			bPointing = false;
 			
-			// Fix: Check for empty ammo and switch weapon
 			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
 				Pawn(Owner).SwitchToBestWeapon();
 
@@ -1654,7 +1217,7 @@ Begin:
 	if (Pawn(Owner).bAltFire!=0) AltFire(0.0);	
 	bPointing=False;
 	if (AmmoType.AmmoAmount<=0) 
-		Pawn(Owner).SwitchToBestWeapon();  //Goto Weapon that has Ammo
+		Pawn(Owner).SwitchToBestWeapon();
 	PlayIdleAnim();
 	OldTarget = CheckTarget();
 	SetTimer(1.25,True);
@@ -1716,8 +1279,34 @@ simulated function PlayRotating(int num)
 }
 
 // =========================================================================
-// Fixes for Client Side State Management
+// Client State Management
 // =========================================================================
+
+// Lightweight state for instant rocket V4 fire+reload animation cycle.
+// V4ProcessStep drives fire timing via HandleV4ClientFire; this state
+// just sequences fire anim → reload anim → idle.
+state ClientV4InstantFire
+{
+	simulated function bool ClientFire(float Value) { return true; }
+	simulated function bool ClientAltFire(float Value) { return false; }
+
+	simulated function AnimEnd()
+	{
+		if (bClientDone) {
+			PlayLoading(1.5, 0);
+			bClientDone = false;
+			return;
+		}
+		PlayIdleAnim();
+		GotoState('');
+	}
+
+	simulated function EndState()
+	{
+		bClientDone = false;
+		bRotated = false;
+	}
+}
 
 state ClientFiring
 {
@@ -1726,13 +1315,13 @@ state ClientFiring
 
 	simulated function Tick(float DeltaTime)
 	{
-		// Only update V4CachedChargeData when actually firing (falling edge).
-		// During loading, V4CachedChargeData reflects the last FULLY loaded
-		// rocket count, not the one currently being loaded. This prevents
-		// the server from seeing V4ChargeData=6 before Load6 finishes.
 		if ( (Pawn(Owner).bFire == 0) || (Ammotype.AmmoAmount <= 0) ) {
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-			V4Log("[CLI] Tick: release fire, rockets="$ClientRocketsLoaded$" V4Cached="$V4CachedChargeData$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
+			if (IsV4Active()) {
+				V4Log("[CLI] Tick: release fire (V4 pending) rockets="$ClientRocketsLoaded$" V4Cached="$V4CachedChargeData$" Time="$Level.TimeSeconds);
+				return;
+			}
+			V4Log("[CLI] Tick: release fire, rockets="$ClientRocketsLoaded$" V4Cached="$V4CachedChargeData$" Time="$Level.TimeSeconds);
 			FiringRockets();
 		}
 	}
@@ -1749,25 +1338,22 @@ state ClientFiring
 		}
 		else if ( bRotated )
 		{
-			// Start loading the next rocket. DON'T update V4CachedChargeData
-			// yet — the load animation hasn't finished. Server must not see
-			// the new count until loading completes (prevents premature auto-fire).
 			PlayLoading(1.1, ClientRocketsLoaded);
 			bRotated = false;
 			ClientRocketsLoaded++;
-			V4Log("[CLI] AnimEnd: loading rocket #"$ClientRocketsLoaded$" V4Cached="$V4CachedChargeData$" (deferred) Time="$Level.TimeSeconds);
 		}
 		else
 		{
-			// Loading complete — rocket is fully loaded. Now update V4CachedChargeData.
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 			if ( bInstantRocket || (ClientRocketsLoaded == 6) )
 			{
-				V4Log("[CLI] AnimEnd: auto-fire instant="$bInstantRocket$" rockets="$ClientRocketsLoaded$" V4Cached="$V4CachedChargeData$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
+				if (IsV4Active()) {
+					V4Log("[CLI] AnimEnd: auto-fire (V4 pending) rockets="$ClientRocketsLoaded$" Time="$Level.TimeSeconds);
+					return;
+				}
 				FiringRockets();
 				return;
 			}
-			V4Log("[CLI] AnimEnd: rocket #"$ClientRocketsLoaded$" ready V4Cached="$V4CachedChargeData$" Time="$Level.TimeSeconds);
 			Enable('Tick');
 			PlayRotating(ClientRocketsLoaded - 1);
 			bRotated = true;
@@ -1776,18 +1362,23 @@ state ClientFiring
 		}
 	}
 
-		simulated function BeginState()
-		{
-			bFireLoad = true;
-			
-			V4Log("[CLI] ClientFiring.Begin instant="$bInstantRocket$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
+	simulated function BeginState()
+	{
+		bFireLoad = true;
+		
+		V4Log("[CLI] ClientFiring.Begin instant="$bInstantRocket$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
 
-			// Notify server to stop lock-on checking - can only lock before loading
-			if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
-				ServerStartedLoading();
+		// Instant V4: HandleV4ClientFire drives fire, not ClientFiring.
+		if (bInstantRocket && IsV4Active()) {
+			GotoState('');
+			return;
+		}
+
+		if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
+			ServerStartedLoading();
 
 		if (AmmoType != None)
-        	AmmoType.AmmoAmount--;
+			AmmoType.AmmoAmount--;
 		
 		if ( bInstantRocket )
 		{
@@ -1807,8 +1398,6 @@ state ClientFiring
 	simulated function EndState()
 	{
 		V4Log("[CLI] ClientFiring.End V4Cached was "$V4CachedChargeData$" -> 0 Time="$Level.TimeSeconds);
-		// Reset V4CachedChargeData so the next input doesn't carry stale
-		// rocket counts from this cycle. BeginState reinitializes to 1.
 		V4CachedChargeData = 0;
 		bClientDone = false;
 		bRotated = false;
@@ -1824,6 +1413,8 @@ state ClientAltFiring
 	{
 		if ( (Pawn(Owner).bAltFire == 0) || (Ammotype.AmmoAmount <= 0) ) {
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
+			if (IsV4Active())
+				return;
 			FiringRockets();
 		}
 	}
@@ -1848,6 +1439,8 @@ state ClientAltFiring
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 			if ( ClientRocketsLoaded == 6 )
 			{
+				if (IsV4Active())
+					return;
 				FiringRockets();
 				return;
 			}
@@ -1859,16 +1452,15 @@ state ClientAltFiring
 		}
 	}
 
-		simulated function BeginState()
-		{
-			bFireLoad = false;
-			
-			// Notify server to stop lock-on checking - can only lock before loading
-			if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
-				ServerStartedLoading();
+	simulated function BeginState()
+	{
+		bFireLoad = false;
+		
+		if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
+			ServerStartedLoading();
 		
 		if (AmmoType != None)
-        	AmmoType.AmmoAmount--;
+			AmmoType.AmmoAmount--;
 
 		ClientRocketsLoaded = 1;
 		V4CachedChargeData = 1;
@@ -1898,12 +1490,8 @@ state ClientReload
 		return bForceAltFire;
 	}
 
-	// Tick only enabled when AnimEnd fires before client cooldown expires.
-	// Waits for NextClientFireTS then re-fires, keeping the client's fire
-	// timing aligned with the server's deterministic cooldown chain.
 	simulated function Tick(float DeltaTime)
 	{
-		// Player released fire while waiting — go idle
 		if (!bForceFire && (Pawn(Owner) == None || Pawn(Owner).bFire == 0)
 			&& !bForceAltFire && (Pawn(Owner) == None || Pawn(Owner).bAltFire == 0))
 		{
@@ -1912,7 +1500,7 @@ state ClientReload
 			return;
 		}
 
-		if (Level.TimeSeconds >= NextClientFireTS) {
+		if (Level.TimeSeconds >= NextV4FireTS) {
 			Disable('Tick');
 			if (bForceFire || (Pawn(Owner) != None && Pawn(Owner).bFire != 0)) {
 				V4Log("[CLI] Reload.Tick: cooldown re-fire Time="$Level.TimeSeconds);
@@ -1930,10 +1518,8 @@ state ClientReload
 		{
 			if ( bForceFire || (Pawn(Owner).bFire != 0) )
 			{
-				// When V4 is active, gate re-fire behind the cooldown timer
-				// to match the server's deterministic fire timing.
-				if (IsV4Active() && Level.TimeSeconds + 0.001 < NextClientFireTS) {
-					V4Log("[CLI] Reload.AnimEnd: waiting for cooldown, need="$(NextClientFireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
+				if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
+					V4Log("[CLI] Reload.AnimEnd: waiting for cooldown, need="$(NextV4FireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
 					Enable('Tick');
 					return;
 				}
@@ -1943,8 +1529,8 @@ state ClientReload
 			}
 			else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
 			{
-				if (IsV4Active() && Level.TimeSeconds + 0.001 < NextClientFireTS) {
-					V4Log("[CLI] Reload.AnimEnd: waiting for cooldown, need="$(NextClientFireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
+				if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
+					V4Log("[CLI] Reload.AnimEnd: waiting for cooldown, need="$(NextV4FireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
 					Enable('Tick');
 					return;
 				}
@@ -1954,7 +1540,6 @@ state ClientReload
 			}
 		}
 		
-		// Switch weapon if out of ammo
 		if ( (AmmoType == None) || (AmmoType.AmmoAmount <= 0) )
 		{
 			GotoState('');
