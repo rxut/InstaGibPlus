@@ -16,6 +16,8 @@ var int V4FirePressIndex;
 var int V4FireReleaseIndex;
 var int V4AltPressIndex;
 var int V4AltReleaseIndex;
+var int V4FirePulseIndex;
+var int V4AltPulseIndex;
 var int AddVelocityId;
 var vector Momentum;
 
@@ -24,6 +26,7 @@ var bool bV4FireStartHeld;
 var bool bV4FireEndHeld;
 var bool bV4AltStartHeld;
 var bool bV4AltEndHeld;
+var bool bV4EightballInstant;
 var bool bDetReady;
 var int V4WeaponIndex;
 var int V4ChargeData;
@@ -43,10 +46,13 @@ function Clear2() {
     V4FireReleaseIndex = -1;
     V4AltPressIndex = -1;
     V4AltReleaseIndex = -1;
+    V4FirePulseIndex = -1;
+    V4AltPulseIndex = -1;
     bV4FireStartHeld = false;
     bV4FireEndHeld = false;
     bV4AltStartHeld = false;
     bV4AltEndHeld = false;
+    bV4EightballInstant = false;
     Momentum = vect(0,0,0);
     bUseServerMoveV4 = false;
 }
@@ -65,4 +71,6 @@ defaultproperties
      V4FireReleaseIndex=-1
      V4AltPressIndex=-1
      V4AltReleaseIndex=-1
+     V4FirePulseIndex=-1
+     V4AltPulseIndex=-1
 }

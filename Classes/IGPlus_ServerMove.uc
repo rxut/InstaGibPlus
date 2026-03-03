@@ -10,6 +10,7 @@ var int MiscData2;
 var int View;
 var int ViewStart;
 var int V4Flags;
+var int V4PulseData;
 var Actor ClientBase;
 var int OldMoveData1;
 var int OldMoveData2;

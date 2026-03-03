@@ -44,6 +44,12 @@ function Initialize() {
 }
 
 function CopyFrom(float Delta, bbPlayer P) {
+	local bool bUseEightballPulse;
+	local bool bForceFirePulse;
+	local bool bForceAltPulse;
+	local int PulseFlags;
+	local ST_UT_Eightball EB;
+
 	TimeStamp = Level.TimeSeconds;
 	self.Delta = Delta;
 	SavedLocation = P.Location;
@@ -68,10 +74,31 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bDuck = P.bDuck != 0;
 	bJump = (P.aUp > 1.0) || P.IGPlus_PressedJumpSave;
 	bDodg = P.bPressedDodge;
-	bFire = (P.bFire != 0) || P.bJustFired;
-	bAFir = (P.bAltFire != 0) || P.bJustAltFired;
-	bFFir = P.bJustFired;
-	bFAFr = P.bJustAltFired;
+	EB = ST_UT_Eightball(P.Weapon);
+	bUseEightballPulse = P.IGPlus_IsEightballPulseEnabled(P.Weapon);
+	if (bUseEightballPulse) {
+		PulseFlags = P.IGPlus_ConsumeEightballShotPulses();
+		bForceFirePulse = (PulseFlags & 1) != 0;
+		bForceAltPulse = (PulseFlags & 2) != 0;
+		if (P.bTraceInput && (bForceFirePulse || bForceAltPulse))
+			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=pulse-only ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
+	} else {
+		if (EB != none && !P.IGPlus_EnableInputReplication && int(Level.ServerMoveVersion) >= 4) {
+			bForceFirePulse = false;
+			bForceAltPulse = false;
+			if (P.bTraceInput && (P.bJustFired || P.bJustAltFired))
+				Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=pulse-only RawBlocked JustFire="$P.bJustFired$" JustAlt="$P.bJustAltFired);
+		} else {
+			bForceFirePulse = P.bJustFired;
+			bForceAltPulse = P.bJustAltFired;
+			if (P.bTraceInput && (bForceFirePulse || bForceAltPulse) && EB != none)
+				Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=raw ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
+		}
+	}
+	bFire = (P.bFire != 0) || bForceFirePulse;
+	bAFir = (P.bAltFire != 0) || bForceAltPulse;
+	bFFir = bForceFirePulse;
+	bFAFr = bForceAltPulse;
 	bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
 	V4WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
 	V4ChargeData = P.IGPlus_GetV4ChargeData();
@@ -104,7 +131,7 @@ function SerializeTo(IGPlus_DataBuffer B, out float DeltaError) {
 	B.AddBit(bFAFr);
 	B.AddBit(bDetReady);
 	B.AddBits(3, V4WeaponIndex);
-	B.AddBits(3, V4ChargeData);
+	B.AddBits(4, V4ChargeData);
 	Temp = SavedViewRotation.Pitch << 16 >> 16;
 	Temp = Clamp(Temp, -16384, 16383);
 	B.AddBits(15, Temp);
@@ -130,7 +157,7 @@ function DeserializeFrom(IGPlus_DataBuffer B) {
 	B.ConsumeBit(Temp); bFAFr = Temp != 0;
 	B.ConsumeBit(Temp); bDetReady = Temp != 0;
 	B.ConsumeBits(3, V4WeaponIndex);
-	B.ConsumeBits(3, V4ChargeData);
+	B.ConsumeBits(4, V4ChargeData);
 	B.ConsumeBits(15, SavedViewRotation.Pitch); SavedViewRotation.Pitch = SavedViewRotation.Pitch << 17 >> 17;
 	B.ConsumeBits(16, SavedViewRotation.Yaw);
 	SavedViewRotation.Roll = 0;
@@ -162,5 +189,5 @@ defaultproperties {
 	bHidden=True
 	DrawType=DT_None
 	RemoteRole=ROLE_None
-	SerializedBits=71
+	SerializedBits=72
 }
