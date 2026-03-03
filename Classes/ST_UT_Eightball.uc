@@ -18,6 +18,12 @@ var rotator V4ServerFireRot;
 var bool bUseV4ServerFireData;
 
 const V4_PHASELOCK_MAX_OVERSHOOT = 0.060;
+const IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT = 0;
+const IGPLUS_EB_SHOT_KIND_PRIMARY_RELEASE = 1;
+const IGPLUS_EB_SHOT_KIND_ALT_RELEASE = 2;
+const IGPLUS_EB_SHOT_KIND_ALT_AUTO6 = 3;
+const IGPLUS_EB_AUTH_QUEUE_SIZE = 8;
+const IGPLUS_EB_AUTH_CONSUME_EPSILON = 0.010;
 
 // Rate limiting to prevent rapid fire exploits
 var float LastClientFireTime;
@@ -42,6 +48,20 @@ var bool bV4PrimaryReleaseArmed;
 var bool bV4AltReleaseArmed;
 var float V4PrimaryReleaseTS;
 var float V4AltReleaseTS;
+var bool bV4AuthShotMode;
+
+struct V4AuthShotEntry {
+	var bool bActive;
+	var int Seq;
+	var int Kind;
+	var float ShotTS;
+	var rotator ShotView;
+	var vector ShotLoc;
+	var int Charge;
+	var bool bInstant;
+	var bool bTight;
+};
+var V4AuthShotEntry V4AuthShots[IGPLUS_EB_AUTH_QUEUE_SIZE];
 
 
 // Client-side offset correction
@@ -169,6 +189,8 @@ simulated function bool IsPingCompEnabled() {
 }
 
 simulated function bool IsV4Active() {
+	if (Level != none && Level.NetMode == NM_Standalone)
+		return false;
 	if (!IsPingCompEnabled())
 		return false;
 	if (bbPlayer(Owner) == none)
@@ -217,12 +239,156 @@ simulated function bool IsDeterministicReady() {
 	return true;
 }
 
-// No-op stub: bbPlayer still calls this when decoding shot-packs from moves.
-// Eightball no longer uses the auth-shot queue; edge detection handles fire.
+simulated function V4ClearAuthoritativeShotEntry(int Index) {
+	if (Index < 0 || Index >= IGPLUS_EB_AUTH_QUEUE_SIZE)
+		return;
+
+	V4AuthShots[Index].bActive = false;
+	V4AuthShots[Index].Seq = 0;
+	V4AuthShots[Index].Kind = 0;
+	V4AuthShots[Index].ShotTS = 0.0;
+	V4AuthShots[Index].ShotView = rot(0,0,0);
+	V4AuthShots[Index].ShotLoc = vect(0,0,0);
+	V4AuthShots[Index].Charge = 0;
+	V4AuthShots[Index].bInstant = false;
+	V4AuthShots[Index].bTight = false;
+}
+
+simulated function V4ClearAuthoritativeShots(optional bool bDisableMode) {
+	local int i;
+
+	for (i = 0; i < IGPLUS_EB_AUTH_QUEUE_SIZE; i++)
+		V4ClearAuthoritativeShotEntry(i);
+
+	if (bDisableMode)
+		bV4AuthShotMode = false;
+}
+
+simulated function int V4FindDueAuthoritativeShot(float StepTS) {
+	local int i;
+	local int BestIdx;
+	local float BestTS;
+	local float CandidateTS;
+
+	BestIdx = -1;
+	BestTS = 0.0;
+	for (i = 0; i < IGPLUS_EB_AUTH_QUEUE_SIZE; i++) {
+		if (!V4AuthShots[i].bActive)
+			continue;
+		CandidateTS = V4AuthShots[i].ShotTS;
+		if (CandidateTS > StepTS + IGPLUS_EB_AUTH_CONSUME_EPSILON)
+			continue;
+		if (BestIdx < 0 || CandidateTS < BestTS) {
+			BestIdx = i;
+			BestTS = CandidateTS;
+		}
+	}
+
+	return BestIdx;
+}
+
+simulated function V4ApplyAuthoritativeShot(int Index, float StepTS) {
+	local int NumRockets;
+	local bool bHandled;
+	local float FireTS;
+	local int ShotKind;
+
+	if (Index < 0 || Index >= IGPLUS_EB_AUTH_QUEUE_SIZE)
+		return;
+	if (!V4AuthShots[Index].bActive)
+		return;
+
+	ShotKind = V4AuthShots[Index].Kind;
+	FireTS = V4AuthShots[Index].ShotTS;
+	if (FireTS > StepTS)
+		FireTS = StepTS;
+
+	bHandled = false;
+	if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT) {
+		NumRockets = 1;
+		HandleV4ServerFire(V4AuthShots[Index].ShotView, V4AuthShots[Index].ShotLoc, NumRockets, V4AuthShots[Index].bTight);
+		V4ResetPrimaryCycle(true);
+		bHandled = true;
+	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_RELEASE) {
+		NumRockets = Clamp(V4AuthShots[Index].Charge, 1, 6);
+		HandleV4ServerFire(V4AuthShots[Index].ShotView, V4AuthShots[Index].ShotLoc, NumRockets, V4AuthShots[Index].bTight);
+		V4ResetPrimaryCycle(true);
+		bHandled = true;
+	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_ALT_RELEASE || ShotKind == IGPLUS_EB_SHOT_KIND_ALT_AUTO6) {
+		NumRockets = Clamp(V4AuthShots[Index].Charge, 1, 6);
+		HandleV4ServerAltFire(V4AuthShots[Index].ShotView, V4AuthShots[Index].ShotLoc, NumRockets);
+		V4ResetAltCycle(true);
+		bHandled = true;
+	}
+
+	if (bHandled) {
+		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, FireTS, V4PostFireInterval(NumRockets));
+		if (V4ShouldDebug())
+			V4Log("[SRV] AuthShot consume seq="$V4AuthShots[Index].Seq$" kind="$ShotKind$" charge="$V4AuthShots[Index].Charge$" ts="$V4AuthShots[Index].ShotTS$" step="$StepTS$" rockets="$NumRockets);
+	} else if (V4ShouldDebug()) {
+		V4Log("[SRV] AuthShot drop invalid-kind seq="$V4AuthShots[Index].Seq$" kind="$ShotKind);
+	}
+
+	V4ClearAuthoritativeShotEntry(Index);
+}
+
+simulated function bool V4ConsumeAuthoritativeShot(float StepTS) {
+	local int ShotIdx;
+
+	ShotIdx = V4FindDueAuthoritativeShot(StepTS);
+	if (ShotIdx < 0)
+		return false;
+
+	V4ApplyAuthoritativeShot(ShotIdx, StepTS);
+	return true;
+}
+
 simulated function V4QueueAuthoritativeShot(
 	int Seq, int ShotKind, float ShotTS, rotator ShotView,
 	vector ShotLoc, int Charge, bool bInstant, bool bTight
-) {}
+) {
+	local int i;
+	local int SlotIdx;
+	local float OldestTS;
+
+	if (Role < ROLE_Authority)
+		return;
+
+	SlotIdx = -1;
+	for (i = 0; i < IGPLUS_EB_AUTH_QUEUE_SIZE; i++) {
+		if (V4AuthShots[i].bActive && ((V4AuthShots[i].Seq & 255) == (Seq & 255)))
+			return;
+		if (!V4AuthShots[i].bActive && SlotIdx < 0)
+			SlotIdx = i;
+	}
+
+	if (SlotIdx < 0) {
+		OldestTS = V4AuthShots[0].ShotTS;
+		SlotIdx = 0;
+		for (i = 1; i < IGPLUS_EB_AUTH_QUEUE_SIZE; i++) {
+			if (V4AuthShots[i].ShotTS < OldestTS) {
+				OldestTS = V4AuthShots[i].ShotTS;
+				SlotIdx = i;
+			}
+		}
+		if (V4ShouldDebug())
+			V4Log("[SRV] AuthShot overflow drop seq="$V4AuthShots[SlotIdx].Seq$" kind="$V4AuthShots[SlotIdx].Kind);
+	}
+
+	V4AuthShots[SlotIdx].bActive = true;
+	V4AuthShots[SlotIdx].Seq = Seq & 255;
+	V4AuthShots[SlotIdx].Kind = ShotKind & 3;
+	V4AuthShots[SlotIdx].ShotTS = ShotTS;
+	V4AuthShots[SlotIdx].ShotView = ShotView;
+	V4AuthShots[SlotIdx].ShotLoc = ShotLoc;
+	V4AuthShots[SlotIdx].Charge = Clamp(Charge, 1, 6);
+	V4AuthShots[SlotIdx].bInstant = bInstant;
+	V4AuthShots[SlotIdx].bTight = bTight;
+	bV4AuthShotMode = true;
+
+	if (V4ShouldDebug())
+		V4Log("[SRV] AuthShot queue seq="$(Seq & 255)$" kind="$(ShotKind & 3)$" ts="$ShotTS$" charge="$Clamp(Charge, 1, 6)$" instant="$bInstant$" tight="$bTight);
+}
 
 function PostBeginPlay()
 {
@@ -318,6 +484,22 @@ simulated function bool V4ProcessStep(
 	if (bV4MoveInstantValid && TournamentPlayer(Owner) != none && bMoveInstant != bV4MoveInstant && V4ShouldDebug())
 		V4Log("[DBG] Instant mismatch move="$bV4MoveInstant$" owner="$bMoveInstant$" StepTS="$StepTS);
 	bInstantRocket = bMoveInstant;
+
+	// Server authoritative-shot mode: execute queued shot events and suppress
+	// legacy edge reconstruction to avoid double-fire/drift paths.
+	if (bServerSide && bV4AuthShotMode) {
+		if (V4ConsumeAuthoritativeShot(StepTS))
+			return true;
+
+		// Keep edge trackers coherent while waiting for the next queued event.
+		bV4WasFireHeld = bFireHeld;
+		bV4WasAltHeld = bAltHeld;
+		if (!bFireHeld)
+			bV4PrimaryReleaseArmed = false;
+		if (!bAltHeld)
+			bV4AltReleaseArmed = false;
+		return true;
+	}
 
 	// ── PRIMARY FIRE ──
 
@@ -606,12 +788,59 @@ simulated function bool V4ProcessStep(
 	return true;
 }
 
+simulated function V4EmitClientAuthoritativeShot(bool bAlt, int NumRockets, optional bool bTight) {
+	local bbPlayer bbP;
+	local Pawn PawnOwner;
+	local int ShotKind;
+	local bool bShotInstant;
+	local bool bShotTight;
+
+	if (Role == ROLE_Authority)
+		return;
+	if (!IsV4Active() || !UsesServerMoveV4())
+		return;
+
+	bbP = bbPlayer(Owner);
+	PawnOwner = Pawn(Owner);
+	if (bbP == none || PawnOwner == none || NumRockets <= 0)
+		return;
+
+	bShotInstant = !bAlt && bInstantRocket;
+	bShotTight = !bAlt && bTight;
+	if (bAlt) {
+		if (NumRockets >= 6)
+			ShotKind = IGPLUS_EB_SHOT_KIND_ALT_AUTO6;
+		else
+			ShotKind = IGPLUS_EB_SHOT_KIND_ALT_RELEASE;
+	} else if (bShotInstant) {
+		ShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT;
+		NumRockets = 1;
+	} else {
+		ShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_RELEASE;
+	}
+
+	bbP.IGPlus_QueueEightballAuthoritativeShot(
+		ShotKind,
+		Level.TimeSeconds,
+		PawnOwner.ViewRotation,
+		PawnOwner.Location,
+		Clamp(NumRockets, 1, 6),
+		bShotInstant,
+		bShotTight
+	);
+
+	if (bbP.bTraceInput)
+		V4Log("[CLI-SHOT] emit kind="$ShotKind$" rockets="$Clamp(NumRockets, 1, 6)$" instant="$bShotInstant$" tight="$bShotTight$" ts="$Level.TimeSeconds);
+}
+
 // Client-side instant rocket fire driven by V4ProcessStep.
 // Plays the fire animation and spawns visual-only rockets, then the
 // ClientV4InstantFire state handles the reload anim before going idle.
 // V4ProcessStep calls this again when the next cooldown expires.
 simulated function HandleV4ClientFire() {
 	local bbPlayer bbP;
+
+	V4EmitClientAuthoritativeShot(false, 1, false);
 
 	if (IsV4Active())
 		V4ConsumeClientAmmo(1);
@@ -638,6 +867,8 @@ simulated function HandleV4ClientFire() {
 // Syncs ClientRocketsLoaded to the server's count before firing so both
 // sides agree on the number of rockets/grenades spawned.
 simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
+	V4EmitClientAuthoritativeShot(bAlt, NumRockets, bTight);
+
 	ClientRocketsLoaded = NumRockets;
 	V4CachedChargeData = NumRockets;
 
@@ -775,6 +1006,7 @@ function Finish()
 {
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
+	V4ClearAuthoritativeShots(true);
 
 	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
 	{
@@ -1049,26 +1281,28 @@ state FireRockets
 		local rotator AimRot;
 		local bool bUseStepFireData;
 
-		if (bCanClientFire == false)
-		{
-			bUseV4ServerFireData = false;
-			bTightWad = false;
-			RocketsLoaded = 0;
-			V4ResetPrimaryCycle(false);
-			V4ResetAltCycle(false);
-			return;
-		}
+			if (bCanClientFire == false)
+			{
+				bUseV4ServerFireData = false;
+				bTightWad = false;
+				RocketsLoaded = 0;
+				V4ResetPrimaryCycle(false);
+				V4ResetAltCycle(false);
+				V4ClearAuthoritativeShots(false);
+				return;
+			}
 			
 		PawnOwner = Pawn(Owner);
-		if (PawnOwner == None)
-		{
-			bUseV4ServerFireData = false;
-			bTightWad = false;
-			RocketsLoaded = 0;
-			V4ResetPrimaryCycle(false);
-			V4ResetAltCycle(false);
-			return;
-		}
+			if (PawnOwner == None)
+			{
+				bUseV4ServerFireData = false;
+				bTightWad = false;
+				RocketsLoaded = 0;
+				V4ResetPrimaryCycle(false);
+				V4ResetAltCycle(false);
+				V4ClearAuthoritativeShots(false);
+				return;
+			}
 		
 		bbP = bbPlayer(PawnOwner);
 
@@ -1500,6 +1734,7 @@ simulated function PlaySelect() {
 	bCanClientFire = false;
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
+	V4ClearAuthoritativeShots(true);
 	bTightWad = false;
 	V4CachedChargeData = 0;
 	ClientRocketsLoaded = 0;
