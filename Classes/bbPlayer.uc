@@ -3362,9 +3362,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 						V4ShotCharge = Clamp(V4ShotCharge, 1, 6);
 
 					if (V4ShotKind >= IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT && V4ShotKind <= IGPLUS_EB_SHOT_KIND_ALT_AUTO6) {
-						if (V4Eightball != none) {
-							V4Eightball.V4QueueAuthoritativeShot(V4ShotSeq, V4ShotKind, V4ShotTS, V4ShotViewUsed, V4ShotLoc, V4ShotCharge, bV4ShotInstant, bV4ShotTight);
-						}
+						// ST_UT_Eightball no longer queues shots explicitly via an array. Wait to see if this affects bV4ShotQueued.
 						bV4ShotQueued = true;
 					} else {
 						if (bTraceInput)
