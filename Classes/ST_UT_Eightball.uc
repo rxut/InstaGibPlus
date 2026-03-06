@@ -566,8 +566,8 @@ simulated function float V4AdvanceCooldown(float PrevNextTS, float FireTS, float
 //
 // Server (bServerSide=true): spawns authoritative rockets via HandleV4ServerFire.
 // Client (bServerSide=false): only tracks edge state and sets NextV4FireTS.
-//   The client state machine (ClientFiring/ClientReload) handles animations
-//   and visual rockets. NextV4FireTS gates re-fire in ClientReload.
+//   Client weapon states handle animations and visual rockets only; refire
+//   and cooldown ownership stays in deterministic step processing.
 // =========================================================================
 simulated function float GetV4ChargeInterval() {
 	return 0.9;
@@ -1636,6 +1636,89 @@ simulated function PlayRotating(int num)
 	Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
 }
 
+simulated function int V4GetClientLoadAnimBudget(bool bAltLoad) {
+	if (bAltLoad) {
+		V4RefreshInternalBudget();
+		return Min(6, Max(1, V4InternalBudget));
+	}
+
+	return Min(6, Max(1, V4PrimaryCycleStartBudget));
+}
+
+simulated function int V4GetClientLoadAnimTarget(bool bAltLoad) {
+	if (bAltLoad)
+		return Clamp(V4CachedChargeData, 1, V4GetClientLoadAnimBudget(true));
+
+	return Clamp(V4PrimaryPredictedLoaded, 1, V4GetClientLoadAnimBudget(false));
+}
+
+simulated function bool V4SyncClientAnimLoaded(int TargetLoaded) {
+	local int ConsumeDelta;
+
+	if (ClientRocketsLoaded > TargetLoaded) {
+		ClientRocketsLoaded = TargetLoaded;
+	} else if (TargetLoaded > ClientRocketsLoaded) {
+		ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
+		if (!V4ConsumeClientAmmo(ConsumeDelta))
+			return false;
+		ClientRocketsLoaded = TargetLoaded;
+	}
+
+	V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
+	return true;
+}
+
+simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
+	if (!IsV4Active())
+		return false;
+
+	if (!bCanClientFire || Pawn(Owner) == None) {
+		GotoState('');
+		return true;
+	}
+
+	if (bClientDone) {
+		PlayLoading(1.5, 0);
+		GotoState('ClientReload');
+		return true;
+	}
+
+	if (bRotated) {
+		PlayLoading(1.1, ClientRocketsLoaded);
+		bRotated = false;
+		V4SyncClientAnimLoaded(V4GetClientLoadAnimTarget(bAltLoad));
+		return true;
+	}
+
+	V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
+	if (ClientRocketsLoaded >= V4GetClientLoadAnimBudget(bAltLoad))
+		return true;
+
+	PlayRotating(ClientRocketsLoaded - 1);
+	bRotated = true;
+	return true;
+}
+
+simulated function bool V4HandleClientReloadAnimEnd() {
+	if (!IsV4Active())
+		return false;
+
+	if (!bCanClientFire || Pawn(Owner) == None) {
+		GotoState('');
+		return true;
+	}
+
+	if ((AmmoType == None) || (AmmoType.AmmoAmount <= 0)) {
+		GotoState('');
+		Pawn(Owner).SwitchToBestWeapon();
+		return true;
+	}
+
+	GotoState('');
+	Global.AnimEnd();
+	return true;
+}
+
 // =========================================================================
 // Client State Management
 // =========================================================================
@@ -1648,12 +1731,12 @@ state ClientV4InstantFire
 	simulated function bool ClientFire(float Value) { return true; }
 	simulated function bool ClientAltFire(float Value) { return false; }
 
-		simulated function AnimEnd()
-		{
-			if (bClientDone) {
-				PlayLoading(1.5, 0);
-				bClientDone = false;
-				return;
+	simulated function AnimEnd()
+	{
+		if (bClientDone) {
+			PlayLoading(1.5, 0);
+			bClientDone = false;
+			return;
 		}
 		PlayIdleAnim();
 		GotoState('');
@@ -1676,11 +1759,6 @@ state ClientFiring
 		if (P == none)
 			return;
 
-		if (IsV4Active()) {
-			V4CachedChargeData = Clamp(Max(ClientRocketsLoaded, V4PrimaryPredictedLoaded), 0, 7);
-			return;
-		}
-
 		if ((P.bFire == 0) || (AmmoType == none) || (AmmoType.AmmoAmount <= 0)) {
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 			FiringRockets();
@@ -1689,87 +1767,67 @@ state ClientFiring
 	
 	simulated function AnimEnd()
 	{
-		local int TargetLoaded;
-		local int ConsumeDelta;
+		if (V4HandleClientLoadAnimEnd(false))
+			return;
 
 		if ( !bCanClientFire || (Pawn(Owner) == None) )
 			GotoState('');
-			else if ( bClientDone )
-			{
-				PlayLoading(1.5,0);
-				GotoState('ClientReload');
-			}
-			else if ( bRotated )
-			{
-				PlayLoading(1.1, ClientRocketsLoaded);
-				bRotated = false;
-				if (IsV4Active()) {
-					TargetLoaded = Clamp(
-						V4PrimaryPredictedLoaded,
-						1,
-						Min(6, Max(1, V4PrimaryCycleStartBudget))
-					);
-					if (ClientRocketsLoaded > TargetLoaded) {
-						ClientRocketsLoaded = TargetLoaded;
-					} else if (TargetLoaded > ClientRocketsLoaded) {
-						ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
-						if (!V4ConsumeClientAmmo(ConsumeDelta))
-							return;
-						ClientRocketsLoaded = TargetLoaded;
-					}
-				} else {
-				ClientRocketsLoaded++;
-			}
+		else if ( bClientDone )
+		{
+			PlayLoading(1.5,0);
+			GotoState('ClientReload');
+		}
+		else if ( bRotated )
+		{
+			PlayLoading(1.1, ClientRocketsLoaded);
+			bRotated = false;
+			ClientRocketsLoaded++;
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 		}
-				else
-				{
-					V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-					if ( bInstantRocket || (ClientRocketsLoaded == 6) )
-				{
-					if (IsV4Active())
-						return;
-						FiringRockets();
-						return;
-					}
-					if (IsV4Active()) {
-						if (ClientRocketsLoaded >= Min(6, Max(1, V4PrimaryCycleStartBudget)))
-							return;
-					}
-				Enable('Tick');
-				PlayRotating(ClientRocketsLoaded - 1);
-				bRotated = true;
-		if (!IsV4Active() && AmmoType != None)
-			AmmoType.AmmoAmount--;
+		else
+		{
+			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
+			if ( bInstantRocket || (ClientRocketsLoaded == 6) )
+			{
+				FiringRockets();
+				return;
+			}
+			Enable('Tick');
+			PlayRotating(ClientRocketsLoaded - 1);
+			bRotated = true;
+			if (AmmoType != None)
+				AmmoType.AmmoAmount--;
 		}
 	}
 
 	simulated function BeginState()
-		{
-			bFireLoad = true;
+	{
+		bFireLoad = true;
+		if (IsV4Active())
+			Disable('Tick');
 
-			// Instant V4: HandleV4ClientFire drives fire, not ClientFiring.
-			if (bInstantRocket && IsV4Active()) {
+		// Instant V4: HandleV4ClientFire drives fire, not ClientFiring.
+		if (bInstantRocket && IsV4Active()) {
 			GotoState('');
 			return;
 		}
 
 		if (!IsV4Active() && AmmoType != None)
 			AmmoType.AmmoAmount--;
-		
+
 		if ( bInstantRocket )
 		{
 			ClientRocketsLoaded = 1;
 			V4CachedChargeData = 1;
 			FiringRockets();
 		}
-			else
-			{
-				ClientRocketsLoaded = 1;
-				V4CachedChargeData = 1;
-				PlayRotating(ClientRocketsLoaded - 1);
-				bRotated = true;
-			}
+		else
+		{
+			ClientRocketsLoaded = 1;
+			V4CachedChargeData = 1;
+			PlayRotating(ClientRocketsLoaded - 1);
+			bRotated = true;
+		}
 	}
 
 	simulated function EndState()
@@ -1791,12 +1849,6 @@ state ClientAltFiring
 		if (P == none)
 			return;
 
-		if (IsV4Active()) {
-			if (P.bAltFire == 0)
-				V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-			return;
-		}
-
 		if ((P.bAltFire == 0) || (AmmoType == none) || (AmmoType.AmmoAmount <= 0)) {
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 			FiringRockets();
@@ -1805,8 +1857,8 @@ state ClientAltFiring
 	
 	simulated function AnimEnd()
 	{
-		local int TargetLoaded;
-		local int ConsumeDelta;
+		if (V4HandleClientLoadAnimEnd(true))
+			return;
 
 		if ( !bCanClientFire || (Pawn(Owner) == None) )
 			GotoState('');
@@ -1819,45 +1871,21 @@ state ClientAltFiring
 		{
 			PlayLoading(1.1, ClientRocketsLoaded);
 			bRotated = false;
-			if (IsV4Active()) {
-				V4RefreshInternalBudget();
-				TargetLoaded = Clamp(
-					V4CachedChargeData,
-					1,
-					Min(6, Max(1, V4InternalBudget))
-					);
-					if (ClientRocketsLoaded > TargetLoaded) {
-						ClientRocketsLoaded = TargetLoaded;
-					} else if (TargetLoaded > ClientRocketsLoaded) {
-						ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
-						if (!V4ConsumeClientAmmo(ConsumeDelta))
-							return;
-						ClientRocketsLoaded = TargetLoaded;
-					}
-			} else {
-				ClientRocketsLoaded++;
-			}
+			ClientRocketsLoaded++;
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 		}
-			else
+		else
+		{
+			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
+			if ( ClientRocketsLoaded == 6 )
 			{
-				V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-				if ( ClientRocketsLoaded == 6 )
-			{
-				if (IsV4Active())
-					return;
-					FiringRockets();
-					return;
-				}
-				if (IsV4Active()) {
-					V4RefreshInternalBudget();
-					if (ClientRocketsLoaded >= Min(6, Max(1, V4InternalBudget)))
-						return;
-				}
-				Enable('Tick');
-				PlayRotating(ClientRocketsLoaded - 1);
-				bRotated = true;
-			if (!IsV4Active() && AmmoType != None)
+				FiringRockets();
+				return;
+			}
+			Enable('Tick');
+			PlayRotating(ClientRocketsLoaded - 1);
+			bRotated = true;
+			if (AmmoType != None)
 				AmmoType.AmmoAmount--;
 		}
 	}
@@ -1865,6 +1893,8 @@ state ClientAltFiring
 	simulated function BeginState()
 	{
 		bFireLoad = false;
+		if (IsV4Active())
+			Disable('Tick');
 		
 		if (!IsV4Active() && AmmoType != None)
 			AmmoType.AmmoAmount--;
@@ -1886,62 +1916,41 @@ state ClientAltFiring
 
 state ClientReload
 {
-	simulated function Tick(float DeltaTime)
+	simulated function bool ClientFire(float Value)
 	{
-		if (!bForceFire && (Pawn(Owner) == None || Pawn(Owner).bFire == 0)
-			&& !bForceAltFire && (Pawn(Owner) == None || Pawn(Owner).bAltFire == 0))
-		{
-			Disable('Tick');
-			GotoState('');
-			return;
-		}
+		if (IsV4Active())
+			return bCanClientFire && (Pawn(Owner) != None) && ((AmmoType == None) || (AmmoType.AmmoAmount > 0));
 
-		if (Level.TimeSeconds >= NextV4FireTS) {
-			Disable('Tick');
-			if (bForceFire || (Pawn(Owner) != None && Pawn(Owner).bFire != 0)) {
-				if (IsV4Active())
-					return;
-				Global.ClientFire(0);
-			} else if (bForceAltFire || (Pawn(Owner) != None && Pawn(Owner).bAltFire != 0)) {
-				Global.ClientAltFire(0);
-			}
-		}
+		bForceFire = bForceFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
+		return bForceFire;
+	}
+
+	simulated function bool ClientAltFire(float Value)
+	{
+		if (IsV4Active())
+			return bCanClientFire && (Pawn(Owner) != None) && ((AmmoType == None) || (AmmoType.AmmoAmount > 0));
+
+		bForceAltFire = bForceAltFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
+		return bForceAltFire;
 	}
 
 	simulated function AnimEnd()
 	{
-			if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
-				{
-					if ( bForceFire || (Pawn(Owner).bFire != 0) )
-					{
-						if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
-							Enable('Tick');
-							return;
-						}
-						if (IsV4Active()) {
-							GotoState('');
-							return;
-						}
-						Global.ClientFire(0);
-						return;
-					}
-				else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
-				{
-					if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
-						Enable('Tick');
-						return;
-					}
-					Global.ClientAltFire(0);
-					return;
-				}
-		}
-		
-		if ( (AmmoType == None) || (AmmoType.AmmoAmount <= 0) )
-		{
-			GotoState('');
-			if ( Pawn(Owner) != None )
-				Pawn(Owner).SwitchToBestWeapon();
+		if (V4HandleClientReloadAnimEnd())
 			return;
+
+		if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
+		{
+			if ( bForceFire || (Pawn(Owner).bFire != 0) )
+			{
+				Global.ClientFire(0);
+				return;
+			}
+			else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
+			{
+				Global.ClientAltFire(0);
+				return;
+			}
 		}
 		
 		GotoState('');
@@ -1950,14 +1959,12 @@ state ClientReload
 
 	simulated function EndState()
 	{
-		Disable('Tick');
 		bForceFire = false;
 		bForceAltFire = false;
 	}
 
 	simulated function BeginState()
 	{
-		Disable('Tick');
 		bForceFire = false;
 		bForceAltFire = false;
 	}
