@@ -18,10 +18,6 @@ var rotator V4ServerFireRot;
 var bool bUseV4ServerFireData;
 
 const V4_PHASELOCK_MAX_OVERSHOOT = 0.060;
-const IGPLUS_EB_RELEASE_DEBOUNCE = 0.150;
-const IGPLUS_EB_PRIMARY_END_RELEASE = 1;
-const IGPLUS_EB_PRIMARY_END_AUTO_6 = 2;
-const IGPLUS_EB_PRIMARY_END_AUTO_BUDGET = 3;
 
 // V4 deterministic fire — shared between client and server
 var float NextV4FireTS;
@@ -36,7 +32,6 @@ var int V4CachedChargeData;
 var int V4ClientConsumedAmmo;
 var int V4InternalBudget;
 var bool bV4SuppressPrimaryFirstBudgetAuto;
-var bool bV4SuppressAltFirstBudgetAuto;
 
 // Primary deterministic cycle controller (server-authoritative, client-predicted)
 var int V4PrimaryCycleId;
@@ -49,7 +44,7 @@ var bool bV4PrimaryLatchedInstant;
 var int V4PrimaryLastPredictedCycleId;
 var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
-var int V4PrimaryLastPredictedReason;
+var bool bV4PrimaryLastPredictedAuto;
 
 // Client-side offset correction
 var float yMod;
@@ -181,7 +176,6 @@ simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
 simulated function V4ResetAltCycle(optional bool bClearHeld) {
 	if (bClearHeld) {
 		bV4WasAltHeld = false;
-		bV4SuppressAltFirstBudgetAuto = false;
 	}
 	V4ResetClientAmmoTracking();
 }
@@ -190,7 +184,6 @@ simulated function V4BumpPrimaryWeaponEpoch() {
 	V4PrimaryWeaponEpoch = (V4PrimaryWeaponEpoch + 1) & 65535;
 	if (V4PrimaryWeaponEpoch == 0)
 		V4PrimaryWeaponEpoch = 1;
-	V4PrimaryCycleEpoch = V4PrimaryWeaponEpoch;
 	V4ResetPrimaryCycle(true);
 }
 
@@ -236,22 +229,22 @@ simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bSe
 	}
 }
 
-simulated function V4PrimaryRecordPrediction(int NumRockets, int EndReason) {
+simulated function V4PrimaryRecordPrediction(int NumRockets, bool bAutoEnded) {
 	V4PrimaryLastPredictedCycleId = V4PrimaryCycleId & 255;
 	V4PrimaryLastPredictedRockets = Clamp(NumRockets, 1, 6);
 	bV4PrimaryLastPredictedInstant = bV4PrimaryLatchedInstant;
-	V4PrimaryLastPredictedReason = EndReason;
+	bV4PrimaryLastPredictedAuto = bAutoEnded;
 	V4PrimaryPredictedLoaded = V4PrimaryLastPredictedRockets;
 }
 
-simulated function V4PrimarySendServerConfirm(int NumRockets, int EndReason) {
+simulated function V4PrimarySendServerConfirm(int NumRockets, bool bAutoEnded) {
 	if (Role != ROLE_Authority)
 		return;
 
 	ClientV4PrimaryShotConfirm(
 		byte(V4PrimaryCycleId & 255),
 		byte(Clamp(NumRockets, 1, 6)),
-		byte(EndReason & 255),
+		bAutoEnded,
 		bV4PrimaryLatchedInstant
 	);
 }
@@ -259,7 +252,7 @@ simulated function V4PrimarySendServerConfirm(int NumRockets, int EndReason) {
 simulated function ClientV4PrimaryShotConfirm(
 	byte CycleId,
 	byte Rockets,
-	byte EndReason,
+	bool bAutoEnded,
 	bool bInstant
 ) {
 	local int ConfirmedRockets;
@@ -295,7 +288,7 @@ simulated function ClientV4PrimaryShotConfirm(
 	} else if (bInstant) {
 		bMismatch = true;
 	}
-	if (V4PrimaryLastPredictedReason != int(EndReason))
+	if (bV4PrimaryLastPredictedAuto != bAutoEnded)
 		bMismatch = true;
 
 	// Base UT behavior: client HUD ammo follows replicated server ammo.
@@ -499,9 +492,7 @@ simulated function V4CancelDeterministicLoad(float StepTS, bool bServerSide, opt
 		}
 	}
 
-	bUseV4ServerFireData = false;
-	bTightWad = false;
-	RocketsLoaded = 0;
+	V4ClearPendingServerFireState();
 	V4CachedChargeData = 0;
 	ClientRocketsLoaded = 0;
 	bClientDone = false;
@@ -645,7 +636,6 @@ simulated function bool V4ProcessStep(
 	local bool bMoveInstant;
 	local bool bOwnerInstantSetting;
 	local bool bBudgetLimitReached;
-	local int PrimaryEndReason;
 
 	if (V4HasSwitchAwayRequest() && (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring'))) {
 		V4CancelDeterministicLoad(StepTS, bServerSide, V4ChargeData);
@@ -666,13 +656,8 @@ simulated function bool V4ProcessStep(
 	if (StepTS + 0.0001 < NextV4FireTS)
 		return true;
 
-	if (!bAltHeld)
-		bV4SuppressAltFirstBudgetAuto = false;
-
 	if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
 		if (!bV4WasFireHeld && !bV4WasAltHeld) {
-			if (bAltHeld)
-				bV4SuppressAltFirstBudgetAuto = true;
 			if (bServerSide && (bFireHeld || bAltHeld))
 				V4HandleOutOfAmmo();
 			V4ResetPrimaryCycle(true);
@@ -699,9 +684,9 @@ simulated function bool V4ProcessStep(
 		if (bV4PrimaryLatchedInstant) {
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, 1, bAltHeld);
-				V4PrimarySendServerConfirm(1, IGPLUS_EB_PRIMARY_END_RELEASE);
+				V4PrimarySendServerConfirm(1, false);
 			} else {
-				V4PrimaryRecordPrediction(1, IGPLUS_EB_PRIMARY_END_RELEASE);
+				V4PrimaryRecordPrediction(1, false);
 				HandleV4ClientFire();
 			}
 			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(1));
@@ -739,15 +724,11 @@ simulated function bool V4ProcessStep(
 			bV4SuppressPrimaryFirstBudgetAuto = false;
 
 		if (NumRockets >= 6 || bBudgetLimitReached) {
-			if (NumRockets >= 6)
-				PrimaryEndReason = IGPLUS_EB_PRIMARY_END_AUTO_6;
-			else
-				PrimaryEndReason = IGPLUS_EB_PRIMARY_END_AUTO_BUDGET;
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-				V4PrimarySendServerConfirm(NumRockets, PrimaryEndReason);
+				V4PrimarySendServerConfirm(NumRockets, true);
 			} else {
-				V4PrimaryRecordPrediction(NumRockets, PrimaryEndReason);
+				V4PrimaryRecordPrediction(NumRockets, true);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
 			}
 			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
@@ -763,9 +744,9 @@ simulated function bool V4ProcessStep(
 			NumRockets = V4ResolvePrimaryEdgeCharge(StepTS, V4ChargeData);
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-				V4PrimarySendServerConfirm(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE);
+				V4PrimarySendServerConfirm(NumRockets, false);
 			} else {
-				V4PrimaryRecordPrediction(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE);
+				V4PrimaryRecordPrediction(NumRockets, false);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
 			}
 			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
@@ -788,12 +769,12 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-		if (bAltHeld && bV4WasAltHeld) {
-			NumRockets = V4CalculateCharge(StepTS);
-			if (!bServerSide && ClientRocketsLoaded > NumRockets)
-				ClientRocketsLoaded = NumRockets;
-			V4CachedChargeData = NumRockets;
-		
+	if (bAltHeld && bV4WasAltHeld) {
+		NumRockets = V4CalculateCharge(StepTS);
+		if (!bServerSide && ClientRocketsLoaded > NumRockets)
+			ClientRocketsLoaded = NumRockets;
+		V4CachedChargeData = NumRockets;
+
 		if (!bServerSide) {
 			V4EnsureClientLoadState(true);
 		}
@@ -807,22 +788,13 @@ simulated function bool V4ProcessStep(
 			else HandleV4ClientLoadedFire(true, NumRockets, false);
 			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
 			bV4WasAltHeld = false;
-			bV4SuppressAltFirstBudgetAuto = false;
 		}
 
 		return true;
 	}
 
 	if (!bAltHeld && bV4WasAltHeld) {
-		if (bV4SuppressAltFirstBudgetAuto
-			&& V4LoadStartTS > 0.0
-			&& (StepTS - V4LoadStartTS) < IGPLUS_EB_RELEASE_DEBOUNCE) {
-			if (!bServerSide)
-				V4EnsureClientLoadState(true);
-			return true;
-		}
 		bV4WasAltHeld = false;
-		bV4SuppressAltFirstBudgetAuto = false;
 		NumRockets = V4CalculateCharge(StepTS);
 		if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
 		else HandleV4ClientLoadedFire(true, NumRockets, false);
@@ -1618,8 +1590,6 @@ simulated function PlaySelect() {
 	if (Pawn(Owner) != none) {
 		if (Pawn(Owner).bFire != 0 && !V4OwnerInstantEnabled())
 			bV4SuppressPrimaryFirstBudgetAuto = true;
-		if (Pawn(Owner).bAltFire != 0)
-			bV4SuppressAltFirstBudgetAuto = true;
 	}
 	bTightWad = false;
 	V4CachedChargeData = 0;
