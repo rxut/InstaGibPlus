@@ -43,7 +43,7 @@ function LogInputGeneric(string Type, IGPlus_SavedInput I) {
 	if (bStarted == false)
 		StartLog();
 
-	FileLog(++Line$"|"$Type$"|"$I.TimeStamp$"|"$I.Delta$"|"$I.bForw$"|"$I.bBack$"|"$I.bLeft$"|"$I.bRigh$"|"$I.bWalk$"|"$I.bDuck$"|"$I.bJump$"|"$I.bDodg$"|"$I.bFire$"|"$I.bAFir$"|"$I.bFFir$"|"$I.bFAFr$"|"$(I.SavedViewRotation.Pitch&0xFFFF)$","$(I.SavedViewRotation.Yaw&0xFFFF)$"|"$I.SavedLocation$"|"$I.SavedVelocity$"|"$I.SavedDodging$"|"$I.SavedDodgeDir$"|"$I.SavedDodgeClickTimer);
+	FileLog(++Line$"|"$Type$"|"$I.TimeStamp$"|"$I.Delta$"|"$I.bForw$"|"$I.bBack$"|"$I.bLeft$"|"$I.bRigh$"|"$I.bWalk$"|"$I.bDuck$"|"$I.bJump$"|"$I.bDodg$"|"$I.bFire$"|"$I.bAFir$"|"$I.bForceFireTap$"|"$I.bForceAltTap$"|"$(I.SavedViewRotation.Pitch&0xFFFF)$","$(I.SavedViewRotation.Yaw&0xFFFF)$"|"$I.SavedLocation$"|"$I.SavedVelocity$"|"$I.SavedDodging$"|"$I.SavedDodgeDir$"|"$I.SavedDodgeClickTimer);
 }
 
 function LogInput(IGPlus_SavedInput I) {

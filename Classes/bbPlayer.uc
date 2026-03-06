@@ -3698,7 +3698,7 @@ function xxServerMove(
 	SM.View = View;
 	SM.ViewStart = View;
 	SM.V4Flags = 0;
-	SM.V4PulseData = 0;
+	SM.V4AuxData = 0;
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
@@ -3729,7 +3729,7 @@ function xxServerMove_v4(
 	int ViewStart,
 	Actor ClientBase,
 	optional int V4Flags,
-	optional int V4PulseData,
+	optional int V4AuxData,
 	optional int OldMoveData1,
 	optional int OldMoveData2
 ) {
@@ -3752,13 +3752,13 @@ function xxServerMove_v4(
 	SM.View = View;
 	SM.ViewStart = ViewStart;
 	SM.V4Flags = V4Flags;
-	SM.V4PulseData = V4PulseData;
+	SM.V4AuxData = V4AuxData;
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
 	SM.V4ShotSeq = 0;
 	if ((V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0)
-		SM.V4ShotSeq = V4PulseData & 0xFF;
+		SM.V4ShotSeq = V4AuxData & 0xFF;
 	SM.bUseV4 = true;
 
 	if (zzUTPure.Settings.bEnableServerPacketReordering) {
@@ -4797,8 +4797,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	ViewRotation = I.SavedViewRotation;
 	bInputFireHeld = I.bFire;
 	bInputAltHeld = I.bAFir;
-	bInputForceFire = I.bFFir;
-	bInputForceAltFire = I.bFAFr;
+	bInputForceFire = I.bForceFireTap;
+	bInputForceAltFire = I.bForceAltTap;
 
 	if (IGPlus_SuppressFireHeldUntilRelease) {
 		if (bInputFireHeld) {
@@ -5560,8 +5560,8 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	local bool bAltFireNew;
 	local bool bCurrentFireHeld;
 	local bool bCurrentAltHeld;
-	local bool bForceFirePulse;
-	local bool bForceAltPulse;
+	local bool bForceFireTap;
+	local bool bForceAltTap;
 	local bool bCurrentEightballInstant;
 	local int EdgeIndex;
 
@@ -5605,30 +5605,30 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	PendMove.bDuck = (bDuck > 0);
 
 	if (ST_UT_Eightball(Weapon) != none && PendMove.bUseServerMoveV4) {
-		bForceFirePulse = false;
-		bForceAltPulse = false;
+		bForceFireTap = false;
+		bForceAltTap = false;
 	} else {
-		bForceFirePulse = bJustFired;
-		bForceAltPulse = bJustAltFired;
+		bForceFireTap = bJustFired;
+		bForceAltTap = bJustAltFired;
 	}
 
 	// Keep merged hold bits aligned with suppression-aware effective held state.
 	bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
 	bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
 
-	bFireNew = PendMove.bFire || bForceFirePulse || bCurrentFireHeld;
+	bFireNew = PendMove.bFire || bForceFireTap || bCurrentFireHeld;
 	if (bFireNew != PendMove.bFire && PendMove.FireIndex < 0) {
 		PendMove.FireIndex = PendMove.IGPlus_MergeCount;
 	}
 	PendMove.bFire = bFireNew;
-	PendMove.bForceFire = PendMove.bForceFire || bForceFirePulse;
+	PendMove.bForceFire = PendMove.bForceFire || bForceFireTap;
 
-	bAltFireNew = PendMove.bAltFire || bForceAltPulse || bCurrentAltHeld;
+	bAltFireNew = PendMove.bAltFire || bForceAltTap || bCurrentAltHeld;
 	if (bAltFireNew != PendMove.bAltFire && PendMove.AltFireIndex < 0) {
 		PendMove.AltFireIndex = PendMove.IGPlus_MergeCount;
 	}
 	PendMove.bAltFire = bAltFireNew;
-	PendMove.bForceAltFire = PendMove.bForceAltFire || bForceAltPulse;
+	PendMove.bForceAltFire = PendMove.bForceAltFire || bForceAltTap;
 	EdgeIndex = PendMove.IGPlus_MergeCount;
 
 	if (PendMove.bUseServerMoveV4) {
@@ -5638,9 +5638,9 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 		else
 			PendMove.bV4EightballInstant = false;
 
-		if (bForceFirePulse)
+		if (bForceFireTap)
 			PendMove.bV4FireStartHeld = false;
-		if (bForceAltPulse)
+		if (bForceAltTap)
 			PendMove.bV4AltStartHeld = false;
 
 		if (PendMove.bV4FireEndHeld != bCurrentFireHeld) {
@@ -5748,8 +5748,8 @@ function IGPlus_ReplicateInput(float Delta) {
 						SerializedInput.SavedLocation,
 						SerializedInput.bFire,
 						SerializedInput.bAFir,
-						SerializedInput.bFFir,
-						SerializedInput.bFAFr,
+							SerializedInput.bForceFireTap,
+							SerializedInput.bForceAltTap,
 						false,
 						SerializedInput.bDetReady,
 						SerializedInput.V4ChargeData
@@ -5808,8 +5808,8 @@ function xxReplicateMove(
 	local Weapon V4LocalWeapon;
 	local bool bMoveFireHeld;
 	local bool bMoveAltHeld;
-	local bool bForceFirePulse;
-	local bool bForceAltPulse;
+	local bool bForceFireTap;
+	local bool bForceAltTap;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -5900,20 +5900,20 @@ function xxReplicateMove(
 			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
 			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
 			if (ST_UT_Eightball(Weapon) != none && NewMove.bUseServerMoveV4) {
-				bForceFirePulse = false;
-				bForceAltPulse = false;
+				bForceFireTap = false;
+				bForceAltTap = false;
 			} else {
-				bForceFirePulse = bJustFired;
-				bForceAltPulse = bJustAltFired;
+				bForceFireTap = bJustFired;
+				bForceAltTap = bJustAltFired;
 			}
 
-			NewMove.bFire = (bForceFirePulse || bMoveFireHeld);
-			NewMove.bForceFire = bForceFirePulse;
+			NewMove.bFire = (bForceFireTap || bMoveFireHeld);
+			NewMove.bForceFire = bForceFireTap;
 			if (LastMove == none || LastMove.bFire != NewMove.bFire)
 				NewMove.FireIndex = 0;
 
-			NewMove.bAltFire = (bForceAltPulse || bMoveAltHeld);
-			NewMove.bForceAltFire = bForceAltPulse;
+			NewMove.bAltFire = (bForceAltTap || bMoveAltHeld);
+			NewMove.bForceAltFire = bForceAltTap;
 			if (LastMove == none || LastMove.bAltFire != NewMove.bAltFire)
 				NewMove.AltFireIndex = 0;
 
@@ -5924,9 +5924,9 @@ function xxReplicateMove(
 				NewMove.bV4FireStartHeld = bMoveFireHeld;
 				NewMove.bV4AltStartHeld = bMoveAltHeld;
 			}
-				if (bForceFirePulse)
+				if (bForceFireTap)
 					NewMove.bV4FireStartHeld = false;
-				if (bForceAltPulse)
+				if (bForceAltTap)
 					NewMove.bV4AltStartHeld = false;
 
 			NewMove.bV4FireEndHeld = bMoveFireHeld;
@@ -6057,7 +6057,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local int ViewPacked;
 	local int ViewStartPacked;
 	local int V4Flags;
-	local int V4PulseData;
+	local int V4AuxData;
 	local int V4ShotSeq;
 	local int V4ShotChargeBits;
 
@@ -6109,7 +6109,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	ViewPacked = ((Move.IGPlus_SavedViewRotation.Pitch & 0xFFFF) << 16) | (Move.IGPlus_SavedViewRotation.Yaw & 0xFFFF);
 	ViewStartPacked = ((Move.IGPlus_SavedViewRotationStart.Pitch & 0xFFFF) << 16) | (Move.IGPlus_SavedViewRotationStart.Yaw & 0xFFFF);
 	V4Flags = 0;
-	V4PulseData = 0;
+	V4AuxData = 0;
 	V4ShotSeq = 0;
 	V4ShotChargeBits = 0;
 	if (bTraceInput && IGPlus_InputLogFile != none)
@@ -6146,7 +6146,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 				V4ShotChargeBits
 			)) {
 				V4Flags or_eq IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT;
-				V4PulseData = V4ShotSeq;
+				V4AuxData = V4ShotSeq;
 				// Carrying a shotpack requires deterministic Eightball context even
 				// when the move's transient weapon-index snapshot is stale/zero.
 				MoveDeltaTime and_eq 0xFFFFFF00;
@@ -6172,7 +6172,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 				ViewStartPacked,
 				Base,
 				V4Flags,
-				V4PulseData,
+				V4AuxData,
 				OldMoveData1,
 				OldMoveData2
 			);
@@ -8052,7 +8052,7 @@ state FeigningDeath
 		int ViewStart,
 		Actor ClientBase,
 		optional int V4Flags,
-		optional int V4PulseData,
+		optional int V4AuxData,
 		optional int OldMoveData1,
 		optional int OldMoveData2
 	)
@@ -8071,7 +8071,7 @@ state FeigningDeath
 				((Rotation.Pitch & 0xFFFF) << 16) | (Rotation.Yaw & 0xFFFF),
 				ClientBase,
 				V4Flags,
-				V4PulseData,
+				V4AuxData,
 				OldMoveData1,
 				OldMoveData2);
 		}
@@ -9204,7 +9204,7 @@ state Dying
 		int ViewStart,
 		Actor ClientBase,
 		optional int V4Flags,
-		optional int V4PulseData,
+		optional int V4AuxData,
 		optional int OldMoveData1,
 		optional int OldMoveData2
 	)
@@ -9223,9 +9223,9 @@ state Dying
 				ViewStart,
 				ClientBase,
 				V4Flags,
-				V4PulseData,
-				OldMoveData1,
-				OldMoveData2);
+					V4AuxData,
+					OldMoveData1,
+					OldMoveData2);
 		}
 
 	function FindGoodView()
@@ -9375,7 +9375,7 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 		int ViewStart,
 		Actor ClientBase,
 		optional int V4Flags,
-		optional int V4PulseData,
+		optional int V4AuxData,
 		optional int OldMoveData1,
 		optional int OldMoveData2
 	)
@@ -9394,9 +9394,9 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 				((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF),
 				ClientBase,
 				V4Flags,
-				V4PulseData,
-				OldMoveData1,
-				OldMoveData2);
+					V4AuxData,
+					OldMoveData1,
+					OldMoveData2);
 		}
 
 	function FindGoodView()

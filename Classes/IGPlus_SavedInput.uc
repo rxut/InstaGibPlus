@@ -29,8 +29,8 @@ var bool bJump;
 var bool bDodg;
 var bool bFire;
 var bool bAFir;
-var bool bFFir;
-var bool bFAFr;
+var bool bForceFireTap;
+var bool bForceAltTap;
 var bool bDetReady;
 var bool bDetPredictedLocal;
 var int V4WeaponIndex;
@@ -44,8 +44,8 @@ function Initialize() {
 }
 
 function CopyFrom(float Delta, bbPlayer P) {
-	local bool bForceFirePulse;
-	local bool bForceAltPulse;
+	local bool bForceFireTap;
+	local bool bForceAltTap;
 	local ST_UT_Eightball EB;
 
 	TimeStamp = Level.TimeSeconds;
@@ -74,20 +74,20 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bDodg = P.bPressedDodge;
 	EB = ST_UT_Eightball(P.Weapon);
 	if (EB != none && EB.IsV4Active()) {
-		bForceFirePulse = false;
-		bForceAltPulse = false;
+		bForceFireTap = false;
+		bForceAltTap = false;
 		if (P.bTraceInput && (P.bJustFired || P.bJustAltFired))
 			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=det-hold RawBlocked JustFire="$P.bJustFired$" JustAlt="$P.bJustAltFired);
 	} else {
-		bForceFirePulse = P.bJustFired;
-		bForceAltPulse = P.bJustAltFired;
-		if (P.bTraceInput && (bForceFirePulse || bForceAltPulse) && EB != none)
-			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=raw ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
+		bForceFireTap = P.bJustFired;
+		bForceAltTap = P.bJustAltFired;
+		if (P.bTraceInput && (bForceFireTap || bForceAltTap) && EB != none)
+			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=raw ForceFire="$bForceFireTap$" ForceAlt="$bForceAltTap);
 	}
-	bFire = (P.bFire != 0) || bForceFirePulse;
-	bAFir = (P.bAltFire != 0) || bForceAltPulse;
-	bFFir = bForceFirePulse;
-	bFAFr = bForceAltPulse;
+	bFire = (P.bFire != 0) || bForceFireTap;
+	bAFir = (P.bAltFire != 0) || bForceAltTap;
+	self.bForceFireTap = bForceFireTap;
+	self.bForceAltTap = bForceAltTap;
 	bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
 	V4WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
 	V4ChargeData = P.IGPlus_GetV4ChargeData();
@@ -116,8 +116,8 @@ function SerializeTo(IGPlus_DataBuffer B, out float DeltaError) {
 	B.AddBit(bDodg);
 	B.AddBit(bFire);
 	B.AddBit(bAFir);
-	B.AddBit(bFFir);
-	B.AddBit(bFAFr);
+	B.AddBit(bForceFireTap);
+	B.AddBit(bForceAltTap);
 	B.AddBit(bDetReady);
 	B.AddBits(3, V4WeaponIndex);
 	B.AddBits(4, V4ChargeData);
@@ -142,8 +142,8 @@ function DeserializeFrom(IGPlus_DataBuffer B) {
 	B.ConsumeBit(Temp); bDodg = Temp != 0;
 	B.ConsumeBit(Temp); bFire = Temp != 0;
 	B.ConsumeBit(Temp); bAFir = Temp != 0;
-	B.ConsumeBit(Temp); bFFir = Temp != 0;
-	B.ConsumeBit(Temp); bFAFr = Temp != 0;
+	B.ConsumeBit(Temp); bForceFireTap = Temp != 0;
+	B.ConsumeBit(Temp); bForceAltTap = Temp != 0;
 	B.ConsumeBit(Temp); bDetReady = Temp != 0;
 	B.ConsumeBits(3, V4WeaponIndex);
 	B.ConsumeBits(4, V4ChargeData);
@@ -165,8 +165,8 @@ function bool IsSimilarTo(IGPlus_SavedInput Other) {
 		bDodg == Other.bDodg &&
 		bFire == Other.bFire &&
 		bAFir == Other.bAFir &&
-		bFFir == Other.bFFir &&
-		bFAFr == Other.bFAFr &&
+		bForceFireTap == Other.bForceFireTap &&
+		bForceAltTap == Other.bForceAltTap &&
 		bDetReady == Other.bDetReady &&
 		V4WeaponIndex == Other.V4WeaponIndex &&
 		V4ChargeData == Other.V4ChargeData &&
