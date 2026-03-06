@@ -1597,11 +1597,8 @@ simulated function PlayLoading(float rate, int num)
 {
 	if (Owner == None)
 		return;
-	
-	// Match base UT_Eightball cadence: honor caller-supplied load rate.
-	PlayAnim(LoadAnim[num], rate, 0.05);
 
-	// Always play locally for the owning client.
+	PlayAnim(LoadAnim[num], rate, 0.05);
 	Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 }
 
@@ -1609,10 +1606,8 @@ simulated function PlayRotating(int num)
 {
 	if (Owner == None)
 		return;
-	
-	PlayAnim(RotateAnim[num],, 0.05);
 
-	// Always play locally for the owning client.
+	PlayAnim(RotateAnim[num],, 0.05);
 	Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
 }
 
