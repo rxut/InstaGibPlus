@@ -21,7 +21,6 @@ const V4_PHASELOCK_MAX_OVERSHOOT = 0.060;
 const IGPLUS_EB_SHOT_KIND_ALT_RELEASE = 2;
 const IGPLUS_EB_SHOT_KIND_ALT_AUTO6 = 3;
 const IGPLUS_EB_RELEASE_DEBOUNCE = 0.150;
-const IGPLUS_EB_PRIMARY_RELEASE_DEBOUNCE = 0.150;
 const IGPLUS_EB_PRIMARY_END_RELEASE = 1;
 const IGPLUS_EB_PRIMARY_END_AUTO_6 = 2;
 const IGPLUS_EB_PRIMARY_END_AUTO_BUDGET = 3;
@@ -56,8 +55,6 @@ var int V4PrimaryCycleStartBudget;
 var int V4PrimaryPredictedLoaded;
 var bool bV4PrimaryLatchedInstant;
 var int V4PrimaryLastEndReason;
-var bool bV4PrimaryReleasePending;
-var float V4PrimaryReleasePendingTS;
 var int V4PrimaryLastPredictedCycleId;
 var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
@@ -142,8 +139,6 @@ simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
 	V4PrimaryPredictedLoaded = 0;
 	bV4PrimaryLatchedInstant = false;
 	V4PrimaryLastEndReason = 0;
-	bV4PrimaryReleasePending = false;
-	V4PrimaryReleasePendingTS = 0.0;
 	V4LoadStartTS = 0.0;
 	V4ResetClientAmmoTracking();
 }
@@ -192,8 +187,6 @@ simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bSe
 	bV4PrimaryLatchedInstant = bMoveInstant;
 	V4PrimaryLastEndReason = 0;
 	bV4SuppressPrimaryFirstBudgetAuto = (V4PrimaryCycleStartBudget <= 1);
-	bV4PrimaryReleasePending = false;
-	V4PrimaryReleasePendingTS = 0.0;
 
 	bInstantRocket = bV4PrimaryLatchedInstant;
 	if (!bV4PrimaryLatchedInstant) {
@@ -489,12 +482,12 @@ simulated function bool V4HasSwitchAwayRequest() {
 	return false;
 }
 
-simulated function V4CancelDeterministicLoad(float StepTS, bool bServerSide) {
+simulated function V4CancelDeterministicLoad(float StepTS, bool bServerSide, optional int MoveChargeData) {
 	local int CancelCount;
 
 	if (bServerSide && AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bV4PrimaryCycleActive || bV4WasFireHeld) {
-			CancelCount = Clamp(V4CalculateCharge(StepTS), 1, 6);
+			CancelCount = Clamp(V4ResolvePrimaryCharge(StepTS, MoveChargeData), 1, 6);
 			AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
 		} else if (bV4WasAltHeld) {
 			// Base UT style: consume what is currently loaded, not a
@@ -607,6 +600,26 @@ simulated function int V4CalculateCharge(float StepTS) {
 	return FinalCharge;
 }
 
+simulated function int V4ResolvePrimaryCharge(float StepTS, optional int MoveChargeData) {
+	local int BudgetLimit;
+	local int NumRockets;
+	local int MoveCharge;
+
+	NumRockets = V4CalculateCharge(StepTS);
+	BudgetLimit = Max(1, V4InternalBudget);
+	MoveCharge = Clamp(MoveChargeData, 0, 6);
+
+	// Use the client-reported loaded count from the move stream when it is
+	// available. That lets release-edge firing stay in sync with the client
+	// without relying on a debounce window to let the server catch up.
+	if (MoveCharge > 0)
+		NumRockets = Min(Clamp(Max(NumRockets, MoveCharge), 1, 6), BudgetLimit);
+	else if (V4PrimaryPredictedLoaded > 0)
+		NumRockets = Min(Clamp(Max(NumRockets, V4PrimaryPredictedLoaded), 1, 6), BudgetLimit);
+
+	return NumRockets;
+}
+
 simulated function bool V4ProcessStep(
 	float StepTS,
 	rotator StepView,
@@ -626,7 +639,7 @@ simulated function bool V4ProcessStep(
 	local int PrimaryEndReason;
 
 	if (V4HasSwitchAwayRequest() && (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring'))) {
-		V4CancelDeterministicLoad(StepTS, bServerSide);
+		V4CancelDeterministicLoad(StepTS, bServerSide, V4ChargeData);
 		return true;
 	}
 
@@ -700,19 +713,13 @@ simulated function bool V4ProcessStep(
 			bV4WasFireHeld = false;
 			return true;
 		}
-		if (bV4PrimaryReleasePending) {
-			if (V4ShouldDebug())
-				V4Log("[PRI] Cancel pending release cycle="$V4PrimaryCycleId$" Time="$Level.TimeSeconds);
-			bV4PrimaryReleasePending = false;
-			V4PrimaryReleasePendingTS = 0.0;
-		}
 
-				NumRockets = V4CalculateCharge(StepTS);
-				V4PrimaryPredictedLoaded = NumRockets;
-					if (!bServerSide && ClientRocketsLoaded > NumRockets) {
-						V4Log("[CLI] Clamp primary loaded "$ClientRocketsLoaded$" -> "$NumRockets$" Time="$Level.TimeSeconds);
-						ClientRocketsLoaded = NumRockets;
-					}
+		NumRockets = V4ResolvePrimaryCharge(StepTS, V4ChargeData);
+		V4PrimaryPredictedLoaded = NumRockets;
+		if (!bServerSide && ClientRocketsLoaded > NumRockets) {
+			V4Log("[CLI] Clamp primary loaded "$ClientRocketsLoaded$" -> "$NumRockets$" Time="$Level.TimeSeconds);
+			ClientRocketsLoaded = NumRockets;
+		}
 		V4CachedChargeData = NumRockets;
 
 		if (!bServerSide)
@@ -752,27 +759,22 @@ simulated function bool V4ProcessStep(
 	}
 
 	if (!bFireHeld && bV4WasFireHeld) {
+		bV4WasFireHeld = false;
 		if (bV4PrimaryCycleActive) {
-			if (!bV4PrimaryReleasePending) {
-				bV4PrimaryReleasePending = true;
-				V4PrimaryReleasePendingTS = StepTS;
-				if (V4ShouldDebug())
-					V4Log("[PRI] Pending release cycle="$V4PrimaryCycleId$" elapsed="$(StepTS - V4LoadStartTS)$" Time="$Level.TimeSeconds);
-				if (!bServerSide)
-					V4EnsureClientLoadState(false);
-				return true;
+			NumRockets = V4ResolvePrimaryCharge(StepTS, V4ChargeData);
+			V4PrimaryLastEndReason = IGPLUS_EB_PRIMARY_END_RELEASE;
+			if (V4ShouldDebug()) {
+				V4Log(
+					"[PRI] Release cycle="$V4PrimaryCycleId$
+					" rockets="$NumRockets$
+					" moveCharge="$V4ChargeData$
+					" elapsed="$(StepTS - V4LoadStartTS)$
+					" Time="$Level.TimeSeconds
+				);
 			}
-				if ((StepTS - V4PrimaryReleasePendingTS) < IGPLUS_EB_PRIMARY_RELEASE_DEBOUNCE)
-					return true;
-			}
-
-			bV4WasFireHeld = false;
-			if (bV4PrimaryCycleActive) {
-				NumRockets = V4CalculateCharge(StepTS);
-				V4PrimaryLastEndReason = IGPLUS_EB_PRIMARY_END_RELEASE;
-				if (bServerSide) {
-					HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-					V4PrimarySendServerConfirm(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE, StepTS);
+			if (bServerSide) {
+				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
+				V4PrimarySendServerConfirm(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE, StepTS);
 			} else {
 				V4PrimaryRecordPrediction(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
