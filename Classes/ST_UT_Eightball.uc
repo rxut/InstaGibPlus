@@ -984,9 +984,7 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc, int NumRockets, bo
 	RocketsLoaded = NumRockets;
 	bFireLoad = true;
 	bTightWad = bTight;
-
-	if (TournamentPlayer(P) != none)
-		bInstantRocket = TournamentPlayer(P).bInstantRocket;
+	bInstantRocket = bV4PrimaryLatchedInstant;
 
 	bCanClientFire = true;
 	bPointing = true;
