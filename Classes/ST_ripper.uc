@@ -78,13 +78,14 @@ simulated function bool IsDeterministicReady() {
 }
 
 // Ripper 'Fire' anim: NumFrames=15, Rate=30fps (default)
-// Duration = NumFrames / (Rate * PlayRate)
+// Unreal play duration is based on the last frame index, so use
+// (NumFrames - 1) / (Rate * PlayRate) to match stock refire timing.
 simulated function float PrimaryShotInterval() {
 	local float RateScale;
 	RateScale = 0.7 + 0.6 * FireAdjust;
 	if (RateScale <= 0.001)
 		return 0.50;
-	return FClamp(15.0 / (30.0 * RateScale), 0.05, 2.0);
+	return FClamp(14.0 / (30.0 * RateScale), 0.05, 2.0);
 }
 
 simulated function float AltShotInterval() {
@@ -92,7 +93,7 @@ simulated function float AltShotInterval() {
 	RateScale = 0.4 + 0.3 * FireAdjust;
 	if (RateScale <= 0.001)
 		return 0.50;
-	return FClamp(15.0 / (30.0 * RateScale), 0.05, 2.0);
+	return FClamp(14.0 / (30.0 * RateScale), 0.05, 2.0);
 }
 
 simulated function float V4FireInterval(bool bAlt) {
@@ -109,6 +110,16 @@ function V4HandleOutOfAmmo() {
 	P.StopFiring();
 	if (P.PendingWeapon == none || P.PendingWeapon == self)
 		P.SwitchToBestWeapon();
+}
+
+simulated function V4PlayFireAnim(bool bAlt) {
+	if (bAlt) {
+		PlayAnim('Fire', 0.4 + 0.3 * FireAdjust, 0.05);
+		PlayOwnedSound(class'Razor2Alt'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+	} else {
+		PlayAnim('Fire', 0.7 + 0.6 * FireAdjust, 0.05);
+		PlayOwnedSound(class'Razor2'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+	}
 }
 
 simulated function bool V4ProcessStep(
@@ -133,8 +144,11 @@ simulated function bool V4ProcessStep(
 
 	bWantsPrimary = bFireHeld || bForceFire;
 	bWantsAlt = bAltHeld || bForceAlt;
-	if (!bWantsPrimary && !bWantsAlt)
+	if (!bWantsPrimary && !bWantsAlt) {
+		if (!bServerSide && AnimSequence == 'Fire')
+			PlayIdleAnim();
 		return true;
+	}
 
 	if (StepTS + 0.0001 < NextV4FireTS)
 		return true;
@@ -173,11 +187,11 @@ simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLo
 		PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
 
 	if (bAlt) {
-		PlayAltFiring();
+		V4PlayFireAnim(true);
 		if (BP != none && BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
 			SpawnClientSideRazorAlt(true, StepView, StepLoc);
 	} else {
-		PlayFiring();
+		V4PlayFireAnim(false);
 		if (BP != none && BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
 			SpawnClientSideRazor(true, StepView, StepLoc);
 	}
@@ -203,12 +217,10 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 		Affector.FireEffect();
 
 	if (bAlt) {
-		PlayAltFiring();
-		PlayOwnedSound(class'Razor2Alt'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+		V4PlayFireAnim(true);
 		SpawnServerRazorAlt();
 	} else {
-		PlayFiring();
-		PlayOwnedSound(class'Razor2'.Default.SpawnSound, SLOT_None, Pawn(Owner).SoundDampening * 4.2);
+		V4PlayFireAnim(false);
 		SpawnServerRazor();
 	}
 

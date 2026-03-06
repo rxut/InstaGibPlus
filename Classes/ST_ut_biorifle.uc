@@ -96,9 +96,10 @@ simulated function bool IsDeterministicReady() {
 	return true;
 }
 
-// Primary fire interval: Fire anim = 9 frames at 30fps base, PlayRate = 0.65+0.4*FireAdjust.
+// Primary fire interval: Fire anim = 9 frames at 30fps base, but Unreal play
+// duration lands on the last frame index, so stock timing is 8 / (30 * rate).
 simulated function float PrimaryShotInterval() {
-	return 9.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
+	return 8.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
 }
 
 // Encode charge as half-step ticks (0..8), matching stock 0.0..4.1 charge progression.
@@ -238,7 +239,7 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc) {
 	bPointing = true;
 
 	P.PlayRecoil(FiringSpeed);
-	PlayFiring();
+	V4PlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
 	IGPlus_V4ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget, StepLoc, StepView);
@@ -265,6 +266,11 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, float CS) {
 	GotoState('NormalFire');
 }
 
+simulated function V4PlayPrimaryFiringAnim() {
+	PlayOwnedSound(AltFireSound, SLOT_None, 1.7 * Pawn(Owner).SoundDampening);
+	PlayAnim('Fire', 0.65 + 0.4 * FireAdjust, 0.05);
+}
+
 simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 	local bbPlayer BP;
@@ -277,7 +283,7 @@ simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
 	bPointing = true;
 	if (FiringSpeed > 0)
 		PawnOwner.PlayRecoil(FiringSpeed);
-	PlayFiring();
+	V4PlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
 	if (PlayerPawn(Owner) != none)
