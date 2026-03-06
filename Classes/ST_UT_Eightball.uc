@@ -96,12 +96,67 @@ simulated function bool V4OwnerInstantEnabled() {
 	return bInstantRocket;
 }
 
-simulated function V4SyncInstantRocketFlag() {
-	local TournamentPlayer TP;
+simulated function bool V4ShouldBypassLegacyClientInput() {
+	if ((AmmoType == none) || (AmmoType.AmmoAmount <= 0))
+		return false;
 
-	TP = TournamentPlayer(Owner);
-	if (TP != none)
-		bInstantRocket = TP.bInstantRocket;
+	bInstantRocket = V4OwnerInstantEnabled();
+	return IsPingCompEnabled() && PlayerPawn(Owner) != none && UsesServerMoveV4();
+}
+
+function V4ClearPendingServerFireState() {
+	bUseV4ServerFireData = false;
+	bTightWad = false;
+	RocketsLoaded = 0;
+}
+
+function V4ResetFireRocketsState() {
+	V4ClearPendingServerFireState();
+	V4ResetPrimaryCycle(false);
+	V4ResetAltCycle(false);
+}
+
+function bool V4PrepareServerFireContext(
+	rotator StepView,
+	vector StepLoc,
+	out int NumRockets,
+	out PlayerPawn P
+) {
+	P = PlayerPawn(Owner);
+	if (P == none)
+		return false;
+
+	V4ServerFireLoc = StepLoc;
+	if (bbPlayer(Owner) != none)
+		V4ServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	V4ServerFireRot = StepView;
+	bUseV4ServerFireData = true;
+
+	if (AmmoType == none)
+		GiveAmmo(P);
+	if (AmmoType != none) {
+		if (AmmoType.AmmoAmount < NumRockets)
+			NumRockets = AmmoType.AmmoAmount;
+		AmmoType.UseAmmo(NumRockets);
+	}
+
+	if (NumRockets <= 0) {
+		V4ClearPendingServerFireState();
+		return false;
+	}
+
+	return true;
+}
+
+function V4ArmServerFireState(int NumRockets, bool bPrimary, optional bool bTight) {
+	RocketsLoaded = NumRockets;
+	bFireLoad = bPrimary;
+	bTightWad = bPrimary && bTight;
+	if (bPrimary)
+		bInstantRocket = bV4PrimaryLatchedInstant;
+
+	bCanClientFire = true;
+	bPointing = true;
 }
 
 simulated function V4ResetClientAmmoTracking() {
@@ -855,91 +910,31 @@ simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional 
 function HandleV4ServerFire(rotator StepView, vector StepLoc, int NumRockets, bool bTight) {
 	local PlayerPawn P;
 
-	P = PlayerPawn(Owner);
-	if (P == none)
+	if (!V4PrepareServerFireContext(StepView, StepLoc, NumRockets, P))
 		return;
 
-	V4ServerFireLoc = StepLoc;
-	if (bbPlayer(Owner) != none)
-		V4ServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	V4ServerFireRot = StepView;
-	bUseV4ServerFireData = true;
-
-	if (AmmoType == none)
-		GiveAmmo(P);
-	if (AmmoType != none) {
-		if (AmmoType.AmmoAmount < NumRockets)
-			NumRockets = AmmoType.AmmoAmount;
-		AmmoType.UseAmmo(NumRockets);
+	V4ArmServerFireState(NumRockets, true, bTight);
+	if (P.PendingWeapon != none && P.PendingWeapon != self) {
+		P.PlayRecoil(FiringSpeed);
+		bChangeWeapon = true;
 	}
-	if (NumRockets <= 0) {
-		bUseV4ServerFireData = false;
-		bTightWad = false;
-		RocketsLoaded = 0;
-		return;
-	}
-
-	RocketsLoaded = NumRockets;
-	bFireLoad = true;
-	bTightWad = bTight;
-	bInstantRocket = bV4PrimaryLatchedInstant;
-
-	bCanClientFire = true;
-	bPointing = true;
-
-	if (NumRockets > 0) {
-		if (P.PendingWeapon != none && P.PendingWeapon != self) {
-			P.PlayRecoil(FiringSpeed);
-			bChangeWeapon = true;
-		}
-		GoToState('FireRockets');
-	}
+	GoToState('FireRockets');
 }
 
 // Spawn grenades on the server using deterministic step loc/view.
 function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets) {
 	local PlayerPawn P;
 
-	P = PlayerPawn(Owner);
-	if (P == none)
+	if (!V4PrepareServerFireContext(StepView, StepLoc, NumRockets, P))
 		return;
 
-	V4ServerFireLoc = StepLoc;
-	if (bbPlayer(Owner) != none)
-		V4ServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	V4ServerFireRot = StepView;
-	bUseV4ServerFireData = true;
-
-	if (AmmoType == none)
-		GiveAmmo(P);
-	if (AmmoType != none) {
-		if (AmmoType.AmmoAmount < NumRockets)
-			NumRockets = AmmoType.AmmoAmount;
-		AmmoType.UseAmmo(NumRockets);
-	}
-	if (NumRockets <= 0) {
-		bUseV4ServerFireData = false;
-		bTightWad = false;
-		RocketsLoaded = 0;
+	V4ArmServerFireState(NumRockets, false);
+	if (P.PendingWeapon != none && P.PendingWeapon != self) {
+		bChangeWeapon = true;
+		V4ClearPendingServerFireState();
 		return;
 	}
-
-	RocketsLoaded = NumRockets;
-	bFireLoad = false;
-	bTightWad = false;
-	bCanClientFire = true;
-	bPointing = true;
-
-	if (NumRockets > 0) {
-		if (P.PendingWeapon != none && P.PendingWeapon != self) {
-			bChangeWeapon = true;
-			bUseV4ServerFireData = false;
-			bTightWad = false;
-			RocketsLoaded = 0;
-			return;
-		}
-		GoToState('FireRockets');
-	}
+	GoToState('FireRockets');
 }
 
 function V4HandleOutOfAmmo() {
@@ -1013,51 +1008,30 @@ function AltFire( float Value )
 
 simulated function bool ClientFire( float Value )
 {
-	local Pawn PawnOwner;
-
-	if (!bCanClientFire) {
+	if (!bCanClientFire)
 		return false;
-	}
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == None) {
+	if (Pawn(Owner) == None)
 		return false;
-	}
 
-	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
-	{
-		V4SyncInstantRocketFlag();
+	// Deterministic primary load/fire is driven only by step processing.
+	// Instant rockets: V4ProcessStep drives fire timing via HandleV4ClientFire.
+	if (V4ShouldBypassLegacyClientInput())
+		return true;
 
-		// Deterministic primary load/fire is driven only by step processing.
-		// Instant rockets: V4ProcessStep drives fire timing via
-		// HandleV4ClientFire. Don't enter ClientFiring here.
-		if (IsPingCompEnabled() && PlayerPawn(Owner) != none && UsesServerMoveV4())
-			return true;
-	}
 	return Super.ClientFire(Value);
 }
 
 simulated function bool ClientAltFire( float Value )
 {
-	local Pawn PawnOwner;
-
-	if (!bCanClientFire) {
+	if (!bCanClientFire)
 		return false;
-	}
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == None) {
+	if (Pawn(Owner) == None)
 		return false;
-	}
 
-	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
-	{
-		V4SyncInstantRocketFlag();
+	// Deterministic alt load/fire is driven only by step processing.
+	if (V4ShouldBypassLegacyClientInput())
+		return true;
 
-		// Deterministic alt load/fire is driven only by step processing.
-		if (IsPingCompEnabled() && PlayerPawn(Owner) != none && UsesServerMoveV4())
-			return true;
-	}
 	return Super.ClientAltFire(Value);
 }
 
@@ -1219,26 +1193,18 @@ state FireRockets
 		local rotator AimRot;
 		local bool bUseStepFireData;
 
-			if (bCanClientFire == false)
-			{
-				bUseV4ServerFireData = false;
-				bTightWad = false;
-				RocketsLoaded = 0;
-				V4ResetPrimaryCycle(false);
-				V4ResetAltCycle(false);
-				return;
-			}
+		if (bCanClientFire == false)
+		{
+			V4ResetFireRocketsState();
+			return;
+		}
 			
 		PawnOwner = Pawn(Owner);
-			if (PawnOwner == None)
-			{
-				bUseV4ServerFireData = false;
-				bTightWad = false;
-				RocketsLoaded = 0;
-				V4ResetPrimaryCycle(false);
-				V4ResetAltCycle(false);
-				return;
-			}
+		if (PawnOwner == None)
+		{
+			V4ResetFireRocketsState();
+			return;
+		}
 		bbP = bbPlayer(PawnOwner);
 
 		PawnOwner.PlayRecoil(FiringSpeed);
@@ -1648,7 +1614,6 @@ simulated function PlaySelect() {
 	bCanClientFire = false;
 	V4BumpPrimaryWeaponEpoch();
 	V4InvalidateMoveInstantMode();
-	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
 	if (Pawn(Owner) != none) {
 		if (Pawn(Owner).bFire != 0 && !V4OwnerInstantEnabled())
