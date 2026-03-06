@@ -1348,58 +1348,6 @@ state NormalFire
 		}
 	}
 
-	function AnimEnd()
-	{
-		if ( bRotated )
-		{
-			bRotated = false;
-			PlayLoading(1.1, RocketsLoaded);
-		}
-		else
-		{
-			if ( RocketsLoaded == 6 )
-			{
-				GotoState('FireRockets');
-				return;
-			}
-			RocketsLoaded++;
-			AmmoType.UseAmmo(1);
-			if (pawn(Owner).bAltFire!=0) bTightWad=True;
-			bPointing = true;
-			Owner.MakeNoise(0.6 * Pawn(Owner).SoundDampening);		
-			RotateRocket();
-		}
-	}
-
-	function BeginState()
-	{
-		bFireLoad = True;
-		RocketsLoaded = 1;
-		RotateRocket();
-	}
-
-	function RotateRocket()
-	{
-		if ( PlayerPawn(Owner) == None )
-		{
-			if ( FRand() > 0.33 )
-				Pawn(Owner).bFire = 0;
-			if ( Pawn(Owner).bFire == 0 )
-			{
-	 			GoToState('FireRockets');
-				return;
-			}
-		}
-		if ( AmmoType.AmmoAmount <= 0 ) 
-		{
-			GotoState('FireRockets');
-			return;
-		}
-		if ( AmmoType.AmmoAmount == 1 )
-			Owner.PlaySound(Misc2Sound, SLOT_None, Pawn(Owner).SoundDampening); 
-		PlayRotating(RocketsLoaded-1);
-		bRotated = true;
-	}
 }
 
 state AltFiring
@@ -1416,50 +1364,6 @@ state AltFiring
 		Super.Tick(DeltaTime);
 	}
 	
-	function AnimEnd()
-	{
-		if ( bRotated )
-		{
-			bRotated = false;
-			PlayLoading(1.1, RocketsLoaded);
-		}
-		else
-		{
-			if ( RocketsLoaded == 6 )
-			{
-				GotoState('FireRockets');
-				return;
-			}
-			RocketsLoaded++;
-			AmmoType.UseAmmo(1);		
-			if ( (PlayerPawn(Owner) == None) && ((FRand() > 0.5) || (Pawn(Owner).Enemy == None)) )
-				Pawn(Owner).bAltFire = 0;
-			bPointing = true;
-			Owner.MakeNoise(0.6 * Pawn(Owner).SoundDampening);		
-			RotateRocket();
-		}
-	}
-
-	function RotateRocket()
-	{
-		if (AmmoType.AmmoAmount<=0)
-		{ 
-			GotoState('FireRockets');
-			return;
-		}		
-		PlayRotating(RocketsLoaded-1);
-		bRotated = true;
-	}
-
-	function BeginState()
-	{
-		RocketsLoaded = 1;
-		bFireLoad = False;
-		RotateRocket();
-	}
-
-Begin:
-	bLockedOn = False;
 }
 
 state Active
@@ -1846,8 +1750,7 @@ state ClientReload
 		if (IsV4Active())
 			return bCanClientFire && (Pawn(Owner) != None) && ((AmmoType == None) || (AmmoType.AmmoAmount > 0));
 
-		bForceFire = bForceFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
-		return bForceFire;
+		return Super.ClientFire(Value);
 	}
 
 	simulated function bool ClientAltFire(float Value)
@@ -1855,8 +1758,7 @@ state ClientReload
 		if (IsV4Active())
 			return bCanClientFire && (Pawn(Owner) != None) && ((AmmoType == None) || (AmmoType.AmmoAmount > 0));
 
-		bForceAltFire = bForceAltFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
-		return bForceAltFire;
+		return Super.ClientAltFire(Value);
 	}
 
 	simulated function AnimEnd()
@@ -1876,22 +1778,7 @@ state ClientReload
 			return;
 		}
 
-		if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
-		{
-			if ( bForceFire || (Pawn(Owner).bFire != 0) )
-			{
-				Global.ClientFire(0);
-				return;
-			}
-			else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
-			{
-				Global.ClientAltFire(0);
-				return;
-			}
-		}
-		
-		GotoState('');
-		Global.AnimEnd();
+		Super.AnimEnd();
 	}
 }
 
