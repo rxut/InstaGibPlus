@@ -36,7 +36,6 @@ var bool bV4SuppressPrimaryFirstBudgetAuto;
 // Primary deterministic cycle controller (server-authoritative, client-predicted)
 var int V4PrimaryCycleId;
 var int V4PrimaryWeaponEpoch;
-var int V4PrimaryCycleEpoch;
 var bool bV4PrimaryCycleActive;
 var int V4PrimaryCycleStartBudget;
 var int V4PrimaryPredictedLoaded;
@@ -70,11 +69,8 @@ simulated function bool V4OwnerInstantEnabled() {
 }
 
 simulated function bool V4ShouldBypassLegacyClientInput() {
-	if ((AmmoType == none) || (AmmoType.AmmoAmount <= 0))
-		return false;
-
 	bInstantRocket = V4OwnerInstantEnabled();
-	return IsPingCompEnabled() && PlayerPawn(Owner) != none && UsesServerMoveV4();
+	return UsesServerMoveV4();
 }
 
 function V4ClearPendingServerFireState() {
@@ -185,7 +181,6 @@ simulated function V4RefreshInternalBudget() {
 
 simulated function V4PrimaryStartCycle(bool bMoveInstant, bool bServerSide) {
 	V4PrimaryCycleId = (V4PrimaryCycleId + 1) & 255;
-	V4PrimaryCycleEpoch = V4PrimaryWeaponEpoch;
 	V4PrimaryCycleStartBudget = Max(1, V4InternalBudget);
 	V4PrimaryPredictedLoaded = 1;
 	bV4PrimaryLatchedInstant = bMoveInstant;
@@ -661,9 +656,6 @@ simulated function bool V4ProcessStep(
 	// current setting says instant rockets are off.
 	if (!bOwnerInstantSetting)
 		bMoveInstant = false;
-
-	if (bV4PrimaryCycleActive && V4PrimaryCycleEpoch != V4PrimaryWeaponEpoch)
-		V4ResetPrimaryCycle(true);
 
 	// ── PRIMARY FIRE ──
 	if (bFireHeld && !bV4WasFireHeld) {
@@ -1911,18 +1903,6 @@ state ClientReload
 		
 		GotoState('');
 		Global.AnimEnd();
-	}
-
-	simulated function EndState()
-	{
-		bForceFire = false;
-		bForceAltFire = false;
-	}
-
-	simulated function BeginState()
-	{
-		bForceFire = false;
-		bForceAltFire = false;
 	}
 }
 

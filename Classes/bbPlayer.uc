@@ -5442,32 +5442,12 @@ simulated function bool IGPlus_IsDeterministicSwitchGuardActive() {
 
 simulated function bool IGPlus_IsV4DetReady(optional Weapon Preferred) {
 	local Weapon Candidate;
-	local ST_ShockRifle SR;
-	local ST_ripper RP;
-	local ST_UT_FlakCannon FC;
-	local ST_ut_biorifle BR;
-	local ST_UT_Eightball EB;
 
 	Candidate = IGPlus_FindV4SupportedWeapon(Preferred);
 	if (Candidate == none)
 		return false;
 
-	SR = ST_ShockRifle(Candidate);
-	if (SR != none)
-		return SR.IsDeterministicReady();
-	RP = ST_ripper(Candidate);
-	if (RP != none)
-		return RP.IsDeterministicReady();
-	FC = ST_UT_FlakCannon(Candidate);
-	if (FC != none)
-		return FC.IsDeterministicReady();
-	BR = ST_ut_biorifle(Candidate);
-	if (BR != none)
-		return BR.IsDeterministicReady();
-	EB = ST_UT_Eightball(Candidate);
-	if (EB != none)
-		return EB.IsDeterministicReady();
-	return false;
+	return IGPlus_V4IsWeaponReady(Candidate);
 }
 
 function IGPlus_SavedMove PickRedundantMove(IGPlus_SavedMove Old, IGPlus_SavedMove M, vector Accel, EDodgeDir DodgeMove) {
