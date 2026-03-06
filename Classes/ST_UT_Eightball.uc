@@ -46,28 +46,6 @@ var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
 var bool bV4PrimaryLastPredictedAuto;
 
-// Client-side offset correction
-var float yMod;
-var vector CDO;
-
-simulated function V4MaybePlayClientLoadCatchupSound(bool bAlt, int NumRockets) {
-	// Primary-only: if authoritative auto-fire interrupts during rotate,
-	// the final load sound may never be reached via AnimEnd.
-	if (Role == ROLE_Authority || bAlt || !IsV4Active())
-		return;
-	if (!IsInState('ClientFiring'))
-		return;
-	if (!bRotated)
-		return;
-	if (NumRockets <= ClientRocketsLoaded)
-		return;
-
-	if (Owner == None || Pawn(Owner) == None)
-		return;
-
-	Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
-}
-
 simulated function V4SetMoveInstantMode(bool bValid, bool bInstant) {
 	bV4MoveInstantValid = bValid;
 	bV4MoveInstant = bInstant;
@@ -664,13 +642,16 @@ simulated function bool V4ProcessStep(
 	if (V4CooldownRemaining > 0.0001)
 		return true;
 
-	if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
-		if (!bV4WasFireHeld && !bV4WasAltHeld) {
-			if (bServerSide && (bFireHeld || bAltHeld))
-				V4HandleOutOfAmmo();
-			V4ResetPrimaryCycle(true);
-			V4ResetAltCycle(true);
-			return true;
+		if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
+			if (!bV4WasFireHeld && !bV4WasAltHeld) {
+				if (bServerSide && (bFireHeld || bAltHeld) && Pawn(Owner) != none) {
+					Pawn(Owner).StopFiring();
+					if (Pawn(Owner).PendingWeapon == none || Pawn(Owner).PendingWeapon == self)
+						Pawn(Owner).SwitchToBestWeapon();
+				}
+				V4ResetPrimaryCycle(true);
+				V4ResetAltCycle(true);
+				return true;
 		}
 	}
 
@@ -861,16 +842,21 @@ simulated function HandleV4ClientFire() {
 		GotoState('ClientV4InstantFire');
 }
 
-	// Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
-	// Syncs ClientRocketsLoaded to the server's count before firing so both
-	// sides agree on the number of rockets/grenades spawned.
-	simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
-		if (bAlt && V4HasSwitchAwayRequest()) {
-			V4CancelDeterministicLoad(false);
-			return;
-		}
+// Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
+// Syncs ClientRocketsLoaded to the server's count before firing so both
+// sides agree on the number of rockets/grenades spawned.
+simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
+	if (bAlt && V4HasSwitchAwayRequest()) {
+		V4CancelDeterministicLoad(false);
+		return;
+	}
 
-	V4MaybePlayClientLoadCatchupSound(bAlt, NumRockets);
+	// Primary-only: if authoritative auto-fire interrupts during rotate,
+	// the final load sound may never be reached via AnimEnd.
+	if (Role < ROLE_Authority && !bAlt && IsV4Active() && IsInState('ClientFiring')
+		&& bRotated && NumRockets > ClientRocketsLoaded
+		&& Owner != None && Pawn(Owner) != None)
+		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 
 	if (bAlt)
 		V4EmitClientAuthoritativeShot(NumRockets);
@@ -915,16 +901,6 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 		return;
 	}
 	GoToState('FireRockets');
-}
-
-function V4HandleOutOfAmmo() {
-	local Pawn P;
-	P = Pawn(Owner);
-	if (P == none)
-		return;
-	P.StopFiring();
-	if (P.PendingWeapon == none || P.PendingWeapon == self)
-		P.SwitchToBestWeapon();
 }
 
 function DropFrom(vector StartLocation)
@@ -1048,19 +1024,6 @@ simulated function FiringRockets()
 	}
 }
 
-simulated function yModInit() {
-	if (PlayerPawn(Owner) == None)
-		return;
-
-	yMod = PlayerPawn(Owner).Handedness;
-	if (yMod != 2.0)
-		yMod *= Default.FireOffset.Y;
-	else
-		yMod = 0;
-
-	CDO = CalcDrawOffsetClient();
-}
-
 simulated function vector CalcDrawOffsetClient() {
 	local vector DrawOffset;
 	local Pawn PawnOwner;
@@ -1090,18 +1053,28 @@ simulated function SpawnClientSideRockets(int NumRockets)
 	local rotator FireRot, AimRot;
 	local ST_RocketMk2 r;
 	local float Angle, RocketRad;
+	local float LocalYMod;
 	local pawn PawnOwner;
 	local float Spread;
+	local vector ClientDrawOffset;
 	local int i;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None) return;
+	if (PlayerPawn(Owner) == None)
+		return;
 
-	yModInit();
+	LocalYMod = PlayerPawn(Owner).Handedness;
+	if (LocalYMod != 2.0)
+		LocalYMod *= Default.FireOffset.Y;
+	else
+		LocalYMod = 0;
+
+	ClientDrawOffset = CalcDrawOffsetClient();
 
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
 	
-	StartLoc = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
+	StartLoc = Owner.Location + ClientDrawOffset + FireOffset.X * X + LocalYMod * Y + FireOffset.Z * Z;
 	if (bbPlayer(Owner) != None)
 		StartLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	AimRot = PawnOwner.ViewRotation;
@@ -1643,24 +1616,10 @@ simulated function PlayRotating(int num)
 	Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
 }
 
-simulated function V4SyncClientAnimLoaded(int TargetLoaded) {
-	local int ConsumeDelta;
-
-	if (ClientRocketsLoaded > TargetLoaded) {
-		ClientRocketsLoaded = TargetLoaded;
-	} else if (TargetLoaded > ClientRocketsLoaded) {
-		ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
-		if (!V4ConsumeClientAmmo(ConsumeDelta))
-			return;
-		ClientRocketsLoaded = TargetLoaded;
-	}
-
-	V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-}
-
 simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
 	local int LoadBudget;
 	local int TargetLoaded;
+	local int ConsumeDelta;
 
 	if (!IsV4Active())
 		return false;
@@ -1688,7 +1647,15 @@ simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
 	if (bRotated) {
 		PlayLoading(1.1, ClientRocketsLoaded);
 		bRotated = false;
-		V4SyncClientAnimLoaded(TargetLoaded);
+		if (ClientRocketsLoaded > TargetLoaded) {
+			ClientRocketsLoaded = TargetLoaded;
+		} else if (TargetLoaded > ClientRocketsLoaded) {
+			ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
+			if (!V4ConsumeClientAmmo(ConsumeDelta))
+				return true;
+			ClientRocketsLoaded = TargetLoaded;
+		}
+		V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 		return true;
 	}
 
@@ -1698,26 +1665,6 @@ simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
 
 	PlayRotating(ClientRocketsLoaded - 1);
 	bRotated = true;
-	return true;
-}
-
-simulated function bool V4HandleClientReloadAnimEnd() {
-	if (!IsV4Active())
-		return false;
-
-	if (!bCanClientFire || Pawn(Owner) == None) {
-		GotoState('');
-		return true;
-	}
-
-	if ((AmmoType == None) || (AmmoType.AmmoAmount <= 0)) {
-		GotoState('');
-		Pawn(Owner).SwitchToBestWeapon();
-		return true;
-	}
-
-	GotoState('');
-	Global.AnimEnd();
 	return true;
 }
 
@@ -1938,8 +1885,20 @@ state ClientReload
 
 	simulated function AnimEnd()
 	{
-		if (V4HandleClientReloadAnimEnd())
+		if (IsV4Active()) {
+			if (!bCanClientFire || Pawn(Owner) == None) {
+				GotoState('');
+				return;
+			}
+			if ((AmmoType == None) || (AmmoType.AmmoAmount <= 0)) {
+				GotoState('');
+				Pawn(Owner).SwitchToBestWeapon();
+				return;
+			}
+			GotoState('');
+			Global.AnimEnd();
 			return;
+		}
 
 		if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
 		{
