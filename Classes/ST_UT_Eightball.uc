@@ -19,11 +19,11 @@ var bool bUseV4ServerFireData;
 
 // V4 deterministic fire — shared between client and server
 var float V4CooldownRemaining;
-var float V4LoadElapsed;
+var float V4PrimaryLoadElapsed;
+var float V4AltLoadElapsed;
 var float V4LastStepTS;
 var bool bV4WasFireHeld;
 var bool bV4WasAltHeld;
-var bool bV4StepClockValid;
 var bool bV4MoveInstantValid;
 var bool bV4MoveInstant;
 var int V4CachedChargeData;
@@ -169,7 +169,7 @@ simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
 	V4PrimaryCycleStartBudget = 0;
 	V4PrimaryPredictedLoaded = 0;
 	bV4PrimaryLatchedInstant = false;
-	V4LoadElapsed = 0.0;
+	V4PrimaryLoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
 }
 
@@ -177,7 +177,7 @@ simulated function V4ResetAltCycle(optional bool bClearHeld) {
 	if (bClearHeld) {
 		bV4WasAltHeld = false;
 	}
-	V4LoadElapsed = 0.0;
+	V4AltLoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
 }
 
@@ -216,7 +216,7 @@ simulated function V4PrimaryStartCycle(bool bMoveInstant, bool bServerSide) {
 	bInstantRocket = bV4PrimaryLatchedInstant;
 	if (!bV4PrimaryLatchedInstant) {
 		bV4PrimaryCycleActive = true;
-		V4LoadElapsed = 0.0;
+		V4PrimaryLoadElapsed = 0.0;
 		if (!bServerSide) {
 			// Deterministic primary cycle owns the first-rocket consume.
 			// This must happen after tracking reset so finalize doesn't
@@ -226,7 +226,7 @@ simulated function V4PrimaryStartCycle(bool bMoveInstant, bool bServerSide) {
 		}
 	} else {
 		bV4PrimaryCycleActive = false;
-		V4LoadElapsed = 0.0;
+		V4PrimaryLoadElapsed = 0.0;
 	}
 }
 
@@ -302,7 +302,7 @@ simulated function ClientV4PrimaryShotConfirm(
 	ClientRocketsLoaded = ConfirmedRockets;
 	if (bV4PrimaryCycleActive && ConfirmCycleId == ActiveCycleId) {
 		bV4PrimaryCycleActive = false;
-		V4LoadElapsed = 0.0;
+		V4PrimaryLoadElapsed = 0.0;
 	}
 
 	// Snap to post-fire path when client prediction drifted from authoritative shot.
@@ -552,26 +552,29 @@ simulated function float V4PostFireInterval(int NumRockets) {
 simulated function V4AdvanceStepClock(float StepTS) {
 	local float StepDelta;
 
-	if (!bV4StepClockValid) {
+	if (V4LastStepTS < 0.0) {
 		V4LastStepTS = StepTS;
-		bV4StepClockValid = true;
 		return;
 	}
 
 	StepDelta = StepTS - V4LastStepTS;
+	if (StepDelta < -0.001) {
+		V4LastStepTS = StepTS;
+		return;
+	}
+
 	V4LastStepTS = StepTS;
 
-	if (StepDelta < 0.0) {
-		if (StepDelta < -0.001)
-			return;
+	if (StepDelta < 0.0)
 		StepDelta = 0.0;
-	}
 
 	if (V4CooldownRemaining > 0.0)
 		V4CooldownRemaining = FMax(0.0, V4CooldownRemaining - StepDelta);
 
-	if (bV4PrimaryCycleActive || bV4WasAltHeld)
-		V4LoadElapsed += StepDelta;
+	if (bV4PrimaryCycleActive)
+		V4PrimaryLoadElapsed += StepDelta;
+	if (bV4WasAltHeld)
+		V4AltLoadElapsed += StepDelta;
 }
 
 simulated function V4StartCooldown(float Interval) {
@@ -591,51 +594,36 @@ simulated function float GetV4ChargeInterval() {
 	return 0.9;
 }
 
-simulated function int V4CalculateCharge() {
+simulated function int V4CalculateCharge(float LoadElapsed) {
 	local int Charge;
 	local int FinalCharge;
 
 	V4RefreshInternalBudget();
 
-	Charge = 1 + int(V4LoadElapsed / GetV4ChargeInterval());
+	Charge = 1 + int(LoadElapsed / GetV4ChargeInterval());
 	FinalCharge = Min(Clamp(Charge, 1, 6), Max(1, V4InternalBudget));
 	return FinalCharge;
 }
 
-simulated function int V4ResolvePrimaryCharge(optional int MoveChargeData) {
+simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	local int BudgetLimit;
 	local int NumRockets;
 	local int MoveCharge;
 
-	NumRockets = V4CalculateCharge();
-	BudgetLimit = Max(1, V4InternalBudget);
-	MoveCharge = Clamp(MoveChargeData, 0, 6);
-
-	// While the trigger is still held, keep the legacy time-based estimate as
-	// the driver and only let move charge data pull it upward when the client
-	// has already advanced farther on that step.
-	if (MoveCharge > 0)
-		NumRockets = Min(Clamp(Max(NumRockets, MoveCharge), 1, 6), BudgetLimit);
-	else if (V4PrimaryPredictedLoaded > 0)
-		NumRockets = Min(Clamp(Max(NumRockets, V4PrimaryPredictedLoaded), 1, 6), BudgetLimit);
-
-	return NumRockets;
-}
-
-simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
-	local int BudgetLimit;
-	local int MoveCharge;
-
+	NumRockets = V4CalculateCharge(V4PrimaryLoadElapsed);
 	BudgetLimit = Max(1, V4InternalBudget);
 	MoveCharge = Clamp(MoveChargeData, 0, 6);
 
 	// Release/cancel edges should spend exactly what the move reported as
-	// loaded on that input step. Falling back to wall-clock here can overshoot
+	// loaded on that input step. Falling back to elapsed charge here can overshoot
 	// badly once the weapon is already idling or being thrown.
 	if (MoveCharge > 0)
 		return Min(Clamp(MoveCharge, 1, 6), BudgetLimit);
 
-	return V4ResolvePrimaryCharge(0);
+	if (V4PrimaryPredictedLoaded > 0)
+		NumRockets = Max(NumRockets, V4PrimaryPredictedLoaded);
+
+	return Min(Clamp(NumRockets, 1, 6), BudgetLimit);
 }
 
 simulated function bool V4ProcessStep(
@@ -724,21 +712,21 @@ simulated function bool V4ProcessStep(
 			return true;
 		}
 
-		NumRockets = V4CalculateCharge();
-		V4PrimaryPredictedLoaded = NumRockets;
-		if (!bServerSide && ClientRocketsLoaded > NumRockets)
-			ClientRocketsLoaded = NumRockets;
+			NumRockets = V4CalculateCharge(V4PrimaryLoadElapsed);
+			V4PrimaryPredictedLoaded = NumRockets;
+			if (!bServerSide && ClientRocketsLoaded > NumRockets)
+				ClientRocketsLoaded = NumRockets;
 		V4CachedChargeData = NumRockets;
 
 		if (!bServerSide)
 			V4EnsureClientLoadState(false);
 
-		bBudgetLimitReached = NumRockets >= V4InternalBudget;
-		if (bV4SuppressPrimaryFirstBudgetAuto
-			&& bBudgetLimitReached
-			&& NumRockets <= 1
-			&& V4LoadElapsed < GetV4ChargeInterval())
-			bBudgetLimitReached = false;
+			bBudgetLimitReached = NumRockets >= V4InternalBudget;
+			if (bV4SuppressPrimaryFirstBudgetAuto
+				&& bBudgetLimitReached
+				&& NumRockets <= 1
+				&& V4PrimaryLoadElapsed < GetV4ChargeInterval())
+				bBudgetLimitReached = false;
 		if (V4InternalBudget > 1 || NumRockets > 1)
 			bV4SuppressPrimaryFirstBudgetAuto = false;
 
@@ -776,7 +764,7 @@ simulated function bool V4ProcessStep(
 
 	// ── ALT FIRE (GRENADES) ──
 	if (bAltHeld && !bV4WasAltHeld) {
-		V4LoadElapsed = 0.0;
+		V4AltLoadElapsed = 0.0;
 		V4CachedChargeData = 1;
 		if (!bServerSide) {
 			// Mirror primary: deterministic cycle owns initial consume.
@@ -789,38 +777,38 @@ simulated function bool V4ProcessStep(
 	}
 
 	if (bAltHeld && bV4WasAltHeld) {
-		NumRockets = V4CalculateCharge();
-		if (!bServerSide && ClientRocketsLoaded > NumRockets)
-			ClientRocketsLoaded = NumRockets;
+			NumRockets = V4CalculateCharge(V4AltLoadElapsed);
+			if (!bServerSide && ClientRocketsLoaded > NumRockets)
+				ClientRocketsLoaded = NumRockets;
 		V4CachedChargeData = NumRockets;
 
 		if (!bServerSide)
 			V4EnsureClientLoadState(true);
 
 		bBudgetLimitReached = NumRockets >= V4InternalBudget;
-		if (bBudgetLimitReached && NumRockets <= 1 && V4LoadElapsed < GetV4ChargeInterval())
-			bBudgetLimitReached = false;
+			if (bBudgetLimitReached && NumRockets <= 1 && V4AltLoadElapsed < GetV4ChargeInterval())
+				bBudgetLimitReached = false;
 
 		if (NumRockets >= 6 || bBudgetLimitReached) {
+				if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
+				else HandleV4ClientLoadedFire(true, NumRockets, false);
+				V4StartCooldown(V4PostFireInterval(NumRockets));
+				bV4WasAltHeld = false;
+				V4AltLoadElapsed = 0.0;
+			}
+
+		return true;
+	}
+
+		if (!bAltHeld && bV4WasAltHeld) {
+			bV4WasAltHeld = false;
+			NumRockets = V4CalculateCharge(V4AltLoadElapsed);
 			if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
 			else HandleV4ClientLoadedFire(true, NumRockets, false);
 			V4StartCooldown(V4PostFireInterval(NumRockets));
-			bV4WasAltHeld = false;
-			V4LoadElapsed = 0.0;
+			V4AltLoadElapsed = 0.0;
+			return true;
 		}
-
-		return true;
-	}
-
-	if (!bAltHeld && bV4WasAltHeld) {
-		bV4WasAltHeld = false;
-		NumRockets = V4CalculateCharge();
-		if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
-		else HandleV4ClientLoadedFire(true, NumRockets, false);
-		V4StartCooldown(V4PostFireInterval(NumRockets));
-		V4LoadElapsed = 0.0;
-		return true;
-	}
 
 	return true;
 }
@@ -1655,23 +1643,7 @@ simulated function PlayRotating(int num)
 	Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
 }
 
-simulated function int V4GetClientLoadAnimBudget(bool bAltLoad) {
-	if (bAltLoad) {
-		V4RefreshInternalBudget();
-		return Min(6, Max(1, V4InternalBudget));
-	}
-
-	return Min(6, Max(1, V4PrimaryCycleStartBudget));
-}
-
-simulated function int V4GetClientLoadAnimTarget(bool bAltLoad) {
-	if (bAltLoad)
-		return Clamp(V4CachedChargeData, 1, V4GetClientLoadAnimBudget(true));
-
-	return Clamp(V4PrimaryPredictedLoaded, 1, V4GetClientLoadAnimBudget(false));
-}
-
-simulated function bool V4SyncClientAnimLoaded(int TargetLoaded) {
+simulated function V4SyncClientAnimLoaded(int TargetLoaded) {
 	local int ConsumeDelta;
 
 	if (ClientRocketsLoaded > TargetLoaded) {
@@ -1679,15 +1651,17 @@ simulated function bool V4SyncClientAnimLoaded(int TargetLoaded) {
 	} else if (TargetLoaded > ClientRocketsLoaded) {
 		ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
 		if (!V4ConsumeClientAmmo(ConsumeDelta))
-			return false;
+			return;
 		ClientRocketsLoaded = TargetLoaded;
 	}
 
 	V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-	return true;
 }
 
 simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
+	local int LoadBudget;
+	local int TargetLoaded;
+
 	if (!IsV4Active())
 		return false;
 
@@ -1702,15 +1676,24 @@ simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
 		return true;
 	}
 
+	if (bAltLoad) {
+		V4RefreshInternalBudget();
+		LoadBudget = Min(6, Max(1, V4InternalBudget));
+		TargetLoaded = Clamp(V4CachedChargeData, 1, LoadBudget);
+	} else {
+		LoadBudget = Min(6, Max(1, V4PrimaryCycleStartBudget));
+		TargetLoaded = Clamp(V4PrimaryPredictedLoaded, 1, LoadBudget);
+	}
+
 	if (bRotated) {
 		PlayLoading(1.1, ClientRocketsLoaded);
 		bRotated = false;
-		V4SyncClientAnimLoaded(V4GetClientLoadAnimTarget(bAltLoad));
+		V4SyncClientAnimLoaded(TargetLoaded);
 		return true;
 	}
 
 	V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-	if (ClientRocketsLoaded >= V4GetClientLoadAnimBudget(bAltLoad))
+	if (ClientRocketsLoaded >= LoadBudget)
 		return true;
 
 	PlayRotating(ClientRocketsLoaded - 1);
@@ -2008,4 +1991,5 @@ state ClientDown
 }
 
 defaultproperties {
+	V4LastStepTS=-1.0
 }
