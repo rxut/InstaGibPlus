@@ -490,7 +490,7 @@ function TraceFire(float Accuracy) {
 		AimRot = DeterministicShotRot;
 		AimLoc = DeterministicShotLoc;
 		if (PawnOwner != none)
-			DrawOffsetLoc = PawnOwner.BaseEyeHeight * vect(0,0,1) + (PlayerViewOffset >> AimRot);
+			DrawOffsetLoc = PawnOwner.BaseEyeHeight * vect(0,0,1) + ((0.01 * PlayerViewOffset) >> AimRot);
 		else
 			DrawOffsetLoc = CalcDrawOffset();
 	}
