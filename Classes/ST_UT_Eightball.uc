@@ -394,13 +394,7 @@ simulated function bool IsV4Active() {
 }
 
 simulated function bool UsesServerMoveV4() {
-	local bbPlayer P;
-
 	if (!IsV4Active())
-		return false;
-
-	P = bbPlayer(Owner);
-	if (P == none)
 		return false;
 
 	// Deterministic Eightball authority must stay active for both
@@ -1044,7 +1038,7 @@ function ServerStartedLoading()
 }
 
 // Called by client to play loading sounds on server so other players can hear
-function ServerPlayLoadSound(int RocketNum, bool bIsRotate)
+function ServerPlayLoadSound(bool bIsRotate)
 {
 	if (Owner == None || Pawn(Owner) == None)
 		return;
@@ -1894,7 +1888,7 @@ simulated function PlayLoading(float rate, int num)
 		&& PlayerPawn(Owner) != None
 	);
 	if (bProxyToServer)
-		ServerPlayLoadSound(num, false);
+		ServerPlayLoadSound(false);
 
 	// Always play locally for the owning client.
 	Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
@@ -1919,7 +1913,7 @@ simulated function PlayRotating(int num)
 		&& PlayerPawn(Owner) != None
 	);
 	if (bProxyToServer)
-		ServerPlayLoadSound(num, true);
+		ServerPlayLoadSound(true);
 
 	// Always play locally for the owning client.
 	Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);

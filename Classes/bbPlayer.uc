@@ -2833,15 +2833,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local int V4FirePulseIndex;
 	local int V4AltPulseIndex;
 	local bool bV4HasShotPack;
-	local bool bV4ShotDuplicate;
-	local bool bV4ShotAccepted;
 	local int V4ShotSeq;
-	local int V4ShotSliceIndex;
-	local int V4ShotKind;
-	local int V4ShotCharge;
-	local bool bV4ShotInstant;
-	local bool bV4ShotTight;
-	local rotator V4ShotView;
 	local int V4ShotDupFlag;
 	local ST_UT_Eightball V4Eightball;
 
@@ -3064,15 +3056,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	V4FirePulseIndex = -1;
 	V4AltPulseIndex = -1;
 	bV4EightballInstant = false;
-	bV4ShotDuplicate = false;
-	bV4ShotAccepted = false;
 	V4ShotSeq = 0;
-	V4ShotSliceIndex = 0;
-	V4ShotKind = 0;
-	V4ShotCharge = 0;
-	bV4ShotInstant = false;
-	bV4ShotTight = false;
-	V4ShotView = rot(0,0,0);
 	if (bFired && FireIndex >= 0)
 		V4FirePressIndex = FireIndex;
 	if (bAltFired && AltFireIndex >= 0)
@@ -3097,34 +3081,18 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4FirePulseIndex = IGPlus_V5PulseDecodeIndex(SM.V4PulseData, IGPLUS_V5PULSE_HAS_FIRE, IGPLUS_V5PULSE_FIRE_SHIFT);
 			V4AltPulseIndex = IGPlus_V5PulseDecodeIndex(SM.V4PulseData, IGPLUS_V5PULSE_HAS_ALT, IGPLUS_V5PULSE_ALT_SHIFT);
 		}
-		if (bV4HasShotPack && bV4WeaponIsEightball) {
-			V4ShotSeq = SM.V4ShotSeq & 255;
-			V4ShotSliceIndex = SM.V4ShotSliceIndex;
-			V4ShotKind = SM.V4ShotKind;
-			V4ShotCharge = SM.V4ShotCharge;
-			bV4ShotInstant = SM.bV4ShotInstant;
-			bV4ShotTight = SM.bV4ShotTight;
-			V4ShotView = SM.V4ShotView;
-			V4ShotDupFlag = 0;
-			bV4ShotAccepted = IGPlus_ServerRegisterEightballShotSeq(V4ShotSeq, V4ShotDupFlag);
-			bV4ShotDuplicate = V4ShotDupFlag != 0;
-			IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
-			if (bTraceInput) {
-				Log(
-					"[EB] [SRV-SHOT] recv seq="$V4ShotSeq$
-					" kind="$V4ShotKind$
-					" slice="$V4ShotSliceIndex$
-					" charge="$V4ShotCharge$
-					" instant="$bV4ShotInstant$
-					" tight="$bV4ShotTight$
-					" dx="$SM.V4ShotDX$
-					" dy="$SM.V4ShotDY$
-					" dz="$SM.V4ShotDZ$
-					" dup="$bV4ShotDuplicate$
-					" accepted="$bV4ShotAccepted
-				);
+			if (bV4HasShotPack && bV4WeaponIsEightball) {
+				V4ShotSeq = SM.V4ShotSeq & 255;
+				V4ShotDupFlag = 0;
+				IGPlus_ServerRegisterEightballShotSeq(V4ShotSeq, V4ShotDupFlag);
+				IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
+				if (bTraceInput) {
+					Log(
+						"[EB] [SRV-SHOT] recv seq="$V4ShotSeq$
+						" dupFlag="$V4ShotDupFlag
+					);
+				}
 			}
-		}
 	}
 
 	if (V4Eightball != none)
@@ -3142,15 +3110,13 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			" FireEnd="$bV4FireEndHeld$
 			" FirePress="$V4FirePressIndex$
 			" FireRelease="$V4FireReleaseIndex$
-			" FirePulse="$V4FirePulseIndex$
-			" AltPulse="$V4AltPulseIndex$
-			" ShotPack="$bV4HasShotPack$
-			" ShotSeq="$V4ShotSeq$
-			" ShotKind="$V4ShotKind$
-			" ShotSlice="$V4ShotSliceIndex$
-			" PulseData="$SM.V4PulseData$
-			" FireBit="$bFired$
-			" FireIndex="$FireIndex$
+				" FirePulse="$V4FirePulseIndex$
+				" AltPulse="$V4AltPulseIndex$
+				" ShotPack="$bV4HasShotPack$
+				" ShotSeq="$V4ShotSeq$
+				" PulseData="$SM.V4PulseData$
+				" FireBit="$bFired$
+				" FireIndex="$FireIndex$
 			" ForceFire="$bForceFire
 			);
 		if (bV5EightballPulse && ((bForceFire && V4FirePulseIndex < 0) || (bForceAltFire && V4AltPulseIndex < 0)))
@@ -3859,15 +3825,6 @@ function xxServerMove(
 	SM.OldMoveData2 = OldMoveData2;
 	SM.bV4EightballShotPack = false;
 	SM.V4ShotSeq = 0;
-	SM.V4ShotSliceIndex = 0;
-	SM.V4ShotKind = 0;
-	SM.V4ShotCharge = 0;
-	SM.bV4ShotInstant = false;
-	SM.bV4ShotTight = false;
-	SM.V4ShotView = rot(0,0,0);
-	SM.V4ShotDX = 0;
-	SM.V4ShotDY = 0;
-	SM.V4ShotDZ = 0;
 	SM.bUseV4 = false;
 
 	if (zzUTPure.Settings.bEnableServerPacketReordering) {
@@ -3923,29 +3880,8 @@ function xxServerMove_v4(
 	SM.OldMoveData2 = OldMoveData2;
 	SM.bV4EightballShotPack = (V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0;
 	SM.V4ShotSeq = 0;
-	SM.V4ShotSliceIndex = 0;
-	SM.V4ShotKind = 0;
-	SM.V4ShotCharge = 0;
-	SM.bV4ShotInstant = false;
-	SM.bV4ShotTight = false;
-	SM.V4ShotView = rot(0,0,0);
-	SM.V4ShotDX = 0;
-	SM.V4ShotDY = 0;
-	SM.V4ShotDZ = 0;
-	if (SM.bV4EightballShotPack) {
+	if (SM.bV4EightballShotPack)
 		SM.V4ShotSeq = V4PulseData & 0xFF;
-		SM.V4ShotSliceIndex = (V4PulseData >>> 8) & 0x1F;
-		SM.V4ShotKind = (V4PulseData >>> 13) & 0x3;
-		SM.V4ShotCharge = (V4PulseData >>> 15) & 0x7;
-		SM.bV4ShotInstant = (V4PulseData & (1 << 18)) != 0;
-		SM.bV4ShotTight = (V4PulseData & (1 << 19)) != 0;
-		SM.V4ShotView.Yaw = OldMoveData1 & 0xFFFF;
-		SM.V4ShotView.Pitch = ((OldMoveData1 >>> 16) & 0xFFFF);
-		SM.V4ShotView.Roll = 0;
-		SM.V4ShotDX = IGPlus_SignExtend10(OldMoveData2 & 0x3FF);
-		SM.V4ShotDY = IGPlus_SignExtend10((OldMoveData2 >>> 10) & 0x3FF);
-		SM.V4ShotDZ = IGPlus_SignExtend10((OldMoveData2 >>> 20) & 0x3FF);
-	}
 	SM.bUseV4 = true;
 
 	if (zzUTPure.Settings.bEnableServerPacketReordering) {
