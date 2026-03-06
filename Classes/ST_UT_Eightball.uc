@@ -3,7 +3,7 @@
 // V4 deterministic fire for Eightball rocket launcher.
 // Edge-only design: server spawns rockets from rising/falling edge
 // detection in sub-steps; client runs the same edge logic as a
-// cooldown calculator (shared NextV4FireTS) while the legacy
+// shared duration-based controller while the legacy
 // ClientFiring state machine handles animations.
 // ===============================================================
 
@@ -17,13 +17,13 @@ var vector V4ServerFireLoc;
 var rotator V4ServerFireRot;
 var bool bUseV4ServerFireData;
 
-const V4_PHASELOCK_MAX_OVERSHOOT = 0.060;
-
 // V4 deterministic fire — shared between client and server
-var float NextV4FireTS;
-var float V4LoadStartTS;
+var float V4CooldownRemaining;
+var float V4LoadElapsed;
+var float V4LastStepTS;
 var bool bV4WasFireHeld;
 var bool bV4WasAltHeld;
+var bool bV4StepClockValid;
 var bool bV4MoveInstantValid;
 var bool bV4MoveInstant;
 var int V4CachedChargeData;
@@ -169,7 +169,7 @@ simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
 	V4PrimaryCycleStartBudget = 0;
 	V4PrimaryPredictedLoaded = 0;
 	bV4PrimaryLatchedInstant = false;
-	V4LoadStartTS = 0.0;
+	V4LoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
 }
 
@@ -177,6 +177,7 @@ simulated function V4ResetAltCycle(optional bool bClearHeld) {
 	if (bClearHeld) {
 		bV4WasAltHeld = false;
 	}
+	V4LoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
 }
 
@@ -204,7 +205,7 @@ simulated function V4RefreshInternalBudget() {
 	V4InternalBudget = AmmoType.AmmoAmount;
 }
 
-simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bServerSide) {
+simulated function V4PrimaryStartCycle(bool bMoveInstant, bool bServerSide) {
 	V4PrimaryCycleId = (V4PrimaryCycleId + 1) & 255;
 	V4PrimaryCycleEpoch = V4PrimaryWeaponEpoch;
 	V4PrimaryCycleStartBudget = Max(1, V4InternalBudget);
@@ -215,7 +216,7 @@ simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bSe
 	bInstantRocket = bV4PrimaryLatchedInstant;
 	if (!bV4PrimaryLatchedInstant) {
 		bV4PrimaryCycleActive = true;
-		V4LoadStartTS = StepTS;
+		V4LoadElapsed = 0.0;
 		if (!bServerSide) {
 			// Deterministic primary cycle owns the first-rocket consume.
 			// This must happen after tracking reset so finalize doesn't
@@ -225,7 +226,7 @@ simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bSe
 		}
 	} else {
 		bV4PrimaryCycleActive = false;
-		V4LoadStartTS = 0.0;
+		V4LoadElapsed = 0.0;
 	}
 }
 
@@ -301,7 +302,7 @@ simulated function ClientV4PrimaryShotConfirm(
 	ClientRocketsLoaded = ConfirmedRockets;
 	if (bV4PrimaryCycleActive && ConfirmCycleId == ActiveCycleId) {
 		bV4PrimaryCycleActive = false;
-		V4LoadStartTS = 0.0;
+		V4LoadElapsed = 0.0;
 	}
 
 	// Snap to post-fire path when client prediction drifted from authoritative shot.
@@ -473,12 +474,12 @@ simulated function bool V4HasSwitchAwayRequest() {
 	return false;
 }
 
-simulated function V4CancelDeterministicLoad(float StepTS, bool bServerSide, optional int MoveChargeData) {
+simulated function V4CancelDeterministicLoad(bool bServerSide, optional int MoveChargeData) {
 	local int CancelCount;
 
 	if (bServerSide && AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bV4PrimaryCycleActive || bV4WasFireHeld) {
-			CancelCount = Clamp(V4ResolvePrimaryEdgeCharge(StepTS, MoveChargeData), 1, 6);
+			CancelCount = Clamp(V4ResolvePrimaryEdgeCharge(MoveChargeData), 1, 6);
 			AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
 		} else if (bV4WasAltHeld) {
 			// Base UT style: consume what is currently loaded, not a
@@ -548,24 +549,41 @@ simulated function float V4PostFireInterval(int NumRockets) {
 	return 0.05 + (FireFrames - 1) / (30.0 * FirePlayRate) + 0.05 + 6.0 / 15.0;
 }
 
-// Advance cooldown with phase-lock for small overshoots (sub-step jitter).
-// Larger overshoots reset cooldown from the actual fire time.
-simulated function float V4AdvanceCooldown(float PrevNextTS, float FireTS, float Interval) {
-	local float Overshoot;
+simulated function V4AdvanceStepClock(float StepTS) {
+	local float StepDelta;
 
-	if (PrevNextTS > 0) {
-		Overshoot = FireTS - PrevNextTS;
-		if (Overshoot >= -0.001 && Overshoot <= V4_PHASELOCK_MAX_OVERSHOOT)
-			return PrevNextTS + Interval;
+	if (!bV4StepClockValid) {
+		V4LastStepTS = StepTS;
+		bV4StepClockValid = true;
+		return;
 	}
-	return FireTS + Interval;
+
+	StepDelta = StepTS - V4LastStepTS;
+	V4LastStepTS = StepTS;
+
+	if (StepDelta < 0.0) {
+		if (StepDelta < -0.001)
+			return;
+		StepDelta = 0.0;
+	}
+
+	if (V4CooldownRemaining > 0.0)
+		V4CooldownRemaining = FMax(0.0, V4CooldownRemaining - StepDelta);
+
+	if (bV4PrimaryCycleActive || bV4WasAltHeld)
+		V4LoadElapsed += StepDelta;
+}
+
+simulated function V4StartCooldown(float Interval) {
+	V4CooldownRemaining = FMax(0.0, Interval);
 }
 
 // =========================================================================
 // V4ProcessStep — runs on BOTH client and server
 //
 // Server (bServerSide=true): spawns authoritative rockets via HandleV4ServerFire.
-// Client (bServerSide=false): only tracks edge state and sets NextV4FireTS.
+// Client (bServerSide=false): only tracks edge state and advances the shared
+// duration clocks from the same per-step timestamps used by the server.
 //   Client weapon states handle animations and visual rockets only; refire
 //   and cooldown ownership stays in deterministic step processing.
 // =========================================================================
@@ -573,23 +591,23 @@ simulated function float GetV4ChargeInterval() {
 	return 0.9;
 }
 
-simulated function int V4CalculateCharge(float StepTS) {
+simulated function int V4CalculateCharge() {
 	local int Charge;
 	local int FinalCharge;
 
 	V4RefreshInternalBudget();
 
-	Charge = 1 + int((StepTS - V4LoadStartTS) / GetV4ChargeInterval());
+	Charge = 1 + int(V4LoadElapsed / GetV4ChargeInterval());
 	FinalCharge = Min(Clamp(Charge, 1, 6), Max(1, V4InternalBudget));
 	return FinalCharge;
 }
 
-simulated function int V4ResolvePrimaryCharge(float StepTS, optional int MoveChargeData) {
+simulated function int V4ResolvePrimaryCharge(optional int MoveChargeData) {
 	local int BudgetLimit;
 	local int NumRockets;
 	local int MoveCharge;
 
-	NumRockets = V4CalculateCharge(StepTS);
+	NumRockets = V4CalculateCharge();
 	BudgetLimit = Max(1, V4InternalBudget);
 	MoveCharge = Clamp(MoveChargeData, 0, 6);
 
@@ -604,7 +622,7 @@ simulated function int V4ResolvePrimaryCharge(float StepTS, optional int MoveCha
 	return NumRockets;
 }
 
-simulated function int V4ResolvePrimaryEdgeCharge(float StepTS, optional int MoveChargeData) {
+simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	local int BudgetLimit;
 	local int MoveCharge;
 
@@ -617,7 +635,7 @@ simulated function int V4ResolvePrimaryEdgeCharge(float StepTS, optional int Mov
 	if (MoveCharge > 0)
 		return Min(Clamp(MoveCharge, 1, 6), BudgetLimit);
 
-	return V4ResolvePrimaryCharge(StepTS, 0);
+	return V4ResolvePrimaryCharge(0);
 }
 
 simulated function bool V4ProcessStep(
@@ -637,8 +655,10 @@ simulated function bool V4ProcessStep(
 	local bool bOwnerInstantSetting;
 	local bool bBudgetLimitReached;
 
+	V4AdvanceStepClock(StepTS);
+
 	if (V4HasSwitchAwayRequest() && (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring'))) {
-		V4CancelDeterministicLoad(StepTS, bServerSide, V4ChargeData);
+		V4CancelDeterministicLoad(bServerSide, V4ChargeData);
 		return true;
 	}
 
@@ -653,7 +673,7 @@ simulated function bool V4ProcessStep(
 	else
 		bMoveInstant = bInstantRocket;
 
-	if (StepTS + 0.0001 < NextV4FireTS)
+	if (V4CooldownRemaining > 0.0001)
 		return true;
 
 	if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
@@ -679,7 +699,7 @@ simulated function bool V4ProcessStep(
 	// ── PRIMARY FIRE ──
 	if (bFireHeld && !bV4WasFireHeld) {
 		V4RefreshInternalBudget();
-		V4PrimaryStartCycle(StepTS, bMoveInstant, bServerSide);
+		V4PrimaryStartCycle(bMoveInstant, bServerSide);
 		bV4WasFireHeld = true;
 		if (bV4PrimaryLatchedInstant) {
 			if (bServerSide) {
@@ -689,7 +709,7 @@ simulated function bool V4ProcessStep(
 				V4PrimaryRecordPrediction(1, false);
 				HandleV4ClientFire();
 			}
-			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(1));
+			V4StartCooldown(V4PostFireInterval(1));
 			bV4WasFireHeld = false;
 			V4ResetPrimaryCycle(false);
 		} else if (!bServerSide) {
@@ -704,7 +724,7 @@ simulated function bool V4ProcessStep(
 			return true;
 		}
 
-		NumRockets = V4CalculateCharge(StepTS);
+		NumRockets = V4CalculateCharge();
 		V4PrimaryPredictedLoaded = NumRockets;
 		if (!bServerSide && ClientRocketsLoaded > NumRockets)
 			ClientRocketsLoaded = NumRockets;
@@ -717,8 +737,7 @@ simulated function bool V4ProcessStep(
 		if (bV4SuppressPrimaryFirstBudgetAuto
 			&& bBudgetLimitReached
 			&& NumRockets <= 1
-			&& V4LoadStartTS > 0.0
-			&& (StepTS - V4LoadStartTS) < GetV4ChargeInterval())
+			&& V4LoadElapsed < GetV4ChargeInterval())
 			bBudgetLimitReached = false;
 		if (V4InternalBudget > 1 || NumRockets > 1)
 			bV4SuppressPrimaryFirstBudgetAuto = false;
@@ -731,7 +750,7 @@ simulated function bool V4ProcessStep(
 				V4PrimaryRecordPrediction(NumRockets, true);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
 			}
-			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			V4StartCooldown(V4PostFireInterval(NumRockets));
 			bV4WasFireHeld = false;
 			V4ResetPrimaryCycle(false);
 		}
@@ -741,7 +760,7 @@ simulated function bool V4ProcessStep(
 	if (!bFireHeld && bV4WasFireHeld) {
 		bV4WasFireHeld = false;
 		if (bV4PrimaryCycleActive) {
-			NumRockets = V4ResolvePrimaryEdgeCharge(StepTS, V4ChargeData);
+			NumRockets = V4ResolvePrimaryEdgeCharge(V4ChargeData);
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
 				V4PrimarySendServerConfirm(NumRockets, false);
@@ -749,7 +768,7 @@ simulated function bool V4ProcessStep(
 				V4PrimaryRecordPrediction(NumRockets, false);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
 			}
-			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			V4StartCooldown(V4PostFireInterval(NumRockets));
 		}
 		V4ResetPrimaryCycle(false);
 		return true;
@@ -757,7 +776,7 @@ simulated function bool V4ProcessStep(
 
 	// ── ALT FIRE (GRENADES) ──
 	if (bAltHeld && !bV4WasAltHeld) {
-		V4LoadStartTS = StepTS;
+		V4LoadElapsed = 0.0;
 		V4CachedChargeData = 1;
 		if (!bServerSide) {
 			// Mirror primary: deterministic cycle owns initial consume.
@@ -770,24 +789,24 @@ simulated function bool V4ProcessStep(
 	}
 
 	if (bAltHeld && bV4WasAltHeld) {
-		NumRockets = V4CalculateCharge(StepTS);
+		NumRockets = V4CalculateCharge();
 		if (!bServerSide && ClientRocketsLoaded > NumRockets)
 			ClientRocketsLoaded = NumRockets;
 		V4CachedChargeData = NumRockets;
 
-		if (!bServerSide) {
+		if (!bServerSide)
 			V4EnsureClientLoadState(true);
-		}
 
 		bBudgetLimitReached = NumRockets >= V4InternalBudget;
-		if (bBudgetLimitReached && NumRockets <= 1 && (StepTS - V4LoadStartTS) < GetV4ChargeInterval())
+		if (bBudgetLimitReached && NumRockets <= 1 && V4LoadElapsed < GetV4ChargeInterval())
 			bBudgetLimitReached = false;
 
 		if (NumRockets >= 6 || bBudgetLimitReached) {
 			if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
 			else HandleV4ClientLoadedFire(true, NumRockets, false);
-			NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+			V4StartCooldown(V4PostFireInterval(NumRockets));
 			bV4WasAltHeld = false;
+			V4LoadElapsed = 0.0;
 		}
 
 		return true;
@@ -795,10 +814,11 @@ simulated function bool V4ProcessStep(
 
 	if (!bAltHeld && bV4WasAltHeld) {
 		bV4WasAltHeld = false;
-		NumRockets = V4CalculateCharge(StepTS);
+		NumRockets = V4CalculateCharge();
 		if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
 		else HandleV4ClientLoadedFire(true, NumRockets, false);
-		NextV4FireTS = V4AdvanceCooldown(NextV4FireTS, StepTS, V4PostFireInterval(NumRockets));
+		V4StartCooldown(V4PostFireInterval(NumRockets));
+		V4LoadElapsed = 0.0;
 		return true;
 	}
 
@@ -853,14 +873,14 @@ simulated function HandleV4ClientFire() {
 		GotoState('ClientV4InstantFire');
 }
 
-// Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
-// Syncs ClientRocketsLoaded to the server's count before firing so both
-// sides agree on the number of rockets/grenades spawned.
-simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
-	if (bAlt && V4HasSwitchAwayRequest()) {
-		V4CancelDeterministicLoad(Level.TimeSeconds, false);
-		return;
-	}
+	// Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
+	// Syncs ClientRocketsLoaded to the server's count before firing so both
+	// sides agree on the number of rockets/grenades spawned.
+	simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
+		if (bAlt && V4HasSwitchAwayRequest()) {
+			V4CancelDeterministicLoad(false);
+			return;
+		}
 
 	V4MaybePlayClientLoadCatchupSound(bAlt, NumRockets);
 
@@ -932,7 +952,7 @@ function DropFrom(vector StartLocation)
 	// Mirror switch-away behavior: rockets/grenades committed into an active
 	// deterministic load stay spent when the weapon is thrown.
 	if (bShouldCancel)
-		V4CancelDeterministicLoad(Level.TimeSeconds, true, DropCharge);
+		V4CancelDeterministicLoad(true, DropCharge);
 
 	Super.DropFrom(StartLocation);
 }
@@ -1026,8 +1046,7 @@ simulated function FiringRockets()
 	else
 		bAlt = false;
 
-	// NextV4FireTS is set by V4ProcessStep from StepTS (both sides).
-	// No Level.TimeSeconds-based cooldown here.
+	// V4 cooldown is owned by the per-step duration clock.
 
 	Super.FiringRockets();
 
