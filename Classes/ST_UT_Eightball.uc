@@ -487,7 +487,7 @@ simulated function V4CancelDeterministicLoad(float StepTS, bool bServerSide, opt
 
 	if (bServerSide && AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bV4PrimaryCycleActive || bV4WasFireHeld) {
-			CancelCount = Clamp(V4ResolvePrimaryCharge(StepTS, MoveChargeData), 1, 6);
+			CancelCount = Clamp(V4ResolvePrimaryEdgeCharge(StepTS, MoveChargeData), 1, 6);
 			AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
 		} else if (bV4WasAltHeld) {
 			// Base UT style: consume what is currently loaded, not a
@@ -609,15 +609,31 @@ simulated function int V4ResolvePrimaryCharge(float StepTS, optional int MoveCha
 	BudgetLimit = Max(1, V4InternalBudget);
 	MoveCharge = Clamp(MoveChargeData, 0, 6);
 
-	// Use the client-reported loaded count from the move stream when it is
-	// available. That lets release-edge firing stay in sync with the client
-	// without relying on a debounce window to let the server catch up.
+	// While the trigger is still held, keep the legacy time-based estimate as
+	// the driver and only let move charge data pull it upward when the client
+	// has already advanced farther on that step.
 	if (MoveCharge > 0)
 		NumRockets = Min(Clamp(Max(NumRockets, MoveCharge), 1, 6), BudgetLimit);
 	else if (V4PrimaryPredictedLoaded > 0)
 		NumRockets = Min(Clamp(Max(NumRockets, V4PrimaryPredictedLoaded), 1, 6), BudgetLimit);
 
 	return NumRockets;
+}
+
+simulated function int V4ResolvePrimaryEdgeCharge(float StepTS, optional int MoveChargeData) {
+	local int BudgetLimit;
+	local int MoveCharge;
+
+	BudgetLimit = Max(1, V4InternalBudget);
+	MoveCharge = Clamp(MoveChargeData, 0, 6);
+
+	// Release/cancel edges should spend exactly what the move reported as
+	// loaded on that input step. Falling back to wall-clock here can overshoot
+	// badly once the weapon is already idling or being thrown.
+	if (MoveCharge > 0)
+		return Min(Clamp(MoveCharge, 1, 6), BudgetLimit);
+
+	return V4ResolvePrimaryCharge(StepTS, 0);
 }
 
 simulated function bool V4ProcessStep(
@@ -714,7 +730,7 @@ simulated function bool V4ProcessStep(
 			return true;
 		}
 
-		NumRockets = V4ResolvePrimaryCharge(StepTS, V4ChargeData);
+		NumRockets = V4CalculateCharge(StepTS);
 		V4PrimaryPredictedLoaded = NumRockets;
 		if (!bServerSide && ClientRocketsLoaded > NumRockets) {
 			V4Log("[CLI] Clamp primary loaded "$ClientRocketsLoaded$" -> "$NumRockets$" Time="$Level.TimeSeconds);
@@ -761,7 +777,7 @@ simulated function bool V4ProcessStep(
 	if (!bFireHeld && bV4WasFireHeld) {
 		bV4WasFireHeld = false;
 		if (bV4PrimaryCycleActive) {
-			NumRockets = V4ResolvePrimaryCharge(StepTS, V4ChargeData);
+			NumRockets = V4ResolvePrimaryEdgeCharge(StepTS, V4ChargeData);
 			V4PrimaryLastEndReason = IGPLUS_EB_PRIMARY_END_RELEASE;
 			if (V4ShouldDebug()) {
 				V4Log(
@@ -1058,6 +1074,24 @@ function ServerPlayLoadSound(int RocketNum, bool bIsRotate)
 		Owner.PlaySound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
 	else
 		Owner.PlaySound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
+}
+
+function DropFrom(vector StartLocation)
+{
+	local int DropCharge;
+	local bool bShouldCancel;
+
+	DropCharge = V4GetChargeDataForMove();
+	bShouldCancel = Role == ROLE_Authority
+		&& IsV4Active()
+		&& (bV4PrimaryCycleActive || bV4WasFireHeld || bV4WasAltHeld);
+
+	// Mirror switch-away behavior: rockets/grenades committed into an active
+	// deterministic load stay spent when the weapon is thrown.
+	if (bShouldCancel)
+		V4CancelDeterministicLoad(Level.TimeSeconds, true, DropCharge);
+
+	Super.DropFrom(StartLocation);
 }
 
 function Finish()
