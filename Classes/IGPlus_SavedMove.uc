@@ -16,8 +16,6 @@ var int V4FirePressIndex;
 var int V4FireReleaseIndex;
 var int V4AltPressIndex;
 var int V4AltReleaseIndex;
-var int V4FirePulseIndex;
-var int V4AltPulseIndex;
 var int AddVelocityId;
 var vector Momentum;
 
@@ -46,8 +44,6 @@ function Clear2() {
     V4FireReleaseIndex = -1;
     V4AltPressIndex = -1;
     V4AltReleaseIndex = -1;
-    V4FirePulseIndex = -1;
-    V4AltPulseIndex = -1;
     bV4FireStartHeld = false;
     bV4FireEndHeld = false;
     bV4AltStartHeld = false;
@@ -71,6 +67,4 @@ defaultproperties
      V4FireReleaseIndex=-1
      V4AltPressIndex=-1
      V4AltReleaseIndex=-1
-     V4FirePulseIndex=-1
-     V4AltPulseIndex=-1
 }

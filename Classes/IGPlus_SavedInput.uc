@@ -44,10 +44,8 @@ function Initialize() {
 }
 
 function CopyFrom(float Delta, bbPlayer P) {
-	local bool bUseEightballPulse;
 	local bool bForceFirePulse;
 	local bool bForceAltPulse;
-	local int PulseFlags;
 	local ST_UT_Eightball EB;
 
 	TimeStamp = Level.TimeSeconds;
@@ -75,25 +73,16 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bJump = (P.aUp > 1.0) || P.IGPlus_PressedJumpSave;
 	bDodg = P.bPressedDodge;
 	EB = ST_UT_Eightball(P.Weapon);
-	bUseEightballPulse = P.IGPlus_IsEightballPulseEnabled(P.Weapon);
-	if (bUseEightballPulse) {
-		PulseFlags = P.IGPlus_ConsumeEightballShotPulses();
-		bForceFirePulse = (PulseFlags & 1) != 0;
-		bForceAltPulse = (PulseFlags & 2) != 0;
-		if (P.bTraceInput && (bForceFirePulse || bForceAltPulse))
-			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=pulse-only ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
+	if (EB != none && EB.IsV4Active()) {
+		bForceFirePulse = false;
+		bForceAltPulse = false;
+		if (P.bTraceInput && (P.bJustFired || P.bJustAltFired))
+			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=det-hold RawBlocked JustFire="$P.bJustFired$" JustAlt="$P.bJustAltFired);
 	} else {
-		if (EB != none && !P.IGPlus_EnableInputReplication && int(Level.ServerMoveVersion) >= 4) {
-			bForceFirePulse = false;
-			bForceAltPulse = false;
-			if (P.bTraceInput && (P.bJustFired || P.bJustAltFired))
-				Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=pulse-only RawBlocked JustFire="$P.bJustFired$" JustAlt="$P.bJustAltFired);
-		} else {
-			bForceFirePulse = P.bJustFired;
-			bForceAltPulse = P.bJustAltFired;
-			if (P.bTraceInput && (bForceFirePulse || bForceAltPulse) && EB != none)
-				Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=raw ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
-		}
+		bForceFirePulse = P.bJustFired;
+		bForceAltPulse = P.bJustAltFired;
+		if (P.bTraceInput && (bForceFirePulse || bForceAltPulse) && EB != none)
+			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=raw ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
 	}
 	bFire = (P.bFire != 0) || bForceFirePulse;
 	bAFir = (P.bAltFire != 0) || bForceAltPulse;
