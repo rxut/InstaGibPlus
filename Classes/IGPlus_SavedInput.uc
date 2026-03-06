@@ -33,6 +33,7 @@ var bool bForceFireTap;
 var bool bForceAltTap;
 var bool bDetReady;
 var bool bDetPredictedLocal;
+var bool bV4EightballInstant;
 var int V4WeaponIndex;
 var int V4ChargeData;
 
@@ -83,15 +84,16 @@ function CopyFrom(float Delta, bbPlayer P) {
 		bForceAltTap = P.bJustAltFired;
 		if (P.bTraceInput && (bForceFireTap || bForceAltTap) && EB != none)
 			Log("[EB] [CLI-INPACK] TS="$TimeStamp$" Src=raw ForceFire="$bForceFireTap$" ForceAlt="$bForceAltTap);
-	}
-	bFire = (P.bFire != 0) || bForceFireTap;
-	bAFir = (P.bAltFire != 0) || bForceAltTap;
-	self.bForceFireTap = bForceFireTap;
-	self.bForceAltTap = bForceAltTap;
-	bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
-	V4WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
-	V4ChargeData = P.IGPlus_GetV4ChargeData();
-	bDetPredictedLocal = false;
+		}
+		bFire = (P.bFire != 0) || bForceFireTap;
+		bAFir = (P.bAltFire != 0) || bForceAltTap;
+		self.bForceFireTap = bForceFireTap;
+		self.bForceAltTap = bForceAltTap;
+		bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
+		V4WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
+		bV4EightballInstant = bDetReady && V4WeaponIndex == 5 && P.IGPlus_IsEightballInstantMode(P.Weapon);
+		V4ChargeData = P.IGPlus_GetV4ChargeData();
+		bDetPredictedLocal = false;
 
 	P.bJustFired = false;
 	P.bJustAltFired = false;
@@ -119,6 +121,7 @@ function SerializeTo(IGPlus_DataBuffer B, out float DeltaError) {
 	B.AddBit(bForceFireTap);
 	B.AddBit(bForceAltTap);
 	B.AddBit(bDetReady);
+	B.AddBit(bV4EightballInstant);
 	B.AddBits(3, V4WeaponIndex);
 	B.AddBits(4, V4ChargeData);
 	Temp = SavedViewRotation.Pitch << 16 >> 16;
@@ -145,6 +148,7 @@ function DeserializeFrom(IGPlus_DataBuffer B) {
 	B.ConsumeBit(Temp); bForceFireTap = Temp != 0;
 	B.ConsumeBit(Temp); bForceAltTap = Temp != 0;
 	B.ConsumeBit(Temp); bDetReady = Temp != 0;
+	B.ConsumeBit(Temp); bV4EightballInstant = Temp != 0;
 	B.ConsumeBits(3, V4WeaponIndex);
 	B.ConsumeBits(4, V4ChargeData);
 	B.ConsumeBits(15, SavedViewRotation.Pitch); SavedViewRotation.Pitch = SavedViewRotation.Pitch << 17 >> 17;
@@ -162,21 +166,22 @@ function bool IsSimilarTo(IGPlus_SavedInput Other) {
 		bWalk == Other.bWalk &&
 		bDuck == Other.bDuck &&
 		bJump == Other.bJump &&
-		bDodg == Other.bDodg &&
-		bFire == Other.bFire &&
-		bAFir == Other.bAFir &&
-		bForceFireTap == Other.bForceFireTap &&
-		bForceAltTap == Other.bForceAltTap &&
-		bDetReady == Other.bDetReady &&
-		V4WeaponIndex == Other.V4WeaponIndex &&
-		V4ChargeData == Other.V4ChargeData &&
-		SavedViewRotation.Pitch == Other.SavedViewRotation.Pitch &&
-		SavedViewRotation.Yaw == Other.SavedViewRotation.Yaw;
+			bDodg == Other.bDodg &&
+			bFire == Other.bFire &&
+			bAFir == Other.bAFir &&
+			bForceFireTap == Other.bForceFireTap &&
+			bForceAltTap == Other.bForceAltTap &&
+			bDetReady == Other.bDetReady &&
+			bV4EightballInstant == Other.bV4EightballInstant &&
+			V4WeaponIndex == Other.V4WeaponIndex &&
+			V4ChargeData == Other.V4ChargeData &&
+			SavedViewRotation.Pitch == Other.SavedViewRotation.Pitch &&
+			SavedViewRotation.Yaw == Other.SavedViewRotation.Yaw;
 }
 
 defaultproperties {
 	bHidden=True
 	DrawType=DT_None
 	RemoteRole=ROLE_None
-	SerializedBits=72
-}
+		SerializedBits=73
+	}

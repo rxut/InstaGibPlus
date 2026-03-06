@@ -24,8 +24,6 @@ var float V4AltLoadElapsed;
 var float V4LastStepTS;
 var bool bV4WasFireHeld;
 var bool bV4WasAltHeld;
-var bool bV4MoveInstantValid;
-var bool bV4MoveInstant;
 var int V4CachedChargeData;
 
 // Client ammo consumption reconstruction logic
@@ -44,16 +42,6 @@ var int V4PrimaryLastPredictedCycleId;
 var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
 var bool bV4PrimaryLastPredictedAuto;
-
-simulated function V4SetMoveInstantMode(bool bValid, bool bInstant) {
-	bV4MoveInstantValid = bValid;
-	bV4MoveInstant = bInstant;
-}
-
-simulated function V4InvalidateMoveInstantMode() {
-	bV4MoveInstantValid = false;
-	bV4MoveInstant = false;
-}
 
 simulated function bool V4OwnerInstantEnabled() {
 	local TournamentPlayer TP;
@@ -609,7 +597,9 @@ simulated function bool V4ProcessStep(
 	bool bForceAlt,
 	bool bServerSide,
 	optional bool bStepReadyHint,
-	optional int V4ChargeData
+	optional int V4ChargeData,
+	optional bool bMoveInstantValid,
+	optional bool bMoveInstantValue
 ) {
 	local int NumRockets;
 	local bool bMoveInstant;
@@ -627,8 +617,8 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	if (bV4MoveInstantValid)
-		bMoveInstant = bV4MoveInstant;
+	if (bMoveInstantValid)
+		bMoveInstant = bMoveInstantValue;
 	else if (TournamentPlayer(Owner) != none)
 		bMoveInstant = TournamentPlayer(Owner).bInstantRocket;
 	else
@@ -1557,7 +1547,6 @@ simulated function PlaySelect() {
 	bForceAltFire = false;
 	bCanClientFire = false;
 	V4BumpPrimaryWeaponEpoch();
-	V4InvalidateMoveInstantMode();
 	V4ResetAltCycle(true);
 	if (Pawn(Owner) != none) {
 		if (Pawn(Owner).bFire != 0 && !V4OwnerInstantEnabled())

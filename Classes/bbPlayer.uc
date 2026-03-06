@@ -2787,6 +2787,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local IGPlus_WeaponImplementationBase WImpBase;
 	local bool bV4WeaponSupported;
 	local bool bV4WeaponIsEightball;
+	local bool bV4MoveHasEightballInstant;
 	local bool bV4EightballInstant;
 	local bool bV4HandledStep;
 	local bool bV4EightballStrict;
@@ -2809,7 +2810,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local int V4AltPressIndex;
 	local int V4AltReleaseIndex;
 	local bool bV4HasShotPack;
-	local ST_UT_Eightball V4Eightball;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -2992,9 +2992,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		}
 	}
-	V4Eightball = ST_UT_Eightball(V4Weapon);
-	bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
-	bV4WeaponIsEightball = bV4WeaponSupported && V4Eightball != none;
+		bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+		bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
+		bV4MoveHasEightballInstant = SM.bUseV4 && SM.bDetReady && ST_UT_Eightball(V4Weapon) != none;
 	// Hard-block legacy fire fallback for deterministic v4 weapons.
 	bV4EightballStrict =
 		IGPlus_IsV4StrictWeapon(V4Weapon)
@@ -3035,25 +3035,24 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		}
 	}
 
-	if (V4Eightball != none)
-		V4Eightball.V4SetMoveInstantMode(SM.bUseV4 && SM.bDetReady, bV4EightballInstant);
-
-	bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+		bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 
 	if (bDetFallback) {
-		IGPlus_V4ProcessWeaponStep(
-			V4Weapon,
-			SM.TimeStamp,
-			ViewRotation,
-			Location,
+			IGPlus_V4ProcessWeaponStep(
+				V4Weapon,
+				SM.TimeStamp,
+				ViewRotation,
+				Location,
 			bFired,
 			bAltFired,
 			bForceFire,
-			bForceAltFire,
-			true,
-			SM.bDetReady,
-			SM.V4ChargeData
-		);
+				bForceAltFire,
+				true,
+				SM.bDetReady,
+				SM.V4ChargeData,
+				bV4MoveHasEightballInstant,
+				bV4EightballInstant
+			);
 		// Deterministic weapons execute shots directly from step processing.
 		// Keep fire latches cleared to avoid legacy state-machine refire.
 		bFire = 0;
@@ -3166,19 +3165,21 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					bStepForceAltFire = false;
 				}
 
-					bV4HandledStep = IGPlus_V4ProcessWeaponStep(
-						V4Weapon,
-						StepTS,
-						StepView,
-						StepLoc,
+						bV4HandledStep = IGPlus_V4ProcessWeaponStep(
+							V4Weapon,
+							StepTS,
+							StepView,
+							StepLoc,
 						bStepFireHeld,
 						bStepAltHeld,
 						bStepForceFire,
-						bStepForceAltFire,
-						true,
-						SM.bDetReady,
-						SM.V4ChargeData
-					);
+							bStepForceAltFire,
+							true,
+							SM.bDetReady,
+							SM.V4ChargeData,
+							bV4MoveHasEightballInstant,
+							bV4EightballInstant
+						);
 					if (bV4HandledStep) {
 						// Deterministic shot execution is already handled in v4 step.
 						// Do not feed held-fire into legacy weapon state machine.
@@ -4847,11 +4848,13 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 						bInputFireHeld,
 						bInputAltHeld,
 						bInputForceFire,
-						bInputForceAltFire,
-						true,
-						I.bDetReady,
-						I.V4ChargeData
-					);
+							bInputForceAltFire,
+							true,
+							I.bDetReady,
+							I.V4ChargeData,
+							I.V4WeaponIndex == 5,
+							I.bV4EightballInstant
+						);
 				// Deterministic step path is authoritative; keep legacy fire latches
 				// clear to prevent duplicate server-side refire.
 				bFire = 0;
@@ -5339,7 +5342,9 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	bool bForceAlt,
 	bool bServerSide,
 	optional bool bStepReadyHint,
-	optional int V4ChargeData
+	optional int V4ChargeData,
+	optional bool bHasEightballInstant,
+	optional bool bEightballInstant
 ) {
 	local ST_ShockRifle SR;
 	local ST_ripper RP;
@@ -5373,7 +5378,20 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 
 	EB = ST_UT_Eightball(W);
 	if (EB != none)
-		return EB.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint, V4ChargeData);
+		return EB.V4ProcessStep(
+			StepTS,
+			StepView,
+			StepLoc,
+			bFireHeld,
+			bAltHeld,
+			bForceFire,
+			bForceAlt,
+			bServerSide,
+			bStepReadyHint,
+			V4ChargeData,
+			bHasEightballInstant,
+			bEightballInstant
+		);
 
 	return false;
 }
@@ -5714,19 +5732,21 @@ function IGPlus_ReplicateInput(float Delta) {
 					else
 						V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 					if (V4Weapon != none) {
-					IGPlus_V4ProcessWeaponStep(
-						V4Weapon,
-						SerializedInput.TimeStamp,
-						SerializedInput.SavedViewRotation,
-						SerializedInput.SavedLocation,
+						IGPlus_V4ProcessWeaponStep(
+							V4Weapon,
+							SerializedInput.TimeStamp,
+							SerializedInput.SavedViewRotation,
+							SerializedInput.SavedLocation,
 						SerializedInput.bFire,
 						SerializedInput.bAFir,
 							SerializedInput.bForceFireTap,
-							SerializedInput.bForceAltTap,
-						false,
-						SerializedInput.bDetReady,
-						SerializedInput.V4ChargeData
-					);
+								SerializedInput.bForceAltTap,
+							false,
+							SerializedInput.bDetReady,
+							SerializedInput.V4ChargeData,
+							SerializedInput.V4WeaponIndex == 5,
+							SerializedInput.bV4EightballInstant
+						);
 				}
 			}
 			SerializedInput.bDetPredictedLocal = true;
@@ -5971,19 +5991,21 @@ function xxReplicateMove(
 	if (NewMove.bDetReady)
 		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
 	if (NewMove.bDetReady && V4LocalWeapon != none && IGPlus_V4SupportsWeapon(V4LocalWeapon))
-		IGPlus_V4ProcessWeaponStep(
-			V4LocalWeapon,
-			NewMove.TimeStamp,
-			NewMove.IGPlus_SavedViewRotation,
-			Location,
+			IGPlus_V4ProcessWeaponStep(
+				V4LocalWeapon,
+				NewMove.TimeStamp,
+				NewMove.IGPlus_SavedViewRotation,
+				Location,
 			NewMove.bFire,
 			NewMove.bAltFire,
 			NewMove.bForceFire,
-			NewMove.bForceAltFire,
-			false,
-			NewMove.bDetReady,
-			NewMove.V4ChargeData
-		);
+				NewMove.bForceAltFire,
+				false,
+				NewMove.bDetReady,
+				NewMove.V4ChargeData,
+				NewMove.V4WeaponIndex == 5,
+				NewMove.bV4EightballInstant
+			);
 
 	bForcePacketSplit = false;
 	ClientUpdateTime = FClamp(RealDelta - TimeBetweenNetUpdates + ClientUpdateTime, -TimeBetweenNetUpdates, TimeBetweenNetUpdates);
