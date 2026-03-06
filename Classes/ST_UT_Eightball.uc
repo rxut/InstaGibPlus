@@ -23,10 +23,6 @@ const IGPLUS_EB_PRIMARY_END_RELEASE = 1;
 const IGPLUS_EB_PRIMARY_END_AUTO_6 = 2;
 const IGPLUS_EB_PRIMARY_END_AUTO_BUDGET = 3;
 
-// Rate limiting to prevent rapid fire exploits
-var float LastClientFireTime;
-const FIRE_RATE_LIMIT = 0.25;
-
 // V4 deterministic fire — shared between client and server
 var float NextV4FireTS;
 var float V4LoadStartTS;
@@ -106,23 +102,6 @@ simulated function V4SyncInstantRocketFlag() {
 	TP = TournamentPlayer(Owner);
 	if (TP != none)
 		bInstantRocket = TP.bInstantRocket;
-}
-
-// Returns 1 if handled and successful, 0 if handled and blocked, -1 if caller should fall back to Super.
-simulated function int V4TryEnterClientFireState(name StateName, bool bAllowInstantSkip) {
-	if (!IsPingCompEnabled() || PlayerPawn(Owner) == none)
-		return -1;
-
-	if (UsesServerMoveV4())
-		return 1;
-	if (bAllowInstantSkip && IsV4Active() && bInstantRocket)
-		return 1;
-	if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
-		return 0;
-
-	LastClientFireTime = Level.TimeSeconds;
-	GotoState(StateName);
-	return 1;
 }
 
 simulated function V4ResetClientAmmoTracking() {
@@ -339,17 +318,8 @@ simulated function V4EnsureClientLoadState(bool bAltLoad) {
 		GotoState('ClientFiring');
 }
 
-simulated function bool V4ShouldProxyLoadSound() {
-	return Role < ROLE_Authority
-		&& IsPingCompEnabled()
-		&& !IsV4Active()
-		&& PlayerPawn(Owner) != none;
-}
-
 replication
 {
-	unreliable if(Role < ROLE_Authority)
-		ServerStartedLoading, ServerPlayLoadSound;
 	unreliable if(Role == ROLE_Authority)
 		ClientV4PrimaryShotConfirm;
 }
@@ -982,24 +952,6 @@ function V4HandleOutOfAmmo() {
 		P.SwitchToBestWeapon();
 }
 
-// Called by client when loading starts to stop server lock-on checks
-function ServerStartedLoading()
-{
-	SetTimer(0, false);
-}
-
-// Called by client to play loading sounds on server so other players can hear
-function ServerPlayLoadSound(bool bIsRotate)
-{
-	if (Owner == None || Pawn(Owner) == None)
-		return;
-		
-	if (bIsRotate)
-		Owner.PlaySound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
-	else
-		Owner.PlaySound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
-}
-
 function DropFrom(vector StartLocation)
 {
 	local int DropCharge;
@@ -1062,7 +1014,6 @@ function AltFire( float Value )
 simulated function bool ClientFire( float Value )
 {
 	local Pawn PawnOwner;
-	local int ClientFireResult;
 
 	if (!bCanClientFire) {
 		return false;
@@ -1077,15 +1028,11 @@ simulated function bool ClientFire( float Value )
 	{
 		V4SyncInstantRocketFlag();
 
-		// In ServerMove_v4 mode, primary load/fire is driven only by
-		// deterministic step processing.
+		// Deterministic primary load/fire is driven only by step processing.
 		// Instant rockets: V4ProcessStep drives fire timing via
-		// HandleV4ClientFire. Don't enter ClientFiring.
-		ClientFireResult = V4TryEnterClientFireState('ClientFiring', true);
-		if (ClientFireResult > 0)
+		// HandleV4ClientFire. Don't enter ClientFiring here.
+		if (IsPingCompEnabled() && PlayerPawn(Owner) != none && UsesServerMoveV4())
 			return true;
-		if (ClientFireResult == 0)
-			return false;
 	}
 	return Super.ClientFire(Value);
 }
@@ -1093,7 +1040,6 @@ simulated function bool ClientFire( float Value )
 simulated function bool ClientAltFire( float Value )
 {
 	local Pawn PawnOwner;
-	local int ClientFireResult;
 
 	if (!bCanClientFire) {
 		return false;
@@ -1108,13 +1054,9 @@ simulated function bool ClientAltFire( float Value )
 	{
 		V4SyncInstantRocketFlag();
 
-		// In ServerMove_v4 mode, alt load/fire is driven only by
-		// deterministic step processing.
-		ClientFireResult = V4TryEnterClientFireState('ClientAltFiring', false);
-		if (ClientFireResult > 0)
+		// Deterministic alt load/fire is driven only by step processing.
+		if (IsPingCompEnabled() && PlayerPawn(Owner) != none && UsesServerMoveV4())
 			return true;
-		if (ClientFireResult == 0)
-			return false;
 	}
 	return Super.ClientAltFire(Value);
 }
@@ -1743,11 +1685,6 @@ simulated function PlayLoading(float rate, int num)
 	
 	// Match base UT_Eightball cadence: honor caller-supplied load rate.
 	PlayAnim(LoadAnim[num], rate, 0.05);
-	
-	// In deterministic mode, owner always plays local load/rotate sounds.
-	// Keep server proxy only for legacy non-deterministic path.
-	if (V4ShouldProxyLoadSound())
-		ServerPlayLoadSound(false);
 
 	// Always play locally for the owning client.
 	Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
@@ -1759,11 +1696,6 @@ simulated function PlayRotating(int num)
 		return;
 	
 	PlayAnim(RotateAnim[num],, 0.05);
-	
-	// In deterministic mode, owner always plays local load/rotate sounds.
-	// Keep server proxy only for legacy non-deterministic path.
-	if (V4ShouldProxyLoadSound())
-		ServerPlayLoadSound(true);
 
 	// Always play locally for the owning client.
 	Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
@@ -1887,9 +1819,6 @@ state ClientFiring
 			return;
 		}
 
-		if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
-			ServerStartedLoading();
-
 		if (!IsV4Active() && AmmoType != None)
 			AmmoType.AmmoAmount--;
 		
@@ -2002,9 +1931,6 @@ state ClientAltFiring
 	{
 		bFireLoad = false;
 		
-		if (Role < ROLE_Authority && IsPingCompEnabled() && !UsesServerMoveV4())
-			ServerStartedLoading();
-			
 		if (!IsV4Active() && AmmoType != None)
 			AmmoType.AmmoAmount--;
 
