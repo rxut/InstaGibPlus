@@ -14,7 +14,6 @@ var int V4PulseData;
 var Actor ClientBase;
 var int OldMoveData1;
 var int OldMoveData2;
-var bool bV4EightballShotPack;
 var int V4ShotSeq;
 
 var bool bDetReady;

@@ -61,18 +61,6 @@ var int V4PrimaryLastPredictedReason;
 var float yMod;
 var vector CDO;
 
-simulated function V4Log(coerce string S) {
-	if (!V4ShouldDebug())
-		return;
-	Log("[EB]"@S);
-}
-
-simulated function bool V4ShouldDebug() {
-	local bbPlayer bbP;
-	bbP = bbPlayer(Owner);
-	return bbP != none && bbP.bTraceInput;
-}
-
 simulated function V4MaybePlayClientLoadCatchupSound(bool bAlt, int NumRockets) {
 	// Primary-only: if authoritative auto-fire interrupts during rotate,
 	// the final load sound may never be reached via AnimEnd.
@@ -114,6 +102,31 @@ simulated function bool V4OwnerInstantEnabled() {
 	return bInstantRocket;
 }
 
+simulated function V4SyncInstantRocketFlag() {
+	local TournamentPlayer TP;
+
+	TP = TournamentPlayer(Owner);
+	if (TP != none)
+		bInstantRocket = TP.bInstantRocket;
+}
+
+// Returns 1 if handled and successful, 0 if handled and blocked, -1 if caller should fall back to Super.
+simulated function int V4TryEnterClientFireState(name StateName, bool bAllowInstantSkip) {
+	if (!IsPingCompEnabled() || PlayerPawn(Owner) == none)
+		return -1;
+
+	if (UsesServerMoveV4())
+		return 1;
+	if (bAllowInstantSkip && IsV4Active() && bInstantRocket)
+		return 1;
+	if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
+		return 0;
+
+	LastClientFireTime = Level.TimeSeconds;
+	GotoState(StateName);
+	return 1;
+}
+
 simulated function V4ResetClientAmmoTracking() {
 	if (Role == ROLE_Authority)
 		return;
@@ -147,8 +160,6 @@ simulated function V4BumpPrimaryWeaponEpoch(optional coerce string Reason) {
 		V4PrimaryWeaponEpoch = 1;
 	V4PrimaryCycleEpoch = V4PrimaryWeaponEpoch;
 	V4ResetPrimaryCycle(true);
-	if (V4ShouldDebug())
-		V4Log("[PRI] Epoch++ "$V4PrimaryWeaponEpoch$" reason="$Reason$" Time="$Level.TimeSeconds);
 }
 
 simulated function V4RefreshInternalBudget() {
@@ -237,11 +248,8 @@ simulated function ClientV4PrimaryShotConfirm(
 	// Ignore confirms for a finished cycle once a newer primary cycle is
 	// already loading. Applying those confirms here would reset local ammo
 	// tracking mid-load and can cause an extra client-side consume.
-	if (bV4PrimaryCycleActive && ConfirmCycleId != ActiveCycleId) {
-		if (V4ShouldDebug())
-			V4Log("[CLI] Ignore stale confirm cycle="$ConfirmCycleId$" active="$ActiveCycleId$" consumed="$V4ClientConsumedAmmo$" Time="$Level.TimeSeconds);
+	if (bV4PrimaryCycleActive && ConfirmCycleId != ActiveCycleId)
 		return;
-	}
 
 	bCycleMatch = ((V4PrimaryLastPredictedCycleId & 255) == ConfirmCycleId);
 	bMismatch = false;
@@ -257,20 +265,6 @@ simulated function ClientV4PrimaryShotConfirm(
 	}
 	if (V4PrimaryLastPredictedReason != int(EndReason))
 		bMismatch = true;
-
-	if (V4ShouldDebug()) {
-		V4Log(
-			"[CLI-CONFIRM] cycle="$int(CycleId)$
-			" rockets="$ConfirmedRockets$
-			" reason="$int(EndReason)$
-			" instant="$bInstant$
-			" mismatch="$bMismatch$
-				" predCycle="$V4PrimaryLastPredictedCycleId$
-				" predRockets="$V4PrimaryLastPredictedRockets$
-				" predReason="$V4PrimaryLastPredictedReason$
-				" predInstant="$bV4PrimaryLastPredictedInstant
-		);
-	}
 
 	// Base UT behavior: client HUD ammo follows replicated server ammo.
 	// Do not mutate client ammo here for primary confirm.
@@ -338,17 +332,20 @@ simulated function V4EnsureClientLoadState(bool bAltLoad) {
 		return;
 
 	if (bAltLoad) {
-		if (!IsInState('ClientAltFiring')) {
-			V4Log("[CLI] Kick ClientAltFiring Time="$Level.TimeSeconds);
+		if (!IsInState('ClientAltFiring'))
 			GotoState('ClientAltFiring');
-		}
 		return;
 	}
 
-	if (!IsInState('ClientFiring')) {
-		V4Log("[CLI] Kick ClientFiring Time="$Level.TimeSeconds);
+	if (!IsInState('ClientFiring'))
 		GotoState('ClientFiring');
-	}
+}
+
+simulated function bool V4ShouldProxyLoadSound() {
+	return Role < ROLE_Authority
+		&& IsPingCompEnabled()
+		&& !IsV4Active()
+		&& PlayerPawn(Owner) != none;
 }
 
 replication
@@ -544,14 +541,9 @@ simulated function float V4AdvanceCooldown(float PrevNextTS, float FireTS, float
 
 	if (PrevNextTS > 0) {
 		Overshoot = FireTS - PrevNextTS;
-		if (Overshoot >= -0.001 && Overshoot <= V4_PHASELOCK_MAX_OVERSHOOT) {
-			if (V4ShouldDebug())
-				V4Log("[DBG] Cooldown anchor prev="$PrevNextTS$" fire="$FireTS$" over="$Overshoot$" next="$(PrevNextTS + Interval));
+		if (Overshoot >= -0.001 && Overshoot <= V4_PHASELOCK_MAX_OVERSHOOT)
 			return PrevNextTS + Interval;
-		}
 	}
-	if (V4ShouldDebug())
-		V4Log("[DBG] Cooldown reset prev="$PrevNextTS$" fire="$FireTS$" over="$(FireTS - PrevNextTS)$" next="$(FireTS + Interval));
 	return FireTS + Interval;
 }
 
@@ -673,11 +665,8 @@ simulated function bool V4ProcessStep(
 	if (!bOwnerInstantSetting)
 		bMoveInstant = false;
 
-	if (bV4PrimaryCycleActive && V4PrimaryCycleEpoch != V4PrimaryWeaponEpoch) {
-		if (V4ShouldDebug())
-			V4Log("[PRI] Cancel cycle "$V4PrimaryCycleId$" epoch mismatch cycle="$V4PrimaryCycleEpoch$" current="$V4PrimaryWeaponEpoch$" Time="$Level.TimeSeconds);
+	if (bV4PrimaryCycleActive && V4PrimaryCycleEpoch != V4PrimaryWeaponEpoch)
 		V4ResetPrimaryCycle(true);
-	}
 
 	// ── PRIMARY FIRE ──
 	if (bFireHeld && !bV4WasFireHeld) {
@@ -709,10 +698,8 @@ simulated function bool V4ProcessStep(
 
 		NumRockets = V4CalculateCharge(StepTS);
 		V4PrimaryPredictedLoaded = NumRockets;
-		if (!bServerSide && ClientRocketsLoaded > NumRockets) {
-			V4Log("[CLI] Clamp primary loaded "$ClientRocketsLoaded$" -> "$NumRockets$" Time="$Level.TimeSeconds);
+		if (!bServerSide && ClientRocketsLoaded > NumRockets)
 			ClientRocketsLoaded = NumRockets;
-		}
 		V4CachedChargeData = NumRockets;
 
 		if (!bServerSide)
@@ -723,11 +710,8 @@ simulated function bool V4ProcessStep(
 			&& bBudgetLimitReached
 			&& NumRockets <= 1
 			&& V4LoadStartTS > 0.0
-			&& (StepTS - V4LoadStartTS) < GetV4ChargeInterval()) {
-			if (V4ShouldDebug())
-				V4Log("[PRI] Suppress early budget auto cycle="$V4PrimaryCycleId$" budget="$V4InternalBudget$" elapsed="$(StepTS - V4LoadStartTS)$" Time="$Level.TimeSeconds);
+			&& (StepTS - V4LoadStartTS) < GetV4ChargeInterval())
 			bBudgetLimitReached = false;
-		}
 		if (V4InternalBudget > 1 || NumRockets > 1)
 			bV4SuppressPrimaryFirstBudgetAuto = false;
 
@@ -754,15 +738,6 @@ simulated function bool V4ProcessStep(
 		bV4WasFireHeld = false;
 		if (bV4PrimaryCycleActive) {
 			NumRockets = V4ResolvePrimaryEdgeCharge(StepTS, V4ChargeData);
-			if (V4ShouldDebug()) {
-				V4Log(
-					"[PRI] Release cycle="$V4PrimaryCycleId$
-					" rockets="$NumRockets$
-					" moveCharge="$V4ChargeData$
-					" elapsed="$(StepTS - V4LoadStartTS)$
-					" Time="$Level.TimeSeconds
-				);
-			}
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
 				V4PrimarySendServerConfirm(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE);
@@ -792,11 +767,9 @@ simulated function bool V4ProcessStep(
 
 		if (bAltHeld && bV4WasAltHeld) {
 			NumRockets = V4CalculateCharge(StepTS);
-			if (!bServerSide && ClientRocketsLoaded > NumRockets) {
-				V4Log("[CLI] Clamp alt loaded "$ClientRocketsLoaded$" -> "$NumRockets$" Time="$Level.TimeSeconds);
+			if (!bServerSide && ClientRocketsLoaded > NumRockets)
 				ClientRocketsLoaded = NumRockets;
-			}
-		V4CachedChargeData = NumRockets;
+			V4CachedChargeData = NumRockets;
 		
 		if (!bServerSide) {
 			V4EnsureClientLoadState(true);
@@ -866,9 +839,6 @@ simulated function V4EmitClientAuthoritativeShot(int NumRockets) {
 		false,
 		false
 	);
-
-	if (bbP.bTraceInput)
-		V4Log("[CLI-SHOT] emit kind="$ShotKind$" rockets="$Clamp(NumRockets, 1, 6)$" ts="$Level.TimeSeconds);
 }
 
 // Client-side instant rocket fire driven by V4ProcessStep.
@@ -920,8 +890,6 @@ simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional 
 
 	// Use the same tightwad edge decision as the server step.
 	bTightWad = !bAlt && bTight;
-
-	V4Log("[CLI] V4LoadedFire alt="$bAlt$" rockets="$NumRockets$" tight="$bTightWad$" stepTight="$bTight$" Time="$Level.TimeSeconds);
 	FiringRockets();
 	bTightWad = false;
 }
@@ -933,8 +901,6 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc, int NumRockets, bo
 	P = PlayerPawn(Owner);
 	if (P == none)
 		return;
-
-	V4Log("[SRV] HandleV4ServerFire rockets="$NumRockets$" tight="$bTight$" View="$StepView.Pitch$","$StepView.Yaw$" Loc="$int(StepLoc.X)$","$int(StepLoc.Y)$","$int(StepLoc.Z));
 
 	V4ServerFireLoc = StepLoc;
 	if (bbPlayer(Owner) != none)
@@ -980,8 +946,6 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 	P = PlayerPawn(Owner);
 	if (P == none)
 		return;
-
-	V4Log("[SRV] HandleV4ServerAltFire grenades="$NumRockets$" View="$StepView.Pitch$","$StepView.Yaw$" Loc="$int(StepLoc.X)$","$int(StepLoc.Y)$","$int(StepLoc.Z));
 
 	V4ServerFireLoc = StepLoc;
 	if (bbPlayer(Owner) != none)
@@ -1092,7 +1056,7 @@ function Finish()
 
 function Fire( float Value )
 {
-	if (IsV4Active() && UsesServerMoveV4()) {
+	if (UsesServerMoveV4()) {
 		return;
 	}
 		
@@ -1101,7 +1065,7 @@ function Fire( float Value )
 
 function AltFire( float Value )
 {
-	if (IsV4Active() && UsesServerMoveV4()) {
+	if (UsesServerMoveV4()) {
 		return;
 	}
 
@@ -1111,6 +1075,7 @@ function AltFire( float Value )
 simulated function bool ClientFire( float Value )
 {
 	local Pawn PawnOwner;
+	local int ClientFireResult;
 
 	if (!bCanClientFire) {
 		return false;
@@ -1123,29 +1088,17 @@ simulated function bool ClientFire( float Value )
 
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
 	{
-		if ( TournamentPlayer(Owner) != None )
-			bInstantRocket = TournamentPlayer(Owner).bInstantRocket;
+		V4SyncInstantRocketFlag();
 
-		if ( IsPingCompEnabled() && PlayerPawn(Owner) != None )
-		{
-			// In ServerMove_v4 mode, primary load/fire is driven only by
-			// deterministic step processing.
-			if (IsV4Active() && UsesServerMoveV4()) {
-				return true;
-			}
-
-			// Instant rockets: V4ProcessStep drives fire timing via
-			// HandleV4ClientFire. Don't enter ClientFiring.
-			if (IsV4Active() && bInstantRocket)
-				return true;
-
-			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
-				return false;
-
-			LastClientFireTime = Level.TimeSeconds;
-			GotoState('ClientFiring');
+		// In ServerMove_v4 mode, primary load/fire is driven only by
+		// deterministic step processing.
+		// Instant rockets: V4ProcessStep drives fire timing via
+		// HandleV4ClientFire. Don't enter ClientFiring.
+		ClientFireResult = V4TryEnterClientFireState('ClientFiring', true);
+		if (ClientFireResult > 0)
 			return true;
-		}
+		if (ClientFireResult == 0)
+			return false;
 	}
 	return Super.ClientFire(Value);
 }
@@ -1153,6 +1106,7 @@ simulated function bool ClientFire( float Value )
 simulated function bool ClientAltFire( float Value )
 {
 	local Pawn PawnOwner;
+	local int ClientFireResult;
 
 	if (!bCanClientFire) {
 		return false;
@@ -1165,24 +1119,15 @@ simulated function bool ClientAltFire( float Value )
 
 	if ( (AmmoType != None) && (AmmoType.AmmoAmount > 0) )
 	{
-		if ( TournamentPlayer(Owner) != None )
-			bInstantRocket = TournamentPlayer(Owner).bInstantRocket;
+		V4SyncInstantRocketFlag();
 
-		if ( IsPingCompEnabled() && PlayerPawn(Owner) != None )
-		{
-			// In ServerMove_v4 mode, alt load/fire is driven only by
-			// deterministic step processing.
-			if (IsV4Active() && UsesServerMoveV4()) {
-				return true;
-			}
-
-			if (Level.TimeSeconds - LastClientFireTime < FIRE_RATE_LIMIT)
-				return false;
-
-			LastClientFireTime = Level.TimeSeconds;
-			GotoState('ClientAltFiring');
+		// In ServerMove_v4 mode, alt load/fire is driven only by
+		// deterministic step processing.
+		ClientFireResult = V4TryEnterClientFireState('ClientAltFiring', false);
+		if (ClientFireResult > 0)
 			return true;
-		}
+		if (ClientFireResult == 0)
+			return false;
 	}
 	return Super.ClientAltFire(Value);
 }
@@ -1205,9 +1150,6 @@ simulated function FiringRockets()
 		bAlt = true;
 	else
 		bAlt = false;
-
-	if (Role < ROLE_Authority)
-		V4Log("[CLI] FiringRockets: rockets="$ClientRocketsLoaded$" alt="$bAlt$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
 
 	// NextV4FireTS is set by V4ProcessStep from StepTS (both sides).
 	// No Level.TimeSeconds-based cooldown here.
@@ -1870,8 +1812,6 @@ simulated function TweenDown() {
 
 simulated function PlayLoading(float rate, int num)
 {
-	local bool bProxyToServer;
-
 	if (Owner == None)
 		return;
 	
@@ -1880,14 +1820,7 @@ simulated function PlayLoading(float rate, int num)
 	
 	// In deterministic mode, owner always plays local load/rotate sounds.
 	// Keep server proxy only for legacy non-deterministic path.
-	bProxyToServer = (
-		Role < ROLE_Authority
-		&& IsPingCompEnabled()
-		&& !IsV4Active()
-		&& !UsesServerMoveV4()
-		&& PlayerPawn(Owner) != None
-	);
-	if (bProxyToServer)
+	if (V4ShouldProxyLoadSound())
 		ServerPlayLoadSound(false);
 
 	// Always play locally for the owning client.
@@ -1896,8 +1829,6 @@ simulated function PlayLoading(float rate, int num)
 
 simulated function PlayRotating(int num)
 {
-	local bool bProxyToServer;
-
 	if (Owner == None)
 		return;
 	
@@ -1905,14 +1836,7 @@ simulated function PlayRotating(int num)
 	
 	// In deterministic mode, owner always plays local load/rotate sounds.
 	// Keep server proxy only for legacy non-deterministic path.
-	bProxyToServer = (
-		Role < ROLE_Authority
-		&& IsPingCompEnabled()
-		&& !IsV4Active()
-		&& !UsesServerMoveV4()
-		&& PlayerPawn(Owner) != None
-	);
-	if (bProxyToServer)
+	if (V4ShouldProxyLoadSound())
 		ServerPlayLoadSound(true);
 
 	// Always play locally for the owning client.
@@ -1969,7 +1893,6 @@ state ClientFiring
 
 		if ((P.bFire == 0) || (AmmoType == none) || (AmmoType.AmmoAmount <= 0)) {
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-			V4Log("[CLI] Tick: release fire, rockets="$ClientRocketsLoaded$" V4Cached="$V4CachedChargeData$" Time="$Level.TimeSeconds);
 			FiringRockets();
 		}
 	}
@@ -1983,7 +1906,6 @@ state ClientFiring
 			GotoState('');
 			else if ( bClientDone )
 			{
-				V4Log("[CLI] AnimEnd: done, -> ClientReload Time="$Level.TimeSeconds);
 				PlayLoading(1.5,0);
 				GotoState('ClientReload');
 			}
@@ -2010,18 +1932,16 @@ state ClientFiring
 			}
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
 		}
-			else
-			{
-				V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-				if ( bInstantRocket || (ClientRocketsLoaded == 6) )
-			{
-				if (IsV4Active()) {
-					V4Log("[CLI] AnimEnd: auto-fire (V4 pending) rockets="$ClientRocketsLoaded$" Time="$Level.TimeSeconds);
-					return;
-				}
-					FiringRockets();
-					return;
-				}
+				else
+				{
+					V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
+					if ( bInstantRocket || (ClientRocketsLoaded == 6) )
+				{
+					if (IsV4Active())
+						return;
+						FiringRockets();
+						return;
+					}
 					if (IsV4Active()) {
 						if (ClientRocketsLoaded >= Min(6, Max(1, V4PrimaryCycleStartBudget)))
 							return;
@@ -2035,13 +1955,11 @@ state ClientFiring
 	}
 
 	simulated function BeginState()
-	{
-		bFireLoad = true;
-		
-		V4Log("[CLI] ClientFiring.Begin instant="$bInstantRocket$" Time="$Level.TimeSeconds$" View="$Pawn(Owner).ViewRotation.Pitch$","$Pawn(Owner).ViewRotation.Yaw);
+		{
+			bFireLoad = true;
 
-		// Instant V4: HandleV4ClientFire drives fire, not ClientFiring.
-		if (bInstantRocket && IsV4Active()) {
+			// Instant V4: HandleV4ClientFire drives fire, not ClientFiring.
+			if (bInstantRocket && IsV4Active()) {
 			GotoState('');
 			return;
 		}
@@ -2069,7 +1987,6 @@ state ClientFiring
 
 	simulated function EndState()
 	{
-		V4Log("[CLI] ClientFiring.End V4Cached was "$V4CachedChargeData$" -> 0 Time="$Level.TimeSeconds);
 		V4CachedChargeData = 0;
 		ClientRocketsLoaded = 0;
 		bClientDone = false;
@@ -2213,14 +2130,10 @@ state ClientReload
 		if (Level.TimeSeconds >= NextV4FireTS) {
 			Disable('Tick');
 			if (bForceFire || (Pawn(Owner) != None && Pawn(Owner).bFire != 0)) {
-				if (IsV4Active()) {
-					V4Log("[CLI] Reload.Tick: primary pending deterministic step Time="$Level.TimeSeconds);
+				if (IsV4Active())
 					return;
-				}
-				V4Log("[CLI] Reload.Tick: cooldown re-fire Time="$Level.TimeSeconds);
 				Global.ClientFire(0);
 			} else if (bForceAltFire || (Pawn(Owner) != None && Pawn(Owner).bAltFire != 0)) {
-				V4Log("[CLI] Reload.Tick: cooldown re-altfire Time="$Level.TimeSeconds);
 				Global.ClientAltFire(0);
 			}
 		}
@@ -2229,34 +2142,29 @@ state ClientReload
 	simulated function AnimEnd()
 	{
 			if ( bCanClientFire && (PlayerPawn(Owner) != None) && (AmmoType.AmmoAmount > 0) )
-			{
-				if ( bForceFire || (Pawn(Owner).bFire != 0) )
+				{
+					if ( bForceFire || (Pawn(Owner).bFire != 0) )
+					{
+						if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
+							Enable('Tick');
+							return;
+						}
+						if (IsV4Active()) {
+							GotoState('');
+							return;
+						}
+						Global.ClientFire(0);
+						return;
+					}
+				else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
 				{
 					if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
-						V4Log("[CLI] Reload.AnimEnd: waiting for cooldown, need="$(NextV4FireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
 						Enable('Tick');
 						return;
 					}
-					if (IsV4Active()) {
-						V4Log("[CLI] Reload.AnimEnd: primary pending deterministic step Time="$Level.TimeSeconds);
-						GotoState('');
-						return;
-					}
-					V4Log("[CLI] Reload.AnimEnd: re-fire Time="$Level.TimeSeconds);
-					Global.ClientFire(0);
+					Global.ClientAltFire(0);
 					return;
 				}
-			else if ( bForceAltFire || (Pawn(Owner).bAltFire != 0) )
-			{
-				if (IsV4Active() && Level.TimeSeconds + 0.001 < NextV4FireTS) {
-					V4Log("[CLI] Reload.AnimEnd: waiting for cooldown, need="$(NextV4FireTS - Level.TimeSeconds)$"s Time="$Level.TimeSeconds);
-					Enable('Tick');
-					return;
-				}
-				V4Log("[CLI] Reload.AnimEnd: re-altfire Time="$Level.TimeSeconds);
-				Global.ClientAltFire(0);
-				return;
-			}
 		}
 		
 		if ( (AmmoType == None) || (AmmoType.AmmoAmount <= 0) )

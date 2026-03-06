@@ -2833,8 +2833,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local int V4FirePulseIndex;
 	local int V4AltPulseIndex;
 	local bool bV4HasShotPack;
-	local int V4ShotSeq;
-	local int V4ShotDupFlag;
 	local ST_UT_Eightball V4Eightball;
 
 	debugServerMoveCallsReceived += 1;
@@ -3056,7 +3054,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	V4FirePulseIndex = -1;
 	V4AltPulseIndex = -1;
 	bV4EightballInstant = false;
-	V4ShotSeq = 0;
 	if (bFired && FireIndex >= 0)
 		V4FirePressIndex = FireIndex;
 	if (bAltFired && AltFireIndex >= 0)
@@ -3077,66 +3074,20 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4AltPressIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_PRESS, IGPLUS_V4FLAG_ALT_PRESS_SHIFT);
 			V4AltReleaseIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_RELEASE, IGPLUS_V4FLAG_ALT_RELEASE_SHIFT);
 		}
-		if (bV5EightballPulse) {
-			V4FirePulseIndex = IGPlus_V5PulseDecodeIndex(SM.V4PulseData, IGPLUS_V5PULSE_HAS_FIRE, IGPLUS_V5PULSE_FIRE_SHIFT);
-			V4AltPulseIndex = IGPlus_V5PulseDecodeIndex(SM.V4PulseData, IGPLUS_V5PULSE_HAS_ALT, IGPLUS_V5PULSE_ALT_SHIFT);
-		}
-			if (bV4HasShotPack && bV4WeaponIsEightball) {
-				V4ShotSeq = SM.V4ShotSeq & 255;
-				V4ShotDupFlag = 0;
-				IGPlus_ServerRegisterEightballShotSeq(V4ShotSeq, V4ShotDupFlag);
-				IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
-				if (bTraceInput) {
-					Log(
-						"[EB] [SRV-SHOT] recv seq="$V4ShotSeq$
-						" dupFlag="$V4ShotDupFlag
-					);
-				}
+			if (bV5EightballPulse) {
+				V4FirePulseIndex = IGPlus_V5PulseDecodeIndex(SM.V4PulseData, IGPLUS_V5PULSE_HAS_FIRE, IGPLUS_V5PULSE_FIRE_SHIFT);
+				V4AltPulseIndex = IGPlus_V5PulseDecodeIndex(SM.V4PulseData, IGPLUS_V5PULSE_HAS_ALT, IGPLUS_V5PULSE_ALT_SHIFT);
 			}
-	}
+			if (bV4HasShotPack && bV4WeaponIsEightball) {
+				IGPlus_ServerRegisterEightballShotSeq(SM.V4ShotSeq & 255);
+				IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
+			}
+		}
 
-	if (V4Eightball != none)
-		V4Eightball.V4SetMoveInstantMode(SM.bUseV4 && SM.bDetReady, bV4EightballInstant);
+		if (V4Eightball != none)
+			V4Eightball.V4SetMoveInstantMode(SM.bUseV4 && SM.bDetReady, bV4EightballInstant);
 
-	if (bTraceInput && SM.bUseV4 && SM.bDetReady && V4Eightball != none) {
-		Log(
-			"[EB] [MV] TS="$SM.TimeStamp$
-			" MoveDelta="$SM.MoveDeltaTime$
-			" Merge="$MergeCount$
-			" Flags="$SM.V4Flags$
-			" Timeline="$bV4HasEdgeTimeline$
-			" Instant="$bV4EightballInstant$
-			" FireStart="$bV4FireStartHeld$
-			" FireEnd="$bV4FireEndHeld$
-			" FirePress="$V4FirePressIndex$
-			" FireRelease="$V4FireReleaseIndex$
-				" FirePulse="$V4FirePulseIndex$
-				" AltPulse="$V4AltPulseIndex$
-				" ShotPack="$bV4HasShotPack$
-				" ShotSeq="$V4ShotSeq$
-				" PulseData="$SM.V4PulseData$
-				" FireBit="$bFired$
-				" FireIndex="$FireIndex$
-			" ForceFire="$bForceFire
-			);
-		if (bV5EightballPulse && ((bForceFire && V4FirePulseIndex < 0) || (bForceAltFire && V4AltPulseIndex < 0)))
-			Log("[EB] [MV] Pulse missing for Force bit TS="$SM.TimeStamp$" ForceFire="$bForceFire$" FirePulse="$V4FirePulseIndex$" ForceAlt="$bForceAltFire$" AltPulse="$V4AltPulseIndex);
-	}
-
-	if (SM.bUseV4 && SM.bDetReady && V4Eightball != none && DeltaTime > 0.06) {
-		Log(
-			"[EB] [SRV-HITCH] TS="$SM.TimeStamp$
-			" Delta="$DeltaTime$
-			" MoveDelta="$SM.MoveDeltaTime$
-			" Merge="$(MergeCount + 1)$
-			" Fire="$bFired$
-			" Alt="$bAltFired$
-			" FireIndex="$FireIndex$
-			" AltIndex="$AltFireIndex
-		);
-	}
-
-	bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+		bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 
 	if (bDetFallback) {
 		IGPlus_V4ProcessWeaponStep(
@@ -3823,7 +3774,6 @@ function xxServerMove(
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
-	SM.bV4EightballShotPack = false;
 	SM.V4ShotSeq = 0;
 	SM.bUseV4 = false;
 
@@ -3878,9 +3828,8 @@ function xxServerMove_v4(
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
-	SM.bV4EightballShotPack = (V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0;
 	SM.V4ShotSeq = 0;
-	if (SM.bV4EightballShotPack)
+	if ((V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0)
 		SM.V4ShotSeq = V4PulseData & 0xFF;
 	SM.bUseV4 = true;
 
@@ -5251,11 +5200,8 @@ simulated function IGPlus_PruneEightballShotQueue(optional bool bForceClear) {
 	for (i = 0; i < IGPLUS_EB_SHOT_QUEUE_SIZE; i++) {
 		if (!IGPlus_EBShotPending[i].bActive)
 			continue;
-		if (bForceClear || (NowTS > 0.0 && NowTS - IGPlus_EBShotPending[i].ShotTS > IGPLUS_EB_SHOT_TIMEOUT)) {
-			if (bTraceInput && !bForceClear)
-				Log("[EB] [CLI-SHOT] drop timeout seq="$IGPlus_EBShotPending[i].Seq$" kind="$IGPlus_EBShotPending[i].Kind$" age="$(NowTS - IGPlus_EBShotPending[i].ShotTS));
+		if (bForceClear || (NowTS > 0.0 && NowTS - IGPlus_EBShotPending[i].ShotTS > IGPLUS_EB_SHOT_TIMEOUT))
 			IGPlus_ClearEightballShotEntry(i);
-		}
 	}
 }
 
@@ -5306,8 +5252,6 @@ simulated function int IGPlus_QueueEightballAuthoritativeShot(
 				SlotIdx = i;
 			}
 		}
-		if (bTraceInput && SlotIdx >= 0)
-			Log("[EB] [CLI-SHOT] drop overflow seq="$IGPlus_EBShotPending[SlotIdx].Seq$" kind="$IGPlus_EBShotPending[SlotIdx].Kind);
 	}
 
 	if (SlotIdx < 0)
@@ -5325,9 +5269,6 @@ simulated function int IGPlus_QueueEightballAuthoritativeShot(
 	IGPlus_EBShotPending[SlotIdx].LastSendTS = 0.0;
 	IGPlus_EBShotPending[SlotIdx].Retries = 0;
 
-	if (bTraceInput)
-		Log("[EB] [CLI-SHOT] enqueue seq="$Seq$" kind="$(ShotKind & 3)$" ts="$ShotTS$" charge="$Clamp(Charge, 0, 7)$" instant="$bInstant$" tight="$bTight);
-
 	return Seq;
 }
 
@@ -5336,9 +5277,7 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 	IGPlus_SavedMove OldMove,
 	out int OutShotWord0,
 	out int OutShotWord1,
-	out int OutShotWord2,
-	out int OutShotSeq,
-	out int OutShotKind
+	out int OutShotWord2
 ) {
 	local int i;
 	local int BestIdx;
@@ -5358,13 +5297,10 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 	local int Charge;
 	local int YawPacked;
 	local int PitchPacked;
-	local bool bEntryIsResend;
 
 	OutShotWord0 = 0;
 	OutShotWord1 = 0;
 	OutShotWord2 = 0;
-	OutShotSeq = -1;
-	OutShotKind = -1;
 	if (Move == none)
 		return false;
 
@@ -5415,11 +5351,9 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 	YawPacked = IGPlus_EBShotPending[BestIdx].ShotView.Yaw & 0xFFFF;
 	PitchPacked = IGPlus_EBShotPending[BestIdx].ShotView.Pitch & 0xFFFF;
 
-	OutShotSeq = IGPlus_EBShotPending[BestIdx].Seq & 255;
-	OutShotKind = IGPlus_EBShotPending[BestIdx].Kind & 3;
-	OutShotWord0 = OutShotSeq;
+	OutShotWord0 = IGPlus_EBShotPending[BestIdx].Seq & 255;
 	OutShotWord0 or_eq (SliceIndex & 0x1F) << 8;
-	OutShotWord0 or_eq (OutShotKind & 0x3) << 13;
+	OutShotWord0 or_eq (IGPlus_EBShotPending[BestIdx].Kind & 0x3) << 13;
 	OutShotWord0 or_eq (Charge & 0x7) << 15;
 	if (IGPlus_EBShotPending[BestIdx].bInstant)
 		OutShotWord0 or_eq 1 << 18;
@@ -5433,12 +5367,8 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 	OutShotWord2 or_eq (dy & 0x3FF) << 10;
 	OutShotWord2 or_eq (dz & 0x3FF) << 20;
 
-	bEntryIsResend = IGPlus_EBShotPending[BestIdx].Retries > 0;
 	IGPlus_EBShotPending[BestIdx].LastSendTS = NowTS;
 	IGPlus_EBShotPending[BestIdx].Retries += 1;
-
-	if (bTraceInput)
-		Log("[EB] [CLI-SHOT] send seq="$OutShotSeq$" kind="$OutShotKind$" slice="$SliceIndex$" retries="$IGPlus_EBShotPending[BestIdx].Retries$" resend="$bEntryIsResend$" word0="$OutShotWord0);
 
 	return true;
 }
@@ -5446,57 +5376,44 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 simulated function IGPlus_ClientEightballShotAck(byte AckBaseSeq, int AckMask) {
 	local int i;
 	local int Seq;
-	local int AckedCount;
 
 	if (Role == ROLE_Authority)
 		return;
 
-	AckedCount = 0;
 	for (i = 0; i < IGPLUS_EB_SHOT_QUEUE_SIZE; i++) {
 		if (!IGPlus_EBShotPending[i].bActive)
 			continue;
 		Seq = IGPlus_EBShotPending[i].Seq & 255;
 		if (IGPlus_IsEightballShotAcked(Seq, int(AckBaseSeq), AckMask)) {
-			AckedCount++;
-			if (bTraceInput)
-				Log("[EB] [CLI-SHOT] ack seq="$Seq$" kind="$IGPlus_EBShotPending[i].Kind$" retries="$IGPlus_EBShotPending[i].Retries$" base="$int(AckBaseSeq)$" mask="$AckMask);
 			IGPlus_ClearEightballShotEntry(i);
 		}
 	}
-
-	if (bTraceInput && AckedCount > 0)
-		Log("[EB] [CLI-SHOT] acked="$AckedCount$" base="$int(AckBaseSeq)$" mask="$AckMask);
 }
 
-function bool IGPlus_ServerRegisterEightballShotSeq(int Seq, out int DuplicateFlag) {
+function IGPlus_ServerRegisterEightballShotSeq(int Seq) {
 	local int Back;
 	local int Forward;
 	local int BitMask;
 
 	Seq = Seq & 255;
-	DuplicateFlag = 0;
 
 	if (!IGPlus_EBShotRecvInit) {
 		IGPlus_EBShotRecvInit = true;
 		IGPlus_EBShotRecvBase = Seq;
 		IGPlus_EBShotRecvMask = 0;
-		return true;
+		return;
 	}
 
-	if (Seq == (IGPlus_EBShotRecvBase & 255)) {
-		DuplicateFlag = 1;
-		return false;
-	}
+	if (Seq == (IGPlus_EBShotRecvBase & 255))
+		return;
 
 	Back = IGPlus_SeqBackward8(IGPlus_EBShotRecvBase, Seq);
 	if (Back >= 1 && Back <= 32) {
 		BitMask = 1 << (Back - 1);
-		if ((IGPlus_EBShotRecvMask & BitMask) != 0) {
-			DuplicateFlag = 1;
-			return false;
-		}
+		if ((IGPlus_EBShotRecvMask & BitMask) != 0)
+			return;
 		IGPlus_EBShotRecvMask or_eq BitMask;
-		return true;
+		return;
 	}
 
 	if (Back > 127) {
@@ -5507,14 +5424,11 @@ function bool IGPlus_ServerRegisterEightballShotSeq(int Seq, out int DuplicateFl
 			IGPlus_EBShotRecvMask = IGPlus_EBShotRecvMask << Forward;
 
 		if (Forward >= 1 && Forward <= 32)
-			IGPlus_EBShotRecvMask or_eq 1 << (Forward - 1);
+				IGPlus_EBShotRecvMask or_eq 1 << (Forward - 1);
 
 		IGPlus_EBShotRecvBase = Seq;
-		return true;
+		return;
 	}
-
-	DuplicateFlag = 1;
-	return false;
 }
 
 // Returns the effective held state used for ServerMove_v4 fire timeline.
@@ -5893,20 +5807,13 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 		PulseFlags = IGPlus_ConsumeEightballShotPulses();
 		bForceFirePulse = (PulseFlags & 1) != 0;
 		bForceAltPulse = (PulseFlags & 2) != 0;
-		if (bTraceInput && (bForceFirePulse || bForceAltPulse))
-			Log("[EB] [CLI-PACK] TS="$PendMove.TimeStamp$" Merge="$PendMove.IGPlus_MergeCount$" Src=pulse-only ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
 	} else {
 		if (ST_UT_Eightball(Weapon) != none && PendMove.bUseServerMoveV4) {
 			bForceFirePulse = false;
 			bForceAltPulse = false;
-			if (bTraceInput && (bJustFired || bJustAltFired))
-				Log("[EB] [CLI-PACK] TS="$PendMove.TimeStamp$" Merge="$PendMove.IGPlus_MergeCount$" Src=pulse-only RawBlocked JustFire="$bJustFired$" JustAlt="$bJustAltFired);
 		} else {
 			bForceFirePulse = bJustFired;
 			bForceAltPulse = bJustAltFired;
-			if (bTraceInput && (bForceFirePulse || bForceAltPulse)
-				&& ST_UT_Eightball(Weapon) != none && PendMove.bUseServerMoveV4)
-				Log("[EB] [CLI-PACK] TS="$PendMove.TimeStamp$" Merge="$PendMove.IGPlus_MergeCount$" Src=raw ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
 		}
 	}
 
@@ -6208,20 +6115,13 @@ function xxReplicateMove(
 					PulseFlags = IGPlus_ConsumeEightballShotPulses();
 					bForceFirePulse = (PulseFlags & 1) != 0;
 					bForceAltPulse = (PulseFlags & 2) != 0;
-				if (bTraceInput && (bForceFirePulse || bForceAltPulse))
-						Log("[EB] [CLI-PACK] TS="$NewMove.TimeStamp$" Merge=1 Src=pulse-only ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
 				} else {
 					if (ST_UT_Eightball(Weapon) != none && NewMove.bUseServerMoveV4) {
 						bForceFirePulse = false;
 						bForceAltPulse = false;
-						if (bTraceInput && (bJustFired || bJustAltFired))
-							Log("[EB] [CLI-PACK] TS="$NewMove.TimeStamp$" Merge=1 Src=pulse-only RawBlocked JustFire="$bJustFired$" JustAlt="$bJustAltFired);
 					} else {
 						bForceFirePulse = bJustFired;
 						bForceAltPulse = bJustAltFired;
-						if (bTraceInput && (bForceFirePulse || bForceAltPulse)
-							&& ST_UT_Eightball(Weapon) != none && NewMove.bUseServerMoveV4)
-							Log("[EB] [CLI-PACK] TS="$NewMove.TimeStamp$" Merge=1 Src=raw ForceFire="$bForceFirePulse$" ForceAlt="$bForceAltPulse);
 					}
 				}
 
@@ -6380,12 +6280,9 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local int ViewStartPacked;
 	local int V4Flags;
 	local int V4PulseData;
-	local bool bV4ShotPackPresent;
 	local int V4ShotWord0;
 	local int V4ShotWord1;
 	local int V4ShotWord2;
-	local int V4ShotSeq;
-	local int V4ShotKind;
 	local int V4ShotChargeBits;
 
 	if (Move.bPressedJump) bJumpStatus = !bJumpStatus;
@@ -6437,12 +6334,9 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	ViewStartPacked = ((Move.IGPlus_SavedViewRotationStart.Pitch & 0xFFFF) << 16) | (Move.IGPlus_SavedViewRotationStart.Yaw & 0xFFFF);
 	V4Flags = 0;
 	V4PulseData = 0;
-	bV4ShotPackPresent = false;
 	V4ShotWord0 = 0;
 	V4ShotWord1 = 0;
 	V4ShotWord2 = 0;
-	V4ShotSeq = -1;
-	V4ShotKind = -1;
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogSavedMove(Move);
 	if (Move.bUseServerMoveV4) {
@@ -6480,72 +6374,28 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 			V4PulseData or_eq (Move.V4AltPulseIndex & IGPLUS_V5PULSE_INDEX_MASK) << IGPLUS_V5PULSE_ALT_SHIFT;
 		}
 
-		bV4ShotPackPresent = false;
 		if (Move.V4WeaponIndex == 5 || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
 			if (IGPlus_SelectEightballShotForMove(
 				Move,
 				OldMove,
 				V4ShotWord0,
 				V4ShotWord1,
-				V4ShotWord2,
-				V4ShotSeq,
-				V4ShotKind
+				V4ShotWord2
 			)) {
-				bV4ShotPackPresent = true;
 				V4Flags or_eq IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT;
 				V4PulseData = V4ShotWord0;
 				OldMoveData1 = V4ShotWord1;
 				OldMoveData2 = V4ShotWord2;
-					V4ShotChargeBits = (V4ShotWord0 >>> 15) & 0x7;
-					// Carrying a shotpack requires deterministic Eightball context even
-					// when the move's transient weapon-index snapshot is stale/zero.
-					MoveDeltaTime and_eq 0xFFFFFF00;
-					MoveDeltaTime or_eq 0x01;
-					MoveDeltaTime or_eq (5 & 0x07) << 1;
-					MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
-					if (bTraceInput)
-						Log("[EB] [CLI-SHOT] pack seq="$V4ShotSeq$" kind="$V4ShotKind$" word0="$V4ShotWord0$" word1="$V4ShotWord1$" word2="$V4ShotWord2$" forceWpn=5");
+				V4ShotChargeBits = (V4ShotWord0 >>> 15) & 0x7;
+				// Carrying a shotpack requires deterministic Eightball context even
+				// when the move's transient weapon-index snapshot is stale/zero.
+				MoveDeltaTime and_eq 0xFFFFFF00;
+				MoveDeltaTime or_eq 0x01;
+				MoveDeltaTime or_eq (5 & 0x07) << 1;
+				MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
 				}
 			}
 		}
-
-	if (bTraceInput && Move.bUseServerMoveV4
-		&& (Move.V4WeaponIndex == 5 || bV4ShotPackPresent || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots())) {
-		Log(
-			"[EB] [CLI-MV] TS="$Move.TimeStamp$
-			" Delta="$Move.Delta$
-			" Merge="$(Move.IGPlus_MergeCount + 1)$
-			" Flags="$V4Flags$
-			" FireStart="$Move.bV4FireStartHeld$
-			" FireEnd="$Move.bV4FireEndHeld$
-				" FirePress="$Move.V4FirePressIndex$
-				" FireRelease="$Move.V4FireReleaseIndex$
-				" Instant="$Move.bV4EightballInstant$
-				" FirePulse="$Move.V4FirePulseIndex$
-				" AltPulse="$Move.V4AltPulseIndex$
-				" PulseData="$V4PulseData$
-				" ShotPack="$bV4ShotPackPresent$
-				" ShotSeq="$V4ShotSeq$
-				" ShotKind="$V4ShotKind$
-				" FireBit="$Move.bFire$
-				" FireIndex="$Move.FireIndex$
-				" ForceFire="$Move.bForceFire
-				);
-		}
-
-	if (Move.bUseServerMoveV4
-		&& (Move.V4WeaponIndex == 5 || bV4ShotPackPresent || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots())
-		&& Move.Delta > 0.06) {
-		Log(
-			"[EB] [CLI-HITCH] TS="$Move.TimeStamp$
-			" Delta="$Move.Delta$
-			" Merge="$(Move.IGPlus_MergeCount + 1)$
-			" Fire="$Move.bFire$
-			" Alt="$Move.bAltFire$
-			" ForceFire="$Move.bForceFire$
-			" ForceAlt="$Move.bForceAltFire
-		);
-	}
 
 	if (Move.bUseServerMoveV4) {
 		xxServerMove_v4(
