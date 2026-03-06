@@ -39,7 +39,6 @@ var bool bV4MoveInstant;
 var int V4CachedChargeData;
 
 // Client ammo consumption reconstruction logic
-var int V4LastSeenAmmo;
 var int V4ClientConsumedAmmo;
 var int V4InternalBudget;
 var bool bV4SuppressPrimaryFirstBudgetAuto;
@@ -50,11 +49,9 @@ var int V4PrimaryCycleId;
 var int V4PrimaryWeaponEpoch;
 var int V4PrimaryCycleEpoch;
 var bool bV4PrimaryCycleActive;
-var float V4PrimaryCycleStartTS;
 var int V4PrimaryCycleStartBudget;
 var int V4PrimaryPredictedLoaded;
 var bool bV4PrimaryLatchedInstant;
-var int V4PrimaryLastEndReason;
 var int V4PrimaryLastPredictedCycleId;
 var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
@@ -77,8 +74,6 @@ simulated function bool V4ShouldDebug() {
 }
 
 simulated function V4MaybePlayClientLoadCatchupSound(bool bAlt, int NumRockets) {
-	local int MissingLoadNum;
-
 	// Primary-only: if authoritative auto-fire interrupts during rotate,
 	// the final load sound may never be reached via AnimEnd.
 	if (Role == ROLE_Authority || bAlt || !IsV4Active())
@@ -93,7 +88,6 @@ simulated function V4MaybePlayClientLoadCatchupSound(bool bAlt, int NumRockets) 
 	if (Owner == None || Pawn(Owner) == None)
 		return;
 
-	MissingLoadNum = Clamp(NumRockets - 1, 0, 5);
 	Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 }
 
@@ -124,8 +118,6 @@ simulated function V4ResetClientAmmoTracking() {
 	if (Role == ROLE_Authority)
 		return;
 	V4ClientConsumedAmmo = 0;
-	if (AmmoType != none)
-		V4LastSeenAmmo = AmmoType.AmmoAmount;
 }
 
 simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
@@ -134,11 +126,9 @@ simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
 	}
 	bV4SuppressPrimaryFirstBudgetAuto = false;
 	bV4PrimaryCycleActive = false;
-	V4PrimaryCycleStartTS = 0.0;
 	V4PrimaryCycleStartBudget = 0;
 	V4PrimaryPredictedLoaded = 0;
 	bV4PrimaryLatchedInstant = false;
-	V4PrimaryLastEndReason = 0;
 	V4LoadStartTS = 0.0;
 	V4ResetClientAmmoTracking();
 }
@@ -181,11 +171,9 @@ simulated function V4RefreshInternalBudget() {
 simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bServerSide) {
 	V4PrimaryCycleId = (V4PrimaryCycleId + 1) & 255;
 	V4PrimaryCycleEpoch = V4PrimaryWeaponEpoch;
-	V4PrimaryCycleStartTS = StepTS;
 	V4PrimaryCycleStartBudget = Max(1, V4InternalBudget);
 	V4PrimaryPredictedLoaded = 1;
 	bV4PrimaryLatchedInstant = bMoveInstant;
-	V4PrimaryLastEndReason = 0;
 	bV4SuppressPrimaryFirstBudgetAuto = (V4PrimaryCycleStartBudget <= 1);
 
 	bInstantRocket = bV4PrimaryLatchedInstant;
@@ -197,7 +185,7 @@ simulated function V4PrimaryStartCycle(float StepTS, bool bMoveInstant, bool bSe
 			// This must happen after tracking reset so finalize doesn't
 			// synthesize an extra missing consume.
 			V4ResetClientAmmoTracking();
-			V4ConsumeClientAmmo(1, "PrimaryStartCycle initial");
+			V4ConsumeClientAmmo(1);
 		}
 	} else {
 		bV4PrimaryCycleActive = false;
@@ -213,7 +201,7 @@ simulated function V4PrimaryRecordPrediction(int NumRockets, int EndReason) {
 	V4PrimaryPredictedLoaded = V4PrimaryLastPredictedRockets;
 }
 
-simulated function V4PrimarySendServerConfirm(int NumRockets, int EndReason, float ShotTS) {
+simulated function V4PrimarySendServerConfirm(int NumRockets, int EndReason) {
 	if (Role != ROLE_Authority)
 		return;
 
@@ -221,8 +209,7 @@ simulated function V4PrimarySendServerConfirm(int NumRockets, int EndReason, flo
 		byte(V4PrimaryCycleId & 255),
 		byte(Clamp(NumRockets, 1, 6)),
 		byte(EndReason & 255),
-		bV4PrimaryLatchedInstant,
-		ShotTS
+		bV4PrimaryLatchedInstant
 	);
 }
 
@@ -230,8 +217,7 @@ simulated function ClientV4PrimaryShotConfirm(
 	byte CycleId,
 	byte Rockets,
 	byte EndReason,
-	bool bInstant,
-	float ShotTS
+	bool bInstant
 ) {
 	local int ConfirmedRockets;
 	local int ConfirmCycleId;
@@ -278,20 +264,18 @@ simulated function ClientV4PrimaryShotConfirm(
 			" rockets="$ConfirmedRockets$
 			" reason="$int(EndReason)$
 			" instant="$bInstant$
-			" ts="$ShotTS$
 			" mismatch="$bMismatch$
 				" predCycle="$V4PrimaryLastPredictedCycleId$
 				" predRockets="$V4PrimaryLastPredictedRockets$
 				" predReason="$V4PrimaryLastPredictedReason$
 				" predInstant="$bV4PrimaryLastPredictedInstant
-			);
+		);
 	}
 
 	// Base UT behavior: client HUD ammo follows replicated server ammo.
 	// Do not mutate client ammo here for primary confirm.
 	V4ResetClientAmmoTracking();
 
-	V4PrimaryLastEndReason = int(EndReason) & 255;
 	bV4PrimaryLatchedInstant = bInstant;
 	V4PrimaryPredictedLoaded = ConfirmedRockets;
 	V4CachedChargeData = ConfirmedRockets;
@@ -316,7 +300,7 @@ simulated function int V4GetChargeDataForMove() {
 	return Charge;
 }
 
-simulated function bool V4ConsumeClientAmmo(int Amount, optional coerce string Context) {
+simulated function bool V4ConsumeClientAmmo(int Amount) {
 	local int ActualAmount;
 
 	if (Amount <= 0)
@@ -344,7 +328,7 @@ simulated function V4FinalizeClientLoadedAmmo(int NumRockets) {
 
 	Missing = Clamp(NumRockets - V4ClientConsumedAmmo, 0, 6);
 	if (Missing > 0)
-		V4ConsumeClientAmmo(Missing, "FinalizeLoaded rockets="$NumRockets);
+		V4ConsumeClientAmmo(Missing);
 }
 
 simulated function V4EnsureClientLoadState(bool bAltLoad) {
@@ -707,10 +691,9 @@ simulated function bool V4ProcessStep(
 		V4PrimaryStartCycle(StepTS, bMoveInstant, bServerSide);
 		bV4WasFireHeld = true;
 		if (bV4PrimaryLatchedInstant) {
-			V4PrimaryLastEndReason = IGPLUS_EB_PRIMARY_END_RELEASE;
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, 1, bAltHeld);
-				V4PrimarySendServerConfirm(1, IGPLUS_EB_PRIMARY_END_RELEASE, StepTS);
+				V4PrimarySendServerConfirm(1, IGPLUS_EB_PRIMARY_END_RELEASE);
 			} else {
 				V4PrimaryRecordPrediction(1, IGPLUS_EB_PRIMARY_END_RELEASE);
 				HandleV4ClientFire();
@@ -759,10 +742,9 @@ simulated function bool V4ProcessStep(
 				PrimaryEndReason = IGPLUS_EB_PRIMARY_END_AUTO_6;
 			else
 				PrimaryEndReason = IGPLUS_EB_PRIMARY_END_AUTO_BUDGET;
-			V4PrimaryLastEndReason = PrimaryEndReason;
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-				V4PrimarySendServerConfirm(NumRockets, PrimaryEndReason, StepTS);
+				V4PrimarySendServerConfirm(NumRockets, PrimaryEndReason);
 			} else {
 				V4PrimaryRecordPrediction(NumRockets, PrimaryEndReason);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
@@ -778,7 +760,6 @@ simulated function bool V4ProcessStep(
 		bV4WasFireHeld = false;
 		if (bV4PrimaryCycleActive) {
 			NumRockets = V4ResolvePrimaryEdgeCharge(StepTS, V4ChargeData);
-			V4PrimaryLastEndReason = IGPLUS_EB_PRIMARY_END_RELEASE;
 			if (V4ShouldDebug()) {
 				V4Log(
 					"[PRI] Release cycle="$V4PrimaryCycleId$
@@ -790,7 +771,7 @@ simulated function bool V4ProcessStep(
 			}
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
-				V4PrimarySendServerConfirm(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE, StepTS);
+				V4PrimarySendServerConfirm(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE);
 			} else {
 				V4PrimaryRecordPrediction(NumRockets, IGPLUS_EB_PRIMARY_END_RELEASE);
 				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
@@ -808,7 +789,7 @@ simulated function bool V4ProcessStep(
 		if (!bServerSide) {
 			// Mirror primary: deterministic cycle owns initial consume.
 			V4ResetClientAmmoTracking();
-			V4ConsumeClientAmmo(1, "AltStartCycle initial");
+			V4ConsumeClientAmmo(1);
 			V4EnsureClientLoadState(true);
 		}
 		bV4WasAltHeld = true;
@@ -904,7 +885,7 @@ simulated function HandleV4ClientFire() {
 	local bbPlayer bbP;
 
 	if (IsV4Active())
-		V4ConsumeClientAmmo(1, "HandleV4ClientFire instant");
+		V4ConsumeClientAmmo(1);
 	else if (AmmoType != None)
 		AmmoType.AmmoAmount--;
 
@@ -2026,11 +2007,11 @@ state ClientFiring
 						ClientRocketsLoaded = TargetLoaded;
 					} else if (TargetLoaded > ClientRocketsLoaded) {
 						ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
-					if (!V4ConsumeClientAmmo(ConsumeDelta, "ClientFiring.AnimEnd.sync-up"))
-						return;
-					ClientRocketsLoaded = TargetLoaded;
-				}
-			} else {
+						if (!V4ConsumeClientAmmo(ConsumeDelta))
+							return;
+						ClientRocketsLoaded = TargetLoaded;
+					}
+				} else {
 				ClientRocketsLoaded++;
 			}
 			V4CachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
@@ -2149,15 +2130,15 @@ state ClientAltFiring
 					V4CachedChargeData,
 					1,
 					Min(6, Max(1, V4InternalBudget))
-				);
-				if (ClientRocketsLoaded > TargetLoaded) {
-					ClientRocketsLoaded = TargetLoaded;
-				} else if (TargetLoaded > ClientRocketsLoaded) {
-					ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
-					if (!V4ConsumeClientAmmo(ConsumeDelta, "ClientAltFiring.AnimEnd.sync-up"))
-						return;
-					ClientRocketsLoaded = TargetLoaded;
-				}
+					);
+					if (ClientRocketsLoaded > TargetLoaded) {
+						ClientRocketsLoaded = TargetLoaded;
+					} else if (TargetLoaded > ClientRocketsLoaded) {
+						ConsumeDelta = TargetLoaded - ClientRocketsLoaded;
+						if (!V4ConsumeClientAmmo(ConsumeDelta))
+							return;
+						ClientRocketsLoaded = TargetLoaded;
+					}
 			} else {
 				ClientRocketsLoaded++;
 			}

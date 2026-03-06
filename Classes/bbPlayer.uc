@@ -289,16 +289,9 @@ const IGPLUS_V5PULSE_HAS_ALT = 0x00000002;
 const IGPLUS_V5PULSE_FIRE_SHIFT = 2;
 const IGPLUS_V5PULSE_ALT_SHIFT = 7;
 const IGPLUS_V5PULSE_INDEX_MASK = 0x1F;
-const IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT = 0;
-const IGPLUS_EB_SHOT_KIND_PRIMARY_RELEASE = 1;
-const IGPLUS_EB_SHOT_KIND_ALT_RELEASE = 2;
-const IGPLUS_EB_SHOT_KIND_ALT_AUTO6 = 3;
 const IGPLUS_EB_SHOT_QUEUE_SIZE = 32;
 const IGPLUS_EB_SHOT_RESEND_INTERVAL = 0.03;
 const IGPLUS_EB_SHOT_TIMEOUT = 1.0;
-const IGPLUS_EB_SHOT_VIEW_YAW_MAX_DELTA = 8192;
-const IGPLUS_EB_SHOT_VIEW_PITCH_MAX_DELTA = 4096;
-const IGPLUS_EB_SHOT_LOC_MAX_DELTA = 512.0;
 
 var Utilities Utils;
 var StringUtils StringUtils;
@@ -2842,7 +2835,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bV4HasShotPack;
 	local bool bV4ShotDuplicate;
 	local bool bV4ShotAccepted;
-	local bool bV4ShotQueued;
 	local int V4ShotSeq;
 	local int V4ShotSliceIndex;
 	local int V4ShotKind;
@@ -2850,14 +2842,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bV4ShotInstant;
 	local bool bV4ShotTight;
 	local rotator V4ShotView;
-	local rotator V4ShotViewUsed;
-	local rotator V4ShotStepView;
-	local vector V4ShotAnchorLoc;
-	local vector V4ShotLoc;
-	local vector V4ShotDeltaLoc;
-	local float V4ShotTS;
-	local int V4ShotYawDiff;
-	local int V4ShotPitchDiff;
 	local int V4ShotDupFlag;
 	local ST_UT_Eightball V4Eightball;
 
@@ -3082,7 +3066,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	bV4EightballInstant = false;
 	bV4ShotDuplicate = false;
 	bV4ShotAccepted = false;
-	bV4ShotQueued = false;
 	V4ShotSeq = 0;
 	V4ShotSliceIndex = 0;
 	V4ShotKind = 0;
@@ -3090,13 +3073,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	bV4ShotInstant = false;
 	bV4ShotTight = false;
 	V4ShotView = rot(0,0,0);
-	V4ShotViewUsed = rot(0,0,0);
-	V4ShotAnchorLoc = vect(0,0,0);
-	V4ShotLoc = vect(0,0,0);
-	V4ShotDeltaLoc = vect(0,0,0);
-	V4ShotTS = 0.0;
-	V4ShotYawDiff = 0;
-	V4ShotPitchDiff = 0;
 	if (bFired && FireIndex >= 0)
 		V4FirePressIndex = FireIndex;
 	if (bAltFired && AltFireIndex >= 0)
@@ -3349,68 +3325,19 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					}
 				}
 
-				if (bV4HasShotPack && bV4WeaponIsEightball && bV4ShotAccepted && !bV4ShotDuplicate
-					&& !bV4ShotQueued && MoveIndex == Clamp(V4ShotSliceIndex, 0, MergeCount - 1)) {
-					V4ShotTS = FMin(SM.TimeStamp, StepTS + SimStep);
-					V4ShotStepView = WImpBase.IGPlus_V4InterpolateStepView(SM.ViewStart, SM.View, MoveIndex + 1, MergeCount);
-					V4ShotViewUsed = V4ShotView;
-
-					V4ShotYawDiff = WImpBase.IGPlus_V4YawDelta16(V4ShotStepView.Yaw, V4ShotViewUsed.Yaw);
-					if (V4ShotYawDiff < 0)
-						V4ShotYawDiff = -V4ShotYawDiff;
-					V4ShotPitchDiff = (V4ShotViewUsed.Pitch - V4ShotStepView.Pitch) << 16 >> 16;
-					if (V4ShotPitchDiff < 0)
-						V4ShotPitchDiff = -V4ShotPitchDiff;
-					if (V4ShotYawDiff > IGPLUS_EB_SHOT_VIEW_YAW_MAX_DELTA || V4ShotPitchDiff > IGPLUS_EB_SHOT_VIEW_PITCH_MAX_DELTA) {
-						if (bTraceInput)
-							Log("[EB] [SRV-SHOT] clamp view seq="$V4ShotSeq$" yawDiff="$V4ShotYawDiff$" pitchDiff="$V4ShotPitchDiff);
-						V4ShotViewUsed = V4ShotStepView;
-					}
-
-					if (bHasPrevClientLoc) {
-						V4LocAlpha = FClamp(float(MoveIndex + 1) / float(Max(1, MergeCount)), 0.0, 1.0);
-						V4ShotAnchorLoc = PrevClientLocAbs + (ClientLocAbs - PrevClientLocAbs) * V4LocAlpha;
-					} else {
-						V4LocAlpha = 1.0 / float(Max(1, MergeCount - MoveIndex));
-						V4ShotAnchorLoc = Location + (ClientLocAbs - Location) * V4LocAlpha;
-					}
-					V4ShotDeltaLoc.X = float(SM.V4ShotDX);
-					V4ShotDeltaLoc.Y = float(SM.V4ShotDY);
-					V4ShotDeltaLoc.Z = float(SM.V4ShotDZ);
-					V4ShotLoc = V4ShotAnchorLoc + V4ShotDeltaLoc;
-					if (VSize(V4ShotDeltaLoc) > IGPLUS_EB_SHOT_LOC_MAX_DELTA || !IsClientLocationPlausible(V4ShotLoc, V4ShotTS)) {
-						if (bTraceInput)
-							Log("[EB] [SRV-SHOT] clamp loc seq="$V4ShotSeq$" delta="$V4ShotDeltaLoc$" ts="$V4ShotTS);
-						V4ShotLoc = V4ShotAnchorLoc;
-					}
-
-					if (V4ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT)
-						V4ShotCharge = 1;
-					else
-						V4ShotCharge = Clamp(V4ShotCharge, 1, 6);
-
-					if (V4ShotKind >= IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT && V4ShotKind <= IGPLUS_EB_SHOT_KIND_ALT_AUTO6) {
-						// ST_UT_Eightball no longer queues shots explicitly via an array. Wait to see if this affects bV4ShotQueued.
-						bV4ShotQueued = true;
-					} else {
-						if (bTraceInput)
-							Log("[EB] [SRV-SHOT] drop invalid-kind seq="$V4ShotSeq$" kind="$V4ShotKind);
-						bV4ShotQueued = true;
-					}
-				}
-				bV4HandledStep = IGPlus_V4ProcessWeaponStep(
-					V4Weapon,
-					StepTS,
-					StepView,
-					StepLoc,
-					bStepFireHeld,
-					bStepAltHeld,
-					bStepForceFire,
-					bStepForceAltFire,
-					true,
-					SM.bDetReady,
-					SM.V4ChargeData
-				);
+					bV4HandledStep = IGPlus_V4ProcessWeaponStep(
+						V4Weapon,
+						StepTS,
+						StepView,
+						StepLoc,
+						bStepFireHeld,
+						bStepAltHeld,
+						bStepForceFire,
+						bStepForceAltFire,
+						true,
+						SM.bDetReady,
+						SM.V4ChargeData
+					);
 				if (bV4HandledStep) {
 					IGPlus_V4StepsHandled++;
 					// Deterministic shot execution is already handled in v4 step.
@@ -4302,33 +4229,6 @@ function xxRememberPosition()
 		zzPositionIndex = 0;
 	zzNextPositionTime = Now + 0.05;
 
-}
-
-function bool IsClientLocationPlausible(vector ClientLoc, float TimeStamp) {
-	local vector Delta;
-	local bbOldMovementInfo MI;
-	
-	if (TimeStamp >= CurrentTimeStamp) {
-		Delta = ClientLoc - Location;
-		Delta -= (TimeStamp - CurrentTimeStamp)*Velocity;
-		return (VSize(Delta) < CollisionRadius);
-	}
-
-	MI = OldestMI;
-	if (MI == none)
-		// not keeping track
-		return false;
-
-	if (MI.ClientTimeStamp > TimeStamp)
-		// too old
-		return false;
-
-	while(MI.Next != none && MI.Next.ClientTimeStamp < TimeStamp)
-		MI = MI.Next;
-
-	Delta = ClientLoc - MI.Loc;
-	Delta -= (TimeStamp - MI.ClientTimeStamp)*MI.Vel;
-	return (VSize(Delta) < CollisionRadius);
 }
 
 function bool xxCloseEnough(vector HitLoc, optional int HitRadius)
@@ -6545,7 +6445,6 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local int V4Flags;
 	local int V4PulseData;
 	local bool bV4ShotPackPresent;
-	local bool bV4ShotResend;
 	local int V4ShotWord0;
 	local int V4ShotWord1;
 	local int V4ShotWord2;
@@ -6603,7 +6502,6 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	V4Flags = 0;
 	V4PulseData = 0;
 	bV4ShotPackPresent = false;
-	bV4ShotResend = false;
 	V4ShotWord0 = 0;
 	V4ShotWord1 = 0;
 	V4ShotWord2 = 0;
@@ -6662,18 +6560,18 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 				V4PulseData = V4ShotWord0;
 				OldMoveData1 = V4ShotWord1;
 				OldMoveData2 = V4ShotWord2;
-				V4ShotChargeBits = (V4ShotWord0 >>> 15) & 0x7;
-				// Carrying a shotpack requires deterministic Eightball context even
-				// when the move's transient weapon-index snapshot is stale/zero.
-				MoveDeltaTime and_eq 0xFFFFFF00;
-				MoveDeltaTime or_eq 0x01;
-				MoveDeltaTime or_eq (5 & 0x07) << 1;
-				MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
-				if (bTraceInput)
-					Log("[EB] [CLI-SHOT] pack seq="$V4ShotSeq$" kind="$V4ShotKind$" resend="$bV4ShotResend$" word0="$V4ShotWord0$" word1="$V4ShotWord1$" word2="$V4ShotWord2$" forceWpn=5");
+					V4ShotChargeBits = (V4ShotWord0 >>> 15) & 0x7;
+					// Carrying a shotpack requires deterministic Eightball context even
+					// when the move's transient weapon-index snapshot is stale/zero.
+					MoveDeltaTime and_eq 0xFFFFFF00;
+					MoveDeltaTime or_eq 0x01;
+					MoveDeltaTime or_eq (5 & 0x07) << 1;
+					MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
+					if (bTraceInput)
+						Log("[EB] [CLI-SHOT] pack seq="$V4ShotSeq$" kind="$V4ShotKind$" word0="$V4ShotWord0$" word1="$V4ShotWord1$" word2="$V4ShotWord2$" forceWpn=5");
+				}
 			}
 		}
-	}
 
 	if (bTraceInput && Move.bUseServerMoveV4
 		&& (Move.V4WeaponIndex == 5 || bV4ShotPackPresent || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots())) {
