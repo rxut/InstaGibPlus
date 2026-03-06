@@ -276,14 +276,20 @@ const IGPLUS_V4FLAG_HAS_ALT_RELEASE = 0x00000080;
 const IGPLUS_V4FLAG_FIRE_PRESS_SHIFT = 8;
 const IGPLUS_V4FLAG_FIRE_RELEASE_SHIFT = 13;
 const IGPLUS_V4FLAG_ALT_PRESS_SHIFT = 18;
-const IGPLUS_V4FLAG_ALT_RELEASE_SHIFT = 23;
-const IGPLUS_V4FLAG_INDEX_MASK = 0x1F;
-const IGPLUS_V4FLAG_TIMELINE_VALID = 0x10000000;
-const IGPLUS_V4FLAG_EB_INSTANT = 0x20000000;
-const IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT = 0x40000000;
-const IGPLUS_EB_SHOT_QUEUE_SIZE = 32;
-const IGPLUS_EB_SHOT_RESEND_INTERVAL = 0.03;
-const IGPLUS_EB_SHOT_TIMEOUT = 1.0;
+	const IGPLUS_V4FLAG_ALT_RELEASE_SHIFT = 23;
+	const IGPLUS_V4FLAG_INDEX_MASK = 0x1F;
+	const IGPLUS_V4FLAG_TIMELINE_VALID = 0x10000000;
+	const IGPLUS_V4FLAG_EB_INSTANT = 0x20000000;
+	const IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT = 0x40000000;
+	const IGPLUS_EB_SHOT_QUEUE_SIZE = 32;
+	const IGPLUS_EB_SHOT_RESEND_INTERVAL = 0.03;
+	const IGPLUS_EB_SHOT_TIMEOUT = 1.0;
+	const IGPLUS_V4WEAPON_None = 0;
+	const IGPLUS_V4WEAPON_ShockRifle = 1;
+	const IGPLUS_V4WEAPON_Ripper = 2;
+	const IGPLUS_V4WEAPON_FlakCannon = 3;
+	const IGPLUS_V4WEAPON_BioRifle = 4;
+	const IGPLUS_V4WEAPON_Eightball = 5;
 
 var Utilities Utils;
 var StringUtils StringUtils;
@@ -2983,7 +2989,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	V4Weapon = none;
 	if (SM.bDetReady) {
-		if (SM.V4WeaponIndex > 0) {
+		if (SM.V4WeaponIndex != IGPLUS_V4WEAPON_None) {
 			// Explicit index must resolve or we drop deterministic dispatch for
 			// this move; never remap to current weapon.
 			V4Weapon = IGPlus_V4WeaponByIndex(SM.V4WeaponIndex);
@@ -4810,13 +4816,13 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		IGPlus_SuppressAltHeldUntilRelease = false;
 	}
 
-	V4Weapon = none;
-	if (I.bDetReady) {
-		if (I.V4WeaponIndex > 0)
-			V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
-		else
-			V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-	}
+		V4Weapon = none;
+		if (I.bDetReady) {
+			if (I.V4WeaponIndex != IGPLUS_V4WEAPON_None)
+				V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
+			else
+				V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
+		}
 	bDetFallback = V4Weapon != none && I.bDetReady;
 	bEightballStrict =
 		IGPlus_IsV4StrictWeapon(V4Weapon)
@@ -4839,30 +4845,30 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			DodgeClickTimer = DodgeClickTime;
 		}
 
-				if (bDetFallback && Role == ROLE_Authority) {
-						IGPlus_V4ProcessWeaponStep(
-							V4Weapon,
-						I.TimeStamp,
-						I.SavedViewRotation,
-						Location,
-						bInputFireHeld,
-						bInputAltHeld,
-						bInputForceFire,
-							bInputForceAltFire,
-							true,
-							I.bDetReady,
-							I.V4ChargeData,
-							I.V4WeaponIndex == 5,
-							I.bV4EightballInstant
-						);
-				// Deterministic step path is authoritative; keep legacy fire latches
-				// clear to prevent duplicate server-side refire.
-				bFire = 0;
-				bAltFire = 0;
-				} else if (bDetFallback) {
-				// Client-side replay path must not emit deterministic shots.
-				if (bInputFireHeld)
-					bFire = 1;
+			if (bDetFallback && Role == ROLE_Authority) {
+				IGPlus_V4ProcessWeaponStep(
+					V4Weapon,
+					I.TimeStamp,
+					I.SavedViewRotation,
+					Location,
+					bInputFireHeld,
+					bInputAltHeld,
+					bInputForceFire,
+					bInputForceAltFire,
+					true,
+					I.bDetReady,
+					I.V4ChargeData,
+					IGPlus_IsV4WeaponIndexEightball(I.V4WeaponIndex),
+					I.bV4EightballInstant
+				);
+					// Deterministic step path is authoritative; keep legacy fire latches
+					// clear to prevent duplicate server-side refire.
+					bFire = 0;
+					bAltFire = 0;
+			} else if (bDetFallback) {
+					// Client-side replay path must not emit deterministic shots.
+					if (bInputFireHeld)
+						bFire = 1;
 				else
 					bFire = 0;
 				if (bInputAltHeld)
@@ -4965,24 +4971,24 @@ function IGPlus_SavedMove xxGetFreeMove() {
 	}
 }
 
-// V4 Weapon Dispatch — add one cast block per weapon to each function.
+	// V4 Weapon Dispatch — add one cast block per weapon to each function.
 
-// Encode which V4 weapon was ready. 0=none, 1=ShockRifle, 2=Ripper.
-simulated function int IGPlus_GetV4WeaponIndex(Weapon W) {
-	if (W == none)
-		return 0;
-	if (ST_ShockRifle(W) != none)
-		return 1;
-	if (ST_ripper(W) != none)
-		return 2;
-	if (ST_UT_FlakCannon(W) != none)
-		return 3;
-	if (ST_ut_biorifle(W) != none)
-		return 4;
-	if (ST_UT_Eightball(W) != none)
-		return 5;
-	return 0;
-}
+		// Encode which V4 weapon was ready for deterministic dispatch.
+	simulated function int IGPlus_GetV4WeaponIndex(Weapon W) {
+		if (W == none)
+			return IGPLUS_V4WEAPON_None;
+		if (ST_ShockRifle(W) != none)
+			return IGPLUS_V4WEAPON_ShockRifle;
+		if (ST_ripper(W) != none)
+			return IGPLUS_V4WEAPON_Ripper;
+		if (ST_UT_FlakCannon(W) != none)
+			return IGPLUS_V4WEAPON_FlakCannon;
+		if (ST_ut_biorifle(W) != none)
+			return IGPLUS_V4WEAPON_BioRifle;
+		if (ST_UT_Eightball(W) != none)
+			return IGPLUS_V4WEAPON_Eightball;
+		return IGPLUS_V4WEAPON_None;
+	}
 
 // Return charge/load state for current weapon (4 bits, 0-15).
 // Eightball: ClientRocketsLoaded (1-6).
@@ -4999,20 +5005,24 @@ simulated function int IGPlus_GetV4ChargeData() {
 	return 0;
 }
 
-simulated function bool IGPlus_IsEightballInstantMode(optional Weapon W) {
-	local ST_UT_Eightball EB;
-	local Weapon UseW;
+	simulated function bool IGPlus_IsEightballInstantMode(optional Weapon W) {
+		local ST_UT_Eightball EB;
+		local Weapon UseW;
 
-	UseW = W;
-	if (UseW == none)
-		UseW = Weapon;
-	EB = ST_UT_Eightball(UseW);
-	if (EB == none)
-		return false;
-	if (EB.bAlwaysInstant)
-		return true;
-	return bInstantRocket;
-}
+		UseW = W;
+		if (UseW == none)
+			UseW = Weapon;
+		EB = ST_UT_Eightball(UseW);
+		if (EB == none)
+			return false;
+		if (EB.bAlwaysInstant)
+			return true;
+		return bInstantRocket;
+	}
+
+	simulated function bool IGPlus_IsV4WeaponIndexEightball(int Index) {
+		return Index == IGPLUS_V4WEAPON_Eightball;
+	}
 
 simulated function int IGPlus_SeqForward8(int FromSeq, int ToSeq) {
 	return (ToSeq - FromSeq) & 255;
@@ -5241,25 +5251,25 @@ simulated function bool IGPlus_V4EffectiveAltHeld() {
 	return bAltFire != 0;
 }
 
-// Decode V4 weapon index back to the actual weapon in inventory.
-simulated function Weapon IGPlus_V4WeaponByIndex(int Index) {
-	local Inventory Inv;
-	if (Index <= 0)
+	// Decode V4 weapon index back to the actual weapon in inventory.
+	simulated function Weapon IGPlus_V4WeaponByIndex(int Index) {
+		local Inventory Inv;
+		if (Index <= IGPLUS_V4WEAPON_None)
+			return none;
+		for (Inv = Inventory; Inv != none; Inv = Inv.Inventory) {
+			if (Index == IGPLUS_V4WEAPON_ShockRifle && ST_ShockRifle(Inv) != none)
+				return Weapon(Inv);
+			if (Index == IGPLUS_V4WEAPON_Ripper && ST_ripper(Inv) != none)
+				return Weapon(Inv);
+			if (Index == IGPLUS_V4WEAPON_FlakCannon && ST_UT_FlakCannon(Inv) != none)
+				return Weapon(Inv);
+			if (Index == IGPLUS_V4WEAPON_BioRifle && ST_ut_biorifle(Inv) != none)
+				return Weapon(Inv);
+			if (Index == IGPLUS_V4WEAPON_Eightball && ST_UT_Eightball(Inv) != none)
+				return Weapon(Inv);
+		}
 		return none;
-	for (Inv = Inventory; Inv != none; Inv = Inv.Inventory) {
-		if (Index == 1 && ST_ShockRifle(Inv) != none)
-			return Weapon(Inv);
-		if (Index == 2 && ST_ripper(Inv) != none)
-			return Weapon(Inv);
-		if (Index == 3 && ST_UT_FlakCannon(Inv) != none)
-			return Weapon(Inv);
-		if (Index == 4 && ST_ut_biorifle(Inv) != none)
-			return Weapon(Inv);
-		if (Index == 5 && ST_UT_Eightball(Inv) != none)
-			return Weapon(Inv);
 	}
-	return none;
-}
 
 simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
 	if (W == none)
@@ -5509,10 +5519,10 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 		// Eightball timing is edge-sensitive (load start/release fire).
 		// Never merge across a hold-state transition so edge timestamps are
 		// quantized to a single frame instead of an arbitrarily long merged move.
-		if (Pending.V4WeaponIndex == 5) {
-			bCurrentEightballInstant = IGPlus_IsEightballInstantMode(Weapon);
-			if (Pending.bV4EightballInstant != bCurrentEightballInstant)
-				return false;
+			if (IGPlus_IsV4WeaponIndexEightball(Pending.V4WeaponIndex)) {
+				bCurrentEightballInstant = IGPlus_IsEightballInstantMode(Weapon);
+				if (Pending.bV4EightballInstant != bCurrentEightballInstant)
+					return false;
 			if (Pending.bV4FireEndHeld != bCurrentFireHeld)
 				return false;
 			if (Pending.bV4AltEndHeld != bCurrentAltHeld)
@@ -5624,10 +5634,10 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 
 	if (PendMove.bUseServerMoveV4) {
 		bCurrentEightballInstant = IGPlus_IsEightballInstantMode(Weapon);
-		if (PendMove.V4WeaponIndex == 5)
-			PendMove.bV4EightballInstant = bCurrentEightballInstant;
-		else
-			PendMove.bV4EightballInstant = false;
+			if (IGPlus_IsV4WeaponIndexEightball(PendMove.V4WeaponIndex))
+				PendMove.bV4EightballInstant = bCurrentEightballInstant;
+			else
+				PendMove.bV4EightballInstant = false;
 
 		if (bForceFireTap)
 			PendMove.bV4FireStartHeld = false;
@@ -5662,15 +5672,15 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	if (PendMove.bDetReady) {
 		PendMove.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
 		PendMove.V4ChargeData = IGPlus_GetV4ChargeData();
-		if (PendMove.V4WeaponIndex == 5)
-			PendMove.bV4EightballInstant = IGPlus_IsEightballInstantMode(Weapon);
-		else
+			if (IGPlus_IsV4WeaponIndexEightball(PendMove.V4WeaponIndex))
+				PendMove.bV4EightballInstant = IGPlus_IsEightballInstantMode(Weapon);
+			else
+				PendMove.bV4EightballInstant = false;
+		} else {
+			PendMove.V4WeaponIndex = IGPLUS_V4WEAPON_None;
+			PendMove.V4ChargeData = 0;
 			PendMove.bV4EightballInstant = false;
-	} else {
-		PendMove.V4WeaponIndex = 0;
-		PendMove.V4ChargeData = 0;
-		PendMove.bV4EightballInstant = false;
-	}
+		}
 
 	PendMove.Delta = TotalTime;
 }
@@ -5727,8 +5737,8 @@ function IGPlus_ReplicateInput(float Delta) {
 		if (ReferenceInput != none) {
 			for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
 				if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
-					if (SerializedInput.V4WeaponIndex > 0)
-						V4Weapon = IGPlus_V4WeaponByIndex(SerializedInput.V4WeaponIndex);
+						if (SerializedInput.V4WeaponIndex != IGPLUS_V4WEAPON_None)
+							V4Weapon = IGPlus_V4WeaponByIndex(SerializedInput.V4WeaponIndex);
 					else
 						V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 					if (V4Weapon != none) {
@@ -5744,7 +5754,7 @@ function IGPlus_ReplicateInput(float Delta) {
 							false,
 							SerializedInput.bDetReady,
 							SerializedInput.V4ChargeData,
-							SerializedInput.V4WeaponIndex == 5,
+							IGPlus_IsV4WeaponIndexEightball(SerializedInput.V4WeaponIndex),
 							SerializedInput.bV4EightballInstant
 						);
 				}
@@ -5939,15 +5949,15 @@ function xxReplicateMove(
 			if (NewMove.bDetReady) {
 				NewMove.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
 				NewMove.V4ChargeData = IGPlus_GetV4ChargeData();
-				if (NewMove.V4WeaponIndex == 5)
-					NewMove.bV4EightballInstant = IGPlus_IsEightballInstantMode(Weapon);
-				else
+					if (IGPlus_IsV4WeaponIndexEightball(NewMove.V4WeaponIndex))
+						NewMove.bV4EightballInstant = IGPlus_IsEightballInstantMode(Weapon);
+					else
+						NewMove.bV4EightballInstant = false;
+				} else {
+					NewMove.V4WeaponIndex = IGPLUS_V4WEAPON_None;
+					NewMove.V4ChargeData = 0;
 					NewMove.bV4EightballInstant = false;
-			} else {
-				NewMove.V4WeaponIndex = 0;
-				NewMove.V4ChargeData = 0;
-				NewMove.bV4EightballInstant = false;
-			}
+				}
 
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
@@ -6003,9 +6013,9 @@ function xxReplicateMove(
 				false,
 				NewMove.bDetReady,
 				NewMove.V4ChargeData,
-				NewMove.V4WeaponIndex == 5,
-				NewMove.bV4EightballInstant
-			);
+					IGPlus_IsV4WeaponIndexEightball(NewMove.V4WeaponIndex),
+					NewMove.bV4EightballInstant
+				);
 
 	bForcePacketSplit = false;
 	ClientUpdateTime = FClamp(RealDelta - TimeBetweenNetUpdates + ClientUpdateTime, -TimeBetweenNetUpdates, TimeBetweenNetUpdates);
@@ -6111,8 +6121,8 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		IGPlus_InputLogFile.LogSavedMove(Move);
 	if (Move.bUseServerMoveV4) {
 		V4Flags or_eq IGPLUS_V4FLAG_TIMELINE_VALID;
-		if (Move.V4WeaponIndex == 5 && Move.bV4EightballInstant)
-			V4Flags or_eq IGPLUS_V4FLAG_EB_INSTANT;
+			if (IGPlus_IsV4WeaponIndexEightball(Move.V4WeaponIndex) && Move.bV4EightballInstant)
+				V4Flags or_eq IGPLUS_V4FLAG_EB_INSTANT;
 		if (Move.bV4FireStartHeld) V4Flags or_eq IGPLUS_V4FLAG_FIRE_START_HELD;
 		if (Move.bV4FireEndHeld) V4Flags or_eq IGPLUS_V4FLAG_FIRE_END_HELD;
 		if (Move.bV4AltStartHeld) V4Flags or_eq IGPLUS_V4FLAG_ALT_START_HELD;
@@ -6135,10 +6145,10 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 			V4Flags or_eq (Move.V4AltReleaseIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_ALT_RELEASE_SHIFT;
 		}
 
-		if (Move.V4WeaponIndex == 5 || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
-			if (IGPlus_SelectEightballShotForMove(
-				V4ShotSeq,
-				V4ShotChargeBits
+			if (IGPlus_IsV4WeaponIndexEightball(Move.V4WeaponIndex) || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
+				if (IGPlus_SelectEightballShotForMove(
+					V4ShotSeq,
+					V4ShotChargeBits
 			)) {
 				V4Flags or_eq IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT;
 				V4AuxData = V4ShotSeq;
@@ -6146,7 +6156,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 				// when the move's transient weapon-index snapshot is stale/zero.
 				MoveDeltaTime and_eq 0xFFFFFF00;
 				MoveDeltaTime or_eq 0x01;
-				MoveDeltaTime or_eq (5 & 0x07) << 1;
+					MoveDeltaTime or_eq (IGPLUS_V4WEAPON_Eightball & 0x07) << 1;
 				MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
 			}
 		}

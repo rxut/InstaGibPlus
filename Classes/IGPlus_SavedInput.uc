@@ -91,7 +91,9 @@ function CopyFrom(float Delta, bbPlayer P) {
 		self.bForceAltTap = bForceAltTap;
 		bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
 		V4WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
-		bV4EightballInstant = bDetReady && V4WeaponIndex == 5 && P.IGPlus_IsEightballInstantMode(P.Weapon);
+		bV4EightballInstant = bDetReady
+			&& P.IGPlus_IsV4WeaponIndexEightball(V4WeaponIndex)
+			&& P.IGPlus_IsEightballInstantMode(P.Weapon);
 		V4ChargeData = P.IGPlus_GetV4ChargeData();
 		bDetPredictedLocal = false;
 
