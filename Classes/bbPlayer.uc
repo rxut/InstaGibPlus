@@ -468,6 +468,8 @@ var IGPlus_InputLogFile IGPlus_InputLogFile;
 var bool bTraceInput;
 var bool IGPlus_EightballShotPulseFire;
 var bool IGPlus_EightballShotPulseAlt;
+var bool IGPlus_SuppressFireHeldUntilRelease;
+var bool IGPlus_SuppressAltHeldUntilRelease;
 
 struct IGPlus_EightballShotPendingEntry {
 	var bool bActive;
@@ -2813,6 +2815,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bV4EightballInstant;
 	local bool bV5EightballPulse;
 	local bool bV4HandledStep;
+	local bool bV4EightballStrict;
 	local bool bStepFireHeld;
 	local bool bStepAltHeld;
 	local bool bStepForceFire;
@@ -2904,6 +2907,24 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	if (DodgeMove > DODGE_None && DodgeMove < DODGE_Active)
 		ClientDebugMessage("Received Dodge"@DodgeMove@SM.TimeStamp);
+
+	if (IGPlus_SuppressFireHeldUntilRelease) {
+		if (bFired) {
+			bFired = false;
+			bForceFire = false;
+			FireIndex = -1;
+		}
+		IGPlus_SuppressFireHeldUntilRelease = false;
+	}
+
+	if (IGPlus_SuppressAltHeldUntilRelease) {
+		if (bAltFired) {
+			bAltFired = false;
+			bForceAltFire = false;
+			AltFireIndex = -1;
+		}
+		IGPlus_SuppressAltHeldUntilRelease = false;
+	}
 
 	if (SM.ClientBase == none)
 		ClientLocAbs = SM.ClientLocation;
@@ -3026,16 +3047,23 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	V4Weapon = none;
-	if (SM.bDetReady && SM.V4WeaponIndex > 0)
-		V4Weapon = IGPlus_V4WeaponByIndex(SM.V4WeaponIndex);
-	if (V4Weapon == none && SM.bDetReady) {
-		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-		if (V4Weapon == none)
-			V4Weapon = IGPlus_FindV4SupportedWeapon();
+	if (SM.bDetReady) {
+		if (SM.V4WeaponIndex > 0) {
+			// Explicit index must resolve or we drop deterministic dispatch for
+			// this move; never remap to current weapon.
+			V4Weapon = IGPlus_V4WeaponByIndex(SM.V4WeaponIndex);
+		} else {
+			// Legacy/no-index path: bind only to currently active supported weapon.
+			V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
+		}
 	}
 	V4Eightball = ST_UT_Eightball(V4Weapon);
 	bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 	bV4WeaponIsEightball = bV4WeaponSupported && V4Eightball != none;
+	// Hard-block legacy fire fallback for deterministic v4 weapons.
+	bV4EightballStrict =
+		IGPlus_IsV4StrictWeapon(V4Weapon)
+		|| IGPlus_IsV4StrictWeapon(Weapon);
 	// Pulse index mode is enabled per-move only when payload is present.
 	// If payload is absent, fall back to edge/index decoding instead of
 	// treating Force bits as unusable.
@@ -3395,7 +3423,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			}
 
 			if (!bV4HandledStep && MoveIndex == FireIndex && !bDetFallback) {
-				if (!IsExplicitFireWeapon()) {
+				if (bV4EightballStrict) {
+					bFire = 0;
+				} else {
 					if (bFired) {
 						if (bForceFire && (Weapon != None))
 							Weapon.ForceFire();
@@ -3405,32 +3435,28 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					} else {
 						bFire = 0;
 					}
-				} else {
-					bFire = 0;
 				}
 			}
 
 				if (!bV4HandledStep && MoveIndex == AltFireIndex && !bDetFallback) {
-					if (!IsExplicitAltFireWeapon()) {
+					if (bV4EightballStrict) {
+						bAltFire = 0;
+					} else {
 						if (bAltFired || bForceAltFire) {
-							if (bForceAltFire && (Weapon != None))
-								Weapon.ForceAltFire();
-							else if (bAltFire == 0)
-								AltFire(0);
-							if (bAltFired)
-								bAltFire = 1;
-							else
-								bAltFire = 0;
-						} else {
+						if (bForceAltFire && (Weapon != None))
+							Weapon.ForceAltFire();
+						else if (bAltFire == 0)
+							AltFire(0);
+						if (bAltFired)
+							bAltFire = 1;
+						else
 							bAltFire = 0;
-						}
 					} else {
 						bAltFire = 0;
+						}
 					}
-				} else {
-					bAltFire = 0;
 				}
-				bRunActual = (MoveIndex < RunChangeIndex) ^^ NewbRun;
+					bRunActual = (MoveIndex < RunChangeIndex) ^^ NewbRun;
 				bDuckActual = (MoveIndex < DuckChangeIndex) ^^ NewbDuck;
 
 			IGPlus_MoveAutonomous(SimStep, bRunActual, bDuckActual, bDoJump, DoDodge, SM.ClientAcceleration, DeltaRot / MergeCount);
@@ -4348,14 +4374,6 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 	);
 }
 
-function bool IsExplicitFireWeapon() {
-	return false;
-}
-
-function bool IsExplicitAltFireWeapon() {
-	return false;
-}
-
 simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn TheOwner)
 {
 	local vector realHit;
@@ -4684,7 +4702,10 @@ simulated function xxDisableCarcasses()
 
 exec function Fire( optional float F )
 {
+	local bool bRouteClientNN;
+
 	xxEnableCarcasses();
+	bRouteClientNN = Role < ROLE_Authority && GameReplicationInfo.GameEndedComments == "" && bNewNet && xxWeaponIsNewNet();
 	if (Weapon != none) {
 		if (Level.NetMode == NM_Client)
 			ClientDebugMessage("Client Fire"@Weapon.Name@ViewRotation);
@@ -4692,7 +4713,7 @@ exec function Fire( optional float F )
 			ClientDebugMessage("Server Fire"@Weapon.Name@ViewRotation);
 	}
 
-	if (Role < ROLE_Authority && GameReplicationInfo.GameEndedComments == "" && bNewNet && xxWeaponIsNewNet()) {
+	if (bRouteClientNN) {
 		if (Weapon != none)
 			Weapon.ClientFire(1);
 	} else {
@@ -4776,7 +4797,10 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 
 exec function AltFire( optional float F )
 {
+	local bool bRouteClientNN;
+
 	xxEnableCarcasses();
+	bRouteClientNN = Role < ROLE_Authority && GameReplicationInfo.GameEndedComments == "" && bNewNet && xxWeaponIsNewNet(true);
 
 	if (Weapon != none) {
 		if (Level.NetMode == NM_Client)
@@ -4785,7 +4809,7 @@ exec function AltFire( optional float F )
 			ClientDebugMessage("Server AltFire"@Weapon.Name@ViewRotation);
 	}
 
-	if (Role < ROLE_Authority && GameReplicationInfo.GameEndedComments == "" && bNewNet && xxWeaponIsNewNet(true))
+	if (bRouteClientNN)
 	{
 		if (Weapon != none)
 			Weapon.ClientAltFire(1);
@@ -5002,6 +5026,11 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local float OldForward, OldStrafe, OldUp, OldLookUp, OldTurn;
 	local byte OldRun, OldDuck;
 	local bool bDetFallback;
+	local bool bEightballStrict;
+	local bool bInputFireHeld;
+	local bool bInputAltHeld;
+	local bool bInputForceFire;
+	local bool bInputForceAltFire;
 	local Weapon V4Weapon;
 
 	OldBaseX = aBaseX;
@@ -5053,14 +5082,38 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	}
 
 	ViewRotation = I.SavedViewRotation;
+	bInputFireHeld = I.bFire;
+	bInputAltHeld = I.bAFir;
+	bInputForceFire = I.bFFir;
+	bInputForceAltFire = I.bFAFr;
+
+	if (IGPlus_SuppressFireHeldUntilRelease) {
+		if (bInputFireHeld) {
+			bInputFireHeld = false;
+			bInputForceFire = false;
+		}
+		IGPlus_SuppressFireHeldUntilRelease = false;
+	}
+
+	if (IGPlus_SuppressAltHeldUntilRelease) {
+		if (bInputAltHeld) {
+			bInputAltHeld = false;
+			bInputForceAltFire = false;
+		}
+		IGPlus_SuppressAltHeldUntilRelease = false;
+	}
+
 	V4Weapon = none;
-	if (I.bDetReady && I.V4WeaponIndex > 0)
-		V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
-	if (V4Weapon == none)
-		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-	if (V4Weapon == none && I.bDetReady)
-		V4Weapon = IGPlus_FindV4SupportedWeapon();
+	if (I.bDetReady) {
+		if (I.V4WeaponIndex > 0)
+			V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
+		else
+			V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
+	}
 	bDetFallback = V4Weapon != none && I.bDetReady;
+	bEightballStrict =
+		IGPlus_IsV4StrictWeapon(V4Weapon)
+		|| IGPlus_IsV4StrictWeapon(Weapon);
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -5079,71 +5132,67 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			DodgeClickTimer = DodgeClickTime;
 		}
 
-			if (bDetFallback && Role == ROLE_Authority) {
-				IGPlus_V4ProcessWeaponStep(
-					V4Weapon,
-					I.TimeStamp,
-					I.SavedViewRotation,
-					Location,
-					I.bFire,
-					I.bAFir,
-					I.bFFir,
-					I.bFAFr,
-					true,
-					I.bDetReady,
-					I.V4ChargeData
-				);
+				if (bDetFallback && Role == ROLE_Authority) {
+						IGPlus_V4ProcessWeaponStep(
+							V4Weapon,
+						I.TimeStamp,
+						I.SavedViewRotation,
+						Location,
+						bInputFireHeld,
+						bInputAltHeld,
+						bInputForceFire,
+						bInputForceAltFire,
+						true,
+						I.bDetReady,
+						I.V4ChargeData
+					);
 				// Deterministic step path is authoritative; keep legacy fire latches
 				// clear to prevent duplicate server-side refire.
 				bFire = 0;
 				bAltFire = 0;
-			} else if (bDetFallback) {
-			// Client-side replay path must not emit deterministic shots.
-			if (I.bFire)
-				bFire = 1;
-			else
-				bFire = 0;
-			if (I.bAFir)
-				bAltFire = 1;
-			else
-				bAltFire = 0;
-		} else {
-			// handle firing and alt-firing on server
-			if (!IsExplicitFireWeapon()) {
-				if (I.bFire) {
-					if (bFire == 0) {
-						if (I.bLive && I.bFFir && Weapon != none) {
-							Weapon.ForceFire();
-						}
-						else {
-							Fire(0);
-						}
-					}
+				} else if (bDetFallback) {
+				// Client-side replay path must not emit deterministic shots.
+				if (bInputFireHeld)
 					bFire = 1;
+				else
+					bFire = 0;
+				if (bInputAltHeld)
+					bAltFire = 1;
+				else
+					bAltFire = 0;
+				} else {
+					// handle firing and alt-firing on server
+					if (bInputFireHeld) {
+						if (bFire == 0) {
+							if (bEightballStrict) {
+								bFire = 0;
+							} else if (I.bLive && bInputForceFire && Weapon != none) {
+								Weapon.ForceFire();
+							} else {
+								Fire(0);
+							}
+						}
+					if (!bEightballStrict)
+						bFire = 1;
 				} else {
 					bFire = 0;
 				}
-			} else {
-				bFire = 0;
-			}
 
-			if (!IsExplicitAltFireWeapon()) {
-				if (I.bAFir) {
-					if (bAltFire == 0) {
-						if (I.bLive && I.bFAFr && Weapon != none) {
-							Weapon.ForceAltFire();
-						}
-						else {
-							AltFire(0);
-						}
+					if (bInputAltHeld) {
+						if (bAltFire == 0) {
+							if (bEightballStrict) {
+								bAltFire = 0;
+							} else if (I.bLive && bInputForceAltFire && Weapon != none) {
+								Weapon.ForceAltFire();
+							} else {
+								AltFire(0);
+							}
 					}
-					bAltFire = 1;
+					if (!bEightballStrict)
+						bAltFire = 1;
 				} else {
 					bAltFire = 0;
 				}
-			} else {
-				bAltFire = 0;
-			}
 		}
 	} else if (RemoteRole == ROLE_Authority) {
 		// this assumes that you always replay up until the present, otherwise
@@ -5636,10 +5685,18 @@ function bool IGPlus_ServerRegisterEightballShotSeq(int Seq, out int DuplicateFl
 // Keep this bound to physical held input only. Eightball shot-time pulses
 // carry queued refire intent explicitly.
 simulated function bool IGPlus_V4EffectiveFireHeld() {
+	if (IGPlus_SuppressFireHeldUntilRelease) {
+		IGPlus_SuppressFireHeldUntilRelease = false;
+		return false;
+	}
 	return bFire != 0;
 }
 
 simulated function bool IGPlus_V4EffectiveAltHeld() {
+	if (IGPlus_SuppressAltHeldUntilRelease) {
+		IGPlus_SuppressAltHeldUntilRelease = false;
+		return false;
+	}
 	return bAltFire != 0;
 }
 
@@ -5700,6 +5757,35 @@ simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 	EB = ST_UT_Eightball(W);
 	if (EB != none)
 		return EB.IsDeterministicReady();
+	return false;
+}
+
+simulated function bool IGPlus_IsV4StrictWeapon(optional Weapon W) {
+	local ST_ShockRifle SR;
+	local ST_ripper RP;
+	local ST_UT_FlakCannon FC;
+	local ST_ut_biorifle BR;
+	local ST_UT_Eightball EB;
+
+	if (W == none)
+		return false;
+
+	SR = ST_ShockRifle(W);
+	if (SR != none)
+		return SR.IsV4Active();
+	RP = ST_ripper(W);
+	if (RP != none)
+		return RP.IsV4Active();
+	FC = ST_UT_FlakCannon(W);
+	if (FC != none)
+		return FC.IsV4Active();
+	BR = ST_ut_biorifle(W);
+	if (BR != none)
+		return BR.IsV4Active();
+	EB = ST_UT_Eightball(W);
+	if (EB != none)
+		return EB.IsV4Active();
+
 	return false;
 }
 
@@ -5801,19 +5887,8 @@ simulated function bool IGPlus_V4HeldAtStep(
 }
 
 simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred) {
-	local Inventory Inv;
-	local Weapon Candidate;
-
-	Candidate = Preferred;
-	if (Candidate != none && IGPlus_V4SupportsWeapon(Candidate))
-		return Candidate;
-
-	for (Inv = Inventory; Inv != none; Inv = Inv.Inventory) {
-		Candidate = Weapon(Inv);
-		if (Candidate != none && IGPlus_V4SupportsWeapon(Candidate))
-			return Candidate;
-	}
-
+	if (Preferred != none && IGPlus_V4SupportsWeapon(Preferred))
+		return Preferred;
 	return none;
 }
 
@@ -5999,22 +6074,23 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 		}
 	}
 
-	bFireNew = PendMove.bFire || bForceFirePulse || (bFire != 0);
+	// Keep merged hold bits aligned with suppression-aware effective held state.
+	bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
+	bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
+
+	bFireNew = PendMove.bFire || bForceFirePulse || bCurrentFireHeld;
 	if (bFireNew != PendMove.bFire && PendMove.FireIndex < 0) {
 		PendMove.FireIndex = PendMove.IGPlus_MergeCount;
 	}
 	PendMove.bFire = bFireNew;
 	PendMove.bForceFire = PendMove.bForceFire || bForceFirePulse;
 
-	bAltFireNew = PendMove.bAltFire || bForceAltPulse || (bAltFire != 0);
+	bAltFireNew = PendMove.bAltFire || bForceAltPulse || bCurrentAltHeld;
 	if (bAltFireNew != PendMove.bAltFire && PendMove.AltFireIndex < 0) {
 		PendMove.AltFireIndex = PendMove.IGPlus_MergeCount;
 	}
 	PendMove.bAltFire = bAltFireNew;
 	PendMove.bForceAltFire = PendMove.bForceAltFire || bForceAltPulse;
-
-	bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
-	bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
 	EdgeIndex = PendMove.IGPlus_MergeCount;
 
 	if (PendMove.bUseServerMoveV4) {
@@ -6123,18 +6199,14 @@ function IGPlus_ReplicateInput(float Delta) {
 	// Resolve V4Weapon per-input using V4WeaponIndex so that a weapon switch
 	// mid-batch doesn't cause the wrong weapon to fire (e.g. Ripper razor
 	// predicted when the input was actually for ShockRifle).
-	if (ReferenceInput != none) {
-		for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
-			if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
-				if (SerializedInput.V4WeaponIndex > 0)
-					V4Weapon = IGPlus_V4WeaponByIndex(SerializedInput.V4WeaponIndex);
-				else
-					V4Weapon = none;
-				if (V4Weapon == none)
-					V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-				if (V4Weapon == none)
-					V4Weapon = IGPlus_FindV4SupportedWeapon();
-				if (V4Weapon != none) {
+		if (ReferenceInput != none) {
+			for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
+				if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
+					if (SerializedInput.V4WeaponIndex > 0)
+						V4Weapon = IGPlus_V4WeaponByIndex(SerializedInput.V4WeaponIndex);
+					else
+						V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
+					if (V4Weapon != none) {
 					IGPlus_V4ProcessWeaponStep(
 						V4Weapon,
 						SerializedInput.TimeStamp,
@@ -6706,12 +6778,36 @@ simulated function bool xxUsingDefaultWeapon()
 
 exec function ThrowWeapon()
 {
-	if( Level.NetMode == NM_Client )
+	if( Level.NetMode == NM_Client ) {
+		IGPlus_MarkDeterministicSwitchGuard();
+		bForcePacketSplit = true;
+		IGPlus_EightballShotPulseFire = false;
+		IGPlus_EightballShotPulseAlt = false;
+		IGPlus_SuppressFireHeldUntilRelease = (bFire != 0);
+		IGPlus_SuppressAltHeldUntilRelease = (bAltFire != 0);
+		bFire = 0;
+		bAltFire = 0;
+		bJustFired = false;
+		bJustAltFired = false;
 		return;
+	}
 
 	if( Weapon==None || (Weapon.Class==Level.Game.BaseMutator.MutatedDefaultWeapon())
 		|| !Weapon.bCanThrow || (IGPlus_UseFastWeaponSwitch == false && Weapon.IsInState('Idle') == false) )
 		return;
+
+	// Prevent stale deterministic fire intent from leaking to a different
+	// weapon immediately after toss/switch.
+	IGPlus_MarkDeterministicSwitchGuard();
+	bForcePacketSplit = true;
+	IGPlus_EightballShotPulseFire = false;
+	IGPlus_EightballShotPulseAlt = false;
+	IGPlus_SuppressFireHeldUntilRelease = (bFire != 0);
+	IGPlus_SuppressAltHeldUntilRelease = (bAltFire != 0);
+	bFire = 0;
+	bAltFire = 0;
+	bJustFired = false;
+	bJustAltFired = false;
 
 	Weapon.Velocity = Normal(Vector(ViewRotation) * vect(1,1,0)) * zzThrowVelocity + vect(0,0,220);
 	Weapon.bTossedOut = true;
