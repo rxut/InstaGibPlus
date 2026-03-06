@@ -18,8 +18,6 @@ var rotator V4ServerFireRot;
 var bool bUseV4ServerFireData;
 
 const V4_PHASELOCK_MAX_OVERSHOOT = 0.060;
-const IGPLUS_EB_SHOT_KIND_ALT_RELEASE = 2;
-const IGPLUS_EB_SHOT_KIND_ALT_AUTO6 = 3;
 const IGPLUS_EB_RELEASE_DEBOUNCE = 0.150;
 const IGPLUS_EB_PRIMARY_END_RELEASE = 1;
 const IGPLUS_EB_PRIMARY_END_AUTO_6 = 2;
@@ -154,7 +152,7 @@ simulated function V4ResetAltCycle(optional bool bClearHeld) {
 	V4ResetClientAmmoTracking();
 }
 
-simulated function V4BumpPrimaryWeaponEpoch(optional coerce string Reason) {
+simulated function V4BumpPrimaryWeaponEpoch() {
 	V4PrimaryWeaponEpoch = (V4PrimaryWeaponEpoch + 1) & 65535;
 	if (V4PrimaryWeaponEpoch == 0)
 		V4PrimaryWeaponEpoch = 1;
@@ -813,7 +811,6 @@ simulated function bool V4ProcessStep(
 simulated function V4EmitClientAuthoritativeShot(int NumRockets) {
 	local bbPlayer bbP;
 	local Pawn PawnOwner;
-	local int ShotKind;
 
 	if (Role == ROLE_Authority)
 		return;
@@ -825,19 +822,9 @@ simulated function V4EmitClientAuthoritativeShot(int NumRockets) {
 	if (bbP == none || PawnOwner == none || NumRockets <= 0)
 		return;
 
-	if (NumRockets >= 6)
-		ShotKind = IGPLUS_EB_SHOT_KIND_ALT_AUTO6;
-	else
-		ShotKind = IGPLUS_EB_SHOT_KIND_ALT_RELEASE;
-
 	bbP.IGPlus_QueueEightballAuthoritativeShot(
-		ShotKind,
 		Level.TimeSeconds,
-		PawnOwner.ViewRotation,
-		PawnOwner.Location,
-		Clamp(NumRockets, 1, 6),
-		false,
-		false
+		Clamp(NumRockets, 1, 6)
 	);
 }
 
@@ -1033,7 +1020,7 @@ function DropFrom(vector StartLocation)
 
 function Finish()
 {
-	V4BumpPrimaryWeaponEpoch("Finish");
+	V4BumpPrimaryWeaponEpoch();
 	V4ResetAltCycle(true);
 
 	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
@@ -1778,7 +1765,7 @@ simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
-	V4BumpPrimaryWeaponEpoch("PlaySelect");
+	V4BumpPrimaryWeaponEpoch();
 	V4InvalidateMoveInstantMode();
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
@@ -1799,7 +1786,7 @@ simulated function PlaySelect() {
 simulated function TweenDown() {
 	local float TweenTime;
 
-	V4BumpPrimaryWeaponEpoch("TweenDown");
+	V4BumpPrimaryWeaponEpoch();
 	TweenTime = 0.05;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
@@ -2198,7 +2185,7 @@ state DownWeapon
 {
 	function BeginState()
 	{
-		V4BumpPrimaryWeaponEpoch("DownWeapon");
+		V4BumpPrimaryWeaponEpoch();
 		Super.BeginState();
 	}
 }
@@ -2207,7 +2194,7 @@ state ClientDown
 {
 	simulated function BeginState()
 	{
-		V4BumpPrimaryWeaponEpoch("ClientDown");
+		V4BumpPrimaryWeaponEpoch();
 		Super.BeginState();
 	}
 }

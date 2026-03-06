@@ -467,15 +467,9 @@ var bool IGPlus_SuppressAltHeldUntilRelease;
 struct IGPlus_EightballShotPendingEntry {
 	var bool bActive;
 	var int Seq;
-	var int Kind;
 	var float ShotTS;
-	var rotator ShotView;
-	var vector ShotLoc;
 	var int Charge;
-	var bool bInstant;
-	var bool bTight;
 	var float LastSendTS;
-	var int Retries;
 };
 var IGPlus_EightballShotPendingEntry IGPlus_EBShotPending[IGPLUS_EB_SHOT_QUEUE_SIZE];
 var int IGPlus_EBShotNextSeq;
@@ -5085,23 +5079,20 @@ simulated function bool IGPlus_IsEightballPulseEnabled(optional Weapon W) {
 	if (UseW == none)
 		return false;
 	EB = ST_UT_Eightball(UseW);
-	if (EB == none)
-		return false;
-	return EB.IsV4Active();
+	return EB != none && EB.IsV4Active();
 }
 
 simulated function bool IGPlus_IsEightballPulseSourceActive(optional Weapon W) {
 	local ST_UT_Eightball EB;
 	local Weapon UseW;
 
-	if (!IGPlus_IsEightballPulseEnabled(W))
-		return false;
-
 	UseW = W;
 	if (UseW == none)
 		UseW = Weapon;
+	if (UseW == none)
+		return false;
 	EB = ST_UT_Eightball(UseW);
-	return EB != none && EB.UsesServerMoveV4();
+	return EB != none && EB.IsV4Active() && EB.UsesServerMoveV4();
 }
 
 simulated function bool IGPlus_IsEightballInstantMode(optional Weapon W) {
@@ -5144,10 +5135,6 @@ simulated function IGPlus_ClearEightballShotPulses() {
 	IGPlus_EightballShotPulseAlt = false;
 }
 
-simulated function int IGPlus_SignExtend10(int Value) {
-	return (Value << 22) >> 22;
-}
-
 simulated function int IGPlus_SeqForward8(int FromSeq, int ToSeq) {
 	return (ToSeq - FromSeq) & 255;
 }
@@ -5178,15 +5165,9 @@ simulated function IGPlus_ClearEightballShotEntry(int Index) {
 
 	IGPlus_EBShotPending[Index].bActive = false;
 	IGPlus_EBShotPending[Index].Seq = 0;
-	IGPlus_EBShotPending[Index].Kind = 0;
 	IGPlus_EBShotPending[Index].ShotTS = 0.0;
-	IGPlus_EBShotPending[Index].ShotView = rot(0,0,0);
-	IGPlus_EBShotPending[Index].ShotLoc = vect(0,0,0);
 	IGPlus_EBShotPending[Index].Charge = 0;
-	IGPlus_EBShotPending[Index].bInstant = false;
-	IGPlus_EBShotPending[Index].bTight = false;
 	IGPlus_EBShotPending[Index].LastSendTS = 0.0;
-	IGPlus_EBShotPending[Index].Retries = 0;
 }
 
 simulated function IGPlus_PruneEightballShotQueue(optional bool bForceClear) {
@@ -5216,13 +5197,8 @@ simulated function bool IGPlus_HasPendingEightballShots() {
 }
 
 simulated function int IGPlus_QueueEightballAuthoritativeShot(
-	int ShotKind,
 	float ShotTS,
-	rotator ShotView,
-	vector ShotLoc,
-	int Charge,
-	bool bInstant,
-	bool bTight
+	int Charge
 ) {
 	local int i;
 	local int SlotIdx;
@@ -5259,50 +5235,25 @@ simulated function int IGPlus_QueueEightballAuthoritativeShot(
 
 	IGPlus_EBShotPending[SlotIdx].bActive = true;
 	IGPlus_EBShotPending[SlotIdx].Seq = Seq;
-	IGPlus_EBShotPending[SlotIdx].Kind = ShotKind & 3;
 	IGPlus_EBShotPending[SlotIdx].ShotTS = ShotTS;
-	IGPlus_EBShotPending[SlotIdx].ShotView = ShotView;
-	IGPlus_EBShotPending[SlotIdx].ShotLoc = ShotLoc;
 	IGPlus_EBShotPending[SlotIdx].Charge = Clamp(Charge, 0, 7);
-	IGPlus_EBShotPending[SlotIdx].bInstant = bInstant;
-	IGPlus_EBShotPending[SlotIdx].bTight = bTight;
 	IGPlus_EBShotPending[SlotIdx].LastSendTS = 0.0;
-	IGPlus_EBShotPending[SlotIdx].Retries = 0;
 
 	return Seq;
 }
 
 simulated function bool IGPlus_SelectEightballShotForMove(
-	IGPlus_SavedMove Move,
-	IGPlus_SavedMove OldMove,
-	out int OutShotWord0,
-	out int OutShotWord1,
-	out int OutShotWord2
+	out int OutShotSeq,
+	out int OutChargeBits
 ) {
 	local int i;
 	local int BestIdx;
 	local int BestAge;
 	local int Age;
-	local int MergeCount;
-	local int SliceIndex;
-	local int dx;
-	local int dy;
-	local int dz;
 	local float NowTS;
-	local float StartTS;
-	local float T;
-	local vector StartLoc;
-	local vector AnchorLoc;
-	local vector DeltaLoc;
-	local int Charge;
-	local int YawPacked;
-	local int PitchPacked;
 
-	OutShotWord0 = 0;
-	OutShotWord1 = 0;
-	OutShotWord2 = 0;
-	if (Move == none)
-		return false;
+	OutShotSeq = 0;
+	OutChargeBits = 0;
 
 	IGPlus_PruneEightballShotQueue();
 
@@ -5327,48 +5278,9 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 	if (BestIdx < 0)
 		return false;
 
-	MergeCount = Max(1, Move.IGPlus_MergeCount + 1);
-	SliceIndex = MergeCount - 1;
-	if (Move.Delta > 0.0) {
-		StartTS = Move.TimeStamp - Move.Delta;
-		T = (IGPlus_EBShotPending[BestIdx].ShotTS - StartTS) / Move.Delta;
-		SliceIndex = Clamp(int(T * float(MergeCount)), 0, MergeCount - 1);
-	}
-
-	if (OldMove != none && OldMove != Move)
-		StartLoc = OldMove.IGPlus_SavedLocation;
-	else
-		StartLoc = Move.IGPlus_SavedLocation - Move.IGPlus_SavedVelocity * Move.Delta;
-
-	T = FClamp(float(SliceIndex + 1) / float(MergeCount), 0.0, 1.0);
-	AnchorLoc = StartLoc + (Move.IGPlus_SavedLocation - StartLoc) * T;
-	DeltaLoc = IGPlus_EBShotPending[BestIdx].ShotLoc - AnchorLoc;
-	dx = Clamp(int(DeltaLoc.X), -512, 511);
-	dy = Clamp(int(DeltaLoc.Y), -512, 511);
-	dz = Clamp(int(DeltaLoc.Z), -512, 511);
-
-	Charge = Clamp(IGPlus_EBShotPending[BestIdx].Charge, 0, 7);
-	YawPacked = IGPlus_EBShotPending[BestIdx].ShotView.Yaw & 0xFFFF;
-	PitchPacked = IGPlus_EBShotPending[BestIdx].ShotView.Pitch & 0xFFFF;
-
-	OutShotWord0 = IGPlus_EBShotPending[BestIdx].Seq & 255;
-	OutShotWord0 or_eq (SliceIndex & 0x1F) << 8;
-	OutShotWord0 or_eq (IGPlus_EBShotPending[BestIdx].Kind & 0x3) << 13;
-	OutShotWord0 or_eq (Charge & 0x7) << 15;
-	if (IGPlus_EBShotPending[BestIdx].bInstant)
-		OutShotWord0 or_eq 1 << 18;
-	if (IGPlus_EBShotPending[BestIdx].bTight)
-		OutShotWord0 or_eq 1 << 19;
-
-	OutShotWord1 = YawPacked;
-	OutShotWord1 or_eq PitchPacked << 16;
-
-	OutShotWord2 = (dx & 0x3FF);
-	OutShotWord2 or_eq (dy & 0x3FF) << 10;
-	OutShotWord2 or_eq (dz & 0x3FF) << 20;
-
+	OutShotSeq = IGPlus_EBShotPending[BestIdx].Seq & 255;
+	OutChargeBits = Clamp(IGPlus_EBShotPending[BestIdx].Charge, 0, 7);
 	IGPlus_EBShotPending[BestIdx].LastSendTS = NowTS;
-	IGPlus_EBShotPending[BestIdx].Retries += 1;
 
 	return true;
 }
@@ -5492,6 +5404,7 @@ simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 	local ST_UT_FlakCannon FC;
 	local ST_ut_biorifle BR;
 	local ST_UT_Eightball EB;
+
 	SR = ST_ShockRifle(W);
 	if (SR != none)
 		return SR.IsDeterministicReady();
@@ -5659,12 +5572,32 @@ simulated function bool IGPlus_IsDeterministicSwitchGuardActive() {
 
 simulated function bool IGPlus_IsV4DetReady(optional Weapon Preferred) {
 	local Weapon Candidate;
+	local ST_ShockRifle SR;
+	local ST_ripper RP;
+	local ST_UT_FlakCannon FC;
+	local ST_ut_biorifle BR;
+	local ST_UT_Eightball EB;
 
 	Candidate = IGPlus_FindV4SupportedWeapon(Preferred);
 	if (Candidate == none)
 		return false;
 
-	return IGPlus_V4IsWeaponReady(Candidate);
+	SR = ST_ShockRifle(Candidate);
+	if (SR != none)
+		return SR.IsDeterministicReady();
+	RP = ST_ripper(Candidate);
+	if (RP != none)
+		return RP.IsDeterministicReady();
+	FC = ST_UT_FlakCannon(Candidate);
+	if (FC != none)
+		return FC.IsDeterministicReady();
+	BR = ST_ut_biorifle(Candidate);
+	if (BR != none)
+		return BR.IsDeterministicReady();
+	EB = ST_UT_Eightball(Candidate);
+	if (EB != none)
+		return EB.IsDeterministicReady();
+	return false;
 }
 
 function IGPlus_SavedMove PickRedundantMove(IGPlus_SavedMove Old, IGPlus_SavedMove M, vector Accel, EDodgeDir DodgeMove) {
@@ -6280,9 +6213,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local int ViewStartPacked;
 	local int V4Flags;
 	local int V4PulseData;
-	local int V4ShotWord0;
-	local int V4ShotWord1;
-	local int V4ShotWord2;
+	local int V4ShotSeq;
 	local int V4ShotChargeBits;
 
 	if (Move.bPressedJump) bJumpStatus = !bJumpStatus;
@@ -6334,9 +6265,8 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	ViewStartPacked = ((Move.IGPlus_SavedViewRotationStart.Pitch & 0xFFFF) << 16) | (Move.IGPlus_SavedViewRotationStart.Yaw & 0xFFFF);
 	V4Flags = 0;
 	V4PulseData = 0;
-	V4ShotWord0 = 0;
-	V4ShotWord1 = 0;
-	V4ShotWord2 = 0;
+	V4ShotSeq = 0;
+	V4ShotChargeBits = 0;
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogSavedMove(Move);
 	if (Move.bUseServerMoveV4) {
@@ -6372,24 +6302,18 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		if (Move.V4AltPulseIndex >= 0) {
 			V4PulseData or_eq IGPLUS_V5PULSE_HAS_ALT;
 			V4PulseData or_eq (Move.V4AltPulseIndex & IGPLUS_V5PULSE_INDEX_MASK) << IGPLUS_V5PULSE_ALT_SHIFT;
-		}
+			}
 
-		if (Move.V4WeaponIndex == 5 || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
-			if (IGPlus_SelectEightballShotForMove(
-				Move,
-				OldMove,
-				V4ShotWord0,
-				V4ShotWord1,
-				V4ShotWord2
-			)) {
-				V4Flags or_eq IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT;
-				V4PulseData = V4ShotWord0;
-				OldMoveData1 = V4ShotWord1;
-				OldMoveData2 = V4ShotWord2;
-				V4ShotChargeBits = (V4ShotWord0 >>> 15) & 0x7;
-				// Carrying a shotpack requires deterministic Eightball context even
-				// when the move's transient weapon-index snapshot is stale/zero.
-				MoveDeltaTime and_eq 0xFFFFFF00;
+			if (Move.V4WeaponIndex == 5 || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
+				if (IGPlus_SelectEightballShotForMove(
+					V4ShotSeq,
+					V4ShotChargeBits
+				)) {
+					V4Flags or_eq IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT;
+					V4PulseData = V4ShotSeq;
+					// Carrying a shotpack requires deterministic Eightball context even
+					// when the move's transient weapon-index snapshot is stale/zero.
+					MoveDeltaTime and_eq 0xFFFFFF00;
 				MoveDeltaTime or_eq 0x01;
 				MoveDeltaTime or_eq (5 & 0x07) << 1;
 				MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
