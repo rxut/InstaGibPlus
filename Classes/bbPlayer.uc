@@ -265,9 +265,6 @@ var IGPlus_ServerMove IGPlus_ServerMove_First;
 var IGPlus_ServerMove IGPlus_ServerMove_Latest;
 var IGPlus_ServerMove IGPlus_ServerMove_FreeList;
 var IGPlus_WeaponImplementationBase IGPlus_WImpBase;
-var int IGPlus_V4MovesReceived;
-var int IGPlus_V4StepsHandled;
-var int IGPlus_V4StepsFallbackLegacy;
 const IGPLUS_V4FLAG_FIRE_START_HELD = 0x00000001;
 const IGPLUS_V4FLAG_FIRE_END_HELD = 0x00000002;
 const IGPLUS_V4FLAG_ALT_START_HELD = 0x00000004;
@@ -2673,6 +2670,7 @@ function IGPlus_ApplyAllServerMoves() {
 
 	IGPlus_DestroyServerMoveChain(IGPlus_ServerMove_First, SM);
 	IGPlus_ServerMove_First = none;
+	IGPlus_ServerMove_Latest = none;
 }
 
 function IGPlus_ApplyMomentum(vector Momentum) {
@@ -2814,8 +2812,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local ST_UT_Eightball V4Eightball;
 
 	debugServerMoveCallsReceived += 1;
-	if (SM.bUseV4)
-		IGPlus_V4MovesReceived += 1;
 
 	if (bDeleteMe) {
 		ClientDebugMessage("Reject Irrelevant Move");
@@ -3183,16 +3179,13 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 						SM.bDetReady,
 						SM.V4ChargeData
 					);
-				if (bV4HandledStep) {
-					IGPlus_V4StepsHandled++;
-					// Deterministic shot execution is already handled in v4 step.
-					// Do not feed held-fire into legacy weapon state machine.
-					bFire = 0;
-					bAltFire = 0;
-				} else {
-					IGPlus_V4StepsFallbackLegacy++;
+					if (bV4HandledStep) {
+						// Deterministic shot execution is already handled in v4 step.
+						// Do not feed held-fire into legacy weapon state machine.
+						bFire = 0;
+						bAltFire = 0;
+					}
 				}
-			}
 
 			if (!bV4HandledStep && MoveIndex == FireIndex && !bDetFallback) {
 				if (bV4EightballStrict) {
