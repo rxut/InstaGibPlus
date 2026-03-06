@@ -1258,24 +1258,6 @@ simulated function SpawnClientSideRockets(int NumRockets)
 ///////////////////////////////////////////////////////
 state FireRockets
 {
-	function Fire(float F) {}
-	function AltFire(float F) {}
-
-	function ForceFire()
-	{
-		bForceFire = true;
-	}
-
-	function ForceAltFire()
-	{
-		bForceAltFire = true;
-	}
-
-	function bool SplashJump()
-	{
-		return false;
-	}
-
 	function BeginState()
 	{
 		local vector FireLocation, StartLoc, X,Y,Z;
@@ -1512,11 +1494,6 @@ function SetSwitchPriority(pawn Other)
 
 state NormalFire
 {
-	function bool SplashJump()
-	{
-		return true;
-	}
-
 	function Tick(float DeltaTime)
 	{
 		Super.Tick(DeltaTime);
@@ -1700,44 +1677,6 @@ state Idle
 			Super.AnimEnd();
 	}
 
-	function Timer()
-	{
-		NewTarget = CheckTarget();
-		if ( NewTarget == OldTarget )
-		{
-			LockedTarget = NewTarget;
-			If (LockedTarget != None) 
-			{
-				bLockedOn=True;			
-				Owner.MakeNoise(Pawn(Owner).SoundDampening);
-				Owner.PlaySound(Misc1Sound, SLOT_None,Pawn(Owner).SoundDampening);
-				if ( (Pawn(LockedTarget) != None) && (FRand() < 0.7) )
-					Pawn(LockedTarget).WarnTarget(Pawn(Owner), ProjectileSpeed, vector(Pawn(Owner).ViewRotation));	
-				if ( bPendingLock )
-				{
-					OldTarget = NewTarget;
-					Pawn(Owner).bFire = 0;
-					bFireLoad = True;
-					RocketsLoaded = 1;
-					GotoState('FireRockets', 'Begin');
-					return;
-				}
-			}
-		}
-		else if( (OldTarget != None) && (NewTarget == None) ) 
-		{
-			Owner.PlaySound(Misc2Sound, SLOT_None,Pawn(Owner).SoundDampening);
-			bLockedOn = False;
-		}
-		else 
-		{
-			LockedTarget = None;
-			bLockedOn = False;
-		}
-		OldTarget = NewTarget;
-		bPendingLock = false;
-	}
-
 Begin:
 	if (UsesServerMoveV4()) {
 		if (Pawn(Owner) != none && Pawn(Owner).bFire != 0) bPointing = true;
@@ -1862,9 +1801,6 @@ state ClientV4InstantFire
 
 state ClientFiring
 {
-	simulated function bool ClientFire(float Value) { return false; }
-	simulated function bool ClientAltFire(float Value) { return false; }
-
 	simulated function Tick(float DeltaTime)
 	{
 		local Pawn P;
@@ -1983,9 +1919,6 @@ state ClientFiring
 
 state ClientAltFiring
 {
-	simulated function bool ClientFire(float Value) { return false; }
-	simulated function bool ClientAltFire(float Value) { return false; }
-
 	simulated function Tick(float DeltaTime)
 	{
 		local Pawn P;
@@ -2092,18 +2025,6 @@ state ClientAltFiring
 
 state ClientReload
 {
-	simulated function bool ClientFire(float Value)
-	{
-		bForceFire = bForceFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
-		return bForceFire;
-	}
-
-	simulated function bool ClientAltFire(float Value)
-	{
-		bForceAltFire = bForceAltFire || ( bCanClientFire && (Pawn(Owner) != None) && (AmmoType.AmmoAmount > 0) );
-		return bForceAltFire;
-	}
-
 	simulated function Tick(float DeltaTime)
 	{
 		if (!bForceFire && (Pawn(Owner) == None || Pawn(Owner).bFire == 0)
