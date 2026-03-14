@@ -1005,7 +1005,6 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "PlayerScale") return "PlayerScale";
 	if (Key ~= "bAlwaysRenderFlagCarrier") return "bAlwaysRenderFlagCarrier";
 	if (Key ~= "bAlwaysRenderDroppedFlags") return "bAlwaysRenderDroppedFlags";
-	if (Key ~= "MaxPosError") return "MaxPosError";
 	if (Key ~= "MaxHitError") return "MaxHitError";
 	if (Key ~= "MaxJitterTime") return "MaxJitterTime";
 	if (Key ~= "WarpFixDelay") return "WarpFixDelay";
@@ -1014,13 +1013,9 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "MaxNetUpdateRate") return "MaxNetUpdateRate";
 	if (Key ~= "bEnableInputReplication") return "bEnableInputReplication";
 	if (Key ~= "bEnableServerExtrapolation") return "bEnableServerExtrapolation";
-	if (Key ~= "bEnableServerPacketReordering") return "bEnableServerPacketReordering";
-	if (Key ~= "bEnableLoosePositionCheck") return "bEnableLoosePositionCheck";
 	if (Key ~= "bPlayersAlwaysRelevant") return "bPlayersAlwaysRelevant";
 	if (Key ~= "bEnablePingCompensatedSpawn") return "bEnablePingCompensatedSpawn";
 	if (Key ~= "bEnableJitterBounding") return "bEnableJitterBounding";
-	if (Key ~= "LooseCheckCorrectionFactor") return "LooseCheckCorrectionFactor";
-	if (Key ~= "LooseCheckCorrectionFactorOnMover") return "LooseCheckCorrectionFactorOnMover";
 	if (Key ~= "bEnableSnapshotInterpolation") return "bEnableSnapshotInterpolation";
 	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
 	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";
@@ -1365,9 +1360,6 @@ function Mutate(string MutateString, PlayerPawn Sender)
 		}
 		else
 			Sender.ClientMessage(BADminText);
-	}
-	else if (MutateString ~= "geterrordata") {
-		Sender.ClientMessage("MaxPosError:"@Settings.MaxPosError);
 	}
 	else if (Left(MutateString,7) ~= "KICKID ")
 	{

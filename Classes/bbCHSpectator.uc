@@ -1049,7 +1049,6 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bAlwaysRenderFlagCarrier");
 	IGPlus_ServerSendSetting("bAlwaysRenderDroppedFlags");
 
-	IGPlus_ServerSendSetting("MaxPosError");
 	IGPlus_ServerSendSetting("MaxHitError");
 	IGPlus_ServerSendSetting("MaxJitterTime");
 	IGPlus_ServerSendSetting("WarpFixDelay");
@@ -1058,13 +1057,9 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("MaxNetUpdateRate");
 	IGPlus_ServerSendSetting("bEnableInputReplication");
 	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
-	IGPlus_ServerSendSetting("bEnableServerPacketReordering");
-	IGPlus_ServerSendSetting("bEnableLoosePositionCheck");
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
 	IGPlus_ServerSendSetting("bEnableJitterBounding");
-	IGPlus_ServerSendSetting("LooseCheckCorrectionFactor");
-	IGPlus_ServerSendSetting("LooseCheckCorrectionFactorOnMover");
 	IGPlus_ServerSendSetting("bEnableSnapshotInterpolation");
 	IGPlus_ServerSendSetting("SnapshotInterpSendHz");
 	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");

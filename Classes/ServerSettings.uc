@@ -62,7 +62,6 @@ var config int   BrightskinMode; //0=None,1=Unlit
 var config float PlayerScale;
 var config bool  bAlwaysRenderFlagCarrier;
 var config bool  bAlwaysRenderDroppedFlags;
-var config int   MaxPosError;
 var config int   MaxHitError;
 var config float MaxJitterTime;
 var config float WarpFixDelay;
@@ -71,13 +70,9 @@ var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
 var config bool  bEnableServerExtrapolation;
-var config bool  bEnableServerPacketReordering;
-var config bool  bEnableLoosePositionCheck;
 var config bool  bPlayersAlwaysRelevant;
 var config bool  bEnablePingCompensatedSpawn;
 var config bool  bEnableJitterBounding;
-var config float LooseCheckCorrectionFactor;
-var config float LooseCheckCorrectionFactorOnMover;
 var config bool  bEnableSnapshotInterpolation;
 var config float SnapshotInterpSendHz;
 var config float SnapshotInterpRewindMs;
@@ -132,7 +127,6 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "PlayerScale");
 	DumpSetting(P, "bAlwaysRenderFlagCarrier");
 	DumpSetting(P, "bAlwaysRenderDroppedFlags");
-	DumpSetting(P, "MaxPosError");
 	DumpSetting(P, "MaxHitError");
 	DumpSetting(P, "MaxJitterTime");
 	DumpSetting(P, "WarpFixDelay");
@@ -141,13 +135,9 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
 	DumpSetting(P, "bEnableServerExtrapolation");
-	DumpSetting(P, "bEnableServerPacketReordering");
-	DumpSetting(P, "bEnableLoosePositionCheck");
 	DumpSetting(P, "bPlayersAlwaysRelevant");
 	DumpSetting(P, "bEnablePingCompensatedSpawn");
 	DumpSetting(P, "bEnableJitterBounding");
-	DumpSetting(P, "LooseCheckCorrectionFactor");
-	DumpSetting(P, "LooseCheckCorrectionFactorOnMover");
 	DumpSetting(P, "bEnableSnapshotInterpolation");
 	DumpSetting(P, "SnapshotInterpSendHz");
 	DumpSetting(P, "SnapshotInterpRewindMs");
@@ -189,7 +179,6 @@ defaultproperties
 	TeleRadius=210
 	ThrowVelocity=750
 	NNAnnouncer=True
-	MaxPosError=1000
 	MaxHitError=10000
 	MaxJitterTime=0.1
 	WarpFixDelay=0.25
@@ -215,13 +204,9 @@ defaultproperties
 	bAlwaysRenderFlagCarrier=False
 	bAlwaysRenderDroppedFlags=False
 	bEnableServerExtrapolation=False
-	bEnableServerPacketReordering=False
-	bEnableLoosePositionCheck=False
 	bPlayersAlwaysRelevant=True
 	bEnablePingCompensatedSpawn=True
 	bEnableJitterBounding=False
-	LooseCheckCorrectionFactor=1.0
-	LooseCheckCorrectionFactorOnMover=1.0
 	bEnableSnapshotInterpolation=False
 	SnapshotInterpSendHz=30.0
 	SnapshotInterpRewindMs=66.0

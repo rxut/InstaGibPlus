@@ -16,8 +16,6 @@ var int V4FirePressIndex;
 var int V4FireReleaseIndex;
 var int V4AltPressIndex;
 var int V4AltReleaseIndex;
-var int AddVelocityId;
-var vector Momentum;
 
 var bool SavedDodging;
 var bool bV4FireStartHeld;
@@ -49,7 +47,6 @@ function Clear2() {
     bV4AltStartHeld = false;
     bV4AltEndHeld = false;
     bV4EightballInstant = false;
-    Momentum = vect(0,0,0);
     bUseServerMoveV4 = false;
 }
 
