@@ -86,6 +86,9 @@ var localized string HitFeedbackModeDisabled;
 var localized string HitFeedbackModeVisibleOnly;
 var localized string HitFeedbackModeAlways;
 var localized string bEnablePingCompensatedSpawnHelp;
+var UWindowCheckbox Chk_bShowDamageNumbers;
+var localized string bShowDamageNumbersText;
+var localized string bShowDamageNumbersHelp;
 
 var UWindowLabelControl Lbl_Movement;
 var localized string MovementText;
@@ -187,6 +190,18 @@ var localized string bEnableDamageDebugConsoleMessagesHelp;
 var UWindowCheckbox Chk_bEnableHitboxDebugMode;
 var localized string bEnableHitboxDebugModeText;
 var localized string bEnableHitboxDebugModeHelp;
+var IGPlus_EditControl Edit_DamageNumberDuration;
+var localized string DamageNumberDurationText;
+var localized string DamageNumberDurationHelp;
+var IGPlus_EditControl Edit_DamageNumberDecayExponent;
+var localized string DamageNumberDecayExponentText;
+var localized string DamageNumberDecayExponentHelp;
+var IGPlus_EditControl Edit_DamageNumberAccumulationTime;
+var localized string DamageNumberAccumulationTimeText;
+var localized string DamageNumberAccumulationTimeHelp;
+var IGPlus_EditControl Edit_DamageNumberDrawOffset;
+var localized string DamageNumberDrawOffsetText;
+var localized string DamageNumberDrawOffsetHelp;
 
 var float PaddingX;
 var float PaddingY;
@@ -545,6 +560,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bAlwaysRenderFlagCarrier", BoolToString(Chk_bAlwaysRenderFlagCarrier.bChecked));
 	SaveServerSettingIfChanged(S, "bAlwaysRenderDroppedFlags", BoolToString(Chk_bAlwaysRenderDroppedFlags.bChecked));
 	SaveServerSettingIfChanged(S, "HitFeedbackMode", HitFeedbackModeIndexToValue(Cmb_HitFeedbackMode.GetSelectedIndex()));
+	SaveServerSettingIfChanged(S, "bShowDamageNumbers", BoolToString(Chk_bShowDamageNumbers.bChecked));
 	SaveServerSettingIfChanged(S, "bEnablePingCompensatedSpawn", BoolToString(Chk_bEnablePingCompensatedSpawn.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
@@ -579,6 +595,10 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bEnableDamageDebugMode", BoolToString(Chk_bEnableDamageDebugMode.bChecked));
 	SaveServerSettingIfChanged(S, "bEnableDamageDebugConsoleMessages", BoolToString(Chk_bEnableDamageDebugConsoleMessages.bChecked));
 	SaveServerSettingIfChanged(S, "bEnableHitboxDebugMode", BoolToString(Chk_bEnableHitboxDebugMode.bChecked));
+	SaveServerSettingIfChanged(S, "DamageNumberDuration", Edit_DamageNumberDuration.GetValue());
+	SaveServerSettingIfChanged(S, "DamageNumberDecayExponent", Edit_DamageNumberDecayExponent.GetValue());
+	SaveServerSettingIfChanged(S, "DamageNumberAccumulationTime", Edit_DamageNumberAccumulationTime.GetValue());
+	SaveServerSettingIfChanged(S, "DamageNumberDrawOffset", Edit_DamageNumberDrawOffset.GetValue());
 }
 
 function AdminLoginFromUI() {
@@ -888,6 +908,10 @@ function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_LooseCheckCorrectionFactor, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_LooseCheckCorrectionFactorOnMover, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_WarpFixDelay, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_DamageNumberDuration, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_DamageNumberDecayExponent, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_DamageNumberAccumulationTime, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_DamageNumberDrawOffset, C, ControlWidth, 80);
 }
 
 function LoadServerSettings() {
@@ -911,6 +935,7 @@ function LoadServerSettings() {
 	Chk_bAlwaysRenderFlagCarrier.bChecked = S.bAlwaysRenderFlagCarrier;
 	Chk_bAlwaysRenderDroppedFlags.bChecked = S.bAlwaysRenderDroppedFlags;
 	Cmb_HitFeedbackMode.SetSelectedIndex(Clamp(int(S.HitFeedbackMode), 0, 2));
+	Chk_bShowDamageNumbers.bChecked = S.bShowDamageNumbers;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
 	Chk_bOldLandingMomentum.bChecked = S.bOldLandingMomentum;
@@ -945,6 +970,10 @@ function LoadServerSettings() {
 	Chk_bEnableDamageDebugMode.bChecked = S.bEnableDamageDebugMode;
 	Chk_bEnableDamageDebugConsoleMessages.bChecked = S.bEnableDamageDebugConsoleMessages;
 	Chk_bEnableHitboxDebugMode.bChecked = S.bEnableHitboxDebugMode;
+	Edit_DamageNumberDuration.SetValue(string(S.DamageNumberDuration));
+	Edit_DamageNumberDecayExponent.SetValue(string(S.DamageNumberDecayExponent));
+	Edit_DamageNumberAccumulationTime.SetValue(string(S.DamageNumberAccumulationTime));
+	Edit_DamageNumberDrawOffset.SetValue(string(S.DamageNumberDrawOffset));
 
 	bLoadSucceeded = true;
 }
@@ -996,6 +1025,7 @@ function Created() {
 	Cmb_HitFeedbackMode.AddItem(HitFeedbackModeDisabled);
 	Cmb_HitFeedbackMode.AddItem(HitFeedbackModeVisibleOnly);
 	Cmb_HitFeedbackMode.AddItem(HitFeedbackModeAlways);
+	Chk_bShowDamageNumbers = CreateCheckbox(bShowDamageNumbersText, bShowDamageNumbersHelp);
 	Chk_bEnablePingCompensatedSpawn = CreateCheckbox(bEnablePingCompensatedSpawnText, bEnablePingCompensatedSpawnHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
@@ -1033,6 +1063,10 @@ function Created() {
 	Chk_bEnableDamageDebugMode = CreateCheckbox(bEnableDamageDebugModeText, bEnableDamageDebugModeHelp);
 	Chk_bEnableDamageDebugConsoleMessages = CreateCheckbox(bEnableDamageDebugConsoleMessagesText, bEnableDamageDebugConsoleMessagesHelp);
 	Chk_bEnableHitboxDebugMode = CreateCheckbox(bEnableHitboxDebugModeText, bEnableHitboxDebugModeHelp);
+	Edit_DamageNumberDuration = CreateEdit(ECT_Real, DamageNumberDurationText, DamageNumberDurationHelp, 16, 80);
+	Edit_DamageNumberDecayExponent = CreateEdit(ECT_Real, DamageNumberDecayExponentText, DamageNumberDecayExponentHelp, 16, 80);
+	Edit_DamageNumberAccumulationTime = CreateEdit(ECT_Real, DamageNumberAccumulationTimeText, DamageNumberAccumulationTimeHelp, 16, 80);
+	Edit_DamageNumberDrawOffset = CreateEdit(ECT_Real, DamageNumberDrawOffsetText, DamageNumberDrawOffsetHelp, 16, 80);
 
 	ControlOffset += PaddingY - 4;
 
@@ -1104,6 +1138,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bAlwaysRenderFlagCarrier, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bAlwaysRenderDroppedFlags, bShowSettings, WndWidth, Top);
 	LayoutControl(Cmb_HitFeedbackMode, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bShowDamageNumbers, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePingCompensatedSpawn, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
@@ -1141,6 +1176,10 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bEnableDamageDebugMode, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableDamageDebugConsoleMessages, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableHitboxDebugMode, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_DamageNumberDuration, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_DamageNumberDecayExponent, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_DamageNumberAccumulationTime, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_DamageNumberDrawOffset, bShowSettings, WndWidth, Top);
 
 	DesiredHeight = Top + PaddingY;
 }
@@ -1262,6 +1301,8 @@ defaultproperties
 	HitFeedbackModeDisabled="Disabled"
 	HitFeedbackModeVisibleOnly="Visible Only"
 	HitFeedbackModeAlways="Always"
+	bShowDamageNumbersText="Show Damage Numbers"
+	bShowDamageNumbersHelp="If checked, damage dealt is displayed as a number on screen for all players. Obeys LOS Checks."
 	bEnablePingCompensatedSpawnHelp="If checked, enables ping-compensated spawn behavior"
 
 	MovementText="Movement"
@@ -1330,6 +1371,14 @@ defaultproperties
 	bEnableDamageDebugConsoleMessagesHelp="If checked, prints damage debug messages to client consoles"
 	bEnableHitboxDebugModeText="Enable Hitbox Debug Mode"
 	bEnableHitboxDebugModeHelp="If checked, enables hitbox debug diagnostics"
+	DamageNumberDurationText="Damage Number Duration"
+	DamageNumberDurationHelp="How long damage numbers stay visible in seconds"
+	DamageNumberDecayExponentText="Damage Number Decay Exponent"
+	DamageNumberDecayExponentHelp="Fade curve exponent applied to damage number alpha"
+	DamageNumberAccumulationTimeText="Damage Number Accumulation Time"
+	DamageNumberAccumulationTimeHelp="Time window in seconds to accumulate multiple hits"
+	DamageNumberDrawOffsetText="Damage Number Default Position"
+	DamageNumberDrawOffsetHelp="Default horizontal offset from center where damage numbers appear. Overridden by each client's own damage number position setting."
 
 	PaddingX=20
 	PaddingY=12

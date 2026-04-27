@@ -19,7 +19,6 @@ var float DamageNumberLastHitTime;
 var float DamageNumberDuration;
 var float DamageNumberDecayExponent;
 var float DamageNumberAccumulationTime;
-var float DamageNumberDrawSize;
 var float DamageNumberDrawOffset;
 
 // Hardcoded values (used directly in functions, not settings struct)
@@ -180,6 +179,18 @@ static function PlayDamageMarker(PlayerPawn Me, float Damage, int OwnTeam, int E
 	local color NumColor;
 	local float TimeSinceLastHit;
 	local bool bIsTeamHit;
+	local bbPlayer bbP;
+	local float Duration;
+	local float AccumulationTime;
+
+	bbP = bbPlayer(Me);
+	if (bbP != none) {
+		Duration = bbP.DamageNumberDuration;
+		AccumulationTime = bbP.DamageNumberAccumulationTime;
+	} else {
+		Duration = default.DamageNumberDuration;
+		AccumulationTime = default.DamageNumberAccumulationTime;
+	}
 
 	bIsTeamHit = (Me.GameReplicationInfo.bTeamGame && OwnTeam == EnemyTeam);
 	
@@ -191,42 +202,60 @@ static function PlayDamageMarker(PlayerPawn Me, float Damage, int OwnTeam, int E
 	TimeSinceLastHit = Me.Level.TimeSeconds - default.DamageNumberLastHitTime;
 
 	// Check for accumulation conditions: Active AND time < threshold
-	if (default.DamageNumberLifespan > 0.0 && TimeSinceLastHit < default.DamageNumberAccumulationTime) {
+	if (default.DamageNumberLifespan > 0.0 && TimeSinceLastHit < AccumulationTime) {
 		default.DamageNumberDamage += Damage;
-		default.DamageNumberLifespan = default.DamageNumberDuration;
+		default.DamageNumberLifespan = Duration;
 		default.DamageNumberColor = NumColor;
 		default.DamageNumberLastHitTime = Me.Level.TimeSeconds;
 
-		if (bbPlayer(Me).bEnableDamageDebugConsoleMessages)
-			bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ (int(default.DamageNumberDamage)));
+		if (bbP != none && bbP.bEnableDamageDebugConsoleMessages)
+			bbP.ClientMessage("[Debug] Damage done: " $ (int(default.DamageNumberDamage)));
 
 	} else {
 		// Start new / Replace old
 		default.DamageNumberDamage = Damage;
-		default.DamageNumberLifespan = default.DamageNumberDuration;
+		default.DamageNumberLifespan = Duration;
 		default.DamageNumberColor = NumColor;
 		default.DamageNumberLastHitTime = Me.Level.TimeSeconds;
 
-		if (bbPlayer(Me).bEnableDamageDebugConsoleMessages)
-			bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ int(default.DamageNumberDamage));
+		if (bbP != none && bbP.bEnableDamageDebugConsoleMessages)
+			bbP.ClientMessage("[Debug] Damage done: " $ int(default.DamageNumberDamage));
 	}
 }
 
-static function DrawDamageNumbers(Canvas C, float DeltaTime) {
+static function DrawDamageNumbers(Canvas C, float DeltaTime, PlayerPawn Me) {
 	local float FadeMultiplier;
 	local string DamageText;
 	local float TextX, TextY;
 	local HUD MyHud;
-	local float DrawSize, DrawOffset;
+	local float LegacyDrawOffset;
+	local bbPlayer bbP;
+	local bbCHSpectator bbS;
+	local ClientSettings Settings;
+	local float Duration;
+	local float DecayExponent;
 
 	if (default.DamageNumberLifespan <= 0.0)
 		return;
 
+	bbP = bbPlayer(Me);
+	if (bbP != none) {
+		Settings = bbP.Settings;
+		LegacyDrawOffset = bbP.DamageNumberDrawOffset;
+		Duration = bbP.DamageNumberDuration;
+		DecayExponent = bbP.DamageNumberDecayExponent;
+	} else {
+		bbS = bbCHSpectator(Me);
+		if (bbS != none)
+			Settings = bbS.Settings;
+		LegacyDrawOffset = default.DamageNumberDrawOffset;
+		Duration = default.DamageNumberDuration;
+		DecayExponent = default.DamageNumberDecayExponent;
+	}
+
 	class'CanvasUtils'.static.SaveCanvas(C);
 
-	DrawSize = default.DamageNumberDrawSize;
-	DrawOffset = default.DamageNumberDrawOffset;
-	FadeMultiplier = ((default.DamageNumberLifespan / default.DamageNumberDuration) ** default.DamageNumberDecayExponent);
+	FadeMultiplier = ((default.DamageNumberLifespan / Duration) ** DecayExponent);
 
 	MyHud = C.ViewPort.Actor.myHUD;
 	if (MyHud != none && ChallengeHud(MyHud) != none && ChallengeHud(MyHud).MyFonts != none) {
@@ -236,7 +265,10 @@ static function DrawDamageNumbers(Canvas C, float DeltaTime) {
 		C.Font = ChallengeHud(MyHud).MyFonts.GetSmallFont(C.ClipX);
 		C.TextSize(DamageText, TextX, TextY);
 		C.DrawColor = default.DamageNumberColor * FadeMultiplier;
-		C.SetPos(C.SizeX/2 + DrawOffset + DrawSize + 5, C.SizeY/2 - TextY/2);
+		if (Settings != none && Settings.DamageNumberTextLocationX >= 0.0 && Settings.DamageNumberTextLocationY >= 0.0)
+			C.SetPos(Settings.DamageNumberTextLocationX * (C.SizeX - TextX), Settings.DamageNumberTextLocationY * (C.SizeY - TextY));
+		else
+			C.SetPos(C.SizeX/2 + LegacyDrawOffset + 5, C.SizeY/2 - TextY/2);
 		C.DrawText(DamageText);
 	}
 
@@ -351,8 +383,7 @@ defaultproperties {
 	DamageNumberDuration=2.0
 	DamageNumberDecayExponent=5.0
 	DamageNumberAccumulationTime=0.4
-	DamageNumberDrawSize=48.0
-	DamageNumberDrawOffset=48.0
+	DamageNumberDrawOffset=96.0
 	RemoteRole=ROLE_None
 	bHidden=True
 }

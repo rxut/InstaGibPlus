@@ -1072,9 +1072,14 @@ function IGPlus_ServerRequestSettings() {
 
 	IGPlus_ServerSendSetting("ShowTouchedPackage");
 	IGPlus_ServerSendSetting("HitFeedbackMode");
+	IGPlus_ServerSendSetting("bShowDamageNumbers");
 	IGPlus_ServerSendSetting("bEnableDamageDebugMode");
 	IGPlus_ServerSendSetting("bEnableDamageDebugConsoleMessages");
 	IGPlus_ServerSendSetting("bEnableHitboxDebugMode");
+	IGPlus_ServerSendSetting("DamageNumberDuration");
+	IGPlus_ServerSendSetting("DamageNumberDecayExponent");
+	IGPlus_ServerSendSetting("DamageNumberAccumulationTime");
+	IGPlus_ServerSendSetting("DamageNumberDrawOffset");
 
 	IGPlus_ServerSettingsDone(true);
 }

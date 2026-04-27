@@ -45,7 +45,7 @@ function ModifyPlayer(Pawn P) {
 		CreateTracker(P);
 }
 
-function bool CheckVisibility(Pawn Orig, Pawn Dest) {
+function bool DoVisibilityTrace(Pawn Orig, Pawn Dest) {
 	local vector Start;
 	local rotator DirYaw;
 	local vector X,Y,Z;
@@ -55,9 +55,6 @@ function bool CheckVisibility(Pawn Orig, Pawn Dest) {
 	local Pawn P;
 	local vector HitLocation;
 	local vector HitNormal;
-
-	if (bCheckVisibility == false)
-		return true;
 
 	Start = Orig.Location + vect(0,0,1)*Orig.BaseEyeHeight;
 	DirYaw = rotator(Dest.Location - Start);
@@ -85,6 +82,13 @@ function bool CheckVisibility(Pawn Orig, Pawn Dest) {
 	return false;
 }
 
+function bool CheckVisibility(Pawn Orig, Pawn Dest) {
+	if (bCheckVisibility == false)
+		return true;
+
+	return DoVisibilityTrace(Orig, Dest);
+}
+
 function MutatorTakeDamage(
 	out int ActualDamage,
 	Pawn Victim,
@@ -104,6 +108,14 @@ function MutatorTakeDamage(
 		Tracker = FindTracker(Victim);
 		if (Tracker != none)
 			TotalDamage = Tracker.LastDamage;
+
+		// When HFM_Always, do a separate trace for gameplay damage-number suppression.
+		// Negate TotalDamage to signal the client to suppress damage numbers.
+		// Hit sounds and markers are unaffected (they use Abs(Sw)).
+		if (!bCheckVisibility && TotalDamage > 0) {
+			if (!DoVisibilityTrace(InstigatedBy, Victim))
+				TotalDamage = -TotalDamage;
+		}
 
 		InstigatedBy.ReceiveLocalizedMessage(
 			Class'IGPlus_HitFeedbackMessage',

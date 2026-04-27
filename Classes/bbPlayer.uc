@@ -459,8 +459,13 @@ struct ClientWeaponSettings {
 
 var ClientWeaponSettings ClientWeaponSettingsData;
 
+var bool bShowDamageNumbers;
 var bool bEnableDamageDebugMode;
 var bool bEnableDamageDebugConsoleMessages;
+var float DamageNumberDuration;
+var float DamageNumberDecayExponent;
+var float DamageNumberAccumulationTime;
+var float DamageNumberDrawOffset;
 
 replication
 {
@@ -505,8 +510,13 @@ replication
 			IGPlus_ServerSnapInterpTrustedEcho,
 			IGPlus_ServerSnapInterpDelayEchoTime,
 			IGPlus_ServerSnapInterpLastAcceptedTimeEcho,
+			bShowDamageNumbers,
 			bEnableDamageDebugMode,
-			bEnableDamageDebugConsoleMessages;
+			bEnableDamageDebugConsoleMessages,
+			DamageNumberDuration,
+			DamageNumberDecayExponent,
+			DamageNumberAccumulationTime,
+			DamageNumberDrawOffset;
 
 	unreliable if ( Role == ROLE_Authority )
 		DuckFractionRepl,
@@ -1310,8 +1320,13 @@ event Possess()
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
+		bShowDamageNumbers = zzUTPure.Settings.bShowDamageNumbers;
 		bEnableDamageDebugMode = zzUTPure.Settings.bEnableDamageDebugMode;
 		bEnableDamageDebugConsoleMessages = zzUTPure.Settings.bEnableDamageDebugConsoleMessages;
+		DamageNumberDuration = zzUTPure.Settings.DamageNumberDuration;
+		DamageNumberDecayExponent = zzUTPure.Settings.DamageNumberDecayExponent;
+		DamageNumberAccumulationTime = zzUTPure.Settings.DamageNumberAccumulationTime;
+		DamageNumberDrawOffset = zzUTPure.Settings.DamageNumberDrawOffset;
 
 		if(!zzUTPure.bExludeKickers)
 		{
@@ -10196,7 +10211,7 @@ event PostRender( canvas zzCanvas )
 			HitMarkerTestTeam = 0;
 	}
 
-	PlayerStatics.DrawDamageNumbers(zzCanvas, zzTick);
+	PlayerStatics.DrawDamageNumbers(zzCanvas, zzTick, self);
 	if (HitMarkerTestDamage > 0 && PlayerStatics.default.DamageNumberLifespan == 0) {
 		PlayerStatics.PlayDamageMarker(self, HitMarkerTestDamage, PlayerReplicationInfo.Team, HitMarkerTestTeam);
 		++HitMarkerTestTeam;
@@ -12465,9 +12480,14 @@ function IGPlus_ServerRequestSettings() {
 
 	IGPlus_ServerSendSetting("ShowTouchedPackage");
 	IGPlus_ServerSendSetting("HitFeedbackMode");
+	IGPlus_ServerSendSetting("bShowDamageNumbers");
 	IGPlus_ServerSendSetting("bEnableDamageDebugMode");
 	IGPlus_ServerSendSetting("bEnableDamageDebugConsoleMessages");
 	IGPlus_ServerSendSetting("bEnableHitboxDebugMode");
+	IGPlus_ServerSendSetting("DamageNumberDuration");
+	IGPlus_ServerSendSetting("DamageNumberDecayExponent");
+	IGPlus_ServerSendSetting("DamageNumberAccumulationTime");
+	IGPlus_ServerSendSetting("DamageNumberDrawOffset");
 
 	IGPlus_ServerSettingsDone(true);
 }

@@ -1027,9 +1027,14 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bEnableWarpFix") return "bEnableWarpFix";
 	if (Key ~= "ShowTouchedPackage") return "ShowTouchedPackage";
 	if (Key ~= "HitFeedbackMode") return "HitFeedbackMode";
+	if (Key ~= "bShowDamageNumbers") return "bShowDamageNumbers";
 	if (Key ~= "bEnableDamageDebugMode") return "bEnableDamageDebugMode";
 	if (Key ~= "bEnableDamageDebugConsoleMessages") return "bEnableDamageDebugConsoleMessages";
 	if (Key ~= "bEnableHitboxDebugMode") return "bEnableHitboxDebugMode";
+	if (Key ~= "DamageNumberDuration") return "DamageNumberDuration";
+	if (Key ~= "DamageNumberDecayExponent") return "DamageNumberDecayExponent";
+	if (Key ~= "DamageNumberAccumulationTime") return "DamageNumberAccumulationTime";
+	if (Key ~= "DamageNumberDrawOffset") return "DamageNumberDrawOffset";
 	return "";
 }
 
@@ -1066,8 +1071,13 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.IGPlus_SnapInterp_ServerNextTime = 0;
 			BP.IGPlus_SnapInterp_ServerHasLast = false;
 		}
+		BP.bShowDamageNumbers = Settings.bShowDamageNumbers;
 		BP.bEnableDamageDebugMode = Settings.bEnableDamageDebugMode;
 		BP.bEnableDamageDebugConsoleMessages = Settings.bEnableDamageDebugConsoleMessages;
+		BP.DamageNumberDuration = Settings.DamageNumberDuration;
+		BP.DamageNumberDecayExponent = Settings.DamageNumberDecayExponent;
+		BP.DamageNumberAccumulationTime = Settings.DamageNumberAccumulationTime;
+		BP.DamageNumberDrawOffset = Settings.DamageNumberDrawOffset;
 	}
 }
 

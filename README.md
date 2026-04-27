@@ -94,6 +94,8 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [KillFeedY](#killfeedy)
 1. [KillFeedSpeed](#killfeedspeed)
 1. [KillFeedScale](#killfeedscale)
+1. [DamageNumberTextLocationX](#damagenumbertextlocationx)
+1. [DamageNumberTextLocationY](#damagenumbertextlocationy)
 1. [FraggerScopeChoice](#fraggerscopechoice)
 1. [bEnableNetStats](#benablenetstats)
 1. [bNetStatsUnconfirmedTime](#bnetstatsunconfirmedtime)
@@ -600,6 +602,22 @@ Increase to make lines disappear sooner. Decrease to make lines disappear later.
 **Default: 1.0**  
 
 Scales the size of individual lines of the KillFeed.
+
+## DamageNumberTextLocationX
+**Type: float**  
+**Default: -1.0**  
+
+Horizontal position of damage numbers. Left edge of screen is 0. Right edge of screen is 1.
+
+If this value or [DamageNumberTextLocationY](#damagenumbertextlocationy) is negative, the client uses the legacy default placement.
+
+## DamageNumberTextLocationY
+**Type: float**  
+**Default: -1.0**  
+
+Vertical position of damage numbers. Top of screen is 0. Bottom of screen is 1.
+
+If this value or [DamageNumberTextLocationX](#damagenumbertextlocationx) is negative, the client uses the legacy default placement.
 
 ## FraggerScopeChoice
 **Type: EFraggerScopeChoice**  
@@ -1285,9 +1303,14 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [FireTimeout](#firetimeout)
 1. [bEnableCarcassCollision](#benablecarcasscollision)
 1. [ShowTouchedPackage](#showtouchedpackage)
+1. [bShowDamageNumbers](#bshowdamagenumbers)
 1. [bEnableDamageDebugMode](#benabledamagedebugmode)
 1. [bEnableDamageDebugConsoleMessages](#benabledamagedebugconsolemessages)
 1. [bEnableHitboxDebugMode](#benablehitboxdebugmode)
+1. [DamageNumberDuration](#damagenumberduration)
+1. [DamageNumberDecayExponent](#damagenumberdecayexponent)
+1. [DamageNumberAccumulationTime](#damagenumberaccumulationtime)
+1. [DamageNumberDrawOffset](#damagenumberdrawoffset)
 1. [ExcludeMapsForKickers](#excludemapsforkickers)
 1. [HitFeedbackMode](#hitfeedbackmode)
 1. [ForcedSettings](#forcedsettings)
@@ -1613,12 +1636,23 @@ Distance to any position over the last 500ms for hits to be counted.
 
 Send package-names of touched actors to clients when those clients touch the actors.
 
+## bShowDamageNumbers
+
+**Type: bool**  
+**Default: False**  
+
+If `True`, enables gameplay damage number display.
+
+Gameplay damage numbers are only shown when the server-side LOS check passes.
+
+Final screen placement can be customized client-side using [DamageNumberTextLocationX](#damagenumbertextlocationx) and [DamageNumberTextLocationY](#damagenumbertextlocationy).
+
 ## bEnableDamageDebugMode
 
 **Type: bool**  
 **Default: False**  
 
-If `True`, enables server-side damage debug instrumentation.
+If `True`, enables debug damage number display, bypassing gameplay LOS restrictions.
 
 ## bEnableDamageDebugConsoleMessages
 
@@ -1633,6 +1667,36 @@ If `True`, emits damage debug information to console messages.
 **Default: False**  
 
 If `True`, enables hitbox debug instrumentation.
+
+## DamageNumberDuration
+
+**Type: float**  
+**Default: 2.0**  
+**Unit: s**  
+
+How long damage numbers remain visible on screen.
+
+## DamageNumberDecayExponent
+
+**Type: float**  
+**Default: 5.0**  
+
+Controls how quickly damage numbers fade out over their lifetime.
+
+## DamageNumberAccumulationTime
+
+**Type: float**  
+**Default: 0.4**  
+**Unit: s**  
+
+Window used to accumulate rapid consecutive damage events into one displayed value.
+
+## DamageNumberDrawOffset
+
+**Type: float**  
+**Default: 96.0**  
+
+Default horizontal offset from the crosshair where damage numbers are displayed. Each client can override this with their own damage number position setting.
 
 ## ExcludeMapsForKickers
 

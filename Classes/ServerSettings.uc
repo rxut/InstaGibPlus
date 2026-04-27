@@ -84,9 +84,14 @@ var config float SnapshotInterpRewindMs;
 var config bool  bEnableWarpFix;
 var config bool  bEnableCarcassCollision;
 var config bool  ShowTouchedPackage;
+var config bool  bShowDamageNumbers;
 var config bool  bEnableDamageDebugMode;
 var config bool  bEnableDamageDebugConsoleMessages;
 var config bool  bEnableHitboxDebugMode;
+var config float DamageNumberDuration;
+var config float DamageNumberDecayExponent;
+var config float DamageNumberAccumulationTime;
+var config float DamageNumberDrawOffset;
 
 enum EHitFeedbackMode {
 	HFM_Disabled,
@@ -154,9 +159,14 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bEnableWarpFix");
 	DumpSetting(P, "ShowTouchedPackage");
 	DumpSetting(P, "HitFeedbackMode");
+	DumpSetting(P, "bShowDamageNumbers");
 	DumpSetting(P, "bEnableDamageDebugMode");
 	DumpSetting(P, "bEnableDamageDebugConsoleMessages");
-	DumpSetting(P, "bEnableHitboxDebugMode");	
+	DumpSetting(P, "bEnableHitboxDebugMode");
+	DumpSetting(P, "DamageNumberDuration");
+	DumpSetting(P, "DamageNumberDecayExponent");
+	DumpSetting(P, "DamageNumberAccumulationTime");
+	DumpSetting(P, "DamageNumberDrawOffset");
 }
 
 defaultproperties
@@ -228,7 +238,12 @@ defaultproperties
 	bEnableWarpFix=True
 	bEnableCarcassCollision=True
 	HitFeedbackMode=HFM_Always
+	bShowDamageNumbers=False
 	bEnableDamageDebugMode=False
 	bEnableDamageDebugConsoleMessages=False
 	bEnableHitboxDebugMode=False
+	DamageNumberDuration=2.0
+	DamageNumberDecayExponent=5.0
+	DamageNumberAccumulationTime=0.4
+	DamageNumberDrawOffset=96.0
 }
