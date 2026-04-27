@@ -82,6 +82,8 @@ var config float  KillFeedX;
 var config float  KillFeedY;
 var config float  KillFeedSpeed;
 var config float  KillFeedScale;
+var config float  DamageNumberTextLocationX;
+var config float  DamageNumberTextLocationY;
 
 enum EFraggerScopeChoice {
 	FSC_None,
@@ -393,6 +395,8 @@ simulated function string DumpSettings() {
 		GetSetting("KillFeedY")$
 		GetSetting("KillFeedSpeed")$
 		GetSetting("KillFeedScale")$
+		GetSetting("DamageNumberTextLocationX")$
+		GetSetting("DamageNumberTextLocationY")$
 		GetSetting("FraggerScopeChoice")$
 		GetSetting("bEnableNetStats")$
 		GetSetting("bNetStatsUnconfirmedTime")$
@@ -493,6 +497,8 @@ defaultproperties
 	KillFeedY=0.5
 	KillFeedSpeed=1.0
 	KillFeedScale=1.0
+	DamageNumberTextLocationX=-1.0
+	DamageNumberTextLocationY=-1.0
 	FraggerScopeChoice=FSC_Moveable
 	bEnableNetStats=False
 	bNetStatsUnconfirmedTime=True

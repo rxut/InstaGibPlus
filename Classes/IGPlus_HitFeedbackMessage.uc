@@ -34,8 +34,8 @@ static function ClientReceive(
 	if (bViewTarget || Settings == none || Settings.HitMarkerSource == HMSRC_Server)
 		class'bbPlayerStatics'.static.PlayHitMarker(P, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
 
-
-	if (bbP != none && bbP.bEnableDamageDebugMode)
+	// Negative Sw suppresses gameplay damage numbers while preserving damage magnitude via Abs(Sw). Allows debug mode to show all damage while suppressing non LOS damage for clients.
+	if (bbP != none && (bbP.bEnableDamageDebugMode || (bbP.bShowDamageNumbers && Sw >= 0)))
 		class'bbPlayerStatics'.static.PlayDamageMarker(P, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
 
 	if (bViewTarget || Settings == none || Settings.HitSoundSource == HSSRC_Server)

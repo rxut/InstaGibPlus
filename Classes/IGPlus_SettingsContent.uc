@@ -339,6 +339,14 @@ var localized string MoreInformationText;
 	var localized string KillFeedLocationText;
 	var localized string KillFeedLocationHelp;
 
+// Damage Numbers
+	var UWindowLabelControl Lbl_DamageNumbers;
+	var localized string DamageNumbersLblText;
+
+	var IGPlus_ScreenLocationControl SLoc_DamageNumberTextLocation;
+	var localized string DamageNumberTextLocationText;
+	var localized string DamageNumberTextLocationHelp;
+
 // Hit Marker
 	var UWindowLabelControl Lbl_HitMarker;
 	var localized string HitMarkerLblText;
@@ -963,6 +971,9 @@ function Created() {
 	Edit_KillFeedScale = CreateEdit(ECT_Real, KillFeedScaleText, KillFeedScaleHelp, , 64);
 	SLoc_KillFeedLocation = CreateScreenLocation(100, KillFeedLocationText, KillFeedLocationHelp);
 
+	Lbl_DamageNumbers = CreateSeparator(DamageNumbersLblText);
+	SLoc_DamageNumberTextLocation = CreateScreenLocation(100, DamageNumberTextLocationText, DamageNumberTextLocationHelp);
+
 	Lbl_HitMarker = CreateSeparator(HitMarkerLblText);
 	Cmb_HitMarkerSource = CreateComboBox(HitMarkerSourceText, HitMarkerSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HitMarkerSource);
@@ -1114,6 +1125,10 @@ function Load() {
 	Edit_KillFeedSpeed.SetValue(string(Settings.KillFeedSpeed));
 	Edit_KillFeedScale.SetValue(string(Settings.KillFeedScale));
 	SLoc_KillFeedLocation.SetLocation(Settings.KillFeedX, Settings.KillFeedY);
+	if (Settings.DamageNumberTextLocationX >= 0.0 && Settings.DamageNumberTextLocationY >= 0.0)
+		SLoc_DamageNumberTextLocation.SetLocation(Settings.DamageNumberTextLocationX, Settings.DamageNumberTextLocationY);
+	else
+		SLoc_DamageNumberTextLocation.SetLocation(0.65, 0.5);
 
 	Cmb_HitMarkerSource.SetSelectedIndex(Clamp(Settings.HitMarkerSource, 0, 1));
 	Cmb_HitMarkerColorMode.SetSelectedIndex(Clamp(Settings.HitMarkerColorMode, 0, 1));
@@ -1235,6 +1250,7 @@ function Save() {
 	Settings.KillFeedSpeed = float(Edit_KillFeedSpeed.GetValue());
 	Settings.KillFeedScale = float(Edit_KillFeedScale.GetValue());
 	SLoc_KillFeedLocation.GetLocation(Settings.KillFeedX, Settings.KillFeedY);
+	SLoc_DamageNumberTextLocation.GetLocation(Settings.DamageNumberTextLocationX, Settings.DamageNumberTextLocationY);
 
 	Settings.HitMarkerSource = Settings.IntToHitMarkerSource(Cmb_HitMarkerSource.GetSelectedIndex());
 	Settings.HitMarkerColorMode = Settings.IntToHitMarkerColorMode(Cmb_HitMarkerColorMode.GetSelectedIndex());
@@ -1547,6 +1563,11 @@ defaultproperties
 
 		KillFeedLocationText="Location"
 		KillFeedLocationHelp="Where on screen to show the kill feed"
+
+	DamageNumbersLblText="Damage Numbers"
+
+		DamageNumberTextLocationText="Location"
+		DamageNumberTextLocationHelp="Where on screen to show damage numbers"
 
 	HitMarkerLblText="Hit Marker"
 
