@@ -1,4 +1,4 @@
-// ===============================================================
+﻿// ===============================================================
 // Stats.ST_UT_Eightball
 // V4 deterministic fire for Eightball rocket launcher.
 // Edge-only design: server spawns rockets from rising/falling edge
@@ -42,6 +42,7 @@ var int V4PrimaryLastPredictedCycleId;
 var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
 var bool bV4PrimaryLastPredictedAuto;
+var bool bV4PrimaryTightLatched;
 
 simulated function bool V4OwnerInstantEnabled() {
 	local TournamentPlayer TP;
@@ -131,6 +132,7 @@ simulated function V4ResetPrimaryCycle(optional bool bClearHeld) {
 	V4PrimaryCycleStartBudget = 0;
 	V4PrimaryPredictedLoaded = 0;
 	bV4PrimaryLatchedInstant = false;
+	bV4PrimaryTightLatched = false;
 	V4PrimaryLoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
 }
@@ -172,6 +174,7 @@ simulated function V4PrimaryStartCycle(bool bMoveInstant, bool bServerSide) {
 	V4PrimaryCycleStartBudget = Max(1, V4InternalBudget);
 	V4PrimaryPredictedLoaded = 1;
 	bV4PrimaryLatchedInstant = bMoveInstant;
+	bV4PrimaryTightLatched = false;
 	bV4SuppressPrimaryFirstBudgetAuto = (V4PrimaryCycleStartBudget <= 1);
 
 	bInstantRocket = bV4PrimaryLatchedInstant;
@@ -648,7 +651,9 @@ simulated function bool V4ProcessStep(
 		bMoveInstant = false;
 
 	// ── PRIMARY FIRE ──
-	if (bFireHeld && !bV4WasFireHeld) {
+	// Skip the rising edge while an alt (grenade) cycle is loading so the
+	// alt branches below keep updating charge and can auto-fire at 6.
+	if (bFireHeld && !bV4WasFireHeld && !bAltHeld && !bV4WasAltHeld) {
 		V4RefreshInternalBudget();
 		V4PrimaryStartCycle(bMoveInstant, bServerSide);
 		bV4WasFireHeld = true;
@@ -676,6 +681,10 @@ simulated function bool V4ProcessStep(
 		}
 
 			NumRockets = V4CalculateCharge(V4PrimaryLoadElapsed);
+			// Sample alt only on the sub-step where a new rocket actually loads,
+			// mirroring base UT99's per-AnimEnd sample so a brief tap doesn't latch.
+			if (NumRockets > V4PrimaryPredictedLoaded && bAltHeld)
+				bV4PrimaryTightLatched = true;
 			V4PrimaryPredictedLoaded = NumRockets;
 			if (!bServerSide && ClientRocketsLoaded > NumRockets)
 				ClientRocketsLoaded = NumRockets;
@@ -695,11 +704,11 @@ simulated function bool V4ProcessStep(
 
 		if (NumRockets >= 6 || bBudgetLimitReached) {
 			if (bServerSide) {
-				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
+				HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightLatched || bAltHeld);
 				V4PrimarySendServerConfirm(NumRockets, true);
 			} else {
 				V4PrimaryRecordPrediction(NumRockets, true);
-				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
+				HandleV4ClientLoadedFire(false, NumRockets, bV4PrimaryTightLatched || bAltHeld);
 			}
 			V4StartCooldown(V4PostFireInterval(NumRockets));
 			bV4WasFireHeld = false;
@@ -713,11 +722,11 @@ simulated function bool V4ProcessStep(
 		if (bV4PrimaryCycleActive) {
 			NumRockets = V4ResolvePrimaryEdgeCharge(V4ChargeData);
 			if (bServerSide) {
-				HandleV4ServerFire(StepView, StepLoc, NumRockets, bAltHeld);
+				HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightLatched || bAltHeld);
 				V4PrimarySendServerConfirm(NumRockets, false);
 			} else {
 				V4PrimaryRecordPrediction(NumRockets, false);
-				HandleV4ClientLoadedFire(false, NumRockets, bAltHeld);
+				HandleV4ClientLoadedFire(false, NumRockets, bV4PrimaryTightLatched || bAltHeld);
 			}
 			V4StartCooldown(V4PostFireInterval(NumRockets));
 		}
