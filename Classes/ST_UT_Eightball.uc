@@ -1,4 +1,4 @@
-// ===============================================================
+﻿// ===============================================================
 // Stats.ST_UT_Eightball: put your comment here
 //
 // Created by UClasses - (C) 2000-2001 by meltdown@thirdtower.com
@@ -310,8 +310,8 @@ simulated function FiringRockets()
 			SpawnClientSideRockets(ClientRocketsLoaded);
 		}
 
-        // Send the explicit command
-        ServerExplicitFire(Pawn(Owner).Location, Pawn(Owner).ViewRotation, ClientRocketsLoaded, bAlt, Pawn(Owner).bAltFire != 0);
+        // Send the explicit command (latched bTightWad OR live bAltFire at fire moment)
+        ServerExplicitFire(Pawn(Owner).Location, Pawn(Owner).ViewRotation, ClientRocketsLoaded, bAlt, bTightWad || (Pawn(Owner).bAltFire != 0));
     }
 }
 
@@ -364,7 +364,6 @@ simulated function SpawnClientSideRockets(int NumRockets)
 	local pawn PawnOwner;
 	local float Spread;
 	local int i;
-	local bool bTightWad;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None) return;
@@ -382,10 +381,7 @@ simulated function SpawnClientSideRockets(int NumRockets)
 	AimRot = PawnOwner.ViewRotation;
 
 	Angle = 0;
-	// Calculate bTightWad client-side
-	if ( PawnOwner.bAltFire != 0 )
-		bTightWad = true;
-	
+
 	if (bTightWad || NumRockets == 1) 
 		RocketRad = 7;
 	else
@@ -993,6 +989,10 @@ state ClientFiring
 			PlayLoading(1.1, ClientRocketsLoaded);
 			bRotated = false;
 			ClientRocketsLoaded++;
+			// Sticky tightwad latch: sample alt once per rocket loaded,
+			// matching base UT99's NormalFire.AnimEnd behavior.
+			if (Pawn(Owner) != None && Pawn(Owner).bAltFire != 0)
+				bTightWad = true;
 		}
 		else
 		{
@@ -1012,6 +1012,7 @@ state ClientFiring
 	simulated function BeginState()
 	{
 		bFireLoad = true;
+		bTightWad = false;
 		
 		// Notify server to stop lock-on checking - can only lock before loading
 		if (Role < ROLE_Authority && IsPingCompEnabled())
