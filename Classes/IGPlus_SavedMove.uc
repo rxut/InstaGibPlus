@@ -1,4 +1,4 @@
-class IGPlus_SavedMove extends SavedMove;
+﻿class IGPlus_SavedMove extends SavedMove;
 
 // Player attributes after applying this move
 var vector IGPlus_SavedLocation;
@@ -11,7 +11,6 @@ var int RunChangeIndex;
 var int DuckChangeIndex;
 var int FireIndex;
 var int AltFireIndex;
-var int AddVelocityId;
 var vector Momentum;
 
 var bool SavedDodging;

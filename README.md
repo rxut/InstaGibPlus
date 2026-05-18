@@ -1,4 +1,4 @@
-# InstaGib+
+﻿# InstaGib+
 An InstaGib focussed fork of TimTim's NewNet mutator for Unreal Tournament.
 
 1. [Features](#features)
@@ -870,9 +870,6 @@ Parameters marked `optional` do not have to be supplied.
 1. [SniperClientSideAnimations](#sniperclientsideanimations)
 1. [TranslocatorClientSideAnimations](#translocatorclientsideanimations)
 1. [NetcodeHelp](#netcodehelp)
-1. [bEnableLoosePositionCheck](#benableloosepositioncheck-command)
-1. [LooseCheckCorrectionFactor](#loosecheckcorrectionfactor-command)
-1. [LooseCheckCorrectionFactorOnMover](#loosecheckcorrectionfactoronmover-command)
 1. [bEnableInputReplication](#benableinputreplication-command)
 1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation-command)
 1. [SnapshotInterpSendHz](#snapshotinterpsendhz-command)
@@ -1071,21 +1068,6 @@ Enable/disable client-side animations for Translocator behavior.
 ## NetcodeHelp
 Prints netcode runtime settings and available netcode debug commands.
 
-## bEnableLoosePositionCheck (command)
-**Parameters: (optional string Value)**
-
-Read/set server setting [bEnableLoosePositionCheck](#benableloosepositioncheck) (admin only).
-
-## LooseCheckCorrectionFactor (command)
-**Parameters: (optional string Value)**
-
-Read/set server setting [LooseCheckCorrectionFactor](#loosecheckcorrectionfactor) (admin only).
-
-## LooseCheckCorrectionFactorOnMover (command)
-**Parameters: (optional string Value)**
-
-Read/set server setting [LooseCheckCorrectionFactorOnMover](#loosecheckcorrectionfactoronmover) (admin only).
-
 ## bEnableInputReplication (command)
 **Parameters: (optional string Value)**
 
@@ -1263,20 +1245,15 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [PlayerScale](#playerscale)
 1. [bAlwaysRenderFlagCarrier](#balwaysrenderflagcarrier)
 1. [bAlwaysRenderDroppedFlags](#balwaysrenderdroppedflags)
-1. [MaxPosError](#maxposerror)
 1. [MaxHitError](#maxhiterror)
 1. [MaxJitterTime](#maxjittertime)
 1. [MinNetUpdateRate](#minnetupdaterate)
 1. [MaxNetUpdateRate](#maxnetupdaterate)
 1. [bEnableInputReplication](#benableinputreplication)
 1. [bEnableServerExtrapolation](#benableserverextrapolation)
-1. [bEnableServerPacketReordering](#benableserverpacketreordering)
-1. [bEnableLoosePositionCheck](#benableloosepositioncheck)
 1. [bPlayersAlwaysRelevant](#bplayersalwaysrelevant)
 1. [bEnablePingCompensatedSpawn](#benablepingcompensatedspawn)
 1. [bEnableJitterBounding](#benablejitterbounding)
-1. [LooseCheckCorrectionFactor](#loosecheckcorrectionfactor)
-1. [LooseCheckCorrectionFactorOnMover](#loosecheckcorrectionfactoronmover)
 1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation)
 1. [SnapshotInterpSendHz](#snapshotinterpsendhz)
 1. [SnapshotInterpRewindMs](#snapshotinterprewindms)
@@ -1590,14 +1567,6 @@ Horizontal speed with which to throw weapons.
 
 Forces clients to do demos.
 
-## MaxPosError
-
-**Type: float**  
-**Default: 1000**  
-**Unit: uu²**
-
-Unused. Intended to be maximum squared distance error for updating clients.
-
 ## MaxHitError
 
 **Type: float**  
@@ -1697,8 +1666,6 @@ Trade uncertainty relative to shooters ping. Reasonable values range from 0 to 1
 If enabled, players will replicate their movement at a higher fidelity, in exchange for more upstream traffic.  
 Players will replicate (up to) the 10 most recent simulation steps to the server at their selected NetUpdateRate.
 
-[bEnableServerPacketReordering](#benableserverpacketreordering) has no effect if input replication is enabled.
-
 Restrictions:
 - Players should not run very high FPS (>500).
 - Speed parameters of movement axis inputs are ignored.
@@ -1712,24 +1679,6 @@ Disable to restore default netcode behavior.
 **Default: False**  
 
 If enabled the server will extrapolate client movement when the client's movement updates are too far behind the server's timepoint.
-
-Disable to restore default netcode behavior.
-
-## bEnableServerPacketReordering
-
-**Type: bool**  
-**Default: False**  
-
-If enabled, the server will try to reorder incoming ServerMove calls to extract the maximum amount of usable data. More relevant at lower TickRates.
-
-Disable to restore default netcode behavior.
-
-## bEnableLoosePositionCheck
-
-**Type: bool**  
-**Default: False**  
-
-If enabled the server will loosen the check of players position, by factoring in current movement The server will even use the players reported position instead of the calculated one, if the loose check is successful.
 
 Disable to restore default netcode behavior.
 
@@ -1760,20 +1709,6 @@ Disable to restore default netcode behavior.
 If enabled, updates by clients over more than [MaxJitterTime](#maxjittertime) will be cut down to MaxJitterTime in order to reduce visible warping for other players.
 
 Disable to restore default netcode behavior.
-
-## LooseCheckCorrectionFactor
-
-**Type: float**  
-**Default: 1.0**  
-
-Multiplier for loose position check correction strength.
-
-## LooseCheckCorrectionFactorOnMover
-
-**Type: float**  
-**Default: 1.0**  
-
-Multiplier for loose position check correction strength while standing on movers.
 
 ## bEnableSnapshotInterpolation
 

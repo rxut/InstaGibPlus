@@ -1,4 +1,4 @@
-class bbPlayer extends TournamentPlayer
+﻿class bbPlayer extends TournamentPlayer
 	config(User) abstract;
 
 var int bReason;
@@ -187,15 +187,6 @@ var bool IGPlus_SkipMovesUntilNextTick;
 var float LastWeaponEffectCreated;
 var bool bWasPaused;
 
-struct AddVelocityCall {
-	var vector Momentum;
-	var float TimeStamp;
-};
-
-var AddVelocityCall AddVelocityCalls[16];
-var int LastAddVelocityIndex;
-var int LastAddVelocityAppliedIndex;
-
 // EyeHeight related variables
 var bool bForceZSmoothing;
 var int IgnoreZChangeTicks;
@@ -261,7 +252,6 @@ var int HitMarkerTestDamage;
 var int HitMarkerTestTeam;
 
 var IGPlus_ServerMove IGPlus_ServerMove_First;
-var IGPlus_ServerMove IGPlus_ServerMove_Latest;
 var IGPlus_ServerMove IGPlus_ServerMove_FreeList;
 
 var Utilities Utils;
@@ -419,7 +409,6 @@ var IGPlus_FlagSprite IGPlus_TeamFlagSprite[4];
 
 var bool IGPlus_EnableDualButtonSwitch;
 var bool IGPlus_UseFastWeaponSwitch;
-var bool IGPlus_DeferredWeaponSwitch;
 
 var bool IGPlus_EnableInputReplication;
 var bool IGPlus_EnableSnapshotInterpolation;
@@ -579,8 +568,7 @@ replication
 		IGPlus_ServerSettingsSet,
 		IGPlus_ServerSettingsDone,
 		IGPlus_ClientReStart,
-		IGPlus_NotifyPlayerRestart,
-		ClientAddMomentum;
+		IGPlus_NotifyPlayerRestart;
 
 	unreliable if (RemoteRole == ROLE_AutonomousProxy)
 		xxCAP,
@@ -2581,23 +2569,10 @@ function ClearLastServerMoveParams() {
 }
 
 function IGPlus_ProcessRemoteMovement() {
-	if (IGPlus_DeferredWeaponSwitch) {
-		// Deferred fast switch is loose-check-only. If loose check is disabled,
-		// clear any stale deferred switch flag without applying it.
-		if (zzUTPure != None &&
-			zzUTPure.Settings.bEnableLoosePositionCheck &&
-			IGPlus_UseFastWeaponSwitch &&
-			PendingWeapon != None)
-			ChangedWeapon();
-		IGPlus_DeferredWeaponSwitch = false;
-	}
-
 	IGPlus_ApplyAllServerMoves();
 
 	if (IGPlus_EnableInputReplication)
 		IGPlus_AcknowledgeInput();
-	else if (zzUTPure.Settings.bEnableLoosePositionCheck)
-		IGPlus_LooseCheckClientError();
 	else
 		IGPlus_CheckClientError();
 
@@ -2679,7 +2654,6 @@ function IGPlus_AfterTranslocate() {
 }
 
 function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
-	local int i;
 	local float ServerDeltaTime;
 	local float DeltaTime;
 	local float SimTime;
@@ -2701,8 +2675,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local byte ClientRoll;
 	local int MergeCount;
 	local int MoveIndex;
-
-	local int AddVelocityId;
 
 	local int JumpIndex;
 	local float JumpPos;
@@ -2751,7 +2723,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		return;
 	}
 
-	AddVelocityId  =             (SM.MiscData & 0xF0000000) >>> 28; // >>> doesnt sign-extend
 	ClientTlocCounter =          (SM.MiscData & 0x0C000000) >> 26;
 	bFired         =             (SM.MiscData & 0x02000000) != 0;
 	bAltFired      =             (SM.MiscData & 0x01000000) != 0;
@@ -2853,13 +2824,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		}
 	}
 
-	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None) {
-		// Defer only for loose-check path to avoid changing standard/input behavior.
-		if (zzUTPure != None && zzUTPure.Settings.bEnableLoosePositionCheck)
-			IGPlus_DeferredWeaponSwitch = true;
-		else
-			ChangedWeapon();
-	}
+	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
+		ChangedWeapon();
 
 	CurrentTimeStamp = SM.TimeStamp;
 	ServerTimeStamp = Level.TimeSeconds;
@@ -2877,17 +2843,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	ViewRotation.Yaw = ViewYaw;
 	ViewRotation.Roll = 0;
 	SetRotation(Rot);
-
-	// Apply momentum as it was applied on client
-	if (((AddVelocityId - LastAddVelocityAppliedIndex) & 0xF) > ((LastAddVelocityIndex - LastAddVelocityAppliedIndex) & 0xF))
-		AddVelocityId = LastAddVelocityIndex;
-
-	for (i = LastAddVelocityAppliedIndex; i != AddVelocityId; i = (i+1) & 0xF) {
-		IGPlus_ApplyMomentum(AddVelocityCalls[i].Momentum);
-		AddVelocityCalls[i].Momentum = vect(0,0,0);
-	}
-
-	LastAddVelocityAppliedIndex = AddVelocityId;
 
 	// Predict new position
 	if ((Level.Pauser == "") && (DeltaTime > 0) && (IGPlus_SkipMovesUntilNextTick == false)) {
@@ -2978,11 +2933,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 		bWasPaused = false;
 	}
-
-	if (IGPlus_WantCAP || zzUTPure.Settings.bEnableLoosePositionCheck == false)
-		return;
-
-	IGPlus_WantCAP = IGPlus_IsCAPNecessary();
 }
 
 function IGPlus_CheckClientError() {
@@ -3029,158 +2979,6 @@ function IGPlus_CheckClientError() {
 	}
 }
 
-function IGPlus_LooseCheckClientError() {
-	if (IGPlus_WantCAP) {
-		ClearLastServerMoveParams();
-		IGPlus_SendCAP();
-	}
-}
-
-function bool IGPlus_IsCAPNecessary() {
-	local vector ClientLoc;
-	local vector ClientVel;
-	local EPhysics ClientPhysics;
-	local vector ClientLocAbs;
-	local int ClientTlocCounter;
-	local vector LocDelta;
-	local float ClientLocError;
-	local float MinLocError;
-	local float MaxLocError;
-	local bool bServerOnMover;
-	local bool bClientOnMover;
-	local bool bForceUpdate;
-	local bool bCanTraceNewLoc;
-	local bool bMovedToNewLoc;
-	local bool bMoverLooseCheckContext;
-	local bool bAppliedQueuedMomentum;
-	local bool bPreserveServerVelocity;
-	local Decoration Carried;
-	local vector OldLoc;
-	local float LooseCheckCorrectionFactor;
-
-	if (bHaveReceivedServerMove == false)
-		return false;
-
-	ClientLoc = LastServerMoveParams.Location;
-	ClientVel = LastServerMoveParams.Velocity;
-	ClientPhysics = LastServerMoveParams.Physics;
-	ClientLocAbs = ClientLoc;
-	if (LastServerMoveParams.Base != none)
-		ClientLocAbs += LastServerMoveParams.Base.Location;
-	ClientTlocCounter = LastServerMoveParams.TlocCounter;
-
-	LocDelta = Location - ClientLocAbs;
-	ClientLocError = LocDelta Dot LocDelta;
-	debugClientLocError = ClientLocError;
-
-	// Apply momentum that the client never got around to
-	bAppliedQueuedMomentum = false;
-	while(LastAddVelocityAppliedIndex != LastAddVelocityIndex && AddVelocityCalls[LastAddVelocityAppliedIndex].TimeStamp < ServerTimeStamp) {
-		IGPlus_ApplyMomentum(AddVelocityCalls[LastAddVelocityAppliedIndex].Momentum);
-		AddVelocityCalls[LastAddVelocityAppliedIndex].Momentum = vect(0,0,0);
-		zzbForceUpdate = true;
-		bAppliedQueuedMomentum = true;
-		LastAddVelocityAppliedIndex = (LastAddVelocityAppliedIndex+1) & 0xF;
-	}
-
-	// Calculate how far off we allow the client to be from the predicted position
-	MinLocError = 0.0;
-	MaxLocError = 3.0;
-	if (LastServerMoveParams.ClientDeltaTime > 0) {
-		MinLocError = 3.0;
-		MaxLocError = CalculateLocError(
-			LastServerMoveParams.ClientDeltaTime,
-			LastServerMoveParams.Physics,
-			ClientVel
-		);
-		MaxLocError = MaxLocError * MaxLocError;
-	}
-
-	bServerOnMover = Mover(Base) != None;
-	bClientOnMover = Mover(LastServerMoveParams.Base) != none;
-	if ((bServerOnMover && bClientOnMover) || OtherPawnAtLocation(ClientLocAbs)) {
-		// Ping is in milliseconds, convert to seconds
-		// 10% slack to account for jitter
-		zzIgnoreUpdateUntil = ServerTimeStamp + (PlayerReplicationInfo.Ping * 0.0011 * Level.TimeDilation);
-	}
-	if (zzIgnoreUpdateUntil <= ServerTimeStamp &&
-		ServerTimeStamp - zzIgnoreUpdateUntil <= LastServerMoveParams.ServerDeltaTime &&
-		Physics == PHYS_Falling
-	) {
-		// extending ignore time until landing (probably from a lift jump)
-		zzIgnoreUpdateUntil = ServerTimeStamp;
-	}
-	bMoverLooseCheckContext =
-		bServerOnMover ||
-		bClientOnMover ||
-		(Physics == PHYS_Falling && zzIgnoreUpdateUntil >= ServerTimeStamp);
-	LooseCheckCorrectionFactor = zzUTPure.Settings.LooseCheckCorrectionFactor;
-	if (bMoverLooseCheckContext)
-		LooseCheckCorrectionFactor = zzUTPure.Settings.LooseCheckCorrectionFactorOnMover;
-
-	bForceUpdate = 
-		zzbForceUpdate ||
-		IGPlus_SkipMovesUntilNextTick ||
-		ClientTlocCounter != TlocCounter ||
-		zzForceUpdateUntil >= ServerTimeStamp;
-
-	clientLastUpdateTime = ServerTimeStamp;
-	debugClientForceUpdate = bForceUpdate;
-
-	ClearLastServerMoveParams();
-
-	if (zzLastClientErr == 0 || ClientLocError < zzLastClientErr)
-		zzLastClientErr = ClientLocError;
-
-	if (ClientLocError < MinLocError && bForceUpdate == false)
-		return false;
-
-	if (bForceUpdate) {
-		ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError);
-		return true;
-	}
-
-	if (ClientLocError > MaxLocError && zzIgnoreUpdateUntil < ServerTimeStamp) {
-		ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError);
-		return true;
-	}
-
-	if (LooseCheckCorrectionFactor < 1.0)
-		ClientLocAbs = Location + (ClientLocAbs - Location) * LooseCheckCorrectionFactor;
-
-	// Keep server-side knockback velocity authoritative for a short window.
-	bPreserveServerVelocity = bAppliedQueuedMomentum || (zzIgnoreUpdateUntil >= ServerTimeStamp);
-
-	bCanTraceNewLoc = FastTrace(ClientLocAbs);
-	if (bCanTraceNewLoc) {
-		clientForcedPosition = ClientLocAbs;
-		zzLastClientErr = 0;
-		bMovedToNewLoc = xxNewMoveSmooth(ClientLocAbs);
-		if (bMovedToNewLoc && ClientPhysics == Physics && !bPreserveServerVelocity)
-			Velocity = ClientVel;
-	}
-	if (bCanTraceNewLoc == false) {
-		Carried = CarriedDecoration;
-		OldLoc = Location;
-
-		bCanTeleport = false;
-		if (SetLocation(ClientLocAbs) && ClientPhysics == Physics && !bPreserveServerVelocity)
-			Velocity = ClientVel;
-		bCanTeleport = true;
-
-		if (Carried != None) {
-			CarriedDecoration = Carried;
-			CarriedDecoration.SetLocation(ClientLocAbs + CarriedDecoration.Location - OldLoc);
-			CarriedDecoration.SetPhysics(PHYS_None);
-			CarriedDecoration.SetBase(self);
-		}
-
-		zzLastClientErr = 0;
-	}
-
-	return false;
-}
-
 function IGPlus_SendCAP() {
 	local vector ClientLoc;
 	local int CAPMiscData;
@@ -3212,8 +3010,6 @@ function IGPlus_SendCAP() {
 
 	LastCAPTime = ServerTimeStamp;
 	NextRealCAPTime = ServerTimeStamp;
-	if (zzUTPure.Settings.bEnableLoosePositionCheck && IGPlus_EnableInputReplication == false)
-		NextRealCAPTime += PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + AverageServerDeltaTime;
 	zzLastClientErr = 0;
 	IGPlus_WantCAP = false;
 	IGPlus_NotifiedTranslocate = true;
@@ -3340,40 +3136,11 @@ function IGPlus_DestroyServerMoveChain(IGPlus_ServerMove Head, IGPlus_ServerMove
 	IGPlus_ServerMove_FreeList = Head;
 }
 
-function IGPlus_InsertServerMove(IGPlus_ServerMove SM) {
-	local IGPlus_ServerMove I;
-
-	if (IGPlus_ServerMove_First == none) {
-		IGPlus_ServerMove_First = SM;
-		IGPlus_ServerMove_Latest = SM;
-		return;
-	}
-
-	if (IGPlus_ServerMove_First.TimeStamp > SM.TimeStamp) {
-		SM.Next = IGPlus_ServerMove_First;
-		IGPlus_ServerMove_First = SM;
-		return;
-	}
-
-	if (IGPlus_ServerMove_Latest.TimeStamp < SM.TimeStamp) {
-		IGPlus_ServerMove_Latest.Next = SM;
-		IGPlus_ServerMove_Latest = SM;
-		return;
-	}
-
-	I = IGPlus_ServerMove_First;
-	while(I.Next != none && I.Next.TimeStamp < SM.TimeStamp) {
-		I = I.Next;
-	}
-	SM.Next = I.Next;
-	I.Next = SM;
-}
-
 //  MiscData
 //  0                      7 8         11 12        15 16  17  18  19           23 24  25  26  27 28        31
 // +------------------------+------------+------------+---+---+---+---------------+---+---+------+------------+
-// |          Roll          |    Dodge   |   Physics  |Ju |Du |Run|  MergeCount   |Fi |Alt| Tloc | AddVelocity|
-// |                        |    Move    |            | mp| ck|   |               | re|Fir| Count|     ID     |
+// |          Roll          |    Dodge   |   Physics  |Ju |Du |Run|  MergeCount   |Fi |Alt| Tloc |  Reserved  |
+// |                        |    Move    |            | mp| ck|   |               | re|Fir| Count|            |
 // +------------------------+------------+------------+---+---+---+---------------+---+---+------+------------+
 //
 //  MiscData2
@@ -3434,12 +3201,8 @@ function xxServerMove(
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
 
-	if (zzUTPure.Settings.bEnableServerPacketReordering) {
-		IGPlus_InsertServerMove(SM);
-	} else {
-		IGPlus_ApplyServerMove(SM);
-		IGPlus_DestroyServerMove(SM);
-	}
+	IGPlus_ApplyServerMove(SM);
+	IGPlus_DestroyServerMove(SM);
 
 	IGPlus_WarpFixUpdate = true;
 }
@@ -4647,8 +4410,7 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 		return bForcePacketSplit == false &&
 			(VSize(NewAccel - OldAccel) < 1 || NewAccelNorm dot OldAccelNorm > 0.95) &&
 			Pending.bForceFire == false && Pending.bForceAltFire == false &&
-			Pending.bPressedJump == false && (Pending.DodgeMove == DODGE_None || Pending.DodgeMove >= DODGE_Active) &&
-			LastAddVelocityAppliedIndex == LastAddVelocityIndex;
+			Pending.bPressedJump == false && (Pending.DodgeMove == DODGE_None || Pending.DodgeMove >= DODGE_Active);
 	}
 
 	return true;
@@ -4794,7 +4556,6 @@ function xxReplicateMove(
 	local EPhysics OldPhys;
 	local float AdjustAlpha;
 	local float RealDelta;
-	local vector PrevVelocity;
 	local vector OldAccel;
 
 	// Higor: process smooth adjustment.
@@ -4851,17 +4612,6 @@ function xxReplicateMove(
 		NewMove.Delta = DeltaTime;
 		NewMove.Acceleration = NewAccel;
 
-		while (LastAddVelocityAppliedIndex != LastAddVelocityIndex) {
-			PrevVelocity = Velocity;
-			IGPlus_ApplyMomentum(AddVelocityCalls[LastAddVelocityAppliedIndex].Momentum);
-			AddVelocityCalls[LastAddVelocityAppliedIndex].Momentum = vect(0,0,0);
-			NewMove.Momentum += (Velocity - PrevVelocity);
-
-			LastAddVelocityAppliedIndex = (LastAddVelocityAppliedIndex+1) & 0xF;
-		}
-		NewMove.AddVelocityId = LastAddVelocityAppliedIndex;
-
-		// Set this move's data.
 		NewMove.TimeStamp = Level.TimeSeconds;
 
 		NewMove.SavedDodging = bDodging;
@@ -4979,7 +4729,6 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 
 	MoveDeltaTime or_eq Clamp(int(Move.Delta * 65536), 0, 0xFFFFFF) << 8;
 
-	                   MiscData or_eq (Move.AddVelocityId & 0xF) << 28;
 	                   MiscData or_eq (TlocCounter << 26);
 	if (Move.bFire)    MiscData or_eq 0x02000000;
 	if (Move.bAltFire) MiscData or_eq 0x01000000;
@@ -6111,51 +5860,10 @@ simulated function AddVelocity( vector NewVelocity )
 		ServerAddMomentum(NewVelocity);
 }
 
-simulated function ClientAddMomentum(vector Momentum, float TimeStamp, int Index) {
-	local int Next;
-	if (TimeStamp <= CurrentTimeStamp)
-		return; // CAP/state already advanced past this momentum timestamp
-
-	if (TimeStamp <= AddVelocityCalls[LastAddVelocityIndex].TimeStamp)
-		return; // too old
-
-	Next = (Index+1) & 0xF;
-	if (((Next - LastAddVelocityAppliedIndex) & 0xF) > ((LastAddVelocityIndex - LastAddVelocityAppliedIndex) & 0xF))
-		LastAddVelocityIndex = Next;
-
-	AddVelocityCalls[Index].Momentum = Momentum;
-	AddVelocityCalls[Index].TimeStamp = TimeStamp;
-}
-
 function ServerAddMomentum(vector Momentum) {
-	local int Next;
-	local int AddIndex;
-
-	if (zzUTPure.Settings.bEnableLoosePositionCheck) {
-		if (Momentum == vect(0,0,0))
-			return;
-
-		Next = (LastAddVelocityIndex+1) & 0xF;
-		if (Next == LastAddVelocityAppliedIndex)
-			return; // full
-
-		AddIndex = LastAddVelocityIndex;
-
-		AddVelocityCalls[AddIndex].Momentum = Momentum;
-		AddVelocityCalls[AddIndex].TimeStamp = Level.TimeSeconds;
-		ClientAddMomentum(Momentum, Level.TimeSeconds, AddIndex);
-
-		IGPlus_ApplyMomentum(Momentum);
-		AddVelocityCalls[AddIndex].Momentum = vect(0,0,0);
-		zzIgnoreUpdateUntil = FMax(zzIgnoreUpdateUntil, Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation);
-
-		LastAddVelocityIndex = Next;
-		LastAddVelocityAppliedIndex = Next;
-	} else {
-		if (Physics == PHYS_Walking)
-			Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
-		Super.AddVelocity(Momentum);
-	}
+	if (Physics == PHYS_Walking)
+		Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
+	Super.AddVelocity(Momentum);
 }
 
 simulated function NN_Momentum( Vector momentum, name DamageType )
@@ -7831,7 +7539,6 @@ state Dying
 
 	simulated function BeginState() {
 		local Carcass C;
-		local int i;
 
 		bJumpStatus = false;
 		zzIgnoreUpdateUntil = 0;
@@ -7877,12 +7584,6 @@ state Dying
 		RealTimeDead = 0.0;
 		RotationRate = rot(0,0,0);
 		bKillCamWanted = true;
-
-		for (i = 0; i < arraycount(AddVelocityCalls); ++i) {
-			AddVelocityCalls[i].Momentum = vect(0,0,0);
-		}
-		LastAddVelocityIndex = 0;
-		LastAddVelocityAppliedIndex = 0;
 	}
 
 	function PlayerMove(float DeltaTime)
@@ -12196,18 +11897,6 @@ exec simulated function SnapInterpStatus(optional string TargetFilter) {
 	);
 }
 
-exec function bEnableLoosePositionCheck(optional string Value) {
-	IGPlus_SetNetcodeSetting("bEnableLoosePositionCheck", Value);
-}
-
-exec function LooseCheckCorrectionFactor(optional string Value) {
-	IGPlus_SetNetcodeSetting("LooseCheckCorrectionFactor", Value);
-}
-
-exec function LooseCheckCorrectionFactorOnMover(optional string Value) {
-	IGPlus_SetNetcodeSetting("LooseCheckCorrectionFactorOnMover", Value);
-}
-
 exec function bEnableInputReplication(optional string Value) {
 	IGPlus_SetNetcodeSetting("bEnableInputReplication", Value);
 }
@@ -12258,9 +11947,6 @@ function IGPlus_PrintNetcodeHelp() {
 		return;
 	}
 
-	ClientMessage("bEnableLoosePositionCheck="$S.GetPropertyText("bEnableLoosePositionCheck"));
-	ClientMessage("LooseCheckCorrectionFactor="$S.GetPropertyText("LooseCheckCorrectionFactor"));
-	ClientMessage("LooseCheckCorrectionFactorOnMover="$S.GetPropertyText("LooseCheckCorrectionFactorOnMover"));
 	ClientMessage("bEnableInputReplication="$S.GetPropertyText("bEnableInputReplication"));
 	ClientMessage("bEnableSnapshotInterpolation="$S.GetPropertyText("bEnableSnapshotInterpolation"));
 	ClientMessage("SnapshotInterpSendHz="$S.GetPropertyText("SnapshotInterpSendHz"));
@@ -12298,9 +11984,6 @@ function IGPlus_ServerSetNetcodeSetting(string Key, string Value) {
 }
 
 function string IGPlus_NormalizeNetcodeKey(string Key) {
-	if (Key ~= "bEnableLoosePositionCheck") return "bEnableLoosePositionCheck";
-	if (Key ~= "LooseCheckCorrectionFactor") return "LooseCheckCorrectionFactor";
-	if (Key ~= "LooseCheckCorrectionFactorOnMover") return "LooseCheckCorrectionFactorOnMover";
 	if (Key ~= "bEnableInputReplication") return "bEnableInputReplication";
 	if (Key ~= "bEnableSnapshotInterpolation") return "bEnableSnapshotInterpolation";
 	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
@@ -12442,7 +12125,6 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bAlwaysRenderFlagCarrier");
 	IGPlus_ServerSendSetting("bAlwaysRenderDroppedFlags");
 
-	IGPlus_ServerSendSetting("MaxPosError");
 	IGPlus_ServerSendSetting("MaxHitError");
 	IGPlus_ServerSendSetting("MaxJitterTime");
 	IGPlus_ServerSendSetting("WarpFixDelay");
@@ -12451,13 +12133,9 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("MaxNetUpdateRate");
 	IGPlus_ServerSendSetting("bEnableInputReplication");
 	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
-	IGPlus_ServerSendSetting("bEnableServerPacketReordering");
-	IGPlus_ServerSendSetting("bEnableLoosePositionCheck");
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
 	IGPlus_ServerSendSetting("bEnableJitterBounding");
-	IGPlus_ServerSendSetting("LooseCheckCorrectionFactor");
-	IGPlus_ServerSendSetting("LooseCheckCorrectionFactorOnMover");
 	IGPlus_ServerSendSetting("bEnableSnapshotInterpolation");
 	IGPlus_ServerSendSetting("SnapshotInterpSendHz");
 	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");

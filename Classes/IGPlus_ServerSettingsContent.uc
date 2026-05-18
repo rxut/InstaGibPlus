@@ -1,4 +1,4 @@
-class IGPlus_ServerSettingsContent extends UMenuPageWindow;
+﻿class IGPlus_ServerSettingsContent extends UMenuPageWindow;
 
 enum EEditControlType {
 	ECT_Text,
@@ -115,9 +115,6 @@ var localized string bEnablePingCompensatedSpawnText;
 
 var UWindowLabelControl Lbl_Networking;
 var localized string NetworkingText;
-var IGPlus_EditControl Edit_MaxPosError;
-var localized string MaxPosErrorText;
-var localized string MaxPosErrorHelp;
 var IGPlus_EditControl Edit_MaxHitError;
 var localized string MaxHitErrorText;
 var localized string MaxHitErrorHelp;
@@ -142,24 +139,12 @@ var localized string bEnableInputReplicationHelp;
 var UWindowCheckbox Chk_bEnableServerExtrapolation;
 var localized string bEnableServerExtrapolationText;
 var localized string bEnableServerExtrapolationHelp;
-var UWindowCheckbox Chk_bEnableServerPacketReordering;
-var localized string bEnableServerPacketReorderingText;
-var localized string bEnableServerPacketReorderingHelp;
-var UWindowCheckbox Chk_bEnableLoosePositionCheck;
-var localized string bEnableLoosePositionCheckText;
-var localized string bEnableLoosePositionCheckHelp;
 var UWindowCheckbox Chk_bPlayersAlwaysRelevant;
 var localized string bPlayersAlwaysRelevantText;
 var localized string bPlayersAlwaysRelevantHelp;
 var UWindowCheckbox Chk_bEnableJitterBounding;
 var localized string bEnableJitterBoundingText;
 var localized string bEnableJitterBoundingHelp;
-var IGPlus_EditControl Edit_LooseCheckCorrectionFactor;
-var localized string LooseCheckCorrectionFactorText;
-var localized string LooseCheckCorrectionFactorHelp;
-var IGPlus_EditControl Edit_LooseCheckCorrectionFactorOnMover;
-var localized string LooseCheckCorrectionFactorOnMoverText;
-var localized string LooseCheckCorrectionFactorOnMoverHelp;
 var UWindowCheckbox Chk_bEnableSnapshotInterpolation;
 var localized string bEnableSnapshotInterpolationText;
 var localized string bEnableSnapshotInterpolationHelp;
@@ -555,13 +540,11 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bDodgePreserveZMomentum", BoolToString(Chk_bDodgePreserveZMomentum.bChecked));
 	SaveServerSettingIfChanged(S, "MaxMultiDodges", Edit_MaxMultiDodges.GetValue());
 
-	SaveServerSettingIfChanged(S, "MaxPosError", Edit_MaxPosError.GetValue());
 	SaveServerSettingIfChanged(S, "MaxHitError", Edit_MaxHitError.GetValue());
 	SaveServerSettingIfChanged(S, "FireTimeout", Edit_FireTimeout.GetValue());
 	SaveServerSettingIfChanged(S, "MinNetUpdateRate", Edit_MinNetUpdateRate.GetValue());
 	SaveServerSettingIfChanged(S, "MaxNetUpdateRate", Edit_MaxNetUpdateRate.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableServerExtrapolation", BoolToString(Chk_bEnableServerExtrapolation.bChecked));
-	SaveServerSettingIfChanged(S, "bEnableServerPacketReordering", BoolToString(Chk_bEnableServerPacketReordering.bChecked));
 	SaveServerSettingIfChanged(S, "bPlayersAlwaysRelevant", BoolToString(Chk_bPlayersAlwaysRelevant.bChecked));
 	SaveServerSettingIfChanged(S, "bEnableJitterBounding", BoolToString(Chk_bEnableJitterBounding.bChecked));
 	SaveServerSettingIfChanged(S, "MaxJitterTime", Edit_MaxJitterTime.GetValue());
@@ -569,9 +552,6 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bEnableSnapshotInterpolation", BoolToString(Chk_bEnableSnapshotInterpolation.bChecked));
 	SaveServerSettingIfChanged(S, "SnapshotInterpSendHz", Edit_SnapshotInterpSendHz.GetValue());
 	SaveServerSettingIfChanged(S, "SnapshotInterpRewindMs", Edit_SnapshotInterpRewindMs.GetValue());
-	SaveServerSettingIfChanged(S, "bEnableLoosePositionCheck", BoolToString(Chk_bEnableLoosePositionCheck.bChecked));
-	SaveServerSettingIfChanged(S, "LooseCheckCorrectionFactor", Edit_LooseCheckCorrectionFactor.GetValue());
-	SaveServerSettingIfChanged(S, "LooseCheckCorrectionFactorOnMover", Edit_LooseCheckCorrectionFactorOnMover.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableWarpFix", BoolToString(Chk_bEnableWarpFix.bChecked));
 	SaveServerSettingIfChanged(S, "WarpFixDelay", Edit_WarpFixDelay.GetValue());
 
@@ -877,7 +857,6 @@ function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_PlayerScale, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MaxMultiDodges, C, ControlWidth, 80);
 
-	ConfigureFixedWidthEdit(Edit_MaxPosError, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MaxHitError, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_FireTimeout, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MinNetUpdateRate, C, ControlWidth, 80);
@@ -885,8 +864,6 @@ function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_MaxJitterTime, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_SnapshotInterpSendHz, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_SnapshotInterpRewindMs, C, ControlWidth, 80);
-	ConfigureFixedWidthEdit(Edit_LooseCheckCorrectionFactor, C, ControlWidth, 80);
-	ConfigureFixedWidthEdit(Edit_LooseCheckCorrectionFactorOnMover, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_WarpFixDelay, C, ControlWidth, 80);
 }
 
@@ -921,7 +898,6 @@ function LoadServerSettings() {
 	Edit_MaxMultiDodges.SetValue(string(S.MaxMultiDodges));
 	Chk_bEnablePingCompensatedSpawn.bChecked = S.bEnablePingCompensatedSpawn;
 
-	Edit_MaxPosError.SetValue(string(S.MaxPosError));
 	Edit_MaxHitError.SetValue(string(S.MaxHitError));
 	Edit_MaxJitterTime.SetValue(string(S.MaxJitterTime));
 	Edit_WarpFixDelay.SetValue(string(S.WarpFixDelay));
@@ -930,12 +906,8 @@ function LoadServerSettings() {
 	Edit_MaxNetUpdateRate.SetValue(string(S.MaxNetUpdateRate));
 	Chk_bEnableInputReplication.bChecked = S.bEnableInputReplication;
 	Chk_bEnableServerExtrapolation.bChecked = S.bEnableServerExtrapolation;
-	Chk_bEnableServerPacketReordering.bChecked = S.bEnableServerPacketReordering;
-	Chk_bEnableLoosePositionCheck.bChecked = S.bEnableLoosePositionCheck;
 	Chk_bPlayersAlwaysRelevant.bChecked = S.bPlayersAlwaysRelevant;
 	Chk_bEnableJitterBounding.bChecked = S.bEnableJitterBounding;
-	Edit_LooseCheckCorrectionFactor.SetValue(string(S.LooseCheckCorrectionFactor));
-	Edit_LooseCheckCorrectionFactorOnMover.SetValue(string(S.LooseCheckCorrectionFactorOnMover));
 	Chk_bEnableSnapshotInterpolation.bChecked = S.bEnableSnapshotInterpolation;
 	Edit_SnapshotInterpSendHz.SetValue(string(S.SnapshotInterpSendHz));
 	Edit_SnapshotInterpRewindMs.SetValue(string(S.SnapshotInterpRewindMs));
@@ -1008,13 +980,11 @@ function Created() {
 	Edit_MaxMultiDodges = CreateEdit(ECT_Integer, MaxMultiDodgesText, MaxMultiDodgesHelp, 6, 80);
 
 	Lbl_Networking = CreateSeparator(NetworkingText);
-	Edit_MaxPosError = CreateEdit(ECT_Integer, MaxPosErrorText, MaxPosErrorHelp, 8, 80);
 	Edit_MaxHitError = CreateEdit(ECT_Integer, MaxHitErrorText, MaxHitErrorHelp, 8, 80);
 	Edit_FireTimeout = CreateEdit(ECT_Real, FireTimeoutText, FireTimeoutHelp, 16, 80);
 	Edit_MinNetUpdateRate = CreateEdit(ECT_Real, MinNetUpdateRateText, MinNetUpdateRateHelp, 16, 80);
 	Edit_MaxNetUpdateRate = CreateEdit(ECT_Real, MaxNetUpdateRateText, MaxNetUpdateRateHelp, 16, 80);
 	Chk_bEnableServerExtrapolation = CreateCheckbox(bEnableServerExtrapolationText, bEnableServerExtrapolationHelp);
-	Chk_bEnableServerPacketReordering = CreateCheckbox(bEnableServerPacketReorderingText, bEnableServerPacketReorderingHelp);
 	Chk_bPlayersAlwaysRelevant = CreateCheckbox(bPlayersAlwaysRelevantText, bPlayersAlwaysRelevantHelp);
 	Chk_bEnableJitterBounding = CreateCheckbox(bEnableJitterBoundingText, bEnableJitterBoundingHelp);
 	Edit_MaxJitterTime = CreateEdit(ECT_Real, MaxJitterTimeText, MaxJitterTimeHelp, 16, 80);
@@ -1022,9 +992,6 @@ function Created() {
 	Chk_bEnableSnapshotInterpolation = CreateCheckbox(bEnableSnapshotInterpolationText, bEnableSnapshotInterpolationHelp);
 	Edit_SnapshotInterpSendHz = CreateEdit(ECT_Real, SnapshotInterpSendHzText, SnapshotInterpSendHzHelp, 16, 80);
 	Edit_SnapshotInterpRewindMs = CreateEdit(ECT_Real, SnapshotInterpRewindMsText, SnapshotInterpRewindMsHelp, 16, 80);
-	Chk_bEnableLoosePositionCheck = CreateCheckbox(bEnableLoosePositionCheckText, bEnableLoosePositionCheckHelp);
-	Edit_LooseCheckCorrectionFactor = CreateEdit(ECT_Real, LooseCheckCorrectionFactorText, LooseCheckCorrectionFactorHelp, 16, 80);
-	Edit_LooseCheckCorrectionFactorOnMover = CreateEdit(ECT_Real, LooseCheckCorrectionFactorOnMoverText, LooseCheckCorrectionFactorOnMoverHelp, 16, 80);
 	Chk_bEnableWarpFix = CreateCheckbox(bEnableWarpFixText, bEnableWarpFixHelp);
 	Edit_WarpFixDelay = CreateEdit(ECT_Real, WarpFixDelayText, WarpFixDelayHelp, 16, 80);
 
@@ -1116,13 +1083,11 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_MaxMultiDodges, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Networking, bShowSettings, WndWidth, Top);
-	LayoutControl(Edit_MaxPosError, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxHitError, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_FireTimeout, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MinNetUpdateRate, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxNetUpdateRate, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableServerExtrapolation, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableServerPacketReordering, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bPlayersAlwaysRelevant, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableJitterBounding, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxJitterTime, bShowSettings, WndWidth, Top);
@@ -1130,9 +1095,6 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bEnableSnapshotInterpolation, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_SnapshotInterpSendHz, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_SnapshotInterpRewindMs, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableLoosePositionCheck, bShowSettings, WndWidth, Top);
-	LayoutControl(Edit_LooseCheckCorrectionFactor, bShowSettings, WndWidth, Top);
-	LayoutControl(Edit_LooseCheckCorrectionFactorOnMover, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableWarpFix, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_WarpFixDelay, bShowSettings, WndWidth, Top);
 
@@ -1282,8 +1244,6 @@ defaultproperties
 	bEnablePingCompensatedSpawnText="Enable Ping Compensated Spawn"
 
 	NetworkingText="Networking"
-	MaxPosErrorText="Max Position Error"
-	MaxPosErrorHelp="Maximum position error before server correction is forced"
 	MaxHitErrorText="Max Hit Error"
 	MaxHitErrorHelp="Maximum tolerated hit registration error"
 	MaxJitterTimeText="Max Jitter Time"
@@ -1300,18 +1260,10 @@ defaultproperties
 	bEnableInputReplicationHelp="If checked, replicates movement input data for validation"
 	bEnableServerExtrapolationText="Enable Server Extrapolation"
 	bEnableServerExtrapolationHelp="If checked, server extrapolates movement between updates"
-	bEnableServerPacketReorderingText="Enable Packet Reordering"
-	bEnableServerPacketReorderingHelp="If checked, server tries to reorder delayed movement packets"
-	bEnableLoosePositionCheckText="Enable Loose Position Check"
-	bEnableLoosePositionCheckHelp="If checked, uses looser position validation rules"
 	bPlayersAlwaysRelevantText="Players Always Relevant"
 	bPlayersAlwaysRelevantHelp="If checked, players stay network relevant regardless of distance"
 	bEnableJitterBoundingText="Enable Jitter Bounding"
 	bEnableJitterBoundingHelp="If checked, bounds movement jitter spikes"
-	LooseCheckCorrectionFactorText="Loose Check Correction Factor"
-	LooseCheckCorrectionFactorHelp="Correction strength used by loose position checks"
-	LooseCheckCorrectionFactorOnMoverText="Loose Check Correction On Mover"
-	LooseCheckCorrectionFactorOnMoverHelp="Loose check correction strength while standing on movers"
 	bEnableSnapshotInterpolationText="Enable Snapshot Interpolation"
 	bEnableSnapshotInterpolationHelp="If checked, clients smooth movement using snapshot interpolation"
 	SnapshotInterpSendHzText="Snapshot Send Hz"
