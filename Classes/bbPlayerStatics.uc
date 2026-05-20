@@ -1,4 +1,6 @@
-class bbPlayerStatics extends Actor;
+﻿class bbPlayerStatics extends Actor;
+
+const DMG_AlwaysHUDConsole = 3;
 
 var float AverageDeltaTime;
 var float DeltaTimeVariance;
@@ -11,20 +13,27 @@ var float HitMarkerSize;
 var color HitMarkerColor;
 var color HitMarkerTeamColors[4];
 
-// Variables for Damage Number Markers
-var float DamageNumberLifespan;
-var float DamageNumberDamage;
-var color DamageNumberColor;
-var float DamageNumberLastHitTime;
-var float DamageNumberDuration;
-var float DamageNumberDecayExponent;
-var float DamageNumberAccumulationTime;
+// Screen-anchored floating damage numbers.
+// Each hit either merges into an existing floater (splash within same tick,
+// or same-victim rapid fire) or starts a new one. Multiple coexist.
+struct DamageFloater {
+	var int Damage;
+	var color Col;
+	var float Age;
+	var float LastHitTime;
+	var PlayerReplicationInfo VictimPRI;
+	var bool bActive;
+};
+
+var DamageFloater DamageFloaters[6];
+
 var float DamageNumberDrawSize;
 var float DamageNumberDrawOffset;
+var float DamageNumberRapidFireWindow;
+var float DamageNumberDriftSpeed;
 
-// Hardcoded values (used directly in functions, not settings struct)
-var color DamageNumberEnemyColor;       // Hardcoded HitMarkerColor
-var color DamageNumberTeamColor;        // Hardcoded HitMarkerTeamColor
+var color DamageNumberEnemyColor;
+var color DamageNumberTeamColor;
 
 static function DrawFPS(Canvas C, HUD MyHud, ClientSettings Settings, float DeltaTime) {
 	local string FPS;
@@ -176,73 +185,148 @@ static function DrawHitMarker(Canvas C, ClientSettings Settings, float DeltaTime
 	default.HitMarkerLifespan = FMax(0.0, default.HitMarkerLifespan - DeltaTime);
 }
 
-static function PlayDamageMarker(PlayerPawn Me, float Damage, int OwnTeam, int EnemyTeam) {
+static function bool HasActiveDamageFloater() {
+	local int i;
+	for (i = 0; i < arraycount(default.DamageFloaters); i++)
+		if (default.DamageFloaters[i].bActive)
+			return true;
+	return false;
+}
+
+static function PlayDamageMarker(
+	PlayerPawn Me,
+	float Damage,
+	int OwnTeam,
+	int EnemyTeam,
+	optional PlayerReplicationInfo VictimPRI
+) {
 	local color NumColor;
-	local float TimeSinceLastHit;
 	local bool bIsTeamHit;
+	local float Now;
+	local int MergeIdx, FreeIdx, OldestIdx;
+	local float OldestAge;
+	local int i;
+	local int WriteIdx;
 
 	bIsTeamHit = (Me.GameReplicationInfo.bTeamGame && OwnTeam == EnemyTeam);
-	
 	if (bIsTeamHit)
 		NumColor = default.DamageNumberTeamColor;
 	else
 		NumColor = default.DamageNumberEnemyColor;
 
-	TimeSinceLastHit = Me.Level.TimeSeconds - default.DamageNumberLastHitTime;
+	Now = Me.Level.TimeSeconds;
 
-	// Check for accumulation conditions: Active AND time < threshold
-	if (default.DamageNumberLifespan > 0.0 && TimeSinceLastHit < default.DamageNumberAccumulationTime) {
-		default.DamageNumberDamage += Damage;
-		default.DamageNumberLifespan = default.DamageNumberDuration;
-		default.DamageNumberColor = NumColor;
-		default.DamageNumberLastHitTime = Me.Level.TimeSeconds;
+	MergeIdx = -1;
+	FreeIdx = -1;
+	OldestIdx = 0;
+	OldestAge = -1.0;
 
-		if (bbPlayer(Me).bEnableDamageDebugConsoleMessages)
-			bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ (int(default.DamageNumberDamage)));
-
-	} else {
-		// Start new / Replace old
-		default.DamageNumberDamage = Damage;
-		default.DamageNumberLifespan = default.DamageNumberDuration;
-		default.DamageNumberColor = NumColor;
-		default.DamageNumberLastHitTime = Me.Level.TimeSeconds;
-
-		if (bbPlayer(Me).bEnableDamageDebugConsoleMessages)
-			bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ int(default.DamageNumberDamage));
+	// Same-tick merge handles splash: one shot, multiple victims => one floater.
+	for (i = 0; i < arraycount(default.DamageFloaters); i++) {
+		if (default.DamageFloaters[i].bActive == false) {
+			if (FreeIdx == -1)
+				FreeIdx = i;
+			continue;
+		}
+		if (default.DamageFloaters[i].LastHitTime == Now) {
+			MergeIdx = i;
+			break;
+		}
+		if (default.DamageFloaters[i].Age > OldestAge) {
+			OldestAge = default.DamageFloaters[i].Age;
+			OldestIdx = i;
+		}
 	}
+
+	// Rapid-fire merge: same victim within RapidFireWindow (minigun, pulse 2ndary).
+	if (MergeIdx == -1 && VictimPRI != none) {
+		for (i = 0; i < arraycount(default.DamageFloaters); i++) {
+			if (default.DamageFloaters[i].bActive == false)
+				continue;
+			if (default.DamageFloaters[i].VictimPRI == VictimPRI &&
+				Now - default.DamageFloaters[i].LastHitTime < default.DamageNumberRapidFireWindow) {
+				MergeIdx = i;
+				break;
+			}
+		}
+	}
+
+	if (MergeIdx != -1) {
+		default.DamageFloaters[MergeIdx].Damage += int(Damage);
+		default.DamageFloaters[MergeIdx].Col = NumColor;
+		default.DamageFloaters[MergeIdx].LastHitTime = Now;
+		default.DamageFloaters[MergeIdx].Age = 0.0;
+		if (default.DamageFloaters[MergeIdx].VictimPRI != VictimPRI)
+			default.DamageFloaters[MergeIdx].VictimPRI = none;
+		WriteIdx = MergeIdx;
+	} else {
+		if (FreeIdx == -1)
+			FreeIdx = OldestIdx;
+		default.DamageFloaters[FreeIdx].Damage = int(Damage);
+		default.DamageFloaters[FreeIdx].Col = NumColor;
+		default.DamageFloaters[FreeIdx].Age = 0.0;
+		default.DamageFloaters[FreeIdx].LastHitTime = Now;
+		default.DamageFloaters[FreeIdx].VictimPRI = VictimPRI;
+		default.DamageFloaters[FreeIdx].bActive = true;
+		WriteIdx = FreeIdx;
+	}
+
+	if (bbPlayer(Me) != none && bbPlayer(Me).ShowDamageNumberMode == DMG_AlwaysHUDConsole)
+		bbPlayer(Me).ClientMessage("[Debug] Damage done: " $ default.DamageFloaters[WriteIdx].Damage);
 }
 
-static function DrawDamageNumbers(Canvas C, float DeltaTime) {
+static function DrawDamageNumbers(Canvas C, ClientSettings Settings, float DeltaTime) {
+	local int i;
 	local float FadeMultiplier;
+	local float YDrift;
+	local float Duration;
+	local float DecayExponent;
 	local string DamageText;
 	local float TextX, TextY;
 	local HUD MyHud;
 	local float DrawSize, DrawOffset;
 
-	if (default.DamageNumberLifespan <= 0.0)
+	if (C.ViewPort == none || C.ViewPort.Actor == none)
+		return;
+
+	MyHud = C.ViewPort.Actor.myHUD;
+	if (MyHud == none || ChallengeHud(MyHud) == none || ChallengeHud(MyHud).MyFonts == none)
 		return;
 
 	class'CanvasUtils'.static.SaveCanvas(C);
 
 	DrawSize = default.DamageNumberDrawSize;
 	DrawOffset = default.DamageNumberDrawOffset;
-	FadeMultiplier = ((default.DamageNumberLifespan / default.DamageNumberDuration) ** default.DamageNumberDecayExponent);
+	Duration = FClamp(Settings.DamageNumberDuration, 0.1, 10.0);
+	DecayExponent = FClamp(Settings.DamageNumberFade, 1.0, 10.0);
 
-	MyHud = C.ViewPort.Actor.myHUD;
-	if (MyHud != none && ChallengeHud(MyHud) != none && ChallengeHud(MyHud).MyFonts != none) {
-		DamageText = string(int(default.DamageNumberDamage));
-		C.Style = ERenderStyle.STY_Translucent;
-		C.bNoSmooth = false;
-		C.Font = ChallengeHud(MyHud).MyFonts.GetSmallFont(C.ClipX);
+	C.Style = ERenderStyle.STY_Translucent;
+	C.bNoSmooth = false;
+	C.Font = ChallengeHud(MyHud).MyFonts.GetSmallFont(C.ClipX);
+
+	for (i = 0; i < arraycount(default.DamageFloaters); i++) {
+		if (default.DamageFloaters[i].bActive == false)
+			continue;
+
+		if (default.DamageFloaters[i].Age >= Duration) {
+			default.DamageFloaters[i].bActive = false;
+			default.DamageFloaters[i].VictimPRI = none;
+			continue;
+		}
+
+		FadeMultiplier = ((1.0 - default.DamageFloaters[i].Age / Duration) ** DecayExponent);
+		YDrift = default.DamageFloaters[i].Age * default.DamageNumberDriftSpeed;
+
+		DamageText = string(default.DamageFloaters[i].Damage);
 		C.TextSize(DamageText, TextX, TextY);
-		C.DrawColor = default.DamageNumberColor * FadeMultiplier;
-		C.SetPos(C.SizeX/2 + DrawOffset + DrawSize + 5, C.SizeY/2 - TextY/2);
+		C.DrawColor = default.DamageFloaters[i].Col * FadeMultiplier;
+		C.SetPos(C.SizeX/2 + DrawOffset + DrawSize + 5, C.SizeY/2 - TextY/2 - YDrift);
 		C.DrawText(DamageText);
+
+		default.DamageFloaters[i].Age += DeltaTime;
 	}
 
 	class'CanvasUtils'.static.RestoreCanvas(C);
-
-	default.DamageNumberLifespan = FMax(0.0, default.DamageNumberLifespan - DeltaTime);
 }
 
 static function Sound GetHitSound(ClientSettings Settings) {
@@ -348,11 +432,10 @@ defaultproperties {
 	HitMarkerTeamColors(3)=(R=255,G=200,B=0,A=255)
 	DamageNumberEnemyColor=(R=255,G=255,B=0,A=255)
 	DamageNumberTeamColor=(R=173,G=216,B=230,A=255)
-	DamageNumberDuration=2.0
-	DamageNumberDecayExponent=5.0
-	DamageNumberAccumulationTime=0.4
 	DamageNumberDrawSize=48.0
 	DamageNumberDrawOffset=48.0
+	DamageNumberRapidFireWindow=0.2
+	DamageNumberDriftSpeed=32.0
 	RemoteRole=ROLE_None
 	bHidden=True
 }

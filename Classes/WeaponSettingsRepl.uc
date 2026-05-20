@@ -1,4 +1,4 @@
-class WeaponSettingsRepl extends Actor;
+﻿class WeaponSettingsRepl extends Actor;
 
 var float HeadHalfHeight;
 var float HeadRadius;
@@ -188,6 +188,7 @@ replication {
 		RocketSelfDamage,
 		RocketHurtRadius,
 		RocketMomentum,
+		RocketSpreadSpacingDegrees,
 		RocketSpeed,
 		GrenadeDamage,
 		GrenadeHurtRadius,

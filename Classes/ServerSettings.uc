@@ -79,8 +79,6 @@ var config float SnapshotInterpRewindMs;
 var config bool  bEnableWarpFix;
 var config bool  bEnableCarcassCollision;
 var config bool  ShowTouchedPackage;
-var config bool  bEnableDamageDebugMode;
-var config bool  bEnableDamageDebugConsoleMessages;
 var config bool  bEnableHitboxDebugMode;
 
 enum EHitFeedbackMode {
@@ -90,6 +88,15 @@ enum EHitFeedbackMode {
 };
 
 var config EHitFeedbackMode HitFeedbackMode;
+
+enum EShowDamageNumberMode {
+	DMG_Disabled,
+	DMG_SpecOnly,
+	DMG_AlwaysHUD,
+	DMG_AlwaysHUDConsole
+};
+
+var config EShowDamageNumberMode ShowDamageNumberMode;
 
 //Add the maplist where kickers will work using normal network
 var config array<string> ExcludeMapsForKickers;
@@ -116,6 +123,17 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "TradePingMargin");
 	DumpSetting(P, "KillCamDelay");
 	DumpSetting(P, "KillCamDuration");
+	DumpSetting(P, "bWarmup");
+	DumpSetting(P, "WarmupTimeLimit");
+	DumpSetting(P, "bCoaches");
+	DumpSetting(P, "Timeouts");
+	DumpSetting(P, "bFastTeams");
+	DumpSetting(P, "bUseClickboard");
+	DumpSetting(P, "bAdvancedTeamSay");
+	DumpSetting(P, "bAllowMultiWeapon");
+	DumpSetting(P, "bDelayedPickupSpawn");
+	DumpSetting(P, "bUseFastWeaponSwitch");
+	DumpSetting(P, "bTellSpectators");
 	DumpSetting(P, "bJumpingPreservesMomentum");
 	DumpSetting(P, "bOldLandingMomentum");
 	DumpSetting(P, "bEnableSingleButtonDodge");
@@ -142,10 +160,12 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "SnapshotInterpSendHz");
 	DumpSetting(P, "SnapshotInterpRewindMs");
 	DumpSetting(P, "bEnableWarpFix");
+	DumpSetting(P, "MinClientRate");
+	DumpSetting(P, "MaxClientRate");
+	DumpSetting(P, "ForceSettingsLevel");
 	DumpSetting(P, "ShowTouchedPackage");
 	DumpSetting(P, "HitFeedbackMode");
-	DumpSetting(P, "bEnableDamageDebugMode");
-	DumpSetting(P, "bEnableDamageDebugConsoleMessages");
+	DumpSetting(P, "ShowDamageNumberMode");
 	DumpSetting(P, "bEnableHitboxDebugMode");	
 }
 
@@ -213,7 +233,6 @@ defaultproperties
 	bEnableWarpFix=True
 	bEnableCarcassCollision=True
 	HitFeedbackMode=HFM_Always
-	bEnableDamageDebugMode=False
-	bEnableDamageDebugConsoleMessages=False
+	ShowDamageNumberMode=DMG_Disabled
 	bEnableHitboxDebugMode=False
 }
