@@ -21,12 +21,17 @@ var localized string MoreInformationText;
 var UWindowLabelControl Lbl_Login;
 var localized string LoginText;
 
-var IGPlus_ComboBox Cmb_AdminPassword;
+var IGPlus_PasswordComboBox Cmb_AdminPassword;
 var localized string AdminPasswordText;
 var localized string AdminPasswordHelp;
 var IGPlus_Button Btn_DeletePassword;
 var localized string DeletePasswordButtonText;
 var localized string DeletePasswordButtonHelp;
+var IGPlus_Button Btn_TogglePasswordVisibility;
+var localized string TogglePasswordShowText;
+var localized string TogglePasswordShowHelp;
+var localized string TogglePasswordHideText;
+var localized string TogglePasswordHideHelp;
 
 var IGPlus_Button Btn_AdminAuth;
 var localized string LoginButtonText;
@@ -405,6 +410,21 @@ function UpdateAuthButton() {
 	} else {
 		Btn_AdminAuth.SetText(LoginButtonText);
 		Btn_AdminAuth.SetHelpText(LoginButtonHelp);
+	}
+}
+
+function UpdateTogglePasswordButton() {
+	if (Btn_TogglePasswordVisibility == none || Cmb_AdminPassword == none)
+		return;
+
+	if (Cmb_AdminPassword.bMaskInput) {
+		Btn_TogglePasswordVisibility.SetText(TogglePasswordShowText);
+		Btn_TogglePasswordVisibility.SetHelpText(TogglePasswordShowHelp);
+		Btn_TogglePasswordVisibility.ToolTipString = TogglePasswordShowHelp;
+	} else {
+		Btn_TogglePasswordVisibility.SetText(TogglePasswordHideText);
+		Btn_TogglePasswordVisibility.SetHelpText(TogglePasswordHideHelp);
+		Btn_TogglePasswordVisibility.ToolTipString = TogglePasswordHideHelp;
 	}
 }
 
@@ -789,6 +809,32 @@ function IGPlus_ComboBox CreateComboBox(
 	return Cmb;
 }
 
+function IGPlus_PasswordComboBox CreatePasswordComboBox(
+	string T,
+	optional string HT,
+	optional bool bCanEdit,
+	optional float EditBoxWidth
+) {
+	local IGPlus_PasswordComboBox Cmb;
+
+	Cmb = IGPlus_PasswordComboBox(CreateControl(class'IGPlus_PasswordComboBox', PaddingX, ControlOffset, 200, 1));
+	Cmb.SetText(T);
+	Cmb.SetHelpText(HT);
+	Cmb.SetFont(F_Normal);
+	Cmb.Align = TA_Left;
+	Cmb.SetEditable(bCanEdit);
+
+	if (EditBoxWidth > 0) {
+		Cmb.EditBoxWidthFraction = 0.5;
+		Cmb.EditBoxMinWidth = EditBoxWidth;
+		Cmb.EditBoxMaxWidth = EditBoxWidth;
+	}
+
+	ControlOffset += LineSpacing;
+
+	return Cmb;
+}
+
 function IGPlus_Button CreateButton(string T, optional string HT) {
 	local IGPlus_Button Btn;
 
@@ -826,20 +872,24 @@ function LayoutPasswordControls(Canvas C, bool bVisible, float Width, out float 
 	local float Height;
 	local float Gap;
 	local float DeleteButtonWidth;
+	local float ToggleButtonWidth;
 	local float ComboWidth;
 
-	if (Cmb_AdminPassword == none || Btn_DeletePassword == none)
+	if (Cmb_AdminPassword == none || Btn_DeletePassword == none || Btn_TogglePasswordVisibility == none)
 		return;
 
 	if (bVisible) {
 		if (Cmb_AdminPassword.bWindowVisible == false)
 			Cmb_AdminPassword.ShowWindow();
+		if (Btn_TogglePasswordVisibility.bWindowVisible == false)
+			Btn_TogglePasswordVisibility.ShowWindow();
 		if (Btn_DeletePassword.bWindowVisible == false)
 			Btn_DeletePassword.ShowWindow();
 
 		Gap = 4;
 		DeleteButtonWidth = 20;
-		ComboWidth = FMax(Width - DeleteButtonWidth - Gap, 40);
+		ToggleButtonWidth = 40;
+		ComboWidth = FMax(Width - DeleteButtonWidth - ToggleButtonWidth - 2*Gap, 40);
 		ConfigurePasswordCombo(C, ComboWidth);
 
 		Cmb_AdminPassword.WinLeft = PaddingX;
@@ -847,7 +897,12 @@ function LayoutPasswordControls(Canvas C, bool bVisible, float Width, out float 
 		Height = FMax(Cmb_AdminPassword.WinHeight, 1);
 		Cmb_AdminPassword.SetSize(ComboWidth, Height);
 
-		Btn_DeletePassword.WinLeft = PaddingX + ComboWidth + Gap;
+		Btn_TogglePasswordVisibility.WinLeft = PaddingX + ComboWidth + Gap;
+		Btn_TogglePasswordVisibility.WinTop = Y;
+		Height = FMax(Btn_TogglePasswordVisibility.WinHeight, 1);
+		Btn_TogglePasswordVisibility.SetSize(ToggleButtonWidth, Height);
+
+		Btn_DeletePassword.WinLeft = PaddingX + ComboWidth + ToggleButtonWidth + 2*Gap;
 		Btn_DeletePassword.WinTop = Y;
 		Height = FMax(Btn_DeletePassword.WinHeight, 1);
 		Btn_DeletePassword.SetSize(DeleteButtonWidth, Height);
@@ -858,6 +913,8 @@ function LayoutPasswordControls(Canvas C, bool bVisible, float Width, out float 
 
 	if (Cmb_AdminPassword.bWindowVisible)
 		Cmb_AdminPassword.HideWindow();
+	if (Btn_TogglePasswordVisibility.bWindowVisible)
+		Btn_TogglePasswordVisibility.HideWindow();
 	if (Btn_DeletePassword.bWindowVisible)
 		Btn_DeletePassword.HideWindow();
 }
@@ -1038,12 +1095,14 @@ function Created() {
 	Lbl_MoreInformation.SetFont(F_Bold);
 
 	Lbl_Login = CreateSeparator(LoginText);
-	Cmb_AdminPassword = CreateComboBox(AdminPasswordText, AdminPasswordHelp, true);
+	Cmb_AdminPassword = CreatePasswordComboBox(AdminPasswordText, AdminPasswordHelp, true);
 	Cmb_AdminPassword.SetMaxLength(64);
 	Cmb_AdminPassword.SetNumericOnly(false);
 	Cmb_AdminPassword.EditBoxWidthFraction = 0.85;
 	Cmb_AdminPassword.EditBoxMinWidth = 70;
 	Cmb_AdminPassword.EditBoxMaxWidth = 65535;
+	Btn_TogglePasswordVisibility = CreateButton(TogglePasswordShowText, TogglePasswordShowHelp);
+	ControlOffset -= LineSpacing;
 	Btn_DeletePassword = CreateButton(DeletePasswordButtonText, DeletePasswordButtonHelp);
 	ControlOffset -= LineSpacing;
 	Btn_AdminAuth = CreateButton(LoginButtonText, LoginButtonHelp);
@@ -1165,6 +1224,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 
 	UpdateStatusText();
 	UpdateAuthButton();
+	UpdateTogglePasswordButton();
 	if (Btn_DeletePassword != none && Cmb_AdminPassword != none)
 		Btn_DeletePassword.bDisabled = (class'StringUtils'.static.Trim(Cmb_AdminPassword.GetValue()) == "");
 
@@ -1259,6 +1319,11 @@ function Notify(UWindowDialogControl C, byte E) {
 			AdminLoginFromUI();
 	} else if (E == DE_Click && C == Btn_DeletePassword) {
 		DeletePasswordFromUI();
+	} else if (E == DE_Click && C == Btn_TogglePasswordVisibility) {
+		if (Cmb_AdminPassword != none) {
+			Cmb_AdminPassword.ToggleMaskInput();
+			UpdateTogglePasswordButton();
+		}
 	}
 }
 
@@ -1326,6 +1391,10 @@ defaultproperties
 	AdminPasswordHelp="Enter password"
 	DeletePasswordButtonText="X"
 	DeletePasswordButtonHelp="Delete this password from saved history"
+	TogglePasswordShowText="Show"
+	TogglePasswordShowHelp="Reveal the saved passwords (use only when not streaming)"
+	TogglePasswordHideText="Hide"
+	TogglePasswordHideHelp="Mask the saved passwords"
 	LoginButtonText="Login"
 	LoginButtonHelp="Log in as admin"
 	LogoutButtonText="Logout"
