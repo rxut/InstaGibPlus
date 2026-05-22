@@ -1136,6 +1136,7 @@ function string IGPlus_NormalizeWeaponSettingKey(string Key) {
 	if (Key ~= "bEnhancedSplashIgnoreStationaryPawns") return "bEnhancedSplashIgnoreStationaryPawns";
 	if (Key ~= "SplashMaxDiffraction") return "SplashMaxDiffraction";
 	if (Key ~= "SplashMinDiffractionDistance") return "SplashMinDiffractionDistance";
+	if (Key ~= "SplashWraparoundRadiusScale") return "SplashWraparoundRadiusScale";
 	if (Key ~= "HeadHalfHeight") return "HeadHalfHeight";
 	if (Key ~= "HeadRadius") return "HeadRadius";
 	if (Key ~= "bEnablePingCompensation") return "bEnablePingCompensation";

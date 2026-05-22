@@ -1,4 +1,4 @@
-class IGPlus_WeaponSettingsContent extends UMenuPageWindow;
+﻿class IGPlus_WeaponSettingsContent extends UMenuPageWindow;
 
 enum EEditControlType {
 	ECT_Text,
@@ -59,6 +59,9 @@ var localized string SplashMaxDiffractionHelp;
 var IGPlus_EditControl Edit_SplashMinDiffractionDistance;
 var localized string SplashMinDiffractionDistanceText;
 var localized string SplashMinDiffractionDistanceHelp;
+var IGPlus_EditControl Edit_SplashWraparoundRadiusScale;
+var localized string SplashWraparoundRadiusScaleText;
+var localized string SplashWraparoundRadiusScaleHelp;
 
 var UWindowLabelControl Lbl_Global;
 var localized string GlobalText;
@@ -849,6 +852,7 @@ function SaveWeaponSettings() {
 	SaveWeaponSettingIfChanged(S, "bEnhancedSplashIgnoreStationaryPawns", BoolToString(Chk_bEnhancedSplashIgnoreStationaryPawns.bChecked));
 	SaveWeaponSettingIfChanged(S, "SplashMaxDiffraction", Edit_SplashMaxDiffraction.GetValue());
 	SaveWeaponSettingIfChanged(S, "SplashMinDiffractionDistance", Edit_SplashMinDiffractionDistance.GetValue());
+	SaveWeaponSettingIfChanged(S, "SplashWraparoundRadiusScale", Edit_SplashWraparoundRadiusScale.GetValue());
 	SaveWeaponSettingIfChanged(S, "HeadHalfHeight", Edit_HeadHalfHeight.GetValue());
 	SaveWeaponSettingIfChanged(S, "HeadRadius", Edit_HeadRadius.GetValue());
 	SaveWeaponSettingIfChanged(S, "bEnablePingCompensation", BoolToString(Chk_bEnablePingCompensation.bChecked));
@@ -1279,6 +1283,7 @@ function ConfigureFixedWidthCombo(IGPlus_ComboBox Cmb, Canvas C, float ControlWi
 function ConfigureResponsiveWeaponControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_SplashMaxDiffraction, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_SplashMinDiffractionDistance, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_SplashWraparoundRadiusScale, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_HeadHalfHeight, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_HeadRadius, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_PingCompensationMax, C, ControlWidth, 80);
@@ -1418,6 +1423,7 @@ function LoadWeaponSettings() {
 	Chk_bEnhancedSplashIgnoreStationaryPawns.bChecked = S.bEnhancedSplashIgnoreStationaryPawns;
 	Edit_SplashMaxDiffraction.SetValue(string(S.SplashMaxDiffraction));
 	Edit_SplashMinDiffractionDistance.SetValue(string(S.SplashMinDiffractionDistance));
+	Edit_SplashWraparoundRadiusScale.SetValue(string(S.SplashWraparoundRadiusScale));
 	Edit_HeadHalfHeight.SetValue(string(S.HeadHalfHeight));
 	Edit_HeadRadius.SetValue(string(S.HeadRadius));
 	Chk_bEnablePingCompensation.bChecked = S.bEnablePingCompensation;
@@ -1596,6 +1602,7 @@ function Created() {
 	Chk_bEnhancedSplashIgnoreStationaryPawns = CreateCheckbox(bEnhancedSplashIgnoreStationaryPawnsText, bEnhancedSplashIgnoreStationaryPawnsHelp);
 	Edit_SplashMaxDiffraction = CreateEdit(ECT_Real, SplashMaxDiffractionText, SplashMaxDiffractionHelp, 16, 80);
 	Edit_SplashMinDiffractionDistance = CreateEdit(ECT_Real, SplashMinDiffractionDistanceText, SplashMinDiffractionDistanceHelp, 16, 80);
+	Edit_SplashWraparoundRadiusScale = CreateEdit(ECT_Real, SplashWraparoundRadiusScaleText, SplashWraparoundRadiusScaleHelp, 16, 80);
 
 	Lbl_Global = CreateSeparator(GlobalText);
 	Edit_HeadHalfHeight = CreateEdit(ECT_Real, HeadHalfHeightText, HeadHalfHeightHelp, 16, 80);
@@ -1827,6 +1834,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bEnhancedSplashIgnoreStationaryPawns, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_SplashMaxDiffraction, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_SplashMinDiffractionDistance, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_SplashWraparoundRadiusScale, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Global, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_HeadHalfHeight, bShowSettings, WndWidth, Top);
@@ -2093,6 +2101,8 @@ defaultproperties
 	SplashMaxDiffractionHelp="Weapon setting: Splash Max Diffraction"
 	SplashMinDiffractionDistanceText="Splash Min Diffraction Distance"
 	SplashMinDiffractionDistanceHelp="Weapon setting: Splash Min Diffraction Distance"
+	SplashWraparoundRadiusScaleText="Splash Wraparound Radius Scale"
+	SplashWraparoundRadiusScaleHelp="Weapon setting: Splash Wraparound Radius Scale"
 
 	GlobalText="Global"
 	HeadHalfHeightText="Head Half Height"

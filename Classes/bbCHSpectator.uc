@@ -1195,6 +1195,7 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("bEnhancedSplashIgnoreStationaryPawns");
 	IGPlus_WeaponSendSetting("SplashMaxDiffraction");
 	IGPlus_WeaponSendSetting("SplashMinDiffractionDistance");
+	IGPlus_WeaponSendSetting("SplashWraparoundRadiusScale");
 	IGPlus_WeaponSendSetting("HeadHalfHeight");
 	IGPlus_WeaponSendSetting("HeadRadius");
 	IGPlus_WeaponSendSetting("bEnablePingCompensation");
