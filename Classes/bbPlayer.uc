@@ -2754,6 +2754,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local int V4AltPressIndex;
 	local int V4AltReleaseIndex;
 	local bool bV4HasShotPack;
+	local ST_UT_Eightball V4PackEightball;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -2942,9 +2943,19 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4AltPressIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_PRESS, IGPLUS_V4FLAG_ALT_PRESS_SHIFT);
 			V4AltReleaseIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_RELEASE, IGPLUS_V4FLAG_ALT_RELEASE_SHIFT);
 		}
-		if (bV4HasShotPack && bV4WeaponIsEightball) {
-			IGPlus_ServerRegisterEightballShotSeq(SM.V4ShotSeq & 255);
-			IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
+		if (bV4HasShotPack) {
+			// The pack may ride a move bound to another weapon (volley + fast
+			// switch within ~1 RTT); resolve the eightball it belongs to via
+			// the same binding rules and only ack packs we could apply.
+			if (!bV4WeaponIsEightball) {
+				V4PackEightball = ST_UT_Eightball(IGPlus_V4WeaponByIndex(IGPLUS_V4WEAPON_Eightball));
+				if (V4PackEightball != none && !IGPlus_V4ServerBindingValid(V4PackEightball))
+					V4PackEightball = none;
+			}
+			if (bV4WeaponIsEightball || V4PackEightball != none) {
+				IGPlus_ServerRegisterEightballShotSeq(SM.V4ShotSeq & 255);
+				IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
+			}
 		}
 	}
 
@@ -3142,6 +3153,22 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 			IGPlus_MoveAutonomous(SimStep, bRunActual, bDuckActual, bDoJump, DoDodge, SM.ClientAcceleration, DeltaRot / MergeCount);
 		}
+
+		// Shot-pack context retransmit: when the pack rides a move bound to
+		// another weapon (volley fired, then switched within ~1 RTT), give the
+		// eightball one no-input step so its own falling-edge self-heal can
+		// resolve a lost release. Inputs are all false, so the machine can
+		// only complete (or cancel, per its switch-away rules) a load it
+		// already tracks; the pack charge passes through the same server-side
+		// time cap as any release. Deliberately bypasses the fire window —
+		// this recovers a volley committed before the switch.
+		if (bV4HasShotPack && !bV4WeaponIsEightball && V4PackEightball != none)
+			V4PackEightball.V4ProcessStep(
+				SM.TimeStamp, ViewRotation, Location,
+				false, false, false, false,
+				true, true,
+				(SM.V4AuxData >>> 8) & 0x0F,
+				false, false);
 
 		if (IGPlus_DidTranslocate) {
 			TlocCounter = (TlocCounter + 1) & 3;
@@ -5850,13 +5877,11 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 					V4ShotChargeBits
 			)) {
 				V4Flags or_eq IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT;
-				V4AuxData = V4ShotSeq;
-				// Carrying a shotpack requires deterministic Eightball context even
-				// when the move's transient weapon-index snapshot is stale/zero.
-				MoveDeltaTime and_eq 0xFFFFFF00;
-				MoveDeltaTime or_eq 0x01;
-					MoveDeltaTime or_eq (IGPLUS_V4WEAPON_Eightball & 0x07) << 1;
-				MoveDeltaTime or_eq (V4ShotChargeBits & 0x0F) << 4;
+				// Self-contained pack: seq + charge ride in V4AuxData so the
+				// move's own binding/charge bits stay untouched. A pack must
+				// never hijack a move bound to another weapon (misrouted fire
+				// edges) or clobber a primary release's charge report.
+				V4AuxData = (V4ShotSeq & 0xFF) | ((V4ShotChargeBits & 0x0F) << 8);
 			}
 		}
 	}
