@@ -573,6 +573,7 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	local int BudgetLimit;
 	local int NumRockets;
 	local int MoveCharge;
+	local int TimeAllowedCharge;
 
 	NumRockets = V4CalculateCharge(V4PrimaryLoadElapsed);
 	BudgetLimit = Max(1, V4InternalBudget);
@@ -580,12 +581,17 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 
 	// Release/cancel edges should spend exactly what the move reported as
 	// loaded on that input step. Falling back to elapsed charge here can overshoot
-	// badly once the weapon is already idling or being thrown.
+	// badly once the weapon is already idling or being thrown. The report may
+	// only lower the count: cap it by the charge the accumulated load time
+	// allows (with a small slack for step quantization at load boundaries) so
+	// a hostile client cannot claim a full volley without loading it.
+	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + 0.06);
 	if (MoveCharge > 0)
-		return Min(Clamp(MoveCharge, 1, 6), BudgetLimit);
+		return Min(Min(Clamp(MoveCharge, 1, 6), TimeAllowedCharge), BudgetLimit);
 
 	if (V4PrimaryPredictedLoaded > 0)
 		NumRockets = Max(NumRockets, V4PrimaryPredictedLoaded);
+	NumRockets = Min(NumRockets, TimeAllowedCharge);
 
 	return Min(Clamp(NumRockets, 1, 6), BudgetLimit);
 }

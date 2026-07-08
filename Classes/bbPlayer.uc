@@ -74,6 +74,13 @@ var float zzGrappleTime;
 var float LastFireTimeStamp;
 var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
+// Server-side v4 binding invariants: weapon switched away from (grace window
+// for in-flight steps, move-timestamp domain) and the last move's held state
+// (fire continuity when switching to a weapon the v4 path does not drive).
+var Weapon IGPlus_V4PrevWeapon;
+var float IGPlus_V4PrevWeaponUntilTS;
+var bool IGPlus_LastFireEndHeld;
+var bool IGPlus_LastAltEndHeld;
 var Weapon zzKilledWithWeapon;
 var Pawn zzLastKilled;
 var vector zzLast10Positions[10];	// every 50ms for half a second of backtracking
@@ -2903,6 +2910,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		}
 	}
+	if (V4Weapon != none && !IGPlus_V4ServerBindingValid(V4Weapon))
+		V4Weapon = none;
 		bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 		bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
 		bV4MoveHasEightballInstant = SM.bUseV4 && SM.bDetReady && ST_UT_Eightball(V4Weapon) != none;
@@ -2945,6 +2954,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
 		}
 	}
+
+	IGPlus_LastFireEndHeld = bV4FireEndHeld;
+	IGPlus_LastAltEndHeld = bV4AltEndHeld;
 
 		bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 
@@ -4444,6 +4456,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			else
 				V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		}
+	if (V4Weapon != none && RemoteRole == ROLE_AutonomousProxy && !IGPlus_V4ServerBindingValid(V4Weapon))
+		V4Weapon = none;
 	bDetFallback = V4Weapon != none && I.bDetReady;
 	bEightballStrict =
 		IGPlus_IsV4StrictWeapon(V4Weapon)
@@ -4465,6 +4479,9 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			DodgeDir = DODGE_None;
 			DodgeClickTimer = DodgeClickTime;
 		}
+
+		IGPlus_LastFireEndHeld = I.bFire;
+		IGPlus_LastAltEndHeld = I.bAFir;
 
 			if (bDetFallback && Role == ROLE_Authority) {
 				IGPlus_V4ProcessWeaponStep(
@@ -4891,6 +4908,21 @@ simulated function bool IGPlus_V4EffectiveAltHeld() {
 		}
 		return none;
 	}
+
+// Hard server-side invariant for deterministic dispatch: the move's weapon
+// binding must be the equipped (or incoming pending) weapon, or the weapon
+// switched away from within a short grace window so in-flight steps of the
+// pre-switch weapon still land. Everything else (readiness hints, switch
+// guards) is soft timing; this is the boundary a client cannot cross.
+function bool IGPlus_V4ServerBindingValid(Weapon W) {
+	if (W == none)
+		return false;
+	if (W.Owner != self)
+		return false;
+	if (W == Weapon || W == PendingWeapon)
+		return true;
+	return W == IGPlus_V4PrevWeapon && CurrentTimeStamp <= IGPlus_V4PrevWeaponUntilTS;
+}
 
 simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
 	if (W == none)
@@ -12066,7 +12098,28 @@ simulated function ChangedWeapon() {
 		IGPlus_MarkDeterministicSwitchGuard();
 		ClientPutDown(none, PendingWeapon);
 	}
+
+	// Grace window for deterministic dispatch: in-flight steps may still
+	// target the weapon we are switching away from (move-timestamp domain).
+	if (Role == ROLE_Authority && Weapon != None && Weapon != PendingWeapon) {
+		IGPlus_V4PrevWeapon = Weapon;
+		IGPlus_V4PrevWeaponUntilTS = CurrentTimeStamp + 0.25;
+	}
+
 	Super.ChangedWeapon();
+
+	// Keep bFire/bAltFire continuous when switching to a weapon the v4 path
+	// does not drive: v4-handled steps clear the flags, so without this the
+	// held button looks like a fresh press edge on the first legacy move and
+	// fires the new weapon mid-select (and mistimes the Translocator
+	// dual-button check).
+	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone
+		&& RemoteRole == ROLE_AutonomousProxy && !IGPlus_V4SupportsWeapon(Weapon)) {
+		if (IGPlus_LastFireEndHeld)
+			bFire = 1;
+		if (IGPlus_LastAltEndHeld)
+			bAltFire = 1;
+	}
 }
 
 function ClientPutDown(Weapon Current, Weapon Next)

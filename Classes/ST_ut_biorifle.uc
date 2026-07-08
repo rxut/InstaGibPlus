@@ -19,6 +19,7 @@ var bool bV4WasAltHeld;
 var int V4CachedChargeData;
 var int V4AltAmmoSpent;
 var int V4ClientPredictedAmmo;
+var float V4AltChargeStartTS;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -156,8 +157,11 @@ simulated function bool V4ProcessStep(
 	if (bV4WasAltHeld) {
 		if (bServerSide) {
 			// While holding alt, consume ammo in the same cadence as stock Bio
-			// (1 at start + 1 per charge step), driven by client charge data.
-			TargetAmmoSpent = 1 + Clamp(V4ChargeData, 0, 8);
+			// (1 at start + 1 per 0.5s charge step). Charge is derived from the
+			// server-tracked hold duration; the client-reported charge may only
+			// lower it (early-release intent), never raise it.
+			TargetAmmoSpent = 1 + Clamp(int((StepTS - V4AltChargeStartTS) / 0.5), 0, 8);
+			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(V4ChargeData, 0, 8));
 			while (V4AltAmmoSpent < TargetAmmoSpent
 				&& AmmoType != none
 				&& AmmoType.AmmoAmount > 0) {
@@ -190,6 +194,7 @@ simulated function bool V4ProcessStep(
 
 	// Alt rising edge: start charging
 	if (bWantsAlt) {
+		V4AltChargeStartTS = StepTS;
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 				AmmoType.UseAmmo(1);
