@@ -448,8 +448,6 @@ var float IGPlus_LastInputSendTime;
 var float MinDodgeClickTime;
 var IGPlus_InputLogFile IGPlus_InputLogFile;
 var bool bTraceInput;
-var bool IGPlus_SuppressFireHeldUntilRelease;
-var bool IGPlus_SuppressAltHeldUntilRelease;
 
 struct IGPlus_EightballShotPendingEntry {
 	var bool bActive;
@@ -2792,24 +2790,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (DodgeMove > DODGE_None && DodgeMove < DODGE_Active)
 		ClientDebugMessage("Received Dodge"@DodgeMove@SM.TimeStamp);
 
-	if (IGPlus_SuppressFireHeldUntilRelease) {
-		if (bFired) {
-			bFired = false;
-			bForceFire = false;
-			FireIndex = -1;
-		}
-		IGPlus_SuppressFireHeldUntilRelease = false;
-	}
-
-	if (IGPlus_SuppressAltHeldUntilRelease) {
-		if (bAltFired) {
-			bAltFired = false;
-			bForceAltFire = false;
-			AltFireIndex = -1;
-		}
-		IGPlus_SuppressAltHeldUntilRelease = false;
-	}
-
 	if (ServerTimeStamp == 0.0) {
 		ServerDeltaTime = SM.MoveDeltaTime;
 	} else {
@@ -4433,22 +4413,6 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	bInputForceFire = I.bForceFireTap;
 	bInputForceAltFire = I.bForceAltTap;
 
-	if (IGPlus_SuppressFireHeldUntilRelease) {
-		if (bInputFireHeld) {
-			bInputFireHeld = false;
-			bInputForceFire = false;
-		}
-		IGPlus_SuppressFireHeldUntilRelease = false;
-	}
-
-	if (IGPlus_SuppressAltHeldUntilRelease) {
-		if (bInputAltHeld) {
-			bInputAltHeld = false;
-			bInputForceAltFire = false;
-		}
-		IGPlus_SuppressAltHeldUntilRelease = false;
-	}
-
 		V4Weapon = none;
 		if (I.bDetReady) {
 			if (I.V4WeaponIndex != IGPLUS_V4WEAPON_None)
@@ -4874,18 +4838,10 @@ function IGPlus_ServerRegisterEightballShotSeq(int Seq) {
 // Keep this bound to physical held input only. Eightball shot-time pulses
 // carry queued refire intent explicitly.
 simulated function bool IGPlus_V4EffectiveFireHeld() {
-	if (IGPlus_SuppressFireHeldUntilRelease) {
-		IGPlus_SuppressFireHeldUntilRelease = false;
-		return false;
-	}
 	return bFire != 0;
 }
 
 simulated function bool IGPlus_V4EffectiveAltHeld() {
-	if (IGPlus_SuppressAltHeldUntilRelease) {
-		IGPlus_SuppressAltHeldUntilRelease = false;
-		return false;
-	}
 	return bAltFire != 0;
 }
 
@@ -5300,9 +5256,13 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 			if (PendMove.bV4FireEndHeld) {
 				if (PendMove.V4FireReleaseIndex < 0)
 					PendMove.V4FireReleaseIndex = EdgeIndex;
+				else
+					bForcePacketSplit = true; // second release can't be encoded in this move
 			} else {
 				if (PendMove.V4FirePressIndex < 0)
 					PendMove.V4FirePressIndex = EdgeIndex;
+				else
+					bForcePacketSplit = true; // second press can't be encoded in this move
 			}
 			PendMove.bV4FireEndHeld = bCurrentFireHeld;
 		}
@@ -5311,9 +5271,13 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 			if (PendMove.bV4AltEndHeld) {
 				if (PendMove.V4AltReleaseIndex < 0)
 					PendMove.V4AltReleaseIndex = EdgeIndex;
+				else
+					bForcePacketSplit = true;
 			} else {
 				if (PendMove.V4AltPressIndex < 0)
 					PendMove.V4AltPressIndex = EdgeIndex;
+				else
+					bForcePacketSplit = true;
 			}
 			PendMove.bV4AltEndHeld = bCurrentAltHeld;
 		}
@@ -5867,28 +5831,15 @@ simulated function bool xxUsingDefaultWeapon()
 
 exec function ThrowWeapon()
 {
-	if( Level.NetMode == NM_Client ) {
-		IGPlus_MarkDeterministicSwitchGuard();
-		bForcePacketSplit = true;
-		IGPlus_SuppressFireHeldUntilRelease = (bFire != 0);
-		IGPlus_SuppressAltHeldUntilRelease = (bAltFire != 0);
-		bFire = 0;
-		bAltFire = 0;
-		bJustFired = false;
-		bJustAltFired = false;
-		return;
-	}
-
 	if( Weapon==None || (Weapon.Class==Level.Game.BaseMutator.MutatedDefaultWeapon())
 		|| !Weapon.bCanThrow || (IGPlus_UseFastWeaponSwitch == false && Weapon.IsInState('Idle') == false) )
 		return;
 
-	// Prevent stale deterministic fire intent from leaking to a different
-	// weapon immediately after toss/switch.
+	// Stale deterministic fire intent cannot leak to another weapon: dispatch
+	// requires the equipped/grace weapon binding, and the switch guard covers
+	// the toss itself. Held fire resuming on the next weapon is stock behavior.
 	IGPlus_MarkDeterministicSwitchGuard();
 	bForcePacketSplit = true;
-	IGPlus_SuppressFireHeldUntilRelease = (bFire != 0);
-	IGPlus_SuppressAltHeldUntilRelease = (bAltFire != 0);
 	bFire = 0;
 	bAltFire = 0;
 	bJustFired = false;
