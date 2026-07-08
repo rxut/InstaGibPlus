@@ -10935,6 +10935,14 @@ simulated function ChangedWeapon() {
 			if (IGPlus_ClientAltFireHeld && IsExplicitAltFireWeapon())
 				TW.bForceAltFire = true;
 		}
+
+		// Keep bFire/bAltFire continuous when leaving an explicit-fire weapon, so the unmask doesn't register as a fresh press
+		if (RemoteRole == ROLE_AutonomousProxy) {
+			if (IGPlus_ClientFireHeld && !IsExplicitFireWeapon())
+				bFire = 1;
+			if (IGPlus_ClientAltFireHeld && !IsExplicitAltFireWeapon())
+				bAltFire = 1;
+		}
 	}
 }
 
