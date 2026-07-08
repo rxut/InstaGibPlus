@@ -2804,7 +2804,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	bV4HasShotPack = SM.bUseV4 && ((SM.V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0);
 	if (bWasPaused == false && IGPlus_SkipMovesUntilNextTick == false) {
-		if (!bV4HasShotPack && IGPlus_OldServerMove(SM.TimeStamp, SM.OldMoveData1, SM.OldMoveData2)) {
+		// Old-move data is populated on shot-pack moves too (the pack rides in
+		// V4AuxData), so movement-loss recovery stays active during volleys.
+		if (IGPlus_OldServerMove(SM.TimeStamp, SM.OldMoveData1, SM.OldMoveData2)) {
 			xxFakeCAP(CurrentTimeStamp);
 			LastCAPTime = Level.TimeSeconds;
 		}
