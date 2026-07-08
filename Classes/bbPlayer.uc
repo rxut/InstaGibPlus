@@ -415,6 +415,10 @@ var IGPlus_FlagSprite IGPlus_TeamFlagSprite[4];
 var bool IGPlus_EnableDualButtonSwitch;
 var bool IGPlus_UseFastWeaponSwitch;
 
+// Raw client fire flags, tracked even where explicit-fire weapons force bFire/bAltFire to 0
+var bool IGPlus_ClientFireHeld;
+var bool IGPlus_ClientAltFireHeld;
+
 var bool IGPlus_EnableInputReplication;
 var bool IGPlus_EnableSnapshotInterpolation;
 var bool IGPlus_PressedJumpSave;
@@ -2895,6 +2899,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				DoDodge = DODGE_None;
 
 			if (MoveIndex == FireIndex) {
+				IGPlus_ClientFireHeld = bFired;
 				if (!IsExplicitFireWeapon()) {
 					if (bFired) {
 						if (bForceFire && (Weapon != None))
@@ -2907,10 +2912,14 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					}
 				} else {
 					bFire = 0;
+					// Latch fire pressed during the select so Active.Begin still sends SendFire
+					if (bFired && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+						TournamentWeapon(Weapon).bForceFire = true;
 				}
 			}
 
 			if (MoveIndex == AltFireIndex) {
+				IGPlus_ClientAltFireHeld = bAltFired;
 				if (!IsExplicitAltFireWeapon()) {
 					if (bAltFired) {
 						if (bForceAltFire && (Weapon != None))
@@ -2923,6 +2932,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					}
 				} else {
 					bAltFire = 0;
+					if (bAltFired && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+						TournamentWeapon(Weapon).bForceAltFire = true;
 				}
 			}
 
@@ -3274,6 +3285,8 @@ function xxServerMoveDead(
 		bClientDead = true;
 		bFire = 0;
 		bAltFire = 0;
+		IGPlus_ClientFireHeld = false;
+		IGPlus_ClientAltFireHeld = false;
 	}
 
 	Acceleration = vect(0,0,0);
@@ -4295,6 +4308,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		}
 
 		// handle firing and alt-firing on server
+		IGPlus_ClientFireHeld = I.bFire;
+		IGPlus_ClientAltFireHeld = I.bAFir;
 		if (!IsExplicitFireWeapon()) {
 			if (I.bFire) {
 				if (bFire == 0) {
@@ -4309,6 +4324,9 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			}
 		} else {
 			bFire = 0;
+			// Latch fire pressed during the select so Active.Begin still sends SendFire
+			if (I.bFire && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+				TournamentWeapon(Weapon).bForceFire = true;
 		}
 
 		if (!IsExplicitAltFireWeapon()) {
@@ -4325,6 +4343,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			}
 		} else {
 			bAltFire = 0;
+			if (I.bAFir && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+				TournamentWeapon(Weapon).bForceAltFire = true;
 		}
 	} else if (RemoteRole == ROLE_Authority) {
 		// this assumes that you always replay up until the present, otherwise
@@ -10897,11 +10917,25 @@ exec function NextWeapon()
 }
 
 simulated function ChangedWeapon() {
+	local TournamentWeapon TW;
+
 	if (Weapon != None && IGPlus_UseFastWeaponSwitch) {
 		Weapon.GotoState('');
 		ClientPutDown(none, PendingWeapon);
 	}
 	Super.ChangedWeapon();
+
+	// Explicit-fire weapons mask bFire/bAltFire to 0, so seed bForceFire from the raw
+	// flags to keep the SendFire block in TournamentWeapon.Active.Begin working.
+	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone) {
+		TW = TournamentWeapon(Weapon);
+		if (TW != None) {
+			if (IGPlus_ClientFireHeld && IsExplicitFireWeapon())
+				TW.bForceFire = true;
+			if (IGPlus_ClientAltFireHeld && IsExplicitAltFireWeapon())
+				TW.bForceAltFire = true;
+		}
+	}
 }
 
 exec function Say(string Msg) {
