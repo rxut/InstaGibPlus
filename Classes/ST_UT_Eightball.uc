@@ -333,7 +333,9 @@ simulated function V4EnsureClientLoadState(bool bAltLoad) {
 
 replication
 {
-	unreliable if(Role == ROLE_Authority)
+	// Reliable: a lost confirm leaves client rocket-count/load visuals
+	// diverged until the next volley; one RPC per volley is cheap.
+	reliable if(Role == ROLE_Authority)
 		ClientV4PrimaryShotConfirm;
 }
 
@@ -930,9 +932,13 @@ function Finish()
 		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
 		{
 			Pawn(Owner).StopFiring();
-			Pawn(Owner).SwitchToBestWeapon();
+			// Never clobber a weapon choice the player already made
+			if (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self)
+				Pawn(Owner).SwitchToBestWeapon();
 			if (bChangeWeapon)
 				GotoState('DownWeapon');
+			else
+				GotoState('Idle');
 		}
 		else
 			GotoState('Idle');
@@ -1411,8 +1417,9 @@ state Idle
 		if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
 		{
 			bPointing = false;
-			
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
+
+			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0)
+				&& (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self) )
 				Pawn(Owner).SwitchToBestWeapon();
 
 			Disable('AnimEnd');
@@ -1421,10 +1428,11 @@ state Idle
 		else
 		{
 			bPointing = False;
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
+			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0)
+				&& (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self) )
 				Pawn(Owner).SwitchToBestWeapon();
 			if ( Pawn(Owner).bFire != 0 ) Fire(0.0);
-			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);	
+			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);
 			Disable('AnimEnd');
 			PlayIdleAnim();
 		}
@@ -1447,7 +1455,8 @@ Begin:
 		if (Pawn(Owner).bAltFire!=0) AltFire(0.0);
 	}
 	bPointing=False;
-	if (AmmoType.AmmoAmount<=0) 
+	if (AmmoType.AmmoAmount<=0
+		&& (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self))
 		Pawn(Owner).SwitchToBestWeapon();
 	PlayIdleAnim();
 	OldTarget = CheckTarget();

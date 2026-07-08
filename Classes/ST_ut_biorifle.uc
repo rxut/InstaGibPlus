@@ -316,9 +316,13 @@ function Finish()
 		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
 		{
 			Pawn(Owner).StopFiring();
-			Pawn(Owner).SwitchToBestWeapon();
+			// Never clobber a weapon choice the player already made
+			if (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self)
+				Pawn(Owner).SwitchToBestWeapon();
 			if (bChangeWeapon)
 				GotoState('DownWeapon');
+			else
+				GotoState('Idle');
 		}
 		else
 			GotoState('Idle');
