@@ -81,6 +81,12 @@ var Weapon IGPlus_V4PrevWeapon;
 var float IGPlus_V4PrevWeaponUntilTS;
 var bool IGPlus_LastFireEndHeld;
 var bool IGPlus_LastAltEndHeld;
+// v5 fire-window state (server-side, move-timestamp domain): bring-up gate
+// for a weapon entering the valid-binding set, plus PendingWeapon tracking so
+// switch initiation is observable from move processing.
+var float IGPlus_V4WeaponGateTS;
+var Weapon IGPlus_V4PendingSeen;
+var float IGPlus_V4PendingSeenTS;
 var Weapon zzKilledWithWeapon;
 var Pawn zzLastKilled;
 var vector zzLast10Positions[10];	// every 50ms for half a second of backtracking
@@ -2880,6 +2886,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	ViewRotation.Roll = 0;
 	SetRotation(Rot);
 
+	IGPlus_V4TrackPendingWeapon(CurrentTimeStamp);
+
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	V4Weapon = none;
 	if (SM.bDetReady) {
@@ -4449,6 +4457,9 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		IGPlus_LastFireEndHeld = I.bFire;
 		IGPlus_LastAltEndHeld = I.bAFir;
 
+		if (Role == ROLE_Authority)
+			IGPlus_V4TrackPendingWeapon(I.TimeStamp);
+
 			if (bDetFallback && Role == ROLE_Authority) {
 				IGPlus_V4ProcessWeaponStep(
 					V4Weapon,
@@ -4882,6 +4893,52 @@ function bool IGPlus_V4ServerBindingValid(Weapon W) {
 	return W == IGPlus_V4PrevWeapon && CurrentTimeStamp <= IGPlus_V4PrevWeaponUntilTS;
 }
 
+// Bring-up gate: how long after entering the valid-binding set a weapon must
+// wait (move-timestamp domain) before deterministic dispatch runs its steps.
+// Approximates the honest-client floor: the client-side deterministic switch
+// guard (0.12s) under fast switch, and a conservative fraction of the select
+// anim otherwise. Exact per-weapon select timing arrives with move-stream
+// switching (roadmap: weapon switching in the input stream).
+simulated function float IGPlus_V4EntryGateSeconds() {
+	if (IGPlus_UseFastWeaponSwitch)
+		return 0.12;
+	return 0.25;
+}
+
+// Observe PendingWeapon transitions from move processing (switch RPCs land
+// between moves, so this is the earliest the move timeline can see them).
+function IGPlus_V4TrackPendingWeapon(float NowTS) {
+	if (PendingWeapon == IGPlus_V4PendingSeen)
+		return;
+	// A canceled/replaced switch re-arms the equipped weapon's bring-up so
+	// toggling PendingWeapon cannot reopen the fire window for free.
+	if (IGPlus_V4PendingSeen != none && PendingWeapon == none)
+		IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, NowTS + IGPlus_V4EntryGateSeconds());
+	IGPlus_V4PendingSeen = PendingWeapon;
+	if (PendingWeapon != none && PendingWeapon != Weapon)
+		IGPlus_V4PendingSeenTS = NowTS;
+}
+
+// Server-side fire window: WHEN the bound weapon may run deterministic steps,
+// complementing IGPlus_V4ServerBindingValid (WHICH weapon may run). A closed
+// window skips dispatch entirely — the same dormancy an honest client's
+// bDetReady=false produces around switches — so no input edges are
+// synthesized and the machines self-heal exactly like after a lost move.
+simulated function bool IGPlus_V4FireWindowOpen(Weapon W, float StepTS) {
+	if (W == none)
+		return false;
+	if (W == Weapon) {
+		// Bring-up gate after the switch completed (or was canceled).
+		return StepTS >= IGPlus_V4WeaponGateTS;
+	}
+	if (W == PendingWeapon) {
+		// Bring-up gate from the moment the switch became observable.
+		return StepTS >= IGPlus_V4PendingSeenTS + IGPlus_V4EntryGateSeconds();
+	}
+	// Grace-window weapon: binding validity already bounds arrival time.
+	return true;
+}
+
 simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
 	if (W == none)
 		return false;
@@ -4976,6 +5033,12 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 
 	if (W == none)
 		return false;
+
+	// Hard server-side timing invariant, enforced at the single dispatch
+	// funnel: a weapon whose fire window is closed gets no deterministic
+	// steps (and legacy fire stays suppressed via the true return).
+	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS))
+		return true;
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	if (WImpBase != none)
@@ -12072,6 +12135,16 @@ simulated function ChangedWeapon() {
 			bFire = 1;
 		if (IGPlus_LastAltEndHeld)
 			bAltFire = 1;
+	}
+
+	// Bring-up gate for the incoming weapon (v5 fire-window invariant): the
+	// switch just completed, so deterministic dispatch may not fire it before
+	// the honest-client bring-up floor has elapsed in move time.
+	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone
+		&& RemoteRole == ROLE_AutonomousProxy) {
+		if (IGPlus_V4SupportsWeapon(Weapon))
+			IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, CurrentTimeStamp + IGPlus_V4EntryGateSeconds());
+		IGPlus_V4PendingSeen = PendingWeapon;
 	}
 }
 
