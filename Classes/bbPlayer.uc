@@ -4908,6 +4908,19 @@ simulated function float IGPlus_V4EntryGateSeconds() {
 	return 0.25;
 }
 
+// Drop all switch-related v4 trust state. Called on death and respawn so no
+// binding grace, bring-up gate, or held-fire snapshot leaks into a new life.
+function IGPlus_V4ClearSwitchTrustState() {
+	IGPlus_V4PrevWeapon = none;
+	IGPlus_V4PrevWeaponUntilTS = 0;
+	IGPlus_V4PrevWeaponStepTS = 0;
+	IGPlus_V4WeaponGateTS = 0;
+	IGPlus_V4PendingSeen = none;
+	IGPlus_V4PendingSeenTS = 0;
+	IGPlus_LastFireEndHeld = false;
+	IGPlus_LastAltEndHeld = false;
+}
+
 // Observe PendingWeapon transitions from move processing (switch RPCs land
 // between moves, so this is the earliest the move timeline can see them).
 function IGPlus_V4TrackPendingWeapon(float NowTS) {
@@ -7434,6 +7447,7 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 			A.Trigger( Self, Killer );
 	if (Weapon.IsA('TournamentWeapon'))
 		TournamentWeapon(Weapon).bCanClientFire = false;
+	IGPlus_V4ClearSwitchTrustState();
 	Velocity.Z *= 1.3;
 	if (Gibbed(DamageType)) {
 		SpawnGibbedCarcass();
@@ -8637,6 +8651,7 @@ state Dying
 
 			IGPlus_ClientReStart(Physics, Location, Rotation);
 
+			IGPlus_V4ClearSwitchTrustState();
 			ChangedWeapon();
 			zzSpawnedTime = Level.TimeSeconds;
 		}
