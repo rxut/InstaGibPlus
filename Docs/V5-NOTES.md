@@ -26,9 +26,11 @@ boundary, loss robustness, and a few stock-parity details.
   switched away from within a 0.25s grace window (move-timestamp domain,
   recorded in `ChangedWeapon`). Previously `bDetReady` let a client fire any
   owned, holstered v4 weapon and bypass all switch/readiness guards. The
-  `bStepReadyHint` bypass inside the weapons is now safe because these hard
-  invariants run before dispatch; the hint only bridges soft timing skew
-  (select-anim completion, switch-guard timer) for honest clients.
+  binding constrains *which* weapon a move may drive; the fire-window
+  invariants from the second hardening pass (below) constrain *when* — only
+  with both is the `bStepReadyHint` bypass inside the weapons reduced to
+  bridging soft timing skew (select-anim completion, switch-guard timer)
+  for honest clients.
 
 ### Robustness
 - **`ClientV4PrimaryShotConfirm` is reliable.** It was `unreliable`; one lost
@@ -78,19 +80,82 @@ boundary, loss robustness, and a few stock-parity details.
   from their own `bV4Was*Held` state vs the next move's start-held bit, so a
   lost release fires at the next move's first step with server-accumulated
   charge. The eightball shot-pack layer is the charge/context retransmit for
-  exactly that case (it rewrites the packed DetReady/weapon-index/charge
-  bits on later moves); with the server-side time cap it can only lower the
-  count, so the layers now compose safely.
+  exactly that case; since the second hardening pass it rides self-contained
+  in `V4AuxData` (it no longer rewrites the move's DetReady/weapon-index/
+  charge bits), and when it lands on a move bound to another weapon the
+  server feeds the eightball one no-input recovery step instead. With the
+  server-side time cap it can only lower the count, so the layers compose
+  safely.
 - **Server-side `FRand()` in multi-grenade/flak spread**: server-authoritative
   cosmetics; the client does not predict those trajectories.
+
+## Second hardening pass (July 2026)
+
+An independent review of the first pass confirmed all of its claims except
+one: "the `bStepReadyHint` bypass is now safe" was overstated. The binding
+invariant constrained which weapon a move may drive but not when — the hint
+still skipped the switch guard and the equipped-weapon check for the
+`PendingWeapon`/grace weapons the binding deliberately admits, leaving a
+modified client zero-bring-up switch-fire and sustained two-weapon fire via
+ping-ponged switches. This pass closes that, plus the honest-client edge
+cases the review surfaced.
+
+### Fire-window invariants (server-side, move-timestamp domain)
+- **Bring-up gate** (`bbPlayer.IGPlus_V4FireWindowOpen`): a weapon entering
+  the valid-binding set (equipped via `ChangedWeapon`, or pending as first
+  observed from move processing) runs no deterministic steps until 0.12s
+  (fast switch — the client-side guard floor) / 0.25s (normal — conservative
+  fraction of any select anim) later. Canceling a pending switch re-arms the
+  equipped weapon's gate, so toggling `PendingWeapon` is never free.
+- **Switch exclusivity**: initiating a switch closes the equipped weapon's
+  window 0.12s after the `PendingWeapon` change is observable in the move
+  stream, and the prev-weapon grace now accepts only steps *timestamped* at
+  or before (about) the switch — the in-flight case it exists for. At any
+  step timestamp, at most one weapon of a switch pair has an open window.
+- A closed window skips dispatch exactly like the dormancy an honest
+  client's `bDetReady=false` produces around switches: no edges are
+  synthesized, machines self-heal as after a lost move. Enforced once, at
+  the `IGPlus_V4ProcessWeaponStep` funnel.
+- **Residual bound**: a modified client can still alternate two weapons at
+  the gate cadence — approximately what an honest player achieves under
+  fast weapon switch, but faster than honest under normal switch settings
+  (the server cannot yet know exact per-weapon select time; that lands with
+  move-stream switching, roadmap item 3).
+- **Lifecycle**: all switch trust state (grace, gates, pending tracking,
+  held-fire snapshot) is cleared on death and respawn. The stale held-fire
+  snapshot could previously restore `bFire=1` on the respawn
+  `ChangedWeapon` after the player had already released while dead.
+
+### Honest-client fixes
+- **Shot pack self-contained** (`V4AuxData` bits 0-7 seq, 8-11 charge): the
+  pack no longer rewrites the carrying move's DetReady/weapon-index/charge
+  bits. That rewrite hijacked moves bound to another weapon for ~1 RTT
+  after a volley (misrouting their fire edges into the eightball machine)
+  and clobbered a primary release's charge report landing in the same
+  window (under-firing it). Lost-release recovery on a move bound to
+  another weapon now runs as one no-input eightball step; packs are only
+  acked when applicable.
+- **Release-cap slack scales with the sub-step** (`FMax(0.06s, step
+  delta)`): under a lag hitch or the coarse 469 sub-step path, the fixed
+  60ms slack could shave a rocket off an honest volley when the release
+  landed on a boundary lagging the client's true load time by a whole step.
+- **Bio and shock guarded `Idle`**: the out-of-ammo auto-switch guard in
+  `Finish()` was only backed by a pending-aware `Idle` on flak, ripper, and
+  eightball. Bio (inheriting `Engine.Weapon.Idle`) re-clobbered the manual
+  choice from the inherited `Begin` label; shock could leave a pending
+  switch sitting in Idle with fast switch off. Both now bounce pending
+  switches to `DownWeapon` in `BeginState`, like flak/ripper.
 
 ## Deliberately deferred (roadmap, in suggested order)
 1. **Collapse the mode matrix.** `bDetReady` is still a per-move client
    assertion selecting between deterministic / fallback / strict handling.
-   With the binding invariants it is no longer exploitable, but the
-   legacy/fallback paths triple the test surface. Target: negotiate v4
-   support once per session, run supported weapons deterministically always,
-   delete the fallback paths.
+   With the binding and fire-window invariants it is no longer exploitable,
+   but the legacy/fallback paths triple the test surface. Target: negotiate
+   once per session, keyed on server policy — rewind ping compensation on
+   means v5 deterministic always for supported weapons; ping comp off means
+   the legacy base ServerMove on standard server tick; NewNet client-
+   authoritative weapons are a separate system. Then delete the per-move
+   trust bits and fallback paths.
 2. **Per-tick client prediction.** The client predicts once per *sent* move
    with end-of-move state while the server replays per sub-step; a mid-move
    press fires server-side with an interpolated view the client never
@@ -102,7 +167,9 @@ boundary, loss robustness, and a few stock-parity details.
    `Level.TimeSeconds`) lives, and it is evaluated at different absolute
    times on client and server. A desired-weapon field per move (server
    switches at move-time, client predicts) would eliminate the guard class
-   entirely, the same way the edge timeline eliminated the SendFire class.
+   entirely, the same way the edge timeline eliminated the SendFire class —
+   and would make the bring-up gates exact (per-weapon select time in move
+   time) instead of a conservative floor.
 4. **Replay-based tests.** The deterministic machines are pure functions of
    input timelines; a `IGPlus_TestCommandlet` harness feeding recorded
    timelines and asserting shot timestamps/counts would lock in stock parity
@@ -122,3 +189,12 @@ boundary, loss robustness, and a few stock-parity details.
 - Double-tap fire faster than one net update (both shots register).
 - Rapid A↔B↔A switch spam while holding fire (binding grace: no eaten
   shots, no shots from holstered weapons).
+- Fire immediately after every kind of switch completion, fast switch on
+  and off (bring-up gate: first shot lands at the honest floor, none eaten).
+- Rocket volley → instant switch → fire the new weapon, on a lossy
+  connection (self-contained pack: no misrouted edges, no under-fired
+  volley, recovery volley still lands).
+- Rocket release during a simulated lag spike (sub-step slack: full count).
+- Run bio and shock dry with a manual switch pending, fast switch off
+  (guarded Idle: the chosen weapon comes up, no auto-switch override).
+- Die while holding fire, release while dead, respawn (no phantom shot).
