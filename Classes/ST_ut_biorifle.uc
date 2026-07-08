@@ -473,6 +473,22 @@ simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
 	}
 }
 
+// Idle override: the Begin label inherited from Engine.Weapon.Idle calls
+// SwitchToBestWeapon unconditionally when out of ammo, clobbering a manual
+// weapon choice the guarded Finish() just preserved. Hand pending switches
+// to DownWeapon before the label can run (same pattern as flak/ripper).
+state Idle
+{
+	function BeginState()
+	{
+		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
+		{
+			GotoState('DownWeapon');
+			return;
+		}
+	}
+}
+
 state ClientAltFiring
 {
 	simulated function Tick(float DeltaTime)

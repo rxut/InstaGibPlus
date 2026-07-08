@@ -736,6 +736,24 @@ simulated function PlayAltFiring()
 	LoopAnim('Fire2', 0.4 + 0.4 * FireAdjust, 0.05);
 }
 
+// Idle override: the Begin label inherited from Engine.Weapon.Idle calls
+// SwitchToBestWeapon unconditionally when out of ammo, clobbering a manual
+// weapon choice the guarded Finish() just preserved. Hand pending switches
+// to DownWeapon first (same pattern as flak/ripper); stock ShockRifle.Idle
+// BeginState (idle timer, held-fire re-checks) is preserved via Super.
+state Idle
+{
+	function BeginState()
+	{
+		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
+		{
+			GotoState('DownWeapon');
+			return;
+		}
+		Super.BeginState();
+	}
+}
+
 state ClientFiring {
 
 	simulated function bool ClientFire(float Value) {
