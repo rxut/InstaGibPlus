@@ -87,6 +87,9 @@ var bool IGPlus_LastAltEndHeld;
 var float IGPlus_V4WeaponGateTS;
 var Weapon IGPlus_V4PendingSeen;
 var float IGPlus_V4PendingSeenTS;
+// Step-time close for the grace weapon: after a switch, the weapon switched
+// away from may only run steps timestamped before (about) the switch itself.
+var float IGPlus_V4PrevWeaponStepTS;
 var Weapon zzKilledWithWeapon;
 var Pawn zzLastKilled;
 var vector zzLast10Positions[10];	// every 50ms for half a second of backtracking
@@ -4929,14 +4932,28 @@ simulated function bool IGPlus_V4FireWindowOpen(Weapon W, float StepTS) {
 		return false;
 	if (W == Weapon) {
 		// Bring-up gate after the switch completed (or was canceled).
-		return StepTS >= IGPlus_V4WeaponGateTS;
+		if (StepTS < IGPlus_V4WeaponGateTS)
+			return false;
+		// Initiating a switch closes the equipped weapon's window (stock puts
+		// the weapon down); 0.12s covers in-flight steps around the moment
+		// the switch became observable in the move stream.
+		if (PendingWeapon != none && PendingWeapon != W
+			&& StepTS > IGPlus_V4PendingSeenTS + 0.12)
+			return false;
+		return true;
 	}
 	if (W == PendingWeapon) {
 		// Bring-up gate from the moment the switch became observable.
 		return StepTS >= IGPlus_V4PendingSeenTS + IGPlus_V4EntryGateSeconds();
 	}
-	// Grace-window weapon: binding validity already bounds arrival time.
-	return true;
+	if (W == IGPlus_V4PrevWeapon) {
+		// Grace covers in-flight pre-switch steps only: their timestamps sit
+		// at or before the switch. Freshly-timestamped steps bound to the
+		// old weapon would otherwise overlap the new weapon's window.
+		return StepTS < IGPlus_V4PrevWeaponStepTS;
+	}
+	// Unreachable after IGPlus_V4ServerBindingValid; fail closed.
+	return false;
 }
 
 simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
@@ -12120,6 +12137,10 @@ simulated function ChangedWeapon() {
 	if (Role == ROLE_Authority && Weapon != None && Weapon != PendingWeapon) {
 		IGPlus_V4PrevWeapon = Weapon;
 		IGPlus_V4PrevWeaponUntilTS = CurrentTimeStamp + 0.25;
+		// In-flight steps were generated before the client's own switch, so
+		// their timestamps sit at or before the switch; 0.12s absorbs
+		// RPC-vs-move reordering jitter without reopening the window.
+		IGPlus_V4PrevWeaponStepTS = CurrentTimeStamp + 0.12;
 	}
 
 	Super.ChangedWeapon();
