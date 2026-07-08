@@ -22,6 +22,7 @@ var float V4CooldownRemaining;
 var float V4PrimaryLoadElapsed;
 var float V4AltLoadElapsed;
 var float V4LastStepTS;
+var float V4LastStepDelta;
 var bool bV4WasFireHeld;
 var bool bV4WasAltHeld;
 var int V4CachedChargeData;
@@ -518,6 +519,8 @@ simulated function float V4PostFireInterval(int NumRockets) {
 simulated function V4AdvanceStepClock(float StepTS) {
 	local float StepDelta;
 
+	V4LastStepDelta = 0.0;
+
 	if (V4LastStepTS < 0.0) {
 		V4LastStepTS = StepTS;
 		return;
@@ -533,6 +536,8 @@ simulated function V4AdvanceStepClock(float StepTS) {
 
 	if (StepDelta < 0.0)
 		StepDelta = 0.0;
+
+	V4LastStepDelta = StepDelta;
 
 	if (V4CooldownRemaining > 0.0)
 		V4CooldownRemaining = FMax(0.0, V4CooldownRemaining - StepDelta);
@@ -585,9 +590,13 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	// loaded on that input step. Falling back to elapsed charge here can overshoot
 	// badly once the weapon is already idling or being thrown. The report may
 	// only lower the count: cap it by the charge the accumulated load time
-	// allows (with a small slack for step quantization at load boundaries) so
-	// a hostile client cannot claim a full volley without loading it.
-	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + 0.06);
+	// allows (with a slack for step quantization at load boundaries) so a
+	// hostile client cannot claim a full volley without loading it. The slack
+	// scales with the current sub-step size: under a lag hitch or the coarse
+	// 469 sub-step path the release lands on a boundary that can lag the
+	// client's true load time by a whole step, and a fixed 60ms would then
+	// shave a rocket off an honest volley.
+	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + FMax(0.06, V4LastStepDelta));
 	if (MoveCharge > 0)
 		return Min(Min(Clamp(MoveCharge, 1, 6), TimeAllowedCharge), BudgetLimit);
 
