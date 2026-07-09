@@ -5103,10 +5103,22 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return false;
 
 	// Hard server-side timing invariant, enforced at the single dispatch
-	// funnel: a weapon whose fire window is closed gets no deterministic
-	// steps (and legacy fire stays suppressed via the true return).
-	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS))
+	// funnel: a weapon whose fire window is closed gets no fire intent (and
+	// legacy fire stays suppressed via the true return). An eightball that
+	// is actually being switched away from still receives a no-input,
+	// no-hint step so its switch-away cancel can settle an in-flight load —
+	// the cancel check runs first and dormancy catches everything else, so
+	// the machine cannot fire from this step.
+	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS)) {
+		EB = ST_UT_Eightball(W);
+		if (EB != none && EB.V4HasSwitchAwayRequest())
+			return EB.V4ProcessStep(
+				StepTS, StepView, StepLoc,
+				false, false, false, false,
+				true, false, V4ChargeData,
+				bHasEightballInstant, bEightballInstant);
 		return true;
+	}
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	if (WImpBase != none)
