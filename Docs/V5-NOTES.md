@@ -146,34 +146,52 @@ cases the review surfaced.
   switch sitting in Idle with fast switch off. Both now bounce pending
   switches to `DownWeapon` in `BeginState`, like flak/ripper.
 
-## Deliberately deferred (roadmap, in suggested order)
-1. **Collapse the mode matrix.** `bDetReady` is still a per-move client
-   assertion selecting between deterministic / fallback / strict handling.
-   With the binding and fire-window invariants it is no longer exploitable,
-   but the legacy/fallback paths triple the test surface. Target: negotiate
-   once per session, keyed on server policy — rewind ping compensation on
-   means v5 deterministic always for supported weapons; ping comp off means
-   the legacy base ServerMove on standard server tick; NewNet client-
-   authoritative weapons are a separate system. Then delete the per-move
-   trust bits and fallback paths.
-2. **Per-tick client prediction.** The client predicts once per *sent* move
-   with end-of-move state while the server replays per sub-step; a mid-move
-   press fires server-side with an interpolated view the client never
-   rendered. Predicting per input slice (each slice is what the timeline
-   encodes) would close most of the remaining divergence.
-3. **Weapon switching in the input stream.** Switching still travels as
-   stock RPC execs outside the move timeline — this is where the remaining
-   wall-clock guard (`IGPlus_MarkDeterministicSwitchGuard`, 0.12s of
-   `Level.TimeSeconds`) lives, and it is evaluated at different absolute
-   times on client and server. A desired-weapon field per move (server
-   switches at move-time, client predicts) would eliminate the guard class
-   entirely, the same way the edge timeline eliminated the SendFire class —
-   and would make the bring-up gates exact (per-weapon select time in move
-   time) instead of a conservative floor.
-4. **Replay-based tests.** The deterministic machines are pure functions of
-   input timelines; a `IGPlus_TestCommandlet` harness feeding recorded
-   timelines and asserting shot timestamps/counts would lock in stock parity
-   per weapon (shock 0.794s, load 0.9s/rocket, bio 0.5s/charge, ...).
+## Roadmap status (July 2026 — third pass)
+
+1. **Collapse the mode matrix — DONE.** The per-move `bDetReady` bit no
+   longer selects code paths on either transport. The server resolves the
+   bound weapon and steps its deterministic machine for every move;
+   `bDetReady` survives only as the readiness hint bridging honest
+   client/server timing skew, and non-hinted moves fall back to the
+   weapon's own server-side readiness for stock-like timing. Machines'
+   clocks and edge state now advance through switches and bring-up, so
+   self-heal no longer waits for the next hinted move. The whole-move
+   dispatch remains solely as the transport fallback (v3 moves under ping
+   comp). Deployment policy: rewind ping comp on → v5 deterministic for
+   supported weapons; ping comp off → legacy base ServerMove on standard
+   tick; NewNet client-authoritative weapons are a separate system.
+
+2. **Per-slice client prediction — DONE.** The client predicts each input
+   slice at its own timestamp with pre-movement location and current view
+   (in `xxReplicateMove`, before the slice is merged), matching the
+   server's per-sub-step replay. Input replication already predicted per
+   input node.
+
+3. **Weapon switching in the input stream — SUPERSEDED.** The original
+   plan assumed the client could stamp switch intent into moves, but stock
+   switching execs (`SwitchWeapon`, `NextWeapon`, `GetWeapon`, ...) are
+   server-replicated: their bodies never run client-side (the same reason
+   ThrowWeapon's old `NM_Client` branch was unreachable), so the server
+   always learns of a switch *first* and its switch state is the
+   authoritative timeline — there is no client-side moment to encode. The
+   goals the item existed for are covered elsewhere: the trust/skew hole is
+   closed by the binding + fire-window invariants (move-timestamp domain),
+   and the eightball's switch-away cancel is delivered even through closed
+   windows via a no-input, no-hint step. What a literal implementation
+   would still buy — exact per-weapon select-time gates instead of the
+   conservative 0.12s/0.25s floor — is blocked on reliable per-weapon
+   select-anim durations, and would require client-side switch origination
+   (input rebinding) to be meaningful. Revisit only if the residual bound
+   (cheater switch-fire ≈ honest fast-switch cadence) proves to matter on
+   normal-switch servers.
+
+4. **Replay-based tests — SKIPPED (manual testing instead).** The
+   deterministic machines remain pure functions of input timelines, so a
+   `IGPlus_TestCommandlet` harness (feeding recorded timelines, asserting
+   shot timestamps/counts against stock parity: shock 0.794s, load
+   0.9s/rocket, bio 0.5s/charge, ...) stays the right shape if automated
+   coverage is ever wanted. For now the checklist below is the gate, run
+   manually per release.
 
 ## Testing checklist for this branch
 - Hold fire / hold alt through switches between every v4 weapon pair, and
@@ -198,3 +216,11 @@ cases the review surfaced.
 - Run bio and shock dry with a manual switch pending, fast switch off
   (guarded Idle: the chosen weapon comes up, no auto-switch override).
 - Die while holding fire, release while dead, respawn (no phantom shot).
+- Mid-move press/release at high fps and low net update rate (per-slice
+  prediction: client shot direction/timing matches the server's, no
+  interpolated-view divergence on fast flicks).
+- Hold fire through a switch to a v4 weapon and wait (always-on machines:
+  fire resumes at server-side readiness — stock feel — without the client
+  re-asserting; no early fire during bring-up).
+- Grenade load → switch away at various pings (switch-away cancel still
+  consumes the committed load; no frozen load resuming on switch-back).
