@@ -2912,9 +2912,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					}
 				} else {
 					bFire = 0;
-					// Latch fire pressed during the select so Active.Begin still sends SendFire
-					if (bFired && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-						TournamentWeapon(Weapon).bForceFire = true;
+					// Mirror held fire during the select so Active.Begin still sends SendFire,
+					// and a release before the weapon is ready cancels the pending shot
+					if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+						TournamentWeapon(Weapon).bForceFire = bFired;
 				}
 			}
 
@@ -2932,8 +2933,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					}
 				} else {
 					bAltFire = 0;
-					if (bAltFired && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-						TournamentWeapon(Weapon).bForceAltFire = true;
+					if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+						TournamentWeapon(Weapon).bForceAltFire = bAltFired;
 				}
 			}
 
@@ -4324,9 +4325,10 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			}
 		} else {
 			bFire = 0;
-			// Latch fire pressed during the select so Active.Begin still sends SendFire
-			if (I.bFire && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-				TournamentWeapon(Weapon).bForceFire = true;
+			// Mirror held fire during the select so Active.Begin still sends SendFire,
+			// and a release before the weapon is ready cancels the pending shot
+			if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+				TournamentWeapon(Weapon).bForceFire = I.bFire;
 		}
 
 		if (!IsExplicitAltFireWeapon()) {
@@ -4343,8 +4345,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 			}
 		} else {
 			bAltFire = 0;
-			if (I.bAFir && TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-				TournamentWeapon(Weapon).bForceAltFire = true;
+			if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
+				TournamentWeapon(Weapon).bForceAltFire = I.bAFir;
 		}
 	} else if (RemoteRole == ROLE_Authority) {
 		// this assumes that you always replay up until the present, otherwise
