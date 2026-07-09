@@ -2893,22 +2893,31 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_V4TrackPendingWeapon(CurrentTimeStamp);
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
+	// Deterministic machines step on every move of a supported weapon. The
+	// per-move bDetReady bit no longer selects code paths — it survives only
+	// as the readiness hint bridging honest client/server timing skew;
+	// non-hinted moves fall back to the weapon's own server-side readiness
+	// for stock-like timing. Trust lives in the binding and fire-window
+	// invariants, not in this bit.
 	V4Weapon = none;
-	if (SM.bDetReady) {
-		if (SM.V4WeaponIndex != IGPLUS_V4WEAPON_None) {
-			// Explicit index must resolve or we drop deterministic dispatch for
-			// this move; never remap to current weapon.
-			V4Weapon = IGPlus_V4WeaponByIndex(SM.V4WeaponIndex);
-		} else {
-			// Legacy/no-index path: bind only to currently active supported weapon.
-			V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-		}
+	if (SM.V4WeaponIndex != IGPLUS_V4WEAPON_None) {
+		// Explicit index must resolve or we drop deterministic dispatch for
+		// this move; never remap to current weapon.
+		V4Weapon = IGPlus_V4WeaponByIndex(SM.V4WeaponIndex);
+	} else {
+		// No-index move: bind to the currently active supported weapon.
+		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 	}
 	if (V4Weapon != none && !IGPlus_V4ServerBindingValid(V4Weapon))
 		V4Weapon = none;
-		bV4WeaponSupported = SM.bUseV4 && SM.bDetReady && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
-		bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
-		bV4MoveHasEightballInstant = SM.bUseV4 && SM.bDetReady && ST_UT_Eightball(V4Weapon) != none;
+	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+	bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
+	// The instant-mode bit is only encoded when the move is index-bound to
+	// the eightball; on other moves the machine falls back to the owner's
+	// replicated setting.
+	bV4MoveHasEightballInstant = SM.bUseV4
+		&& IGPlus_IsV4WeaponIndexEightball(SM.V4WeaponIndex)
+		&& ST_UT_Eightball(V4Weapon) != none;
 	// Hard-block legacy fire fallback for deterministic v4 weapons.
 	bV4EightballStrict =
 		IGPlus_IsV4StrictWeapon(V4Weapon)
@@ -2962,7 +2971,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_LastFireEndHeld = bV4FireEndHeld;
 	IGPlus_LastAltEndHeld = bV4AltEndHeld;
 
-		bDetFallback = SM.bDetReady && !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+	// Single whole-move dispatch for transports without sub-step data (v3
+	// moves under ping comp). No longer selected by the client's bDetReady.
+	bDetFallback = !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
 
 	if (bDetFallback) {
 			IGPlus_V4ProcessWeaponStep(
@@ -4453,16 +4464,16 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	bInputForceFire = I.bForceFireTap;
 	bInputForceAltFire = I.bForceAltTap;
 
-		V4Weapon = none;
-		if (I.bDetReady) {
-			if (I.V4WeaponIndex != IGPLUS_V4WEAPON_None)
-				V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
-			else
-				V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-		}
+	// Deterministic machines step on every input of a supported weapon; the
+	// bDetReady bit is only the readiness hint (see IGPlus_ApplyServerMove).
+	V4Weapon = none;
+	if (I.V4WeaponIndex != IGPLUS_V4WEAPON_None)
+		V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
+	else
+		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 	if (V4Weapon != none && RemoteRole == ROLE_AutonomousProxy && !IGPlus_V4ServerBindingValid(V4Weapon))
 		V4Weapon = none;
-	bDetFallback = V4Weapon != none && I.bDetReady;
+	bDetFallback = V4Weapon != none;
 	bEightballStrict =
 		IGPlus_IsV4StrictWeapon(V4Weapon)
 		|| IGPlus_IsV4StrictWeapon(Weapon);
