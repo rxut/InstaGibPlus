@@ -5271,6 +5271,27 @@ simulated function int IGPlus_V4EncodeEdgeIndex(
 	return Flags | PresenceMask | ((EdgeIndex & IGPLUS_V4FLAG_INDEX_MASK) << Shift);
 }
 
+simulated function bool IGPlus_V4RecordEdge(
+	bool bWasHeld,
+	bool bHeld,
+	int EdgeIndex,
+	out int PressIndex,
+	out int ReleaseIndex
+) {
+	if (bWasHeld == bHeld)
+		return false;
+	if (bWasHeld) {
+		if (ReleaseIndex >= 0)
+			return true;
+		ReleaseIndex = EdgeIndex;
+	} else {
+		if (PressIndex >= 0)
+			return true;
+		PressIndex = EdgeIndex;
+	}
+	return false;
+}
+
 function IGPlus_SavedMove PickRedundantMove(IGPlus_SavedMove Old, IGPlus_SavedMove M, vector Accel, EDodgeDir DodgeMove) {
 	if (M.bPressedJump || (bDodging && M.DodgeMove >= DODGE_Left && M.DodgeMove <= DODGE_Back)) {
 		return M;
@@ -5436,35 +5457,13 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 		if (bForceAltTap)
 			PendMove.bV4AltStartHeld = false;
 
-		if (PendMove.bV4FireEndHeld != bCurrentFireHeld) {
-			if (PendMove.bV4FireEndHeld) {
-				if (PendMove.V4FireReleaseIndex < 0)
-					PendMove.V4FireReleaseIndex = EdgeIndex;
-				else
-					bForcePacketSplit = true; // second release can't be encoded in this move
-			} else {
-				if (PendMove.V4FirePressIndex < 0)
-					PendMove.V4FirePressIndex = EdgeIndex;
-				else
-					bForcePacketSplit = true; // second press can't be encoded in this move
-			}
-			PendMove.bV4FireEndHeld = bCurrentFireHeld;
-		}
+		if (IGPlus_V4RecordEdge(PendMove.bV4FireEndHeld, bCurrentFireHeld, EdgeIndex, PendMove.V4FirePressIndex, PendMove.V4FireReleaseIndex))
+			bForcePacketSplit = true;
+		PendMove.bV4FireEndHeld = bCurrentFireHeld;
 
-		if (PendMove.bV4AltEndHeld != bCurrentAltHeld) {
-			if (PendMove.bV4AltEndHeld) {
-				if (PendMove.V4AltReleaseIndex < 0)
-					PendMove.V4AltReleaseIndex = EdgeIndex;
-				else
-					bForcePacketSplit = true;
-			} else {
-				if (PendMove.V4AltPressIndex < 0)
-					PendMove.V4AltPressIndex = EdgeIndex;
-				else
-					bForcePacketSplit = true;
-			}
-			PendMove.bV4AltEndHeld = bCurrentAltHeld;
-		}
+		if (IGPlus_V4RecordEdge(PendMove.bV4AltEndHeld, bCurrentAltHeld, EdgeIndex, PendMove.V4AltPressIndex, PendMove.V4AltReleaseIndex))
+			bForcePacketSplit = true;
+		PendMove.bV4AltEndHeld = bCurrentAltHeld;
 	}
 
 	// Maintain deterministic-ready based on current merged slice state.
