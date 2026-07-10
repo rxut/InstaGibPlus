@@ -34,7 +34,6 @@ var bool bV4SuppressPrimaryFirstBudgetAuto;
 
 // Primary deterministic cycle controller (server-authoritative, client-predicted)
 var int V4PrimaryCycleId;
-var int V4PrimaryWeaponEpoch;
 var bool bV4PrimaryCycleActive;
 var int V4PrimaryCycleStartBudget;
 var int V4PrimaryPredictedLoaded;
@@ -144,13 +143,6 @@ simulated function V4ResetAltCycle(optional bool bClearHeld) {
 	}
 	V4AltLoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
-}
-
-simulated function V4BumpPrimaryWeaponEpoch() {
-	V4PrimaryWeaponEpoch = (V4PrimaryWeaponEpoch + 1) & 65535;
-	if (V4PrimaryWeaponEpoch == 0)
-		V4PrimaryWeaponEpoch = 1;
-	V4ResetPrimaryCycle(true);
 }
 
 simulated function V4RefreshInternalBudget() {
@@ -380,38 +372,6 @@ simulated function bool UsesServerMoveV4() {
 	// Deterministic Eightball authority must stay active for both
 	// ServerMove_v4 and input-replication transport modes.
 	return int(Level.ServerMoveVersion) >= 4;
-}
-
-simulated function bool IsDeterministicReady() {
-	local Pawn PawnOwner;
-
-	if (!IsV4Active())
-		return false;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-	if (bbPlayer(PawnOwner).IGPlus_IsDeterministicSwitchGuardActive())
-		return false;
-	if (TournamentPlayer(PawnOwner) != none
-		&& TournamentPlayer(PawnOwner).ClientPending != none
-		&& TournamentPlayer(PawnOwner).ClientPending != self)
-		return false;
-	if (PawnOwner.Weapon != self)
-		return false;
-	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
-		return false;
-	if (bChangeWeapon)
-		return false;
-	if (IsInState('Pickup'))
-		return false;
-	if (IsInState('DownWeapon'))
-		return false;
-	if (IsInState('ClientDown'))
-		return false;
-	if (!bCanClientFire)
-		return false;
-	return true;
 }
 
 simulated function bool V4HasSwitchAwayRequest() {
@@ -923,7 +883,7 @@ function DropFrom(vector StartLocation)
 
 function Finish()
 {
-	V4BumpPrimaryWeaponEpoch();
+	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
 
 	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
@@ -1475,7 +1435,7 @@ simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
-	V4BumpPrimaryWeaponEpoch();
+	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
 	if (Pawn(Owner) != none) {
 		if (Pawn(Owner).bFire != 0 && !V4OwnerInstantEnabled())
@@ -1492,7 +1452,7 @@ simulated function PlaySelect() {
 simulated function TweenDown() {
 	local float TweenTime;
 
-	V4BumpPrimaryWeaponEpoch();
+	V4ResetPrimaryCycle(true);
 	TweenTime = 0.05;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
@@ -1811,7 +1771,7 @@ state DownWeapon
 {
 	function BeginState()
 	{
-		V4BumpPrimaryWeaponEpoch();
+		V4ResetPrimaryCycle(true);
 		Super.BeginState();
 	}
 }
@@ -1820,7 +1780,7 @@ state ClientDown
 {
 	simulated function BeginState()
 	{
-		V4BumpPrimaryWeaponEpoch();
+		V4ResetPrimaryCycle(true);
 		Super.BeginState();
 	}
 }

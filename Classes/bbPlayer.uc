@@ -2751,7 +2751,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local int V4AltReleaseIndex;
 	local bool bV4HasShotPack;
 	local ST_UT_Eightball V4PackEightball;
-	local ST_UT_Eightball V4WeaponEB;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -2891,13 +2890,12 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// bDetReady marks client-predicted steps; trust is the binding/window gates.
 	V4Weapon = IGPlus_V4ResolveBoundWeapon(SM.V4WeaponIndex, true);
-	V4WeaponEB = ST_UT_Eightball(V4Weapon);
 	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none;
-	bV4WeaponIsEightball = bV4WeaponSupported && V4WeaponEB != none;
+	bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
 	// The instant bit is only encoded on eightball-bound moves.
 	bV4MoveHasEightballInstant = SM.bUseV4
 		&& IGPlus_IsV4WeaponIndexEightball(SM.V4WeaponIndex)
-		&& V4WeaponEB != none;
+		&& ST_UT_Eightball(V4Weapon) != none;
 	// Hard-block legacy fire fallback for deterministic v4 weapons.
 	// A resolved V4Weapon is active by construction.
 	bV4BlockLegacyFire = (V4Weapon != none) || IGPlus_IsV4ActiveWeapon(Weapon);
@@ -4926,6 +4924,8 @@ simulated function float IGPlus_V4EntryGateSeconds() {
 
 // Drop switch-related v4 trust state (called on death and respawn).
 function IGPlus_V4ClearSwitchTrustState() {
+	local Inventory Item;
+
 	IGPlus_V4PrevWeapon = none;
 	IGPlus_V4PrevWeaponUntilTS = 0;
 	IGPlus_V4PrevWeaponStepTS = 0;
@@ -4934,11 +4934,6 @@ function IGPlus_V4ClearSwitchTrustState() {
 	IGPlus_V4PendingSeenTS = 0;
 	IGPlus_LastFireEndHeld = false;
 	IGPlus_LastAltEndHeld = false;
-	IGPlus_V4ResetOwnedWeaponStates();
-}
-
-function IGPlus_V4ResetOwnedWeaponStates() {
-	local Inventory Item;
 
 	for (Item = Inventory; Item != none; Item = Item.Inventory) {
 		if (ST_ShockRifle(Item) != none)
@@ -4990,44 +4985,76 @@ simulated function bool IGPlus_V4FireWindowOpen(Weapon W, float StepTS) {
 }
 
 simulated function bool IGPlus_V4SupportsWeapon(Weapon W) {
-	if (W == none)
-		return false;
-	if (ST_ShockRifle(W) != none)
-		return true;
-	if (ST_ripper(W) != none)
-		return true;
-	if (ST_UT_FlakCannon(W) != none)
-		return true;
-	if (ST_ut_biorifle(W) != none)
-		return true;
-	if (ST_UT_Eightball(W) != none)
-		return true;
-	return false;
+	return IGPlus_GetV4WeaponIndex(W) != IGPLUS_V4WEAPON_None;
+}
+
+function IGPlus_V4HandleOutOfAmmo(Weapon W) {
+	StopFiring();
+	if (PendingWeapon == none || PendingWeapon == W)
+		SwitchToBestWeapon();
+}
+
+// 0 = no shot, 1 = primary, 2 = alt.
+simulated function int IGPlus_V4IntervalShotDue(
+	float StepTS,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	float PrimaryInterval,
+	float AltInterval,
+	float NextFireTS,
+	out float ShotInterval
+) {
+	local bool bWantsPrimary;
+	local bool bWantsAlt;
+	local bool bAlt;
+
+	bWantsPrimary = bFireHeld || bForceFire;
+	bWantsAlt = bAltHeld || bForceAlt;
+	if (!bWantsPrimary && !bWantsAlt)
+		return 0;
+	if (StepTS + 0.0001 < NextFireTS)
+		return 0;
+
+	bAlt = bWantsAlt && !bWantsPrimary;
+	if (bAlt)
+		ShotInterval = AltInterval;
+	else
+		ShotInterval = PrimaryInterval;
+	if (bAlt)
+		return 2;
+	return 1;
 }
 
 simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
-	local ST_ShockRifle SR;
-	local ST_ripper RP;
-	local ST_UT_FlakCannon FC;
-	local ST_ut_biorifle BR;
-	local ST_UT_Eightball EB;
+	local Pawn PawnOwner;
+	local TournamentPlayer TP;
+	local TournamentWeapon TW;
+	local bbPlayer BP;
 
-	SR = ST_ShockRifle(W);
-	if (SR != none)
-		return SR.IsDeterministicReady();
-	RP = ST_ripper(W);
-	if (RP != none)
-		return RP.IsDeterministicReady();
-	FC = ST_UT_FlakCannon(W);
-	if (FC != none)
-		return FC.IsDeterministicReady();
-	BR = ST_ut_biorifle(W);
-	if (BR != none)
-		return BR.IsDeterministicReady();
-	EB = ST_UT_Eightball(W);
-	if (EB != none)
-		return EB.IsDeterministicReady();
-	return false;
+	if (!IGPlus_IsV4ActiveWeapon(W))
+		return false;
+
+	PawnOwner = Pawn(W.Owner);
+	if (PawnOwner == none)
+		return false;
+
+	BP = bbPlayer(PawnOwner);
+	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
+		return false;
+
+	TP = TournamentPlayer(PawnOwner);
+	if (TP != none && TP.ClientPending != none && TP.ClientPending != W)
+		return false;
+	if (PawnOwner.Weapon != W)
+		return false;
+	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != W)
+		return false;
+	if (W.bChangeWeapon || W.IsInState('Pickup') || W.IsInState('DownWeapon') || W.IsInState('ClientDown'))
+		return false;
+	TW = TournamentWeapon(W);
+	return TW != none && TW.bCanClientFire;
 }
 
 simulated function bool IGPlus_IsV4ActiveWeapon(optional Weapon W) {
@@ -5099,7 +5126,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 				true, false, V4ChargeData,
 				bHasEightballInstant, bEightballInstant);
 		BR = ST_ut_biorifle(W);
-		if (BR != none && BR.bV4WasAltHeld && BR.V4HasSwitchAwayRequest())
+		if (BR != none && BR.bV4WasAltHeld && IGPlus_V4SwitchAwayFrom(BR))
 			return BR.V4ProcessStep(
 				StepTS, StepView, StepLoc,
 				false, false, false, false,
@@ -5193,7 +5220,7 @@ simulated function bool IGPlus_V4HeldAtStep(
 }
 
 simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred) {
-	if (Preferred != none && IGPlus_V4SupportsWeapon(Preferred))
+	if (IGPlus_V4SupportsWeapon(Preferred))
 		return Preferred;
 	return none;
 }

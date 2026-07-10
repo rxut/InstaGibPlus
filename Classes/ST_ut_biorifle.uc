@@ -65,10 +65,6 @@ simulated function bool IsV4Active() {
 	return true;
 }
 
-simulated function bool V4HasSwitchAwayRequest() {
-	return bbPlayer(Owner) != none && bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self);
-}
-
 // One owner's deterministic state must never transfer to the next.
 simulated function V4ResetDeterministicState() {
 	NextV4FireTS = 0.0;
@@ -87,38 +83,6 @@ function GiveTo(Pawn Other) {
 function DropFrom(vector StartLocation) {
 	V4ResetDeterministicState();
 	Super.DropFrom(StartLocation);
-}
-
-simulated function bool IsDeterministicReady() {
-	local Pawn PawnOwner;
-
-	if (!IsV4Active())
-		return false;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-	if (bbPlayer(PawnOwner).IGPlus_IsDeterministicSwitchGuardActive())
-		return false;
-	if (TournamentPlayer(PawnOwner) != none
-		&& TournamentPlayer(PawnOwner).ClientPending != none
-		&& TournamentPlayer(PawnOwner).ClientPending != self)
-		return false;
-	if (PawnOwner.Weapon != self)
-		return false;
-	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
-		return false;
-	if (bChangeWeapon)
-		return false;
-	if (IsInState('Pickup'))
-		return false;
-	if (IsInState('DownWeapon'))
-		return false;
-	if (IsInState('ClientDown'))
-		return false;
-	if (!bCanClientFire)
-		return false;
-	return true;
 }
 
 // Primary fire interval: Fire anim = 9 frames at 30fps base, but Unreal play
@@ -175,7 +139,9 @@ simulated function bool V4ProcessStep(
 
 	// Switch-away releases the charge already paid for; before the readiness
 	// check so it can never go stale.
-	if (bV4WasAltHeld && V4HasSwitchAwayRequest()) {
+	if (bV4WasAltHeld
+		&& bbPlayer(Owner) != none
+		&& bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self)) {
 		bV4WasAltHeld = false;
 		if (bServerSide && V4AltAmmoSpent > 0) {
 			ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 9);

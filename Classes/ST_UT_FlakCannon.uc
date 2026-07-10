@@ -13,9 +13,6 @@ var ST_FlakSlug LocalSlugDummy;
 
 // V4 deterministic fire state
 var float NextV4FireTS;
-var bool bUseDeterministicData;
-var vector DeterministicShotLoc;
-var rotator DeterministicShotRot;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -61,7 +58,6 @@ simulated function bool IsV4Active() {
 // One owner's deterministic state must never transfer to the next.
 simulated function V4ResetDeterministicState() {
 	NextV4FireTS = 0.0;
-	bUseDeterministicData = false;
 }
 
 function GiveTo(Pawn Other) {
@@ -72,38 +68,6 @@ function GiveTo(Pawn Other) {
 function DropFrom(vector StartLocation) {
 	V4ResetDeterministicState();
 	Super.DropFrom(StartLocation);
-}
-
-simulated function bool IsDeterministicReady() {
-	local Pawn PawnOwner;
-
-	if (!IsV4Active())
-		return false;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return false;
-	if (bbPlayer(PawnOwner).IGPlus_IsDeterministicSwitchGuardActive())
-		return false;
-	if (TournamentPlayer(PawnOwner) != none
-		&& TournamentPlayer(PawnOwner).ClientPending != none
-		&& TournamentPlayer(PawnOwner).ClientPending != self)
-		return false;
-	if (PawnOwner.Weapon != self)
-		return false;
-	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
-		return false;
-	if (bChangeWeapon)
-		return false;
-	if (IsInState('Pickup'))
-		return false;
-	if (IsInState('DownWeapon'))
-		return false;
-	if (IsInState('ClientDown'))
-		return false;
-	if (!bCanClientFire)
-		return false;
-	return true;
 }
 
 // Flakm mesh: 'Fire'    = 10 frames, base rate 30fps (no RATE directive, default)
@@ -128,22 +92,6 @@ simulated function float AltShotInterval() {
 	return 10.0 / (24.0 * 1.3) + 15.0 / (30.0 * 0.7);
 }
 
-simulated function float V4FireInterval(bool bAlt) {
-	if (bAlt)
-		return AltShotInterval();
-	return PrimaryShotInterval();
-}
-
-function V4HandleOutOfAmmo() {
-	local Pawn P;
-	P = Pawn(Owner);
-	if (P == none)
-		return;
-	P.StopFiring();
-	if (P.PendingWeapon == none || P.PendingWeapon == self)
-		P.SwitchToBestWeapon();
-}
-
 // V4 step processing — called from bbPlayer.IGPlus_V4ProcessWeaponStep.
 // Returns true to suppress legacy fire, even if no shot is produced.
 simulated function bool V4ProcessStep(
@@ -157,22 +105,23 @@ simulated function bool V4ProcessStep(
 	bool bServerSide,
 	optional bool bClientPredictedStep
 ) {
-	local bool bWantsPrimary, bWantsAlt, bAlt;
+	local bool bAlt;
+	local bbPlayer BP;
+	local int FireMode;
 	local float Interval;
 
 	if (!bClientPredictedStep)
 		return true;
 
-	bWantsPrimary = bFireHeld || bForceFire;
-	bWantsAlt = bAltHeld || bForceAlt;
-	if (!bWantsPrimary && !bWantsAlt)
+	BP = bbPlayer(Owner);
+	if (BP == none)
 		return true;
-
-	if (StepTS + 0.0001 < NextV4FireTS)
+	FireMode = BP.IGPlus_V4IntervalShotDue(
+		StepTS, bFireHeld, bAltHeld, bForceFire, bForceAlt,
+		PrimaryShotInterval(), AltShotInterval(), NextV4FireTS, Interval);
+	if (FireMode == 0)
 		return true;
-
-	bAlt = bWantsAlt && !bWantsPrimary;
-	Interval = V4FireInterval(bAlt);
+	bAlt = FireMode == 2;
 
 	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bServerSide)
@@ -180,7 +129,7 @@ simulated function bool V4ProcessStep(
 		else
 			HandleV4ClientFire(bAlt, StepView, StepLoc);
 	} else if (bServerSide) {
-		V4HandleOutOfAmmo();
+		bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 	}
 
 	NextV4FireTS = StepTS + Interval;
@@ -222,11 +171,8 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	if (PawnOwner == none)
 		return;
 
-	DeterministicShotRot = StepView;
-	DeterministicShotLoc = StepLoc;
 	if (bbPlayer(Owner) != none)
-		DeterministicShotLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	bUseDeterministicData = true;
+		StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 
 	AmmoType.UseAmmo(1);
 
@@ -237,38 +183,36 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 
 	if (bAlt) {
 		PlayAltFiring();
-		SpawnServerSlug();
+		SpawnServerSlugAt(StepLoc + CalcDrawOffset(), StepView, StepView);
 	} else {
 		PlayFiring();
-		SpawnServerChunks();
+		SpawnServerChunksAt(StepLoc + CalcDrawOffset(), StepView);
 	}
-	bUseDeterministicData = false;
 }
 
-// Server-side chunk spawning (uses deterministic V4 data when available)
 function SpawnServerChunks()
 {
-	local Vector Start, X, Y, Z;
+	local Vector Start;
+	local Pawn PawnOwner;
+	local rotator AimRot;
+
+	PawnOwner = Pawn(Owner);
+	Start = PawnOwner.Location + CalcDrawOffset();
+	AimRot = PawnOwner.AdjustAim(AltProjectileSpeed, Start, AimError, True, bWarnTarget);
+	SpawnServerChunksAt(Start, AimRot);
+}
+
+function SpawnServerChunksAt(vector Start, rotator AimRot)
+{
+	local Vector X, Y, Z;
 	local vector R;
 	local Bot B;
 	local ST_UTChunkInfo CI;
 	local Pawn PawnOwner;
-	local rotator AimRot;
 	local ST_UTChunk C;
 
 	PawnOwner = Pawn(Owner);
 	B = Bot(PawnOwner);
-
-	if (bUseDeterministicData)
-	{
-		AimRot = DeterministicShotRot;
-		Start = DeterministicShotLoc + CalcDrawOffset();
-	}
-	else
-	{
-		Start = PawnOwner.Location + CalcDrawOffset();
-		AimRot = PawnOwner.AdjustAim(AltProjectileSpeed, Start, AimError, True, bWarnTarget);
-	}
 
 	PawnOwner.MakeNoise(2.0 * PawnOwner.SoundDampening);
 	GetAxes(AimRot, X, Y, Z);
@@ -353,31 +297,29 @@ function SpawnServerChunks()
 	}
 }
 
-// Server-side slug spawning (uses deterministic V4 data when available)
 function SpawnServerSlug()
 {
 	local Vector Start, X, Y, Z;
-	local ST_FlakSlug Slug;
 	local Pawn PawnOwner;
-	local bbPlayer bbP;
 	local rotator AimRot;
 
 	PawnOwner = Pawn(Owner);
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	Start = PawnOwner.Location + CalcDrawOffset();
+	AimRot = PawnOwner.AdjustToss(AltProjectileSpeed, Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z, AimError, True, bAltWarnTarget);
+	SpawnServerSlugAt(Start, AimRot, PawnOwner.ViewRotation);
+}
+
+function SpawnServerSlugAt(vector Start, rotator AimRot, rotator OffsetRot)
+{
+	local Vector X, Y, Z;
+	local ST_FlakSlug Slug;
+	local Pawn PawnOwner;
+	local bbPlayer bbP;
+
+	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
-
-	if (bUseDeterministicData)
-	{
-		AimRot = DeterministicShotRot;
-		GetAxes(AimRot, X, Y, Z);
-		Start = DeterministicShotLoc + CalcDrawOffset();
-	}
-	else
-	{
-		GetAxes(PawnOwner.ViewRotation, X, Y, Z);
-		Start = PawnOwner.Location + CalcDrawOffset();
-		AimRot = PawnOwner.AdjustToss(AltProjectileSpeed, Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z, AimError, True, bAltWarnTarget);
-	}
-
+	GetAxes(OffsetRot, X, Y, Z);
 	PawnOwner.MakeNoise(PawnOwner.SoundDampening);
 	Spawn(class'WeaponLight',,'',Start+X*20,rot(0,0,0));
 	Start = Start + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
@@ -399,7 +341,7 @@ function Finish()
 			GotoState('DownWeapon');
 		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
 		{
-			V4HandleOutOfAmmo();
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 			if (bChangeWeapon)
 				GotoState('DownWeapon');
 			else
