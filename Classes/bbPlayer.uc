@@ -4377,7 +4377,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local float OldMouseX, OldMouseY;
 	local float OldForward, OldStrafe, OldUp, OldLookUp, OldTurn;
 	local byte OldRun, OldDuck;
-	local bool bDetFallback;
+	local bool bV4Dispatch;
 	local bool bBlockLegacyFire;
 	local bool bInputFireHeld;
 	local bool bInputAltHeld;
@@ -4440,8 +4440,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	bInputForceAltFire = I.bForceAltTap;
 
 	V4Weapon = IGPlus_V4ResolveBoundWeapon(I.V4WeaponIndex, RemoteRole == ROLE_AutonomousProxy);
-	bDetFallback = V4Weapon != none;
-	bBlockLegacyFire = bDetFallback || IGPlus_IsV4ActiveWeapon(Weapon);
+	bV4Dispatch = V4Weapon != none;
+	bBlockLegacyFire = bV4Dispatch || IGPlus_IsV4ActiveWeapon(Weapon);
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -4465,7 +4465,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 
 		IGPlus_V4TrackPendingWeapon(I.TimeStamp);
 
-		if (bDetFallback) {
+		if (bV4Dispatch) {
 			IGPlus_V4ProcessWeaponStep(
 				V4Weapon,
 				I.TimeStamp,
@@ -5070,7 +5070,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	bool bForceFire,
 	bool bForceAlt,
 	bool bServerSide,
-	optional bool bStepReadyHint,
+	optional bool bClientPredictedStep,
 	optional int V4ChargeData,
 	optional bool bHasEightballInstant,
 	optional bool bEightballInstant
@@ -5110,7 +5110,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 
 	// The hint may not vouch for a weapon that is not yet equipped.
 	if (bServerSide && W != Weapon && W == PendingWeapon)
-		bStepReadyHint = false;
+		bClientPredictedStep = false;
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	if (WImpBase != none)
@@ -5118,19 +5118,19 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 
 	SR = ST_ShockRifle(W);
 	if (SR != none)
-		return SR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
+		return SR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	RP = ST_ripper(W);
 	if (RP != none)
-		return RP.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
+		return RP.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	FC = ST_UT_FlakCannon(W);
 	if (FC != none)
-		return FC.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint);
+		return FC.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	BR = ST_ut_biorifle(W);
 	if (BR != none)
-		return BR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bStepReadyHint, V4ChargeData);
+		return BR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep, V4ChargeData);
 
 	EB = ST_UT_Eightball(W);
 	if (EB != none)
@@ -5143,7 +5143,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 			bForceFire,
 			bForceAlt,
 			bServerSide,
-			bStepReadyHint,
+			bClientPredictedStep,
 			V4ChargeData,
 			bHasEightballInstant,
 			bEightballInstant

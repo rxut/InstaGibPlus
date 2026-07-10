@@ -28,7 +28,7 @@ boundary, loss robustness, and a few stock-parity details.
   owned, holstered v4 weapon and bypass all switch/readiness guards. The
   binding constrains *which* weapon a move may drive; the fire-window
   invariants from the second hardening pass (below) constrain *when* — only
-  with both is the `bStepReadyHint` bypass inside the weapons reduced to
+  with both is the `bClientPredictedStep` bypass inside the weapons reduced to
   bridging soft timing skew (select-anim completion, switch-guard timer)
   for honest clients.
 
@@ -92,7 +92,7 @@ boundary, loss robustness, and a few stock-parity details.
 ## Second hardening pass (July 2026)
 
 An independent review of the first pass confirmed all of its claims except
-one: "the `bStepReadyHint` bypass is now safe" was overstated. The binding
+one: "the `bClientPredictedStep` bypass is now safe" was overstated. The binding
 invariant constrained which weapon a move may drive but not when — the hint
 still skipped the switch guard and the equipped-weapon check for the
 `PendingWeapon`/grace weapons the binding deliberately admits, leaving a

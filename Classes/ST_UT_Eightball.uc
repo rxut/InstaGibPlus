@@ -585,7 +585,7 @@ simulated function bool V4ProcessStep(
 	bool bForceFire,
 	bool bForceAlt,
 	bool bServerSide,
-	optional bool bStepReadyHint,
+	optional bool bClientPredictedStep,
 	optional int V4ChargeData,
 	optional bool bMoveInstantValid,
 	optional bool bMoveInstantValue
@@ -604,7 +604,7 @@ simulated function bool V4ProcessStep(
 
 	// Client-anchored: non-hinted steps only continue a cycle in flight
 	// (committed state returns from the held/falling branches first).
-	if (!bStepReadyHint && !bV4WasFireHeld && !bV4WasAltHeld) {
+	if (!bClientPredictedStep && !bV4WasFireHeld && !bV4WasAltHeld) {
 		return true;
 	}
 

@@ -147,13 +147,13 @@ simulated function bool V4ProcessStep(
 	bool bForceFire,
 	bool bForceAlt,
 	bool bServerSide,
-	optional bool bStepReadyHint
+	optional bool bClientPredictedStep
 ) {
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
 	// Client-anchored: the shot lands on the step the client predicted.
-	if (!bStepReadyHint)
+	if (!bClientPredictedStep)
 		return true;
 
 	bWantsPrimary = bFireHeld || bForceFire;

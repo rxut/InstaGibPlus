@@ -166,7 +166,7 @@ simulated function bool V4ProcessStep(
 	bool bForceFire,
 	bool bForceAlt,
 	bool bServerSide,
-	optional bool bStepReadyHint,
+	optional bool bClientPredictedStep,
 	optional int V4ChargeData
 ) {
 	local bool bWantsAlt, bWantsPrimary;
@@ -190,7 +190,7 @@ simulated function bool V4ProcessStep(
 	}
 
 	// Client-anchored: non-hinted steps only continue a charge in flight.
-	if (!bStepReadyHint && !bV4WasAltHeld)
+	if (!bClientPredictedStep && !bV4WasAltHeld)
 		return true;
 
 	bWantsAlt = bAltHeld || bForceAlt;
