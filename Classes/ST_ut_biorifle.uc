@@ -90,6 +90,26 @@ simulated function bool V4HasSwitchAwayRequest() {
 	return false;
 }
 
+// One owner's deterministic state must never transfer to the next.
+simulated function V4ResetDeterministicState() {
+	NextV4FireTS = 0.0;
+	bV4WasAltHeld = false;
+	V4CachedChargeData = 0;
+	V4AltAmmoSpent = 0;
+	V4ClientPredictedAmmo = 0;
+	V4AltChargeStartTS = 0.0;
+}
+
+function GiveTo(Pawn Other) {
+	V4ResetDeterministicState();
+	Super.GiveTo(Other);
+}
+
+function DropFrom(vector StartLocation) {
+	V4ResetDeterministicState();
+	Super.DropFrom(StartLocation);
+}
+
 simulated function bool IsDeterministicReady() {
 	local Pawn PawnOwner;
 

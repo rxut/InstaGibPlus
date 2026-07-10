@@ -903,6 +903,27 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 	GoToState('FireRockets');
 }
 
+// One owner's deterministic state must never transfer to the next.
+simulated function V4ResetDeterministicState() {
+	V4ClearPendingServerFireState();
+	V4ResetPrimaryCycle(true);
+	V4ResetAltCycle(true);
+	V4CooldownRemaining = 0.0;
+	V4LastStepTS = 0.0;
+	V4LastStepDelta = 0.0;
+	V4CachedChargeData = 0;
+	V4InternalBudget = 0;
+	ClientRocketsLoaded = 0;
+	bClientDone = false;
+	bRotated = false;
+}
+
+function GiveTo(Pawn Other)
+{
+	V4ResetDeterministicState();
+	Super.GiveTo(Other);
+}
+
 function DropFrom(vector StartLocation)
 {
 	local int DropCharge;
@@ -918,6 +939,7 @@ function DropFrom(vector StartLocation)
 	if (bShouldCancel)
 		V4CancelDeterministicLoad(true, DropCharge);
 
+	V4ResetDeterministicState();
 	Super.DropFrom(StartLocation);
 }
 

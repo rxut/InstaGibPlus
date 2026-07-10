@@ -47,6 +47,22 @@ simulated function bool IsV4Active() {
 	return true;
 }
 
+// One owner's deterministic state must never transfer to the next.
+simulated function V4ResetDeterministicState() {
+	NextV4FireTS = 0.0;
+	bUseDeterministicData = false;
+}
+
+function GiveTo(Pawn Other) {
+	V4ResetDeterministicState();
+	Super.GiveTo(Other);
+}
+
+function DropFrom(vector StartLocation) {
+	V4ResetDeterministicState();
+	Super.DropFrom(StartLocation);
+}
+
 simulated function bool IsDeterministicReady() {
 	local Pawn PawnOwner;
 	local TournamentPlayer TP;

@@ -4928,6 +4928,25 @@ function IGPlus_V4ClearSwitchTrustState() {
 	IGPlus_V4PendingSeenTS = 0;
 	IGPlus_LastFireEndHeld = false;
 	IGPlus_LastAltEndHeld = false;
+	IGPlus_V4ResetOwnedWeaponStates();
+}
+
+// No deterministic state survives into a new life.
+function IGPlus_V4ResetOwnedWeaponStates() {
+	local Inventory Item;
+
+	for (Item = Inventory; Item != none; Item = Item.Inventory) {
+		if (ST_ShockRifle(Item) != none)
+			ST_ShockRifle(Item).V4ResetDeterministicState();
+		else if (ST_ripper(Item) != none)
+			ST_ripper(Item).V4ResetDeterministicState();
+		else if (ST_UT_FlakCannon(Item) != none)
+			ST_UT_FlakCannon(Item).V4ResetDeterministicState();
+		else if (ST_ut_biorifle(Item) != none)
+			ST_ut_biorifle(Item).V4ResetDeterministicState();
+		else if (ST_UT_Eightball(Item) != none)
+			ST_UT_Eightball(Item).V4ResetDeterministicState();
+	}
 }
 
 // Observe PendingWeapon transitions from move processing.
