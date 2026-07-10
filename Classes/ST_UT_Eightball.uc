@@ -662,7 +662,9 @@ simulated function bool V4ProcessStep(
 	// ── PRIMARY FIRE ──
 	// Skip the rising edge while an alt (grenade) cycle is loading so the
 	// alt branches below keep updating charge and can auto-fire at 6.
-	if (bFireHeld && !bV4WasFireHeld && !bAltHeld && !bV4WasAltHeld) {
+	// Stock precedence: primary wins a simultaneous idle rising edge; an
+	// active grenade cycle (bV4WasAltHeld) retains ownership.
+	if (bFireHeld && !bV4WasFireHeld && !bV4WasAltHeld) {
 		V4RefreshInternalBudget();
 		V4PrimaryStartCycle(bMoveInstant, bServerSide);
 		bV4WasFireHeld = true;

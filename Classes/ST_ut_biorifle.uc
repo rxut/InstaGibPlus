@@ -252,8 +252,9 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	// Alt rising edge: start charging
-	if (bWantsAlt) {
+	// Alt rising edge: start charging. Stock precedence: primary wins a
+	// simultaneous rising edge; an active charge retains ownership above.
+	if (bWantsAlt && !bWantsPrimary) {
 		V4AltChargeStartTS = StepTS;
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
