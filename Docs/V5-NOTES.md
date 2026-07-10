@@ -193,28 +193,55 @@ cases the review surfaced.
    coverage is ever wanted. For now the checklist below is the gate, run
    manually per release.
 
-## Deployment reality: the v4 sub-step transport is dormant (July 2026)
+## Transport selection (July 2026)
 
 A field regression (per-slice prediction gated on `ServerMoveVersion >= 4`
-killing all client fire effects) exposed that deployed servers run
-`Level.ServerMoveVersion = 3` — the stock LevelInfo default. Nothing in IG+
-raises it (the only write forces 0 for spectators), so in practice:
+killing all client fire effects) exposed that servers ran the stock default
+`ServerMoveVersion = 3`, so the sub-step transport had never engaged — the
+deterministic system flowed over the v3 transport through the whole-move
+`bDetFallback` dispatch. **UTPure now sets `ServerMoveVersion` to 4 at
+startup**, activating `xxServerMove_v4`: edge timelines, per-sub-step
+replay, interpolated step views, and the eightball shot pack. Rules that
+remain true regardless of transport:
 
-- Clients never send `xxServerMove_v4` moves; the deterministic system runs
-  over the v3 transport through the **whole-move `bDetFallback` dispatch**,
-  gated on `bDetReady` per move.
-- The sub-step machinery (edge timelines, per-sub-step replay, interpolated
-  step views) is live code but **not exercised in production**. The
-  whole-move fallback is the de facto production path and must be tested
-  and hardened as first-class.
-- Client-side gates must therefore key on readiness (`bDetReady` /
-  `IGPlus_IsV4DetReady`), never on `ServerMoveVersion`, or they silently
-  diverge from what the server accepts.
-- Enabling the sub-step transport for real means deliberately setting
-  `ServerMoveVersion` to 4 server-side (e.g. from UTPure when ping comp is
-  on). That is a separate decision: it also affects the engine's own
-  movement-protocol selection and needs a compatibility check against the
-  full range of supported 469 clients before it ships.
+- Client-side gates must key on readiness (`bDetReady` /
+  `IGPlus_IsV4DetReady`), never on `ServerMoveVersion` — dispatch accepts
+  deterministic fire on both transports, and a versioned gate silently
+  desyncs client effects from server shots.
+- The whole-move fallback stays first-class: it carries v3 moves and any
+  environment where the transport is off.
+- Raising `ServerMoveVersion` also feeds the engine's own movement-protocol
+  negotiation: verify all supported 469 client revisions (and spectators,
+  whose client forces version 0 locally) before wide deployment.
+
+## Production-readiness pass (July 2026)
+
+- **Server-authoritative activation**: dispatch resolution now requires
+  `IGPlus_IsV4StrictWeapon` (ST_ class AND that weapon's `IsV4Active()`).
+  Inactive weapons (ping comp off — the shipped default) fall through to
+  legacy fire instead of a dormant deterministic path that ate their input,
+  and a forged `bDetReady` can no longer drive an inactive weapon.
+- **The readiness hint cannot vouch for a pending weapon**: hint is forced
+  off for `PendingWeapon` bindings server-side; firing a weapon before
+  `ChangedWeapon` equips it now requires server-side readiness, which fails.
+- **Lifecycle resets**: every v4 weapon has `V4ResetDeterministicState()`,
+  called on `GiveTo`/`DropFrom` (dropped non-respawning weapons are reused
+  as pickups) and for all owned weapons on death/respawn.
+- **Bio releases its paid charge on switch-away** (no stale charge, no lost
+  ammo); the eightball keeps its load-cancel on switch — **intentional IG+
+  policy** (rocket cancel is a feature; see checklist), and committed ammo
+  stays spent, matching a thrown weapon.
+- **Resolved grenade volleys always spawn**, even with a switch pending
+  (ammo was already consumed; stock fires then switches).
+- **Primary wins a simultaneous idle rising edge** (stock precedence);
+  active charge/grenade cycles retain ownership.
+- **Bio max charge = stock cadence**: levels 0..9, 4.1 glob at ~4.5s /
+  10 ammo.
+- **Intentional divergences kept**: eightball consumes the whole volley at
+  fire time (frozen budget — deterministic design; mid-load ammo pickups
+  don't extend a volley). Shock/flak refire constants differ slightly from
+  the anim-model derivation — measure with an in-engine timestamp trace
+  before changing any constant.
 
 ## Testing checklist for this branch
 - Hold fire / hold alt through switches between every v4 weapon pair, and
@@ -247,3 +274,15 @@ raises it (the only write forces 0 for spectators), so in practice:
   re-asserting; no early fire during bring-up).
 - Grenade load → switch away at various pings (switch-away cancel still
   consumes the committed load; no frozen load resuming on switch-back).
+- Server with ping comp disabled for one/all weapons (activation gate:
+  those weapons fire through the legacy path, nothing goes dead).
+- Bio charge → switch away (glob fires with the ammo already spent; no
+  stale charge on reselect). Full bio charge: 4.1 glob at ~4.5s / 10 ammo.
+- Grenade volley resolving (release or max) while a switch is pending
+  (grenades spawn, then the switch completes).
+- Press primary+alt on the same frame from idle on bio/eightball (primary
+  fires, stock precedence).
+- Drop a weapon mid-cycle, have another player pick it up (no inherited
+  charge, cooldown, or held-edge state).
+- 469a-e client matrix + a spectator on the ServerMoveVersion-4 server
+  (engine movement negotiation; spectator forces version 0 locally).
