@@ -14,7 +14,6 @@ var int V4AuxData;
 var Actor ClientBase;
 var int OldMoveData1;
 var int OldMoveData2;
-var int V4ShotSeq;
 
 var bool bDetReady;
 var int V4WeaponIndex;

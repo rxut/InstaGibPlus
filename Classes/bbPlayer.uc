@@ -2938,7 +2938,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					V4PackEightball = none;
 			}
 			if (bV4WeaponIsEightball || V4PackEightball != none) {
-				IGPlus_ServerRegisterEightballShotSeq(SM.V4ShotSeq & 255);
+				IGPlus_ServerRegisterEightballShotSeq(SM.V4AuxData & 0xFF);
 				IGPlus_ClientEightballShotAck(byte(IGPlus_EBShotRecvBase & 255), IGPlus_EBShotRecvMask);
 			}
 		}
@@ -3417,7 +3417,6 @@ function xxServerMove(
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
-	SM.V4ShotSeq = 0;
 	SM.bUseV4 = false;
 
 	IGPlus_ApplyServerMove(SM);
@@ -3467,9 +3466,6 @@ function xxServerMove_v4(
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
-	SM.V4ShotSeq = 0;
-	if ((V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0)
-		SM.V4ShotSeq = V4AuxData & 0xFF;
 	SM.bUseV4 = true;
 
 	IGPlus_ApplyServerMove(SM);
@@ -5250,6 +5246,31 @@ simulated function bool IGPlus_IsV4DetReady(optional Weapon Preferred) {
 	return IGPlus_V4IsWeaponReady(Candidate);
 }
 
+function IGPlus_V4FillMoveBinding(IGPlus_SavedMove M) {
+	M.bDetReady = IGPlus_IsV4DetReady(Weapon);
+	if (M.bDetReady) {
+		M.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
+		M.V4ChargeData = IGPlus_GetV4ChargeData();
+		M.bV4EightballInstant = IGPlus_IsV4WeaponIndexEightball(M.V4WeaponIndex)
+			&& IGPlus_IsEightballInstantMode(Weapon);
+	} else {
+		M.V4WeaponIndex = IGPLUS_V4WEAPON_None;
+		M.V4ChargeData = 0;
+		M.bV4EightballInstant = false;
+	}
+}
+
+simulated function int IGPlus_V4EncodeEdgeIndex(
+	int Flags,
+	int EdgeIndex,
+	int PresenceMask,
+	int Shift
+) {
+	if (EdgeIndex < 0)
+		return Flags;
+	return Flags | PresenceMask | ((EdgeIndex & IGPLUS_V4FLAG_INDEX_MASK) << Shift);
+}
+
 function IGPlus_SavedMove PickRedundantMove(IGPlus_SavedMove Old, IGPlus_SavedMove M, vector Accel, EDodgeDir DodgeMove) {
 	if (M.bPressedJump || (bDodging && M.DodgeMove >= DODGE_Left && M.DodgeMove <= DODGE_Back)) {
 		return M;
@@ -5447,19 +5468,7 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	}
 
 	// Maintain deterministic-ready based on current merged slice state.
-	PendMove.bDetReady = IGPlus_IsV4DetReady(Weapon);
-	if (PendMove.bDetReady) {
-		PendMove.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
-		PendMove.V4ChargeData = IGPlus_GetV4ChargeData();
-			if (IGPlus_IsV4WeaponIndexEightball(PendMove.V4WeaponIndex))
-				PendMove.bV4EightballInstant = IGPlus_IsEightballInstantMode(Weapon);
-			else
-				PendMove.bV4EightballInstant = false;
-		} else {
-			PendMove.V4WeaponIndex = IGPLUS_V4WEAPON_None;
-			PendMove.V4ChargeData = 0;
-			PendMove.bV4EightballInstant = false;
-		}
+	IGPlus_V4FillMoveBinding(PendMove);
 
 	PendMove.Delta = TotalTime;
 }
@@ -5743,19 +5752,7 @@ function xxReplicateMove(
 		else if (NewMove.bV4AltStartHeld && !NewMove.bV4AltEndHeld)
 			NewMove.V4AltReleaseIndex = 0;
 
-			NewMove.bDetReady = IGPlus_IsV4DetReady(Weapon);
-			if (NewMove.bDetReady) {
-				NewMove.V4WeaponIndex = IGPlus_GetV4WeaponIndex(Weapon);
-				NewMove.V4ChargeData = IGPlus_GetV4ChargeData();
-					if (IGPlus_IsV4WeaponIndexEightball(NewMove.V4WeaponIndex))
-						NewMove.bV4EightballInstant = IGPlus_IsEightballInstantMode(Weapon);
-					else
-						NewMove.bV4EightballInstant = false;
-				} else {
-					NewMove.V4WeaponIndex = IGPLUS_V4WEAPON_None;
-					NewMove.V4ChargeData = 0;
-					NewMove.bV4EightballInstant = false;
-				}
+			IGPlus_V4FillMoveBinding(NewMove);
 
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
@@ -5903,22 +5900,10 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		if (Move.bV4AltStartHeld) V4Flags or_eq IGPLUS_V4FLAG_ALT_START_HELD;
 		if (Move.bV4AltEndHeld) V4Flags or_eq IGPLUS_V4FLAG_ALT_END_HELD;
 
-		if (Move.V4FirePressIndex >= 0) {
-			V4Flags or_eq IGPLUS_V4FLAG_HAS_FIRE_PRESS;
-			V4Flags or_eq (Move.V4FirePressIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_FIRE_PRESS_SHIFT;
-		}
-		if (Move.V4FireReleaseIndex >= 0) {
-			V4Flags or_eq IGPLUS_V4FLAG_HAS_FIRE_RELEASE;
-			V4Flags or_eq (Move.V4FireReleaseIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_FIRE_RELEASE_SHIFT;
-		}
-		if (Move.V4AltPressIndex >= 0) {
-			V4Flags or_eq IGPLUS_V4FLAG_HAS_ALT_PRESS;
-			V4Flags or_eq (Move.V4AltPressIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_ALT_PRESS_SHIFT;
-		}
-		if (Move.V4AltReleaseIndex >= 0) {
-			V4Flags or_eq IGPLUS_V4FLAG_HAS_ALT_RELEASE;
-			V4Flags or_eq (Move.V4AltReleaseIndex & IGPLUS_V4FLAG_INDEX_MASK) << IGPLUS_V4FLAG_ALT_RELEASE_SHIFT;
-		}
+		V4Flags = IGPlus_V4EncodeEdgeIndex(V4Flags, Move.V4FirePressIndex, IGPLUS_V4FLAG_HAS_FIRE_PRESS, IGPLUS_V4FLAG_FIRE_PRESS_SHIFT);
+		V4Flags = IGPlus_V4EncodeEdgeIndex(V4Flags, Move.V4FireReleaseIndex, IGPLUS_V4FLAG_HAS_FIRE_RELEASE, IGPLUS_V4FLAG_FIRE_RELEASE_SHIFT);
+		V4Flags = IGPlus_V4EncodeEdgeIndex(V4Flags, Move.V4AltPressIndex, IGPLUS_V4FLAG_HAS_ALT_PRESS, IGPLUS_V4FLAG_ALT_PRESS_SHIFT);
+		V4Flags = IGPlus_V4EncodeEdgeIndex(V4Flags, Move.V4AltReleaseIndex, IGPLUS_V4FLAG_HAS_ALT_RELEASE, IGPLUS_V4FLAG_ALT_RELEASE_SHIFT);
 
 			if (IGPlus_IsV4WeaponIndexEightball(Move.V4WeaponIndex) || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
 				if (IGPlus_SelectEightballShotForMove(
