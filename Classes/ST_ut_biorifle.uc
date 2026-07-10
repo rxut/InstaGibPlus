@@ -65,6 +65,31 @@ simulated function bool IsV4Active() {
 	return true;
 }
 
+simulated function bool V4HasSwitchAwayRequest() {
+	local Pawn PawnOwner;
+
+	if (!IsV4Active())
+		return false;
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return true;
+	if (bbPlayer(PawnOwner).IGPlus_IsDeterministicSwitchGuardActive())
+		return true;
+	if (TournamentPlayer(PawnOwner) != none
+		&& TournamentPlayer(PawnOwner).ClientPending != none
+		&& TournamentPlayer(PawnOwner).ClientPending != self)
+		return true;
+	if (PawnOwner.Weapon != self)
+		return true;
+	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
+		return true;
+	if (bChangeWeapon)
+		return true;
+	if (IsInState('DownWeapon') || IsInState('ClientDown'))
+		return true;
+	return false;
+}
+
 simulated function bool IsDeterministicReady() {
 	local Pawn PawnOwner;
 
@@ -146,6 +171,23 @@ simulated function bool V4ProcessStep(
 	local bool bWantsAlt, bWantsPrimary;
 	local float CS;
 	local int ActualCharge, TargetAmmoSpent;
+
+	// Switch-away with a charge in flight: release the glob that was already
+	// paid for (ammo is consumed while charging), then let the switch run.
+	// Runs before the readiness check so the charge can never go stale.
+	if (bV4WasAltHeld && V4HasSwitchAwayRequest()) {
+		bV4WasAltHeld = false;
+		if (bServerSide && V4AltAmmoSpent > 0) {
+			ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 8);
+			CS = float(ActualCharge) * 0.5;
+			if (ActualCharge >= 8)
+				CS = 4.1;
+			HandleV4ServerAltFire(StepView, StepLoc, CS);
+			V4AltAmmoSpent = 0;
+		}
+		NextV4FireTS = StepTS + 0.25;
+		return true;
+	}
 
 	if (!bStepReadyHint && !IsDeterministicReady())
 		return true;

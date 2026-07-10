@@ -5067,8 +5067,9 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return false;
 
 	// Closed fire window: no fire intent reaches the machine (true return
-	// keeps legacy fire suppressed). A switched-away eightball still gets a
-	// no-input, no-hint step so its cancel can settle an in-flight load.
+	// keeps legacy fire suppressed). Switched-away weapons with an in-flight
+	// load still get a no-input, no-hint step: the eightball cancels its
+	// load, the bio releases the charge it already paid for.
 	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS)) {
 		EB = ST_UT_Eightball(W);
 		if (EB != none && EB.V4HasSwitchAwayRequest())
@@ -5077,6 +5078,12 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 				false, false, false, false,
 				true, false, V4ChargeData,
 				bHasEightballInstant, bEightballInstant);
+		BR = ST_ut_biorifle(W);
+		if (BR != none && BR.bV4WasAltHeld && BR.V4HasSwitchAwayRequest())
+			return BR.V4ProcessStep(
+				StepTS, StepView, StepLoc,
+				false, false, false, false,
+				true, false, V4ChargeData);
 		return true;
 	}
 
