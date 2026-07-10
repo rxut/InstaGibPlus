@@ -14,15 +14,6 @@ function bool Insert(byte C) {
 	return False;
 }
 
-function bool InsertUnicode(string C) {
-	if (Super.InsertUnicode(C)) {
-		LastInsertTime = GetLevel().TimeSeconds;
-		LastInsertCaret = CaretOffset - 1;
-		return True;
-	}
-	return False;
-}
-
 function bool IsRevealActive() {
 	if (LastInsertTime <= 0)
 		return false;
