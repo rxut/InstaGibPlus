@@ -2751,6 +2751,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local int V4AltReleaseIndex;
 	local bool bV4HasShotPack;
 	local ST_UT_Eightball V4PackEightball;
+	local ST_UT_Eightball V4WeaponEB;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -2890,31 +2891,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// Machines step on every move of a supported weapon; bDetReady is only
 	// the readiness hint. Trust lives in the binding and fire-window checks.
-	V4Weapon = none;
-	if (SM.V4WeaponIndex != IGPLUS_V4WEAPON_None) {
-		// Explicit index must resolve or we drop deterministic dispatch for
-		// this move; never remap to current weapon.
-		V4Weapon = IGPlus_V4WeaponByIndex(SM.V4WeaponIndex);
-	} else {
-		// No-index move: bind to the currently active supported weapon.
-		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-	}
-	if (!IGPlus_V4ServerBindingValid(V4Weapon))
-		V4Weapon = none;
-	// Server-authoritative activation: an inactive weapon (ping comp off)
-	// takes the legacy fire path instead of a dormant deterministic one.
-	if (!IGPlus_IsV4StrictWeapon(V4Weapon))
-		V4Weapon = none;
+	V4Weapon = IGPlus_V4ResolveBoundWeapon(SM.V4WeaponIndex, true);
+	V4WeaponEB = ST_UT_Eightball(V4Weapon);
 	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none;
-	bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
+	bV4WeaponIsEightball = bV4WeaponSupported && V4WeaponEB != none;
 	// The instant bit is only encoded on eightball-bound moves.
 	bV4MoveHasEightballInstant = SM.bUseV4
 		&& IGPlus_IsV4WeaponIndexEightball(SM.V4WeaponIndex)
-		&& ST_UT_Eightball(V4Weapon) != none;
+		&& V4WeaponEB != none;
 	// Hard-block legacy fire fallback for deterministic v4 weapons.
-	bV4EightballStrict =
-		IGPlus_IsV4StrictWeapon(V4Weapon)
-		|| IGPlus_IsV4StrictWeapon(Weapon);
+	// (A resolved V4Weapon is active by construction.)
+	bV4EightballStrict = (V4Weapon != none) || IGPlus_IsV4StrictWeapon(Weapon);
 	bV4HasEdgeTimeline = false;
 	bV4FireStartHeld = bFired && FireIndex < 0;
 	bV4FireEndHeld = bFired;
@@ -3160,13 +3147,19 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		// Pack on a move bound to another weapon: one no-input eightball step
 		// lets falling-edge self-heal resolve a lost release. Charge still
 		// passes the server time cap; bypasses the window by design.
-		if (bV4HasShotPack && !bV4WeaponIsEightball && V4PackEightball != none)
+		if (bV4HasShotPack && !bV4WeaponIsEightball && V4PackEightball != none) {
+			// Quantize like every other server step so the healed volley
+			// matches the client's predicted view.
+			StepView = ViewRotation;
+			if (WImpBase != none)
+				StepView = WImpBase.IGPlus_V4QuantizeView(StepView);
 			V4PackEightball.V4ProcessStep(
-				SM.TimeStamp, ViewRotation, Location,
+				SM.TimeStamp, StepView, Location,
 				false, false, false, false,
 				true, true,
 				(SM.V4AuxData >>> 8) & 0x0F,
 				false, false);
+		}
 
 		if (IGPlus_DidTranslocate) {
 			TlocCounter = (TlocCounter + 1) & 3;
@@ -4453,19 +4446,9 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 
 	// Deterministic machines step on every input of a supported weapon; the
 	// bDetReady bit is only the readiness hint (see IGPlus_ApplyServerMove).
-	V4Weapon = none;
-	if (I.V4WeaponIndex != IGPLUS_V4WEAPON_None)
-		V4Weapon = IGPlus_V4WeaponByIndex(I.V4WeaponIndex);
-	else
-		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-	if (V4Weapon != none && RemoteRole == ROLE_AutonomousProxy && !IGPlus_V4ServerBindingValid(V4Weapon))
-		V4Weapon = none;
-	if (!IGPlus_IsV4StrictWeapon(V4Weapon))
-		V4Weapon = none;
+	V4Weapon = IGPlus_V4ResolveBoundWeapon(I.V4WeaponIndex, RemoteRole == ROLE_AutonomousProxy);
 	bDetFallback = V4Weapon != none;
-	bEightballStrict =
-		IGPlus_IsV4StrictWeapon(V4Weapon)
-		|| IGPlus_IsV4StrictWeapon(Weapon);
+	bEightballStrict = bDetFallback || IGPlus_IsV4StrictWeapon(Weapon);
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -4907,6 +4890,41 @@ function bool IGPlus_V4ServerBindingValid(Weapon W) {
 	if (W == Weapon || W == PendingWeapon)
 		return true;
 	return W == IGPlus_V4PrevWeapon && CurrentTimeStamp <= IGPlus_V4PrevWeaponUntilTS;
+}
+
+// Resolve a move's bound weapon (explicit index, else the equipped weapon)
+// through the trust gates: binding (which weapon) and activation (inactive
+// weapons take the legacy fire path). Returns none if any gate fails.
+simulated function Weapon IGPlus_V4ResolveBoundWeapon(int V4Index, bool bServerContext) {
+	local Weapon W;
+
+	if (V4Index != IGPLUS_V4WEAPON_None)
+		W = IGPlus_V4WeaponByIndex(V4Index);
+	else
+		W = IGPlus_FindV4SupportedWeapon(Weapon);
+	if (bServerContext && !IGPlus_V4ServerBindingValid(W))
+		W = none;
+	if (!IGPlus_IsV4StrictWeapon(W))
+		W = none;
+	return W;
+}
+
+// The player has committed to switching away from W (or W is going down).
+// Single source for the switch-away condition set; the charge weapons wrap it.
+simulated function bool IGPlus_V4SwitchAwayFrom(Weapon W) {
+	if (!IGPlus_IsV4StrictWeapon(W))
+		return false;
+	if (IGPlus_IsDeterministicSwitchGuardActive())
+		return true;
+	if (ClientPending != none && ClientPending != W)
+		return true;
+	if (Weapon != W)
+		return true;
+	if (PendingWeapon != none && PendingWeapon != W)
+		return true;
+	if (W.bChangeWeapon)
+		return true;
+	return W.IsInState('DownWeapon') || W.IsInState('ClientDown');
 }
 
 // Bring-up gate after entering the valid-binding set (move-time domain).
@@ -5561,6 +5579,7 @@ function xxReplicateMove(
 	local float RealDelta;
 	local vector OldAccel;
 	local Weapon V4LocalWeapon;
+	local bool bLocalEightball;
 	local bool bMoveFireHeld;
 	local bool bMoveAltHeld;
 	local bool bForceFireTap;
@@ -5590,11 +5609,12 @@ function xxReplicateMove(
 	if (IGPlus_EnableInputReplication == false) {
 		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		if (V4LocalWeapon != none && IGPlus_V4IsWeaponReady(V4LocalWeapon)) {
+			bLocalEightball = ST_UT_Eightball(V4LocalWeapon) != none;
 			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
 			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
 			// Merge tap rule: eightball taps ride the edge timeline.
-			bForceFireTap = bJustFired && ST_UT_Eightball(V4LocalWeapon) == none;
-			bForceAltTap = bJustAltFired && ST_UT_Eightball(V4LocalWeapon) == none;
+			bForceFireTap = bJustFired && !bLocalEightball;
+			bForceAltTap = bJustAltFired && !bLocalEightball;
 			IGPlus_V4ProcessWeaponStep(
 				V4LocalWeapon,
 				Level.TimeSeconds,
@@ -5607,7 +5627,7 @@ function xxReplicateMove(
 				false,
 				true,
 				IGPlus_GetV4ChargeData(),
-				ST_UT_Eightball(V4LocalWeapon) != none,
+				bLocalEightball,
 				IGPlus_IsEightballInstantMode(Weapon)
 			);
 		}

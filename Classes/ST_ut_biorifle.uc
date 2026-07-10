@@ -66,28 +66,7 @@ simulated function bool IsV4Active() {
 }
 
 simulated function bool V4HasSwitchAwayRequest() {
-	local Pawn PawnOwner;
-
-	if (!IsV4Active())
-		return false;
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return true;
-	if (bbPlayer(PawnOwner).IGPlus_IsDeterministicSwitchGuardActive())
-		return true;
-	if (TournamentPlayer(PawnOwner) != none
-		&& TournamentPlayer(PawnOwner).ClientPending != none
-		&& TournamentPlayer(PawnOwner).ClientPending != self)
-		return true;
-	if (PawnOwner.Weapon != self)
-		return true;
-	if (PawnOwner.PendingWeapon != none && PawnOwner.PendingWeapon != self)
-		return true;
-	if (bChangeWeapon)
-		return true;
-	if (IsInState('DownWeapon') || IsInState('ClientDown'))
-		return true;
-	return false;
+	return bbPlayer(Owner) != none && bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self);
 }
 
 // One owner's deterministic state must never transfer to the next.
@@ -381,10 +360,7 @@ function Finish()
 			GotoState('DownWeapon');
 		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
 		{
-			Pawn(Owner).StopFiring();
-			// Never clobber a weapon choice the player already made
-			if (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self)
-				Pawn(Owner).SwitchToBestWeapon();
+			V4HandleOutOfAmmo();
 			if (bChangeWeapon)
 				GotoState('DownWeapon');
 			else
