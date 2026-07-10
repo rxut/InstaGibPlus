@@ -152,10 +152,9 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// bStepReadyHint: client told us this weapon was ready at input time.
-	// Trusted unconditionally — the caller uses the weapon index from the
-	// move data to dispatch to the exact weapon the client was using.
-	if (!bStepReadyHint && !IsDeterministicReady())
+	// Fresh shots are client-anchored: fire only on hinted steps so the shot
+	// lands on the same step the client predicted (matching projectiles).
+	if (!bStepReadyHint)
 		return true;
 
 	bWantsPrimary = bFireHeld || bForceFire;

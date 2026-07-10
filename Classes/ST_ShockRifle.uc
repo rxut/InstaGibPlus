@@ -146,9 +146,11 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// bStepReadyHint bridges client/server readiness skew; the binding and
-	// fire-window checks in the dispatcher bound what it can authorize.
-	if (!bStepReadyHint && !IsDeterministicReady())
+	// Fresh shots are client-anchored: fire only on hinted steps so the shot
+	// lands on the same step the client predicted (same view — matching
+	// beams). Firing at server-side readiness instead put the first shot
+	// after a switch up to half an RTT early, with a different rotation.
+	if (!bStepReadyHint)
 		return true;
 
 	bWantsPrimary = bFireHeld || bForceFire;

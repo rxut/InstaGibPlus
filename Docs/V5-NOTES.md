@@ -150,12 +150,14 @@ cases the review surfaced.
 
 1. **Collapse the mode matrix — DONE.** The per-move `bDetReady` bit no
    longer selects code paths on either transport. The server resolves the
-   bound weapon and steps its deterministic machine for every move;
-   `bDetReady` survives only as the readiness hint bridging honest
-   client/server timing skew, and non-hinted moves fall back to the
-   weapon's own server-side readiness for stock-like timing. Machines'
-   clocks and edge state now advance through switches and bring-up, so
-   self-heal no longer waits for the next hinted move. The whole-move
+   bound weapon and steps its deterministic machine for every move.
+   **Fresh fire is client-anchored**: shots and rising edges execute only on
+   hinted steps, so the first shot lands on the exact step the client
+   predicted (same view — matching beams/projectiles; firing at server-side
+   readiness instead put post-switch shots up to half an RTT early with a
+   different rotation). Non-hinted steps still advance clocks and may
+   continue/resolve a cycle already in flight (committed ammo: lost-release
+   self-heal, switch-away settlement), never start one. The whole-move
    dispatch remains solely as the transport fallback (v3 moves under ping
    comp). Deployment policy: rewind ping comp on → v5 deterministic for
    supported weapons; ping comp off → legacy base ServerMove on standard
@@ -269,9 +271,9 @@ remain true regardless of transport:
 - Mid-move press/release at high fps and low net update rate (per-slice
   prediction: client shot direction/timing matches the server's, no
   interpolated-view divergence on fast flicks).
-- Hold fire through a switch to a v4 weapon and wait (always-on machines:
-  fire resumes at server-side readiness — stock feel — without the client
-  re-asserting; no early fire during bring-up).
+- Hold fire through a switch to a v4 weapon while turning (client-anchored
+  resume: first shot fires on the step the client predicted — client and
+  server beam rotations match; no early fire during bring-up).
 - Grenade load → switch away at various pings (switch-away cancel still
   consumes the committed load; no frozen load resuming on switch-back).
 - Server with ping comp disabled for one/all weapons (activation gate:

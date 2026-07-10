@@ -212,7 +212,9 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	if (!bStepReadyHint && !IsDeterministicReady())
+	// Fresh fire is client-anchored: non-hinted steps may only continue or
+	// resolve a charge already in flight (committed ammo), never start one.
+	if (!bStepReadyHint && !bV4WasAltHeld)
 		return true;
 
 	bWantsAlt = bAltHeld || bForceAlt;

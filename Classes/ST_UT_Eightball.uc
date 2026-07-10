@@ -625,7 +625,11 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	if (!bStepReadyHint && !IsDeterministicReady()) {
+	// Fresh fire is client-anchored: non-hinted steps may only continue or
+	// resolve a cycle already in flight (committed ammo), never start one.
+	// Committed state can't reach the rising edges — the held/falling
+	// branches return first — so no extra edge conditions are needed.
+	if (!bStepReadyHint && !bV4WasFireHeld && !bV4WasAltHeld) {
 		return true;
 	}
 
