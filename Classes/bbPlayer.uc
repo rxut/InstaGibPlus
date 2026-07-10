@@ -5591,6 +5591,46 @@ function xxReplicateMove(
 		debugPlayerLocation = Location;
 	}
 
+	// Deterministic local prediction per input slice. The timeline encodes
+	// every slice (merged or not), so each step predicted here is replayed
+	// server-side; predicting per slice — instead of once per sent move with
+	// end-of-move state — keeps timestamps, view, and pre-movement location
+	// aligned with the server's replay, closing the mid-move divergence
+	// (server firing with an interpolated view the client never rendered).
+	// Gate on readiness only, matching the server's acceptance: deterministic
+	// dispatch runs on BOTH transports (v4 sub-step moves AND the v3
+	// whole-move bDetFallback when Level.ServerMoveVersion < 4), so a
+	// ServerMoveVersion condition here silently kills all client effects on
+	// v3-transport servers while the server keeps firing. Input replication
+	// is excluded because it predicts per input node instead.
+	if ((IGPlus_EnableInputReplication == false)
+		&& IGPlus_IsV4DetReady(Weapon)) {
+		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
+		if (V4LocalWeapon != none) {
+			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
+			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
+			// Same tap rule as IGPlus_MergeMove: eightball taps are carried
+			// by the edge timeline, not the force bits.
+			bForceFireTap = bJustFired && ST_UT_Eightball(V4LocalWeapon) == none;
+			bForceAltTap = bJustAltFired && ST_UT_Eightball(V4LocalWeapon) == none;
+			IGPlus_V4ProcessWeaponStep(
+				V4LocalWeapon,
+				Level.TimeSeconds,
+				ViewRotation,
+				Location,
+				bMoveFireHeld,
+				bMoveAltHeld,
+				bForceFireTap,
+				bForceAltTap,
+				false,
+				true,
+				IGPlus_GetV4ChargeData(),
+				ST_UT_Eightball(V4LocalWeapon) != none,
+				IGPlus_IsEightballInstantMode(Weapon)
+			);
+		}
+	}
+
 	// Get a SavedMove actor to store the movement in.
 	if ( PendingMove != None )
 	{
@@ -5744,28 +5784,6 @@ function xxReplicateMove(
 
 	if (RealDelta < TimeBetweenNetUpdates - ClientUpdateTime && CanMergeMove(NewMove, OldAccel))
 		return;
-
-	// Process local deterministic/v4 fire only for moves that will be queued/sent.
-	// This prevents client-only provisional predictions from unsent merged slices.
-	V4LocalWeapon = none;
-	if (NewMove.bDetReady)
-		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
-	if (NewMove.bDetReady && V4LocalWeapon != none && IGPlus_V4SupportsWeapon(V4LocalWeapon))
-			IGPlus_V4ProcessWeaponStep(
-				V4LocalWeapon,
-				NewMove.TimeStamp,
-				NewMove.IGPlus_SavedViewRotation,
-				Location,
-			NewMove.bFire,
-			NewMove.bAltFire,
-			NewMove.bForceFire,
-				NewMove.bForceAltFire,
-				false,
-				NewMove.bDetReady,
-				NewMove.V4ChargeData,
-					IGPlus_IsV4WeaponIndexEightball(NewMove.V4WeaponIndex),
-					NewMove.bV4EightballInstant
-				);
 
 	bForcePacketSplit = false;
 	ClientUpdateTime = FClamp(RealDelta - TimeBetweenNetUpdates + ClientUpdateTime, -TimeBetweenNetUpdates, TimeBetweenNetUpdates);
