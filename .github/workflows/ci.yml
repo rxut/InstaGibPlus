@@ -167,3 +167,4 @@ jobs:
           prerelease: true
           files: Release/${{ env.PKG_NAME }}.zip
           tag_name: ${{ env.PREVIEW_VER }}
+          target_commitish: ${{ github.sha }}
