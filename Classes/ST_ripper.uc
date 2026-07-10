@@ -152,8 +152,7 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// Fresh shots are client-anchored: fire only on hinted steps so the shot
-	// lands on the same step the client predicted (matching projectiles).
+	// Client-anchored: the shot lands on the step the client predicted.
 	if (!bStepReadyHint)
 		return true;
 

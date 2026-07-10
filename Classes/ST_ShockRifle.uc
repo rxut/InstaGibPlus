@@ -51,8 +51,8 @@ simulated function bool IsV4Active() {
 	return true;
 }
 
-// One owner's deterministic state must never transfer to the next: dropped
-// non-respawning weapons are reused as pickups (SpawnCopy returns self).
+// One owner's deterministic state must never transfer to the next
+// (dropped weapons are reused as pickups — SpawnCopy returns self).
 simulated function V4ResetDeterministicState() {
 	NextV4FireTS = 0.0;
 	bUseDeterministicData = false;
@@ -146,10 +146,7 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// Fresh shots are client-anchored: fire only on hinted steps so the shot
-	// lands on the same step the client predicted (same view — matching
-	// beams). Firing at server-side readiness instead put the first shot
-	// after a switch up to half an RTT early, with a different rotation.
+	// Client-anchored: the shot lands on the step the client predicted.
 	if (!bStepReadyHint)
 		return true;
 
@@ -751,8 +748,8 @@ simulated function PlayAltFiring()
 	LoopAnim('Fire2', 0.4 + 0.4 * FireAdjust, 0.05);
 }
 
-// Bounce pending switches to DownWeapon before the inherited Idle label can
-// clobber a manual weapon choice; stock BeginState is preserved via Super.
+// Bounce pending switches to DownWeapon before the inherited Idle label
+// clobbers a manual weapon choice.
 state Idle
 {
 	function BeginState()

@@ -162,8 +162,7 @@ function PostBeginPlay()
 	}
 	xxLog("#");
 
-	// Activate the v4 sub-step move transport: clients send xxServerMove_v4
-	// when Level.ServerMoveVersion >= 4 (engine default is 3).
+	// v4 sub-step transport: clients send xxServerMove_v4 when >= 4 (default 3).
 	if (Level.NetMode != NM_Standalone)
 		Level.SetPropertyText("ServerMoveVersion", "4");
 

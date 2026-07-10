@@ -563,9 +563,8 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	BudgetLimit = Max(1, V4InternalBudget);
 	MoveCharge = Clamp(MoveChargeData, 0, 6);
 
-	// The client report may only lower the count; cap by server-accumulated
-	// load time. Slack scales with the sub-step so coarse steps (lag hitches)
-	// don't shave a rocket off an honest volley.
+	// Client report may only lower the count; sub-step-sized slack so coarse
+	// steps don't shave a rocket off an honest volley.
 	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + FMax(0.06, V4LastStepDelta));
 	if (MoveCharge > 0)
 		return Min(Min(Clamp(MoveCharge, 1, 6), TimeAllowedCharge), BudgetLimit);
@@ -603,10 +602,8 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	// Fresh fire is client-anchored: non-hinted steps may only continue or
-	// resolve a cycle already in flight (committed ammo), never start one.
-	// Committed state can't reach the rising edges — the held/falling
-	// branches return first — so no extra edge conditions are needed.
+	// Client-anchored: non-hinted steps only continue a cycle in flight
+	// (committed state returns from the held/falling branches first).
 	if (!bStepReadyHint && !bV4WasFireHeld && !bV4WasAltHeld) {
 		return true;
 	}
@@ -644,8 +641,7 @@ simulated function bool V4ProcessStep(
 	// ── PRIMARY FIRE ──
 	// Skip the rising edge while an alt (grenade) cycle is loading so the
 	// alt branches below keep updating charge and can auto-fire at 6.
-	// Stock precedence: primary wins a simultaneous idle rising edge; an
-	// active grenade cycle (bV4WasAltHeld) retains ownership.
+	// Stock precedence: primary wins a simultaneous idle edge.
 	if (bFireHeld && !bV4WasFireHeld && !bV4WasAltHeld) {
 		V4RefreshInternalBudget();
 		V4PrimaryStartCycle(bMoveInstant, bServerSide);
@@ -879,9 +875,7 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 		return;
 
 	V4ArmServerFireState(NumRockets, false);
-	// A pending switch must not eat a resolved volley: the ammo is already
-	// consumed, so spawn the grenades and switch afterwards (stock order),
-	// exactly like the primary path.
+	// Ammo is already consumed: spawn the volley, then switch (stock order).
 	if (P.PendingWeapon != none && P.PendingWeapon != self)
 		bChangeWeapon = true;
 	GoToState('FireRockets');

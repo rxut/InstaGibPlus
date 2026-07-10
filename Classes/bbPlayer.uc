@@ -2889,8 +2889,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_V4TrackPendingWeapon(CurrentTimeStamp);
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
-	// Machines step on every move of a supported weapon; bDetReady is only
-	// the readiness hint. Trust lives in the binding and fire-window checks.
+	// bDetReady is only the readiness hint; trust is the binding/window gates.
 	V4Weapon = IGPlus_V4ResolveBoundWeapon(SM.V4WeaponIndex, true);
 	V4WeaponEB = ST_UT_Eightball(V4Weapon);
 	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none;
@@ -2950,8 +2949,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_LastFireEndHeld = bV4FireEndHeld;
 	IGPlus_LastAltEndHeld = bV4AltEndHeld;
 
-	// Single whole-move dispatch for transports without sub-step data (v3
-	// moves under ping comp).
+	// Whole-move dispatch for transports without sub-step data (v3 moves).
 	bDetFallback = !bV4WeaponSupported && V4Weapon != none;
 
 	if (bDetFallback) {
@@ -3144,12 +3142,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			IGPlus_MoveAutonomous(SimStep, bRunActual, bDuckActual, bDoJump, DoDodge, SM.ClientAcceleration, DeltaRot / MergeCount);
 		}
 
-		// Pack on a move bound to another weapon: one no-input eightball step
-		// lets falling-edge self-heal resolve a lost release. Charge still
-		// passes the server time cap; bypasses the window by design.
+		// Pack on a foreign-bound move: one no-input step lets falling-edge
+		// self-heal resolve a lost release (charge still passes the time cap).
 		if (bV4HasShotPack && !bV4WeaponIsEightball && V4PackEightball != none) {
-			// Quantize like every other server step so the healed volley
-			// matches the client's predicted view.
 			StepView = ViewRotation;
 			if (WImpBase != none)
 				StepView = WImpBase.IGPlus_V4QuantizeView(StepView);
@@ -4444,8 +4439,6 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	bInputForceFire = I.bForceFireTap;
 	bInputForceAltFire = I.bForceAltTap;
 
-	// Deterministic machines step on every input of a supported weapon; the
-	// bDetReady bit is only the readiness hint (see IGPlus_ApplyServerMove).
 	V4Weapon = IGPlus_V4ResolveBoundWeapon(I.V4WeaponIndex, RemoteRole == ROLE_AutonomousProxy);
 	bDetFallback = V4Weapon != none;
 	bBlockLegacyFire = bDetFallback || IGPlus_IsV4ActiveWeapon(Weapon);
@@ -4470,7 +4463,6 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		IGPlus_LastFireEndHeld = I.bFire;
 		IGPlus_LastAltEndHeld = I.bAFir;
 
-		// RemoteRole == ROLE_AutonomousProxy implies the server here.
 		IGPlus_V4TrackPendingWeapon(I.TimeStamp);
 
 		if (bDetFallback) {
@@ -4892,9 +4884,8 @@ function bool IGPlus_V4ServerBindingValid(Weapon W) {
 	return W == IGPlus_V4PrevWeapon && CurrentTimeStamp <= IGPlus_V4PrevWeaponUntilTS;
 }
 
-// Resolve a move's bound weapon (explicit index, else the equipped weapon)
-// through the trust gates: binding (which weapon) and activation (inactive
-// weapons take the legacy fire path). Returns none if any gate fails.
+// Bound weapon through the trust gates: binding, then activation (inactive
+// weapons take the legacy fire path). None if any gate fails.
 simulated function Weapon IGPlus_V4ResolveBoundWeapon(int V4Index, bool bServerContext) {
 	local Weapon W;
 
@@ -4910,7 +4901,6 @@ simulated function Weapon IGPlus_V4ResolveBoundWeapon(int V4Index, bool bServerC
 }
 
 // The player has committed to switching away from W (or W is going down).
-// Single source for the switch-away condition set; the charge weapons wrap it.
 simulated function bool IGPlus_V4SwitchAwayFrom(Weapon W) {
 	if (!IGPlus_IsV4ActiveWeapon(W))
 		return false;
@@ -4927,9 +4917,8 @@ simulated function bool IGPlus_V4SwitchAwayFrom(Weapon W) {
 	return W.IsInState('DownWeapon') || W.IsInState('ClientDown');
 }
 
-// Bring-up gate after entering the valid-binding set (move-time domain).
-// Honest-client floor: 0.12s guard under fast switch, else a conservative
-// fraction of any select anim.
+// Bring-up gate, honest-client floor: 0.12s fast-switch guard, else a
+// conservative fraction of any select anim.
 simulated function float IGPlus_V4EntryGateSeconds() {
 	if (IGPlus_UseFastWeaponSwitch)
 		return 0.12;
@@ -4949,7 +4938,6 @@ function IGPlus_V4ClearSwitchTrustState() {
 	IGPlus_V4ResetOwnedWeaponStates();
 }
 
-// No deterministic state survives into a new life.
 function IGPlus_V4ResetOwnedWeaponStates() {
 	local Inventory Item;
 
@@ -4979,9 +4967,7 @@ function IGPlus_V4TrackPendingWeapon(float NowTS) {
 		IGPlus_V4PendingSeenTS = NowTS;
 }
 
-// WHEN the bound weapon may step (binding validity covers WHICH). A closed
-// window skips dispatch — the same dormancy honest clients produce around
-// switches — so machines self-heal like after a lost move.
+// WHEN the bound weapon may step; binding validity covers WHICH.
 simulated function bool IGPlus_V4FireWindowOpen(Weapon W, float StepTS) {
 	if (W == none)
 		return false;
@@ -5103,10 +5089,8 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	if (!IGPlus_IsV4ActiveWeapon(W))
 		return false;
 
-	// Closed fire window: no fire intent reaches the machine (true return
-	// keeps legacy fire suppressed). Switched-away weapons with an in-flight
-	// load still get a no-input, no-hint step: the eightball cancels its
-	// load, the bio releases the charge it already paid for.
+	// Closed window: no fire intent; switched-away charge weapons get one
+	// no-input step to settle an in-flight load.
 	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS)) {
 		EB = ST_UT_Eightball(W);
 		if (EB != none && EB.V4HasSwitchAwayRequest())
@@ -5124,9 +5108,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return true;
 	}
 
-	// The hint may not vouch for a weapon that is not yet equipped; pending
-	// bindings fall back to server-side readiness. Grace bindings keep the
-	// hint — they carry in-flight steps of the weapon that WAS equipped.
+	// The hint may not vouch for a weapon that is not yet equipped.
 	if (bServerSide && W != Weapon && W == PendingWeapon)
 		bStepReadyHint = false;
 
@@ -5602,10 +5584,8 @@ function xxReplicateMove(
 		debugPlayerLocation = Location;
 	}
 
-	// Predict deterministic fire per input slice; the server replays the same
-	// steps. Gate on readiness only — dispatch runs on both transports, so a
-	// ServerMoveVersion condition here kills client effects on v3 servers.
-	// Input replication is excluded: it predicts per input node instead.
+	// Predict per slice, gated on readiness only — a ServerMoveVersion gate
+	// here kills client effects on v3 servers (input-rep predicts per node).
 	if (IGPlus_EnableInputReplication == false) {
 		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		if (V4LocalWeapon != none && IGPlus_V4IsWeaponReady(V4LocalWeapon)) {
@@ -12224,11 +12204,9 @@ simulated function ChangedWeapon() {
 	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone
 		&& RemoteRole == ROLE_AutonomousProxy) {
 		if (IGPlus_V4SupportsWeapon(Weapon)) {
-			// Bring-up gate: no deterministic fire before the honest floor.
 			IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, CurrentTimeStamp + IGPlus_V4EntryGateSeconds());
 		} else {
-			// v4-handled steps clear bFire/bAltFire; restore held state so a
-			// legacy weapon doesn't see a fresh press edge mid-select.
+			// v4 steps clear bFire/bAltFire; restore held state for legacy weapons.
 			if (IGPlus_LastFireEndHeld)
 				bFire = 1;
 			if (IGPlus_LastAltEndHeld)

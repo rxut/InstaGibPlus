@@ -127,8 +127,7 @@ simulated function float PrimaryShotInterval() {
 	return 8.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
 }
 
-// Encode charge as half-step ticks. Levels 0..8 map to 0.0..4.0; level 9 is
-// the clamped 4.1 stock maximum (~4.5s hold, 10 ammo — stock cadence).
+// Half-step charge ticks: 0..8 = 0.0..4.0, 9 = the 4.1 stock max (~4.5s).
 simulated final function int EncodeV4ChargeData(float ClientChargeSize) {
 	if (ClientChargeSize >= 4.05)
 		return 9;
@@ -174,9 +173,8 @@ simulated function bool V4ProcessStep(
 	local float CS;
 	local int ActualCharge, TargetAmmoSpent;
 
-	// Switch-away with a charge in flight: release the glob that was already
-	// paid for (ammo is consumed while charging), then let the switch run.
-	// Runs before the readiness check so the charge can never go stale.
+	// Switch-away releases the charge already paid for; before the readiness
+	// check so it can never go stale.
 	if (bV4WasAltHeld && V4HasSwitchAwayRequest()) {
 		bV4WasAltHeld = false;
 		if (bServerSide && V4AltAmmoSpent > 0) {
@@ -191,8 +189,7 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	// Fresh fire is client-anchored: non-hinted steps may only continue or
-	// resolve a charge already in flight (committed ammo), never start one.
+	// Client-anchored: non-hinted steps only continue a charge in flight.
 	if (!bStepReadyHint && !bV4WasAltHeld)
 		return true;
 
@@ -202,8 +199,7 @@ simulated function bool V4ProcessStep(
 	// --- Alt fire charge tracking (higher priority during active charge) ---
 	if (bV4WasAltHeld) {
 		if (bServerSide) {
-			// Stock cadence: 1 ammo at start + 1 per 0.5s. Server-tracked hold
-			// time is authoritative; the client report may only lower it.
+			// Stock cadence: 1 ammo + 1 per 0.5s; client report may only lower it.
 			TargetAmmoSpent = 1 + Clamp(int((StepTS - V4AltChargeStartTS) / 0.5), 0, 9);
 			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(V4ChargeData, 0, 9));
 			while (V4AltAmmoSpent < TargetAmmoSpent
@@ -236,8 +232,7 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	// Alt rising edge: start charging. Stock precedence: primary wins a
-	// simultaneous rising edge; an active charge retains ownership above.
+	// Alt rising edge; stock precedence: primary wins a simultaneous edge.
 	if (bWantsAlt && !bWantsPrimary) {
 		V4AltChargeStartTS = StepTS;
 		if (bServerSide) {
@@ -515,8 +510,8 @@ simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
 	}
 }
 
-// Bounce pending switches to DownWeapon before the inherited Idle label can
-// clobber a manual weapon choice via SwitchToBestWeapon (flak/ripper pattern).
+// Bounce pending switches to DownWeapon before the inherited Idle label
+// clobbers a manual weapon choice.
 state Idle
 {
 	function BeginState()
