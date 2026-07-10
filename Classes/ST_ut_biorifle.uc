@@ -148,9 +148,12 @@ simulated function float PrimaryShotInterval() {
 	return 8.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
 }
 
-// Encode charge as half-step ticks (0..8), matching stock 0.0..4.1 charge progression.
+// Encode charge as half-step ticks. Levels 0..8 map to 0.0..4.0; level 9 is
+// the clamped 4.1 stock maximum (~4.5s hold, 10 ammo — stock cadence).
 simulated final function int EncodeV4ChargeData(float ClientChargeSize) {
-	return Clamp(int(FMin(ClientChargeSize, 4.1) * 2.0 + 0.0001), 0, 8);
+	if (ClientChargeSize >= 4.05)
+		return 9;
+	return Clamp(int(ClientChargeSize * 2.0 + 0.0001), 0, 8);
 }
 
 function IGPlus_ApplyProjectilePingComp(Projectile P) {
@@ -198,9 +201,9 @@ simulated function bool V4ProcessStep(
 	if (bV4WasAltHeld && V4HasSwitchAwayRequest()) {
 		bV4WasAltHeld = false;
 		if (bServerSide && V4AltAmmoSpent > 0) {
-			ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 8);
+			ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 9);
 			CS = float(ActualCharge) * 0.5;
-			if (ActualCharge >= 8)
+			if (ActualCharge >= 9)
 				CS = 4.1;
 			HandleV4ServerAltFire(StepView, StepLoc, CS);
 			V4AltAmmoSpent = 0;
@@ -220,8 +223,8 @@ simulated function bool V4ProcessStep(
 		if (bServerSide) {
 			// Stock cadence: 1 ammo at start + 1 per 0.5s. Server-tracked hold
 			// time is authoritative; the client report may only lower it.
-			TargetAmmoSpent = 1 + Clamp(int((StepTS - V4AltChargeStartTS) / 0.5), 0, 8);
-			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(V4ChargeData, 0, 8));
+			TargetAmmoSpent = 1 + Clamp(int((StepTS - V4AltChargeStartTS) / 0.5), 0, 9);
+			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(V4ChargeData, 0, 9));
 			while (V4AltAmmoSpent < TargetAmmoSpent
 				&& AmmoType != none
 				&& AmmoType.AmmoAmount > 0) {
@@ -235,9 +238,9 @@ simulated function bool V4ProcessStep(
 			bV4WasAltHeld = false;
 			if (bServerSide) {
 				if (V4AltAmmoSpent > 0) {
-					ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 8);
+					ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 9);
 					CS = float(ActualCharge) * 0.5;
-					if (ActualCharge >= 8)
+					if (ActualCharge >= 9)
 						CS = 4.1;
 					HandleV4ServerAltFire(StepView, StepLoc, CS);
 				} else {
