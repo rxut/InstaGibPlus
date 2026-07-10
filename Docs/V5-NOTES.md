@@ -193,6 +193,29 @@ cases the review surfaced.
    coverage is ever wanted. For now the checklist below is the gate, run
    manually per release.
 
+## Deployment reality: the v4 sub-step transport is dormant (July 2026)
+
+A field regression (per-slice prediction gated on `ServerMoveVersion >= 4`
+killing all client fire effects) exposed that deployed servers run
+`Level.ServerMoveVersion = 3` — the stock LevelInfo default. Nothing in IG+
+raises it (the only write forces 0 for spectators), so in practice:
+
+- Clients never send `xxServerMove_v4` moves; the deterministic system runs
+  over the v3 transport through the **whole-move `bDetFallback` dispatch**,
+  gated on `bDetReady` per move.
+- The sub-step machinery (edge timelines, per-sub-step replay, interpolated
+  step views) is live code but **not exercised in production**. The
+  whole-move fallback is the de facto production path and must be tested
+  and hardened as first-class.
+- Client-side gates must therefore key on readiness (`bDetReady` /
+  `IGPlus_IsV4DetReady`), never on `ServerMoveVersion`, or they silently
+  diverge from what the server accepts.
+- Enabling the sub-step transport for real means deliberately setting
+  `ServerMoveVersion` to 4 server-side (e.g. from UTPure when ping comp is
+  on). That is a separate decision: it also affects the engine's own
+  movement-protocol selection and needs a compatibility check against the
+  full range of supported 469 clients before it ships.
+
 ## Testing checklist for this branch
 - Hold fire / hold alt through switches between every v4 weapon pair, and
   v4 → translocator / hammer / pulse (no mid-select fire, dual-button
