@@ -895,11 +895,11 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 		return;
 
 	V4ArmServerFireState(NumRockets, false);
-	if (P.PendingWeapon != none && P.PendingWeapon != self) {
+	// A pending switch must not eat a resolved volley: the ammo is already
+	// consumed, so spawn the grenades and switch afterwards (stock order),
+	// exactly like the primary path.
+	if (P.PendingWeapon != none && P.PendingWeapon != self)
 		bChangeWeapon = true;
-		V4ClearPendingServerFireState();
-		return;
-	}
 	GoToState('FireRockets');
 }
 
