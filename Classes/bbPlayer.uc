@@ -2730,7 +2730,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bV4MoveHasEightballInstant;
 	local bool bV4EightballInstant;
 	local bool bV4HandledStep;
-	local bool bV4EightballStrict;
+	local bool bV4BlockLegacyFire;
 	local bool bStepFireHeld;
 	local bool bStepAltHeld;
 	local bool bStepForceFire;
@@ -2901,7 +2901,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		&& V4WeaponEB != none;
 	// Hard-block legacy fire fallback for deterministic v4 weapons.
 	// (A resolved V4Weapon is active by construction.)
-	bV4EightballStrict = (V4Weapon != none) || IGPlus_IsV4StrictWeapon(Weapon);
+	bV4BlockLegacyFire = (V4Weapon != none) || IGPlus_IsV4ActiveWeapon(Weapon);
 	bV4HasEdgeTimeline = false;
 	bV4FireStartHeld = bFired && FireIndex < 0;
 	bV4FireEndHeld = bFired;
@@ -2937,7 +2937,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			if (!bV4WeaponIsEightball) {
 				V4PackEightball = ST_UT_Eightball(IGPlus_V4WeaponByIndex(IGPLUS_V4WEAPON_Eightball));
 				if (!IGPlus_V4ServerBindingValid(V4PackEightball)
-					|| !IGPlus_IsV4StrictWeapon(V4PackEightball))
+					|| !IGPlus_IsV4ActiveWeapon(V4PackEightball))
 					V4PackEightball = none;
 			}
 			if (bV4WeaponIsEightball || V4PackEightball != none) {
@@ -3105,7 +3105,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				}
 
 			if (!bV4HandledStep && MoveIndex == FireIndex && !bDetFallback) {
-				if (bV4EightballStrict) {
+				if (bV4BlockLegacyFire) {
 					bFire = 0;
 				} else {
 					if (bFired) {
@@ -3121,7 +3121,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			}
 
 				if (!bV4HandledStep && MoveIndex == AltFireIndex && !bDetFallback) {
-					if (bV4EightballStrict) {
+					if (bV4BlockLegacyFire) {
 						bAltFire = 0;
 					} else {
 						if (bAltFired || bForceAltFire) {
@@ -4383,7 +4383,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local float OldForward, OldStrafe, OldUp, OldLookUp, OldTurn;
 	local byte OldRun, OldDuck;
 	local bool bDetFallback;
-	local bool bEightballStrict;
+	local bool bBlockLegacyFire;
 	local bool bInputFireHeld;
 	local bool bInputAltHeld;
 	local bool bInputForceFire;
@@ -4448,7 +4448,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	// bDetReady bit is only the readiness hint (see IGPlus_ApplyServerMove).
 	V4Weapon = IGPlus_V4ResolveBoundWeapon(I.V4WeaponIndex, RemoteRole == ROLE_AutonomousProxy);
 	bDetFallback = V4Weapon != none;
-	bEightballStrict = bDetFallback || IGPlus_IsV4StrictWeapon(Weapon);
+	bBlockLegacyFire = bDetFallback || IGPlus_IsV4ActiveWeapon(Weapon);
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -4496,7 +4496,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 					// handle firing and alt-firing on server
 					if (bInputFireHeld) {
 						if (bFire == 0) {
-							if (bEightballStrict) {
+							if (bBlockLegacyFire) {
 								bFire = 0;
 							} else if (I.bLive && bInputForceFire && Weapon != none) {
 								Weapon.ForceFire();
@@ -4504,7 +4504,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 								Fire(0);
 							}
 						}
-					if (!bEightballStrict)
+					if (!bBlockLegacyFire)
 						bFire = 1;
 				} else {
 					bFire = 0;
@@ -4512,7 +4512,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 
 					if (bInputAltHeld) {
 						if (bAltFire == 0) {
-							if (bEightballStrict) {
+							if (bBlockLegacyFire) {
 								bAltFire = 0;
 							} else if (I.bLive && bInputForceAltFire && Weapon != none) {
 								Weapon.ForceAltFire();
@@ -4520,7 +4520,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 								AltFire(0);
 							}
 					}
-					if (!bEightballStrict)
+					if (!bBlockLegacyFire)
 						bAltFire = 1;
 				} else {
 					bAltFire = 0;
@@ -4904,7 +4904,7 @@ simulated function Weapon IGPlus_V4ResolveBoundWeapon(int V4Index, bool bServerC
 		W = IGPlus_FindV4SupportedWeapon(Weapon);
 	if (bServerContext && !IGPlus_V4ServerBindingValid(W))
 		W = none;
-	if (!IGPlus_IsV4StrictWeapon(W))
+	if (!IGPlus_IsV4ActiveWeapon(W))
 		W = none;
 	return W;
 }
@@ -4912,7 +4912,7 @@ simulated function Weapon IGPlus_V4ResolveBoundWeapon(int V4Index, bool bServerC
 // The player has committed to switching away from W (or W is going down).
 // Single source for the switch-away condition set; the charge weapons wrap it.
 simulated function bool IGPlus_V4SwitchAwayFrom(Weapon W) {
-	if (!IGPlus_IsV4StrictWeapon(W))
+	if (!IGPlus_IsV4ActiveWeapon(W))
 		return false;
 	if (IGPlus_IsDeterministicSwitchGuardActive())
 		return true;
@@ -5045,7 +5045,7 @@ simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 	return false;
 }
 
-simulated function bool IGPlus_IsV4StrictWeapon(optional Weapon W) {
+simulated function bool IGPlus_IsV4ActiveWeapon(optional Weapon W) {
 	local ST_ShockRifle SR;
 	local ST_ripper RP;
 	local ST_UT_FlakCannon FC;
@@ -5100,7 +5100,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return false;
 
 	// Inactive weapon: not handled here, legacy fire must run.
-	if (!IGPlus_IsV4StrictWeapon(W))
+	if (!IGPlus_IsV4ActiveWeapon(W))
 		return false;
 
 	// Closed fire window: no fire intent reaches the machine (true return

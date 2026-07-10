@@ -219,7 +219,7 @@ remain true regardless of transport:
 ## Production-readiness pass (July 2026)
 
 - **Server-authoritative activation**: dispatch resolution now requires
-  `IGPlus_IsV4StrictWeapon` (ST_ class AND that weapon's `IsV4Active()`).
+  `IGPlus_IsV4ActiveWeapon` (ST_ class AND that weapon's `IsV4Active()`).
   Inactive weapons (ping comp off — the shipped default) fall through to
   legacy fire instead of a dormant deterministic path that ate their input,
   and a forged `bDetReady` can no longer drive an inactive weapon.
