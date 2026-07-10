@@ -334,8 +334,7 @@ simulated function V4EnsureClientLoadState(bool bAltLoad) {
 
 replication
 {
-	// Reliable: a lost confirm leaves client rocket-count/load visuals
-	// diverged until the next volley; one RPC per volley is cheap.
+	// Reliable: a lost confirm desyncs load visuals until the next volley.
 	reliable if(Role == ROLE_Authority)
 		ClientV4PrimaryShotConfirm;
 }
@@ -586,16 +585,9 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	BudgetLimit = Max(1, V4InternalBudget);
 	MoveCharge = Clamp(MoveChargeData, 0, 6);
 
-	// Release/cancel edges should spend exactly what the move reported as
-	// loaded on that input step. Falling back to elapsed charge here can overshoot
-	// badly once the weapon is already idling or being thrown. The report may
-	// only lower the count: cap it by the charge the accumulated load time
-	// allows (with a slack for step quantization at load boundaries) so a
-	// hostile client cannot claim a full volley without loading it. The slack
-	// scales with the current sub-step size: under a lag hitch or the coarse
-	// 469 sub-step path the release lands on a boundary that can lag the
-	// client's true load time by a whole step, and a fixed 60ms would then
-	// shave a rocket off an honest volley.
+	// The client report may only lower the count; cap by server-accumulated
+	// load time. Slack scales with the sub-step so coarse steps (lag hitches)
+	// don't shave a rocket off an honest volley.
 	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + FMax(0.06, V4LastStepDelta));
 	if (MoveCharge > 0)
 		return Min(Min(Clamp(MoveCharge, 1, 6), TimeAllowedCharge), BudgetLimit);

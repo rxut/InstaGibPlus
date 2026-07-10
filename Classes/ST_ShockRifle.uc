@@ -129,9 +129,8 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// bStepReadyHint: client told us this weapon was ready at input time.
-	// Trusted unconditionally — the caller uses the weapon index from the
-	// move data to dispatch to the exact weapon the client was using.
+	// bStepReadyHint bridges client/server readiness skew; the binding and
+	// fire-window checks in the dispatcher bound what it can authorize.
 	if (!bStepReadyHint && !IsDeterministicReady())
 		return true;
 
@@ -736,11 +735,8 @@ simulated function PlayAltFiring()
 	LoopAnim('Fire2', 0.4 + 0.4 * FireAdjust, 0.05);
 }
 
-// Idle override: the Begin label inherited from Engine.Weapon.Idle calls
-// SwitchToBestWeapon unconditionally when out of ammo, clobbering a manual
-// weapon choice the guarded Finish() just preserved. Hand pending switches
-// to DownWeapon first (same pattern as flak/ripper); stock ShockRifle.Idle
-// BeginState (idle timer, held-fire re-checks) is preserved via Super.
+// Bounce pending switches to DownWeapon before the inherited Idle label can
+// clobber a manual weapon choice; stock BeginState is preserved via Super.
 state Idle
 {
 	function BeginState()

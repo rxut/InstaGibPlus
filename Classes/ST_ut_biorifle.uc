@@ -156,10 +156,8 @@ simulated function bool V4ProcessStep(
 	// --- Alt fire charge tracking (higher priority during active charge) ---
 	if (bV4WasAltHeld) {
 		if (bServerSide) {
-			// While holding alt, consume ammo in the same cadence as stock Bio
-			// (1 at start + 1 per 0.5s charge step). Charge is derived from the
-			// server-tracked hold duration; the client-reported charge may only
-			// lower it (early-release intent), never raise it.
+			// Stock cadence: 1 ammo at start + 1 per 0.5s. Server-tracked hold
+			// time is authoritative; the client report may only lower it.
 			TargetAmmoSpent = 1 + Clamp(int((StepTS - V4AltChargeStartTS) / 0.5), 0, 8);
 			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(V4ChargeData, 0, 8));
 			while (V4AltAmmoSpent < TargetAmmoSpent
@@ -473,10 +471,8 @@ simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
 	}
 }
 
-// Idle override: the Begin label inherited from Engine.Weapon.Idle calls
-// SwitchToBestWeapon unconditionally when out of ammo, clobbering a manual
-// weapon choice the guarded Finish() just preserved. Hand pending switches
-// to DownWeapon before the label can run (same pattern as flak/ripper).
+// Bounce pending switches to DownWeapon before the inherited Idle label can
+// clobber a manual weapon choice via SwitchToBestWeapon (flak/ripper pattern).
 state Idle
 {
 	function BeginState()
