@@ -221,20 +221,16 @@ function SpawnServerRazorAt(bool bAlt, vector ShotLoc, rotator AimRot, rotator O
 	local Pawn PawnOwner;
 	local Projectile Razor;
 	local bbPlayer bbP;
-	local float Hand;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
-	if (Owner.IsA('PlayerPawn'))
-		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-	else
-		Hand = 1.0;
 
+	// SetHand already mirrors FireOffset.Y; applying Handedness again flips Right back to Left.
 	GetAxes(OffsetRot, X, Y, Z);
 	if (bHideWeapon)
 		Start = ShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 	else
-		Start = ShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+		Start = ShotLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	PawnOwner.MakeNoise(PawnOwner.SoundDampening);
 
 	if (bAlt)
@@ -389,7 +385,6 @@ simulated function SpawnClientSideRazor(
 	local Pawn PawnOwner;
 	local vector X, Y, Z;
 	local vector Start;
-	local float Hand;
 	local bbPlayer bbP;
 	local rotator AimRot;
 	local vector AimLoc;
@@ -399,11 +394,6 @@ simulated function SpawnClientSideRazor(
 
 	if (Role < ROLE_Authority && bbP != None && bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
 	{
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
-
 		if (bUseShotData) {
 			AimRot = ShotView;
 			AimLoc = ShotLoc;
@@ -413,10 +403,11 @@ simulated function SpawnClientSideRazor(
 		}
 
 		GetAxes(AimRot, X, Y, Z);
+		// FireOffset.Y already reflects Left/Center/Right through SetHand.
 		if (bHideWeapon)
 			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 		if (bbP != None)
 			Start.Z += bbP.GetMoverFireZOffset();
 
@@ -437,7 +428,6 @@ simulated function SpawnClientSideRazorAlt(
 	local Pawn PawnOwner;
 	local vector X, Y, Z;
 	local vector Start;
-	local float Hand;
 	local bbPlayer bbP;
 	local rotator AimRot;
 	local vector AimLoc;
@@ -447,11 +437,6 @@ simulated function SpawnClientSideRazorAlt(
 
 	if (Role < ROLE_Authority && bbP != None && bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
 	{
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
-
 		if (bUseShotData) {
 			AimRot = ShotView;
 			AimLoc = ShotLoc;
@@ -464,7 +449,7 @@ simulated function SpawnClientSideRazorAlt(
 		if (bHideWeapon)
 			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 		if (bbP != None)
 			Start.Z += bbP.GetMoverFireZOffset();
 
