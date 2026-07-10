@@ -5080,6 +5080,12 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return true;
 	}
 
+	// The hint may not vouch for a weapon that is not yet equipped; pending
+	// bindings fall back to server-side readiness. Grace bindings keep the
+	// hint — they carry in-flight steps of the weapon that WAS equipped.
+	if (bServerSide && W != Weapon && W == PendingWeapon)
+		bStepReadyHint = false;
+
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	if (WImpBase != none)
 		StepView = WImpBase.IGPlus_V4QuantizeView(StepView);
