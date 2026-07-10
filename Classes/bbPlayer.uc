@@ -2901,6 +2901,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 	if (!IGPlus_V4ServerBindingValid(V4Weapon))
 		V4Weapon = none;
+	// Server-authoritative activation: an inactive weapon (ping comp off)
+	// takes the legacy fire path instead of a dormant deterministic one.
+	if (!IGPlus_IsV4StrictWeapon(V4Weapon))
+		V4Weapon = none;
 	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none;
 	bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
 	// The instant bit is only encoded on eightball-bound moves.
@@ -2945,7 +2949,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			// Resolve the pack's eightball via binding rules; ack only applied packs.
 			if (!bV4WeaponIsEightball) {
 				V4PackEightball = ST_UT_Eightball(IGPlus_V4WeaponByIndex(IGPLUS_V4WEAPON_Eightball));
-				if (V4PackEightball != none && !IGPlus_V4ServerBindingValid(V4PackEightball))
+				if (!IGPlus_V4ServerBindingValid(V4PackEightball)
+					|| !IGPlus_IsV4StrictWeapon(V4PackEightball))
 					V4PackEightball = none;
 			}
 			if (bV4WeaponIsEightball || V4PackEightball != none) {
@@ -4455,6 +4460,8 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 	if (V4Weapon != none && RemoteRole == ROLE_AutonomousProxy && !IGPlus_V4ServerBindingValid(V4Weapon))
 		V4Weapon = none;
+	if (!IGPlus_IsV4StrictWeapon(V4Weapon))
+		V4Weapon = none;
 	bDetFallback = V4Weapon != none;
 	bEightballStrict =
 		IGPlus_IsV4StrictWeapon(V4Weapon)
@@ -5053,6 +5060,10 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	local IGPlus_WeaponImplementationBase WImpBase;
 
 	if (W == none)
+		return false;
+
+	// Inactive weapon: not handled here, legacy fire must run.
+	if (!IGPlus_IsV4StrictWeapon(W))
 		return false;
 
 	// Closed fire window: no fire intent reaches the machine (true return
