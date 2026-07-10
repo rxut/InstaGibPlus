@@ -81,7 +81,7 @@ var Weapon IGPlus_V4PrevWeapon;
 var float IGPlus_V4PrevWeaponUntilTS;
 var bool IGPlus_LastFireEndHeld;
 var bool IGPlus_LastAltEndHeld;
-// v5 fire-window state (server-side, move-timestamp domain).
+// ServerMove v4 deterministic fire-window state (move-timestamp domain).
 var float IGPlus_V4WeaponGateTS;
 var Weapon IGPlus_V4PendingSeen;
 var float IGPlus_V4PendingSeenTS;
