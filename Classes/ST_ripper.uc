@@ -152,7 +152,6 @@ simulated function bool V4ProcessStep(
 	local bool bWantsPrimary, bWantsAlt, bAlt;
 	local float Interval;
 
-	// Client-anchored: the shot lands on the step the client predicted.
 	if (!bClientPredictedStep)
 		return true;
 

@@ -189,7 +189,6 @@ simulated function bool V4ProcessStep(
 		return true;
 	}
 
-	// Client-anchored: non-hinted steps only continue a charge in flight.
 	if (!bClientPredictedStep && !bV4WasAltHeld)
 		return true;
 

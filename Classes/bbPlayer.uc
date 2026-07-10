@@ -2889,7 +2889,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_V4TrackPendingWeapon(CurrentTimeStamp);
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
-	// bDetReady is only the readiness hint; trust is the binding/window gates.
+	// bDetReady marks client-predicted steps; trust is the binding/window gates.
 	V4Weapon = IGPlus_V4ResolveBoundWeapon(SM.V4WeaponIndex, true);
 	V4WeaponEB = ST_UT_Eightball(V4Weapon);
 	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none;
@@ -2899,7 +2899,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		&& IGPlus_IsV4WeaponIndexEightball(SM.V4WeaponIndex)
 		&& V4WeaponEB != none;
 	// Hard-block legacy fire fallback for deterministic v4 weapons.
-	// (A resolved V4Weapon is active by construction.)
+	// A resolved V4Weapon is active by construction.
 	bV4BlockLegacyFire = (V4Weapon != none) || IGPlus_IsV4ActiveWeapon(Weapon);
 	bV4HasEdgeTimeline = false;
 	bV4FireStartHeld = bFired && FireIndex < 0;
@@ -4884,8 +4884,7 @@ function bool IGPlus_V4ServerBindingValid(Weapon W) {
 	return W == IGPlus_V4PrevWeapon && CurrentTimeStamp <= IGPlus_V4PrevWeaponUntilTS;
 }
 
-// Bound weapon through the trust gates: binding, then activation (inactive
-// weapons take the legacy fire path). None if any gate fails.
+// Binding, then activation; none if any gate fails.
 simulated function Weapon IGPlus_V4ResolveBoundWeapon(int V4Index, bool bServerContext) {
 	local Weapon W;
 
@@ -5108,7 +5107,7 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return true;
 	}
 
-	// The hint may not vouch for a weapon that is not yet equipped.
+	// A pending weapon cannot be client-vouched until it is equipped.
 	if (bServerSide && W != Weapon && W == PendingWeapon)
 		bClientPredictedStep = false;
 
