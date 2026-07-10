@@ -228,39 +228,31 @@ function SpawnServerRazor()
 	local rotator AimRot;
 	local ST_Razor2 Razor;
 	local bbPlayer bbP;
-	local float Hand;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
 
+	// SetHand already mirrors FireOffset.Y; applying Handedness again flips Right back to Left.
 	// Use explicit client data if available
 	if (bUseExplicitData)
 	{
 		AimRot = ExplicitClientRot;
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
 
 		GetAxes(AimRot, X, Y, Z);
 		if (bHideWeapon)
 			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	}
 	else
 	{
 		AimRot = PawnOwner.AdjustAim(ProjectileSpeed, Owner.Location, AimError, True, bWarnTarget);
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
 
 		GetAxes(PawnOwner.ViewRotation, X, Y, Z);
 		if (bHideWeapon)
 			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	}
 
 	PawnOwner.MakeNoise(PawnOwner.SoundDampening);
@@ -281,39 +273,31 @@ function SpawnServerRazorAlt()
 	local rotator AimRot;
 	local ST_Razor2Alt RazorAlt;
 	local bbPlayer bbP;
-	local float Hand;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
 
+	// SetHand already mirrors FireOffset.Y; applying Handedness again flips Right back to Left.
 	// Use explicit client data if available
 	if (bUseExplicitData)
 	{
 		AimRot = ExplicitClientRot;
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
 
 		GetAxes(AimRot, X, Y, Z);
 		if (bHideWeapon)
 			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = ExplicitClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	}
 	else
 	{
 		AimRot = PawnOwner.AdjustAim(AltProjectileSpeed, Owner.Location, AimError, True, bAltWarnTarget);
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
 
 		GetAxes(PawnOwner.ViewRotation, X, Y, Z);
 		if (bHideWeapon)
 			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Z * Z;
 		else
-			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	}
 
 	PawnOwner.MakeNoise(PawnOwner.SoundDampening);
