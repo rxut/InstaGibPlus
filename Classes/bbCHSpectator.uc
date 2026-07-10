@@ -4,6 +4,9 @@
 
 class bbCHSpectator extends CHSpectator;
 
+// MUST stay in sync with ServerSettings.EShowDamageNumberMode declaration order.
+const DMG_Disabled = 0;
+
 // AntiSpam
 var float zzLastView1,zzLastView2;
 var int zzAdminLoginTries;
@@ -47,6 +50,13 @@ var ServerSettings IGPlus_ServerSettingsMenuData;
 var bool IGPlus_ServerSettingsMenuLoaded;
 var bool IGPlus_ServerSettingsMenuCanEdit;
 
+var Object IGPlus_WeaponSettingsHelper;
+var WeaponSettings IGPlus_WeaponSettingsMenuData;
+var bool IGPlus_WeaponSettingsMenuLoaded;
+var bool IGPlus_WeaponSettingsMenuCanEdit;
+
+var int ShowDamageNumberMode;
+
 replication
 {
 	reliable if (RemoteRole == ROLE_AutonomousProxy)
@@ -61,10 +71,17 @@ replication
 		xxSetTimes,
 		IGPlus_ServerSettingsInit,
 		IGPlus_ServerSettingsSet,
-		IGPlus_ServerSettingsDone; //, xxClientActivateMover;
+		IGPlus_ServerSettingsDone,
+		IGPlus_WeaponSettingsInit,
+		IGPlus_WeaponSettingsSet,
+		IGPlus_WeaponSettingsDone; //, xxClientActivateMover;
+
+	reliable if (bNetOwner && Role == ROLE_Authority)
+		ShowDamageNumberMode;
 
 	reliable if (Role < ROLE_Authority)
-		IGPlus_ServerRequestSettings;
+		IGPlus_ServerRequestSettings,
+		IGPlus_WeaponRequestSettings;
 
 	reliable if ( (!bDemoRecording || (bClientDemoRecording && bClientDemoNetFunc) || (Level.NetMode==NM_Standalone)) && Role == ROLE_Authority )
 		ReceiveWeaponEffect;
@@ -323,6 +340,9 @@ event PostBeginPlay()
 	VersionInfoClass = class<Info>(DynamicLoadObject(class'StringUtils'.static.GetPackage()$".VersionInfo", class'class', true));
 	VersionInfo = Spawn(VersionInfoClass);
 
+	if (Role == ROLE_Authority && zzUTPure != none && zzUTPure.Settings != none)
+		ShowDamageNumberMode = int(zzUTPure.Settings.ShowDamageNumberMode);
+
 	InitSettings();
 }
 
@@ -379,6 +399,9 @@ event PostRender( canvas Canvas )
 
 	class'bbPlayerStatics'.static.DrawFPS(Canvas, MyHud, Settings, LastDeltaTime);
 	class'bbPlayerStatics'.static.DrawHitMarker(Canvas, Settings, LastDeltaTime);
+
+	if (Settings.bSpectatorShowDamageNumbers)
+		class'bbPlayerStatics'.static.DrawDamageNumbers(Canvas, Settings, LastDeltaTime);
 }
 
 function xxCalcBehindView(out vector CameraLocation, out rotator CameraRotation, float Dist)
@@ -921,6 +944,19 @@ exec function ShowFPS() {
 		ClientMessage("FPS hidden!", 'IGPlus');
 }
 
+exec function ShowDamageNumbers() {
+	Settings.bSpectatorShowDamageNumbers = !Settings.bSpectatorShowDamageNumbers;
+	Settings.SaveConfig();
+	if (Settings.bSpectatorShowDamageNumbers) {
+		if (ShowDamageNumberMode == DMG_Disabled)
+			ClientMessage("Spectator damage numbers: ON (server has damage numbers disabled - no numbers will appear)", 'IGPlus');
+		else
+			ClientMessage("Spectator damage numbers: ON", 'IGPlus');
+	} else {
+		ClientMessage("Spectator damage numbers: OFF", 'IGPlus');
+	}
+}
+
 exec function IGPlusMenu() {
 	local WindowConsole C;
 
@@ -1037,6 +1073,18 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("KillCamDelay");
 	IGPlus_ServerSendSetting("KillCamDuration");
 
+	IGPlus_ServerSendSetting("bWarmup");
+	IGPlus_ServerSendSetting("WarmupTimeLimit");
+	IGPlus_ServerSendSetting("bCoaches");
+	IGPlus_ServerSendSetting("Timeouts");
+	IGPlus_ServerSendSetting("bFastTeams");
+	IGPlus_ServerSendSetting("bUseClickboard");
+	IGPlus_ServerSendSetting("bAdvancedTeamSay");
+	IGPlus_ServerSendSetting("bAllowMultiWeapon");
+	IGPlus_ServerSendSetting("bDelayedPickupSpawn");
+	IGPlus_ServerSendSetting("bUseFastWeaponSwitch");
+	IGPlus_ServerSendSetting("bTellSpectators");
+
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");
 	IGPlus_ServerSendSetting("bOldLandingMomentum");
 	IGPlus_ServerSendSetting("bEnableSingleButtonDodge");
@@ -1065,14 +1113,233 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");
 	IGPlus_ServerSendSetting("bEnableWarpFix");
 
+	IGPlus_ServerSendSetting("MinClientRate");
+	IGPlus_ServerSendSetting("MaxClientRate");
+	IGPlus_ServerSendSetting("ForceSettingsLevel");
+
 	IGPlus_ServerSendSetting("ShowTouchedPackage");
 	IGPlus_ServerSendSetting("HitFeedbackMode");
-	IGPlus_ServerSendSetting("bEnableDamageDebugMode");
-	IGPlus_ServerSendSetting("bEnableDamageDebugConsoleMessages");
+	IGPlus_ServerSendSetting("ShowDamageNumberMode");
 	IGPlus_ServerSendSetting("bEnableHitboxDebugMode");
 
 	IGPlus_ServerSettingsDone(true);
 }
+
+simulated function WeaponSettings IGPlus_GetWeaponSettingsObject() {
+	if (IGPlus_WeaponSettingsMenuData != none)
+		return IGPlus_WeaponSettingsMenuData;
+
+	IGPlus_WeaponSettingsHelper = new(none, 'InstaGibPlus') class'Object';
+	IGPlus_WeaponSettingsMenuData = new(IGPlus_WeaponSettingsHelper, 'IGPlus_WeaponSettingsMenu') class'WeaponSettings';
+	return IGPlus_WeaponSettingsMenuData;
+}
+
+function IGPlus_WeaponSettingsInit() {
+	IGPlus_WeaponSettingsMenuLoaded = false;
+	IGPlus_WeaponSettingsMenuCanEdit = false;
+	IGPlus_WeaponSettingsMenuData = none;
+}
+
+function IGPlus_WeaponSettingsSet(string Key, string Value) {
+	local WeaponSettings S;
+
+	S = IGPlus_GetWeaponSettingsObject();
+	if (S == none)
+		return;
+
+	S.SetPropertyText(Key, Value);
+}
+
+function IGPlus_WeaponSettingsDone(bool bCanEdit) {
+	IGPlus_WeaponSettingsMenuLoaded = true;
+	IGPlus_WeaponSettingsMenuCanEdit = bCanEdit;
+}
+
+function IGPlus_WeaponSendSetting(string Key) {
+	local IGPlus_WeaponImplementation WImp;
+
+	if (zzUTPure == none)
+		return;
+
+	WImp = zzUTPure.GetWeaponImpl();
+	if (WImp == none || WImp.WeaponSettings == none)
+		return;
+
+	IGPlus_WeaponSettingsSet(Key, WImp.WeaponSettings.GetPropertyText(Key));
+}
+
+function IGPlus_WeaponRequestSettings() {
+	local IGPlus_WeaponImplementation WImp;
+
+	if (bAdmin == false || zzUTPure == none) {
+		IGPlus_WeaponSettingsInit();
+		IGPlus_WeaponSettingsDone(false);
+		return;
+	}
+
+	WImp = zzUTPure.GetWeaponImpl();
+	if (WImp == none || WImp.WeaponSettings == none) {
+		IGPlus_WeaponSettingsInit();
+		IGPlus_WeaponSettingsDone(false);
+		return;
+	}
+
+	IGPlus_WeaponSettingsInit();
+
+	IGPlus_WeaponSendSetting("bEnableEnhancedSplashBio");
+	IGPlus_WeaponSendSetting("bEnableEnhancedSplashShockCombo");
+	IGPlus_WeaponSendSetting("bEnableEnhancedSplashShockProjectile");
+	IGPlus_WeaponSendSetting("bEnableEnhancedSplashRipperSecondary");
+	IGPlus_WeaponSendSetting("bEnableEnhancedSplashFlakSlug");
+	IGPlus_WeaponSendSetting("bEnableEnhancedSplashRockets");
+	IGPlus_WeaponSendSetting("bEnhancedSplashIgnoreStationaryPawns");
+	IGPlus_WeaponSendSetting("SplashMaxDiffraction");
+	IGPlus_WeaponSendSetting("SplashMinDiffractionDistance");
+	IGPlus_WeaponSendSetting("SplashWraparoundRadiusScale");
+	IGPlus_WeaponSendSetting("HeadHalfHeight");
+	IGPlus_WeaponSendSetting("HeadRadius");
+	IGPlus_WeaponSendSetting("bEnablePingCompensation");
+	IGPlus_WeaponSendSetting("bEnableSubTickCompensation");
+	IGPlus_WeaponSendSetting("PingCompensationMax");
+	IGPlus_WeaponSendSetting("bEnableAnimationAdaptiveHeadHitbox");
+	IGPlus_WeaponSendSetting("InvisibilityDuration");
+	IGPlus_WeaponSendSetting("ShieldBeltCharge");
+	IGPlus_WeaponSendSetting("ArmorCharge");
+	IGPlus_WeaponSendSetting("ThighPadsCharge");
+	IGPlus_WeaponSendSetting("HealthPackHealingAmount");
+	IGPlus_WeaponSendSetting("WarheadSelectTime");
+	IGPlus_WeaponSendSetting("WarheadDownTime");
+	IGPlus_WeaponSendSetting("SniperSelectTime");
+	IGPlus_WeaponSendSetting("SniperDownTime");
+	IGPlus_WeaponSendSetting("SniperDamage");
+	IGPlus_WeaponSendSetting("SniperHeadshotDamage");
+	IGPlus_WeaponSendSetting("SniperMomentum");
+	IGPlus_WeaponSendSetting("SniperHeadshotMomentum");
+	IGPlus_WeaponSendSetting("SniperReloadTime");
+	IGPlus_WeaponSendSetting("SniperUseReducedHitbox");
+	IGPlus_WeaponSendSetting("EightballSelectTime");
+	IGPlus_WeaponSendSetting("EightballDownTime");
+	IGPlus_WeaponSendSetting("RocketDamage");
+	IGPlus_WeaponSendSetting("RocketSelfDamage");
+	IGPlus_WeaponSendSetting("RocketHurtRadius");
+	IGPlus_WeaponSendSetting("RocketMomentum");
+	IGPlus_WeaponSendSetting("RocketSpreadSpacingDegrees");
+	IGPlus_WeaponSendSetting("RocketSpeed");
+	IGPlus_WeaponSendSetting("GrenadeDamage");
+	IGPlus_WeaponSendSetting("GrenadeHurtRadius");
+	IGPlus_WeaponSendSetting("GrenadeMomentum");
+	IGPlus_WeaponSendSetting("RocketCompensatePing");
+	IGPlus_WeaponSendSetting("FlakSelectTime");
+	IGPlus_WeaponSendSetting("FlakPostSelectTime");
+	IGPlus_WeaponSendSetting("FlakDownTime");
+	IGPlus_WeaponSendSetting("FlakChunkDamage");
+	IGPlus_WeaponSendSetting("FlakChunkMomentum");
+	IGPlus_WeaponSendSetting("FlakChunkLifespan");
+	IGPlus_WeaponSendSetting("FlakChunkDropOffStart");
+	IGPlus_WeaponSendSetting("FlakChunkDropOffEnd");
+	IGPlus_WeaponSendSetting("FlakChunkDropOffDamageRatio");
+	IGPlus_WeaponSendSetting("FlakChunkRandomSpread");
+	IGPlus_WeaponSendSetting("FlakChunkRandomSpreadSize");
+	IGPlus_WeaponSendSetting("FlakSlugDamage");
+	IGPlus_WeaponSendSetting("FlakSlugHurtRadius");
+	IGPlus_WeaponSendSetting("FlakSlugMomentum");
+	IGPlus_WeaponSendSetting("FlakCompensatePing");
+	IGPlus_WeaponSendSetting("RipperSelectTime");
+	IGPlus_WeaponSendSetting("RipperDownTime");
+	IGPlus_WeaponSendSetting("RipperHeadshotDamage");
+	IGPlus_WeaponSendSetting("RipperHeadShotDamageWallMultiplier");
+	IGPlus_WeaponSendSetting("RipperHeadshotMomentum");
+	IGPlus_WeaponSendSetting("RipperPrimaryDamage");
+	IGPlus_WeaponSendSetting("RipperPrimaryDamageWallMultiplier");
+	IGPlus_WeaponSendSetting("RipperPrimaryMomentum");
+	IGPlus_WeaponSendSetting("RipperSecondaryHurtRadius");
+	IGPlus_WeaponSendSetting("RipperSecondaryDamage");
+	IGPlus_WeaponSendSetting("RipperSecondaryMomentum");
+	IGPlus_WeaponSendSetting("RipperCompensatePing");
+	IGPlus_WeaponSendSetting("MinigunSelectTime");
+	IGPlus_WeaponSendSetting("MinigunDownTime");
+	IGPlus_WeaponSendSetting("MinigunSpinUpTime");
+	IGPlus_WeaponSendSetting("MinigunUnwindTime");
+	IGPlus_WeaponSendSetting("MinigunBulletInterval");
+	IGPlus_WeaponSendSetting("MinigunAlternateBulletInterval");
+	IGPlus_WeaponSendSetting("MinigunMinDamage");
+	IGPlus_WeaponSendSetting("MinigunMaxDamage");
+	IGPlus_WeaponSendSetting("MinigunAltMinDamage");
+	IGPlus_WeaponSendSetting("MinigunAltMaxDamage");
+	IGPlus_WeaponSendSetting("PulseSelectTime");
+	IGPlus_WeaponSendSetting("PulseDownTime");
+	IGPlus_WeaponSendSetting("PulseSphereDamage");
+	IGPlus_WeaponSendSetting("PulseSphereMomentum");
+	IGPlus_WeaponSendSetting("PulseSphereSpeed");
+	IGPlus_WeaponSendSetting("PulseSphereFireRate");
+	IGPlus_WeaponSendSetting("PulseSphereCollisionRadius");
+	IGPlus_WeaponSendSetting("PulseSphereCollisionHeight");
+	IGPlus_WeaponSendSetting("PulseBoltDPS");
+	IGPlus_WeaponSendSetting("PulseBoltMomentum");
+	IGPlus_WeaponSendSetting("PulseBoltMaxAccumulate");
+	IGPlus_WeaponSendSetting("PulseBoltGrowthDelay");
+	IGPlus_WeaponSendSetting("PulseBoltMaxSegments");
+	IGPlus_WeaponSendSetting("PulseCompensatePing");
+	IGPlus_WeaponSendSetting("ShockSelectTime");
+	IGPlus_WeaponSendSetting("ShockDownTime");
+	IGPlus_WeaponSendSetting("ShockBeamDamage");
+	IGPlus_WeaponSendSetting("ShockBeamMomentum");
+	IGPlus_WeaponSendSetting("ShockBeamUseReducedHitbox");
+	IGPlus_WeaponSendSetting("ShockProjectileDamage");
+	IGPlus_WeaponSendSetting("ShockProjectileHurtRadius");
+	IGPlus_WeaponSendSetting("ShockProjectileMomentum");
+	IGPlus_WeaponSendSetting("ShockProjectileBlockBullets");
+	IGPlus_WeaponSendSetting("ShockProjectileBlockFlakChunk");
+	IGPlus_WeaponSendSetting("ShockProjectileBlockFlakSlug");
+	IGPlus_WeaponSendSetting("ShockProjectileTakeDamage");
+	IGPlus_WeaponSendSetting("ShockProjectileHealth");
+	IGPlus_WeaponSendSetting("ShockComboDamage");
+	IGPlus_WeaponSendSetting("ShockComboMomentum");
+	IGPlus_WeaponSendSetting("ShockComboHurtRadius");
+	IGPlus_WeaponSendSetting("BioSelectTime");
+	IGPlus_WeaponSendSetting("BioDownTime");
+	IGPlus_WeaponSendSetting("BioDamage");
+	IGPlus_WeaponSendSetting("BioMomentum");
+	IGPlus_WeaponSendSetting("BioPrimaryInstantExplosion");
+	IGPlus_WeaponSendSetting("BioAltDamage");
+	IGPlus_WeaponSendSetting("BioAltMomentum");
+	IGPlus_WeaponSendSetting("BioHurtRadiusBase");
+	IGPlus_WeaponSendSetting("BioHurtRadiusMax");
+	IGPlus_WeaponSendSetting("BioCompensatePing");
+	IGPlus_WeaponSendSetting("EnforcerSelectTime");
+	IGPlus_WeaponSendSetting("EnforcerDownTime");
+	IGPlus_WeaponSendSetting("EnforcerDamage");
+	IGPlus_WeaponSendSetting("EnforcerMomentum");
+	IGPlus_WeaponSendSetting("EnforcerReloadTime");
+	IGPlus_WeaponSendSetting("EnforcerReloadTimeAlt");
+	IGPlus_WeaponSendSetting("EnforcerReloadTimeRepeat");
+	IGPlus_WeaponSendSetting("EnforcerUseReducedHitbox");
+	IGPlus_WeaponSendSetting("EnforcerAllowDouble");
+	IGPlus_WeaponSendSetting("EnforcerDamageDouble");
+	IGPlus_WeaponSendSetting("EnforcerMomentumDouble");
+	IGPlus_WeaponSendSetting("EnforcerShotOffsetDouble");
+	IGPlus_WeaponSendSetting("EnforcerReloadTimeDouble");
+	IGPlus_WeaponSendSetting("EnforcerReloadTimeAltDouble");
+	IGPlus_WeaponSendSetting("EnforcerReloadTimeRepeatDouble");
+	IGPlus_WeaponSendSetting("HammerSelectTime");
+	IGPlus_WeaponSendSetting("HammerDownTime");
+	IGPlus_WeaponSendSetting("HammerDamage");
+	IGPlus_WeaponSendSetting("HammerMomentum");
+	IGPlus_WeaponSendSetting("HammerSelfDamage");
+	IGPlus_WeaponSendSetting("HammerSelfMomentum");
+	IGPlus_WeaponSendSetting("HammerAltDamage");
+	IGPlus_WeaponSendSetting("HammerAltMomentum");
+	IGPlus_WeaponSendSetting("HammerAltSelfDamage");
+	IGPlus_WeaponSendSetting("HammerAltSelfMomentum");
+	IGPlus_WeaponSendSetting("TranslocatorSelectTime");
+	IGPlus_WeaponSendSetting("TranslocatorOutSelectTime");
+	IGPlus_WeaponSendSetting("TranslocatorDownTime");
+	IGPlus_WeaponSendSetting("TranslocatorHealth");
+	IGPlus_WeaponSendSetting("TranslocatorCompensatePing");
+
+	IGPlus_WeaponSettingsDone(true);
+}
+
 
 // Notification of other player respawning, play effects locally
 function IGPlus_NotifyPlayerRestart(vector Loc, rotator Dir, bbPlayer Other) {

@@ -1,4 +1,4 @@
-class IGPlus_SettingsContent extends UMenuPageWindow;
+﻿class IGPlus_SettingsContent extends UMenuPageWindow;
 
 var ClientSettings Settings;
 
@@ -401,6 +401,18 @@ var localized string MoreInformationText;
 	var UWindowHSliderControl HSld_HitMarkerTeamColorB;
 	var localized string HitMarkerTeamColorBText;
 	var localized string HitMarkerTeamColorBHelp;
+
+// Damage Numbers
+	var UWindowLabelControl Lbl_DamageNumbers;
+	var localized string DamageNumbersLblText;
+
+	var IGPlus_EditControl Edit_DamageNumberDuration;
+	var localized string DamageNumberDurationText;
+	var localized string DamageNumberDurationHelp;
+
+	var IGPlus_EditControl Edit_DamageNumberFade;
+	var localized string DamageNumberFadeText;
+	var localized string DamageNumberFadeHelp;
 
 // Crosshair Factory
 	var UWindowLabelControl Lbl_CrosshairFactory;
@@ -983,6 +995,10 @@ function Created() {
 	HSld_HitMarkerTeamColorG = CreateSlider(0, 255, 1, HitMarkerTeamColorGText, HitMarkerTeamColorGHelp, 150);
 	HSld_HitMarkerTeamColorB = CreateSlider(0, 255, 1, HitMarkerTeamColorBText, HitMarkerTeamColorBHelp, 150);
 
+	Lbl_DamageNumbers = CreateSeparator(DamageNumbersLblText);
+	Edit_DamageNumberDuration = CreateEdit(ECT_Real, DamageNumberDurationText, DamageNumberDurationHelp, , 64);
+	Edit_DamageNumberFade = CreateEdit(ECT_Real, DamageNumberFadeText, DamageNumberFadeHelp, , 64);
+
 	Lbl_CrosshairFactory = CreateSeparator(CrosshairFactoryText);
 	Chk_UseCrosshairFactory = CreateCheckbox(UseCrosshairFactoryText, UseCrosshairFactoryHelp);
 	Btn_CrosshairSettings = CreateButton(CrosshairSettingsText);
@@ -1130,6 +1146,9 @@ function Load() {
 	HSld_HitMarkerTeamColorG.SetValue(Settings.HitMarkerTeamColor.G);
 	HSld_HitMarkerTeamColorB.SetValue(Settings.HitMarkerTeamColor.B);
 
+	Edit_DamageNumberDuration.SetValue(string(Settings.DamageNumberDuration));
+	Edit_DamageNumberFade.SetValue(string(Settings.DamageNumberFade));
+
 	Chk_UseCrosshairFactory.bChecked = Settings.bUseCrosshairFactory;
 
 	Chk_BioUseClientSideAnimations.bChecked = Settings.bBioUseClientSideAnimations;
@@ -1250,6 +1269,9 @@ function Save() {
 	Settings.HitMarkerTeamColor.R = HSld_HitMarkerTeamColorR.GetValue();
 	Settings.HitMarkerTeamColor.G = HSld_HitMarkerTeamColorG.GetValue();
 	Settings.HitMarkerTeamColor.B = HSld_HitMarkerTeamColorB.GetValue();
+
+	Settings.DamageNumberDuration = float(Edit_DamageNumberDuration.GetValue());
+	Settings.DamageNumberFade = float(Edit_DamageNumberFade.GetValue());
 
 	Settings.bUseCrosshairFactory = Chk_UseCrosshairFactory.bChecked;
 
@@ -1594,6 +1616,14 @@ defaultproperties
 
 		HitMarkerTeamColorBText="Color (Team) - Blue"
 		HitMarkerTeamColorBHelp="Blue color component of hit markers for team-mates"
+
+	DamageNumbersLblText="Damage Numbers"
+
+		DamageNumberDurationText="Damage Number Duration"
+		DamageNumberDurationHelp="Length of time in seconds to display damage numbers (clamped 0.1 to 10.0)"
+
+		DamageNumberFadeText="Damage Number Fade"
+		DamageNumberFadeHelp="Damage number fade curve, 1=linear, 2=quadratic, 3=cubic, etc. (clamped 1.0 to 10.0)"
 
 	CrosshairFactoryText="Crosshair Factory"
 

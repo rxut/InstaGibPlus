@@ -23,6 +23,7 @@ var config bool  bEnableEnhancedSplashRockets;
 var config bool  bEnhancedSplashIgnoreStationaryPawns;
 var config float SplashMaxDiffraction;
 var config float SplashMinDiffractionDistance;
+var config float SplashWraparoundRadiusScale;
 
 var config float HeadHalfHeight;
 var config float HeadRadius;
@@ -213,6 +214,7 @@ defaultproperties
 	bEnableEnhancedSplashRockets=False
 	SplashMaxDiffraction=0.5
 	SplashMinDiffractionDistance=50.0
+	SplashWraparoundRadiusScale=1.0
 
 	HeadHalfHeight=7.5
 	HeadRadius=11.0

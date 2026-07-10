@@ -998,6 +998,17 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "TradePingMargin") return "TradePingMargin";
 	if (Key ~= "KillCamDelay") return "KillCamDelay";
 	if (Key ~= "KillCamDuration") return "KillCamDuration";
+	if (Key ~= "bWarmup") return "bWarmup";
+	if (Key ~= "WarmupTimeLimit") return "WarmupTimeLimit";
+	if (Key ~= "bCoaches") return "bCoaches";
+	if (Key ~= "Timeouts") return "Timeouts";
+	if (Key ~= "bFastTeams") return "bFastTeams";
+	if (Key ~= "bUseClickboard") return "bUseClickboard";
+	if (Key ~= "bAdvancedTeamSay") return "bAdvancedTeamSay";
+	if (Key ~= "bAllowMultiWeapon") return "bAllowMultiWeapon";
+	if (Key ~= "bDelayedPickupSpawn") return "bDelayedPickupSpawn";
+	if (Key ~= "bUseFastWeaponSwitch") return "bUseFastWeaponSwitch";
+	if (Key ~= "bTellSpectators") return "bTellSpectators";
 	if (Key ~= "bJumpingPreservesMomentum") return "bJumpingPreservesMomentum";
 	if (Key ~= "bOldLandingMomentum") return "bOldLandingMomentum";
 	if (Key ~= "bEnableSingleButtonDodge") return "bEnableSingleButtonDodge";
@@ -1024,10 +1035,12 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
 	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";
 	if (Key ~= "bEnableWarpFix") return "bEnableWarpFix";
+	if (Key ~= "MinClientRate") return "MinClientRate";
+	if (Key ~= "MaxClientRate") return "MaxClientRate";
+	if (Key ~= "ForceSettingsLevel") return "ForceSettingsLevel";
 	if (Key ~= "ShowTouchedPackage") return "ShowTouchedPackage";
 	if (Key ~= "HitFeedbackMode") return "HitFeedbackMode";
-	if (Key ~= "bEnableDamageDebugMode") return "bEnableDamageDebugMode";
-	if (Key ~= "bEnableDamageDebugConsoleMessages") return "bEnableDamageDebugConsoleMessages";
+	if (Key ~= "ShowDamageNumberMode") return "ShowDamageNumberMode";
 	if (Key ~= "bEnableHitboxDebugMode") return "bEnableHitboxDebugMode";
 	return "";
 }
@@ -1035,18 +1048,17 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 function IGPlus_ApplyServerSettingsToPlayers() {
 	local Pawn P;
 	local bbPlayer BP;
+	local bbCHSpectator BS;
 	local bool bOldSnap;
 
 	for (P = Level.PawnList; P != None; P = P.NextPawn) {
 		BP = bbPlayer(P);
-		if (BP == None)
-			continue;
-
-		BP.TeleRadius = Settings.TeleRadius;
-		BP.BrightskinMode = Settings.BrightskinMode;
-		BP.KillCamDelay = FMax(0.0, Settings.KillCamDelay);
-		BP.KillCamDuration = Settings.KillCamDuration;
-		BP.bJumpingPreservesMomentum = Settings.bJumpingPreservesMomentum;
+		if (BP != None) {
+			BP.TeleRadius = Settings.TeleRadius;
+			BP.BrightskinMode = Settings.BrightskinMode;
+			BP.KillCamDelay = FMax(0.0, Settings.KillCamDelay);
+			BP.KillCamDuration = Settings.KillCamDuration;
+			BP.bJumpingPreservesMomentum = Settings.bJumpingPreservesMomentum;
 		BP.bOldLandingMomentum = Settings.bOldLandingMomentum;
 		BP.bEnableSingleButtonDodge = Settings.bEnableSingleButtonDodge;
 		BP.bUseFlipAnimation = Settings.bUseFlipAnimation;
@@ -1054,19 +1066,29 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 		BP.bDodgePreserveZMomentum = Settings.bDodgePreserveZMomentum;
 		BP.bAlwaysRelevant = Settings.bPlayersAlwaysRelevant || (BP.PlayerReplicationInfo != none && BP.PlayerReplicationInfo.HasFlag != none);
 		BP.IGPlus_EnableWarpFix = Settings.bEnableWarpFix;
-		BP.IGPlus_WarpFixDelay = Settings.WarpFixDelay;
-		BP.IGPlus_AlwaysRenderFlagCarrier = Settings.bAlwaysRenderFlagCarrier;
-		BP.IGPlus_AlwaysRenderDroppedFlags = Settings.bAlwaysRenderDroppedFlags;
-		BP.IGPlus_UseFastWeaponSwitch = Settings.bUseFastWeaponSwitch;
-		BP.IGPlus_EnableInputReplication = Settings.bEnableInputReplication;
-		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
-		BP.IGPlus_EnableSnapshotInterpolation = Settings.bEnableSnapshotInterpolation;
-		if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {
-			BP.IGPlus_SnapInterp_ServerNextTime = 0;
-			BP.IGPlus_SnapInterp_ServerHasLast = false;
+			BP.IGPlus_WarpFixDelay = Settings.WarpFixDelay;
+			BP.IGPlus_AlwaysRenderFlagCarrier = Settings.bAlwaysRenderFlagCarrier;
+			BP.IGPlus_AlwaysRenderDroppedFlags = Settings.bAlwaysRenderDroppedFlags;
+			BP.IGPlus_UseFastWeaponSwitch = Settings.bUseFastWeaponSwitch;
+			BP.IGPlus_EnableInputReplication = Settings.bEnableInputReplication;
+			BP.zzMinimumNetspeed = Settings.MinClientRate;
+			BP.zzMaximumNetspeed = Settings.MaxClientRate;
+			BP.zzForceSettingsLevel = Settings.ForceSettingsLevel;
+			BP.zzbNoMultiWeapon = !Settings.bAllowMultiWeapon;
+			bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
+			BP.IGPlus_EnableSnapshotInterpolation = Settings.bEnableSnapshotInterpolation;
+			if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {
+				BP.IGPlus_SnapInterp_ServerNextTime = 0;
+				BP.IGPlus_SnapInterp_ServerHasLast = false;
+			}
+			BP.ShowDamageNumberMode = int(Settings.ShowDamageNumberMode);
+			continue;
 		}
-		BP.bEnableDamageDebugMode = Settings.bEnableDamageDebugMode;
-		BP.bEnableDamageDebugConsoleMessages = Settings.bEnableDamageDebugConsoleMessages;
+
+		BS = bbCHSpectator(P);
+		if (BS != None) {
+			BS.ShowDamageNumberMode = int(Settings.ShowDamageNumberMode);
+		}
 	}
 }
 
@@ -1107,6 +1129,211 @@ function IGPlus_SetServerSetting(PlayerPawn Sender, string Key, string Value, op
 	if (bSendFeedback)
 		Sender.ClientMessage(NormalKey$"="$Settings.GetPropertyText(NormalKey));
 }
+
+function string IGPlus_NormalizeWeaponSettingKey(string Key) {
+	if (Key ~= "bEnableEnhancedSplashBio") return "bEnableEnhancedSplashBio";
+	if (Key ~= "bEnableEnhancedSplashShockCombo") return "bEnableEnhancedSplashShockCombo";
+	if (Key ~= "bEnableEnhancedSplashShockProjectile") return "bEnableEnhancedSplashShockProjectile";
+	if (Key ~= "bEnableEnhancedSplashRipperSecondary") return "bEnableEnhancedSplashRipperSecondary";
+	if (Key ~= "bEnableEnhancedSplashFlakSlug") return "bEnableEnhancedSplashFlakSlug";
+	if (Key ~= "bEnableEnhancedSplashRockets") return "bEnableEnhancedSplashRockets";
+	if (Key ~= "bEnhancedSplashIgnoreStationaryPawns") return "bEnhancedSplashIgnoreStationaryPawns";
+	if (Key ~= "SplashMaxDiffraction") return "SplashMaxDiffraction";
+	if (Key ~= "SplashMinDiffractionDistance") return "SplashMinDiffractionDistance";
+	if (Key ~= "SplashWraparoundRadiusScale") return "SplashWraparoundRadiusScale";
+	if (Key ~= "HeadHalfHeight") return "HeadHalfHeight";
+	if (Key ~= "HeadRadius") return "HeadRadius";
+	if (Key ~= "bEnablePingCompensation") return "bEnablePingCompensation";
+	if (Key ~= "bEnableSubTickCompensation") return "bEnableSubTickCompensation";
+	if (Key ~= "PingCompensationMax") return "PingCompensationMax";
+	if (Key ~= "bEnableAnimationAdaptiveHeadHitbox") return "bEnableAnimationAdaptiveHeadHitbox";
+	if (Key ~= "InvisibilityDuration") return "InvisibilityDuration";
+	if (Key ~= "ShieldBeltCharge") return "ShieldBeltCharge";
+	if (Key ~= "ArmorCharge") return "ArmorCharge";
+	if (Key ~= "ThighPadsCharge") return "ThighPadsCharge";
+	if (Key ~= "HealthPackHealingAmount") return "HealthPackHealingAmount";
+	if (Key ~= "WarheadSelectTime") return "WarheadSelectTime";
+	if (Key ~= "WarheadDownTime") return "WarheadDownTime";
+	if (Key ~= "SniperSelectTime") return "SniperSelectTime";
+	if (Key ~= "SniperDownTime") return "SniperDownTime";
+	if (Key ~= "SniperDamage") return "SniperDamage";
+	if (Key ~= "SniperHeadshotDamage") return "SniperHeadshotDamage";
+	if (Key ~= "SniperMomentum") return "SniperMomentum";
+	if (Key ~= "SniperHeadshotMomentum") return "SniperHeadshotMomentum";
+	if (Key ~= "SniperReloadTime") return "SniperReloadTime";
+	if (Key ~= "SniperUseReducedHitbox") return "SniperUseReducedHitbox";
+	if (Key ~= "EightballSelectTime") return "EightballSelectTime";
+	if (Key ~= "EightballDownTime") return "EightballDownTime";
+	if (Key ~= "RocketDamage") return "RocketDamage";
+	if (Key ~= "RocketSelfDamage") return "RocketSelfDamage";
+	if (Key ~= "RocketHurtRadius") return "RocketHurtRadius";
+	if (Key ~= "RocketMomentum") return "RocketMomentum";
+	if (Key ~= "RocketSpreadSpacingDegrees") return "RocketSpreadSpacingDegrees";
+	if (Key ~= "RocketSpeed") return "RocketSpeed";
+	if (Key ~= "GrenadeDamage") return "GrenadeDamage";
+	if (Key ~= "GrenadeHurtRadius") return "GrenadeHurtRadius";
+	if (Key ~= "GrenadeMomentum") return "GrenadeMomentum";
+	if (Key ~= "RocketCompensatePing") return "RocketCompensatePing";
+	if (Key ~= "FlakSelectTime") return "FlakSelectTime";
+	if (Key ~= "FlakPostSelectTime") return "FlakPostSelectTime";
+	if (Key ~= "FlakDownTime") return "FlakDownTime";
+	if (Key ~= "FlakChunkDamage") return "FlakChunkDamage";
+	if (Key ~= "FlakChunkMomentum") return "FlakChunkMomentum";
+	if (Key ~= "FlakChunkLifespan") return "FlakChunkLifespan";
+	if (Key ~= "FlakChunkDropOffStart") return "FlakChunkDropOffStart";
+	if (Key ~= "FlakChunkDropOffEnd") return "FlakChunkDropOffEnd";
+	if (Key ~= "FlakChunkDropOffDamageRatio") return "FlakChunkDropOffDamageRatio";
+	if (Key ~= "FlakChunkRandomSpread") return "FlakChunkRandomSpread";
+	if (Key ~= "FlakChunkRandomSpreadSize") return "FlakChunkRandomSpreadSize";
+	if (Key ~= "FlakSlugDamage") return "FlakSlugDamage";
+	if (Key ~= "FlakSlugHurtRadius") return "FlakSlugHurtRadius";
+	if (Key ~= "FlakSlugMomentum") return "FlakSlugMomentum";
+	if (Key ~= "FlakCompensatePing") return "FlakCompensatePing";
+	if (Key ~= "RipperSelectTime") return "RipperSelectTime";
+	if (Key ~= "RipperDownTime") return "RipperDownTime";
+	if (Key ~= "RipperHeadshotDamage") return "RipperHeadshotDamage";
+	if (Key ~= "RipperHeadShotDamageWallMultiplier") return "RipperHeadShotDamageWallMultiplier";
+	if (Key ~= "RipperHeadshotMomentum") return "RipperHeadshotMomentum";
+	if (Key ~= "RipperPrimaryDamage") return "RipperPrimaryDamage";
+	if (Key ~= "RipperPrimaryDamageWallMultiplier") return "RipperPrimaryDamageWallMultiplier";
+	if (Key ~= "RipperPrimaryMomentum") return "RipperPrimaryMomentum";
+	if (Key ~= "RipperSecondaryHurtRadius") return "RipperSecondaryHurtRadius";
+	if (Key ~= "RipperSecondaryDamage") return "RipperSecondaryDamage";
+	if (Key ~= "RipperSecondaryMomentum") return "RipperSecondaryMomentum";
+	if (Key ~= "RipperCompensatePing") return "RipperCompensatePing";
+	if (Key ~= "MinigunSelectTime") return "MinigunSelectTime";
+	if (Key ~= "MinigunDownTime") return "MinigunDownTime";
+	if (Key ~= "MinigunSpinUpTime") return "MinigunSpinUpTime";
+	if (Key ~= "MinigunUnwindTime") return "MinigunUnwindTime";
+	if (Key ~= "MinigunBulletInterval") return "MinigunBulletInterval";
+	if (Key ~= "MinigunAlternateBulletInterval") return "MinigunAlternateBulletInterval";
+	if (Key ~= "MinigunMinDamage") return "MinigunMinDamage";
+	if (Key ~= "MinigunMaxDamage") return "MinigunMaxDamage";
+	if (Key ~= "MinigunAltMinDamage") return "MinigunAltMinDamage";
+	if (Key ~= "MinigunAltMaxDamage") return "MinigunAltMaxDamage";
+	if (Key ~= "PulseSelectTime") return "PulseSelectTime";
+	if (Key ~= "PulseDownTime") return "PulseDownTime";
+	if (Key ~= "PulseSphereDamage") return "PulseSphereDamage";
+	if (Key ~= "PulseSphereMomentum") return "PulseSphereMomentum";
+	if (Key ~= "PulseSphereSpeed") return "PulseSphereSpeed";
+	if (Key ~= "PulseSphereFireRate") return "PulseSphereFireRate";
+	if (Key ~= "PulseSphereCollisionRadius") return "PulseSphereCollisionRadius";
+	if (Key ~= "PulseSphereCollisionHeight") return "PulseSphereCollisionHeight";
+	if (Key ~= "PulseBoltDPS") return "PulseBoltDPS";
+	if (Key ~= "PulseBoltMomentum") return "PulseBoltMomentum";
+	if (Key ~= "PulseBoltMaxAccumulate") return "PulseBoltMaxAccumulate";
+	if (Key ~= "PulseBoltGrowthDelay") return "PulseBoltGrowthDelay";
+	if (Key ~= "PulseBoltMaxSegments") return "PulseBoltMaxSegments";
+	if (Key ~= "PulseCompensatePing") return "PulseCompensatePing";
+	if (Key ~= "ShockSelectTime") return "ShockSelectTime";
+	if (Key ~= "ShockDownTime") return "ShockDownTime";
+	if (Key ~= "ShockBeamDamage") return "ShockBeamDamage";
+	if (Key ~= "ShockBeamMomentum") return "ShockBeamMomentum";
+	if (Key ~= "ShockBeamUseReducedHitbox") return "ShockBeamUseReducedHitbox";
+	if (Key ~= "ShockProjectileDamage") return "ShockProjectileDamage";
+	if (Key ~= "ShockProjectileHurtRadius") return "ShockProjectileHurtRadius";
+	if (Key ~= "ShockProjectileMomentum") return "ShockProjectileMomentum";
+	if (Key ~= "ShockProjectileBlockBullets") return "ShockProjectileBlockBullets";
+	if (Key ~= "ShockProjectileBlockFlakChunk") return "ShockProjectileBlockFlakChunk";
+	if (Key ~= "ShockProjectileBlockFlakSlug") return "ShockProjectileBlockFlakSlug";
+	if (Key ~= "ShockProjectileTakeDamage") return "ShockProjectileTakeDamage";
+	if (Key ~= "ShockProjectileHealth") return "ShockProjectileHealth";
+	if (Key ~= "ShockComboDamage") return "ShockComboDamage";
+	if (Key ~= "ShockComboMomentum") return "ShockComboMomentum";
+	if (Key ~= "ShockComboHurtRadius") return "ShockComboHurtRadius";
+	if (Key ~= "BioSelectTime") return "BioSelectTime";
+	if (Key ~= "BioDownTime") return "BioDownTime";
+	if (Key ~= "BioDamage") return "BioDamage";
+	if (Key ~= "BioMomentum") return "BioMomentum";
+	if (Key ~= "BioPrimaryInstantExplosion") return "BioPrimaryInstantExplosion";
+	if (Key ~= "BioAltDamage") return "BioAltDamage";
+	if (Key ~= "BioAltMomentum") return "BioAltMomentum";
+	if (Key ~= "BioHurtRadiusBase") return "BioHurtRadiusBase";
+	if (Key ~= "BioHurtRadiusMax") return "BioHurtRadiusMax";
+	if (Key ~= "BioCompensatePing") return "BioCompensatePing";
+	if (Key ~= "EnforcerSelectTime") return "EnforcerSelectTime";
+	if (Key ~= "EnforcerDownTime") return "EnforcerDownTime";
+	if (Key ~= "EnforcerDamage") return "EnforcerDamage";
+	if (Key ~= "EnforcerMomentum") return "EnforcerMomentum";
+	if (Key ~= "EnforcerReloadTime") return "EnforcerReloadTime";
+	if (Key ~= "EnforcerReloadTimeAlt") return "EnforcerReloadTimeAlt";
+	if (Key ~= "EnforcerReloadTimeRepeat") return "EnforcerReloadTimeRepeat";
+	if (Key ~= "EnforcerUseReducedHitbox") return "EnforcerUseReducedHitbox";
+	if (Key ~= "EnforcerAllowDouble") return "EnforcerAllowDouble";
+	if (Key ~= "EnforcerDamageDouble") return "EnforcerDamageDouble";
+	if (Key ~= "EnforcerMomentumDouble") return "EnforcerMomentumDouble";
+	if (Key ~= "EnforcerShotOffsetDouble") return "EnforcerShotOffsetDouble";
+	if (Key ~= "EnforcerReloadTimeDouble") return "EnforcerReloadTimeDouble";
+	if (Key ~= "EnforcerReloadTimeAltDouble") return "EnforcerReloadTimeAltDouble";
+	if (Key ~= "EnforcerReloadTimeRepeatDouble") return "EnforcerReloadTimeRepeatDouble";
+	if (Key ~= "HammerSelectTime") return "HammerSelectTime";
+	if (Key ~= "HammerDownTime") return "HammerDownTime";
+	if (Key ~= "HammerDamage") return "HammerDamage";
+	if (Key ~= "HammerMomentum") return "HammerMomentum";
+	if (Key ~= "HammerSelfDamage") return "HammerSelfDamage";
+	if (Key ~= "HammerSelfMomentum") return "HammerSelfMomentum";
+	if (Key ~= "HammerAltDamage") return "HammerAltDamage";
+	if (Key ~= "HammerAltMomentum") return "HammerAltMomentum";
+	if (Key ~= "HammerAltSelfDamage") return "HammerAltSelfDamage";
+	if (Key ~= "HammerAltSelfMomentum") return "HammerAltSelfMomentum";
+	if (Key ~= "TranslocatorSelectTime") return "TranslocatorSelectTime";
+	if (Key ~= "TranslocatorOutSelectTime") return "TranslocatorOutSelectTime";
+	if (Key ~= "TranslocatorDownTime") return "TranslocatorDownTime";
+	if (Key ~= "TranslocatorHealth") return "TranslocatorHealth";
+	if (Key ~= "TranslocatorCompensatePing") return "TranslocatorCompensatePing";
+	return "";
+}
+
+function IGPlus_ApplyWeaponSettings() {
+	local IGPlus_WeaponImplementation WImp;
+
+	WImp = GetWeaponImpl();
+	if (WImp == none || WImp.WeaponSettings == none || WImp.WSettingsRepl == none)
+		return;
+
+	WImp.WSettingsRepl.InitFromWeaponSettings(WImp.WeaponSettings);
+}
+
+function IGPlus_PrintWeaponSetting(PlayerPawn Sender, string Key) {
+	local string NormalKey;
+
+	if (GetWeaponImpl() == none || GetWeaponImpl().WeaponSettings == none) {
+		Sender.ClientMessage("Weapon settings unavailable");
+		return;
+	}
+
+	NormalKey = IGPlus_NormalizeWeaponSettingKey(Key);
+	if (NormalKey == "") {
+		Sender.ClientMessage("Unknown weapon setting:"@Key);
+		return;
+	}
+
+	Sender.ClientMessage(NormalKey$"="$GetWeaponImpl().WeaponSettings.GetPropertyText(NormalKey));
+}
+
+function IGPlus_SetWeaponSetting(PlayerPawn Sender, string Key, string Value, optional bool bSendFeedback) {
+	local string NormalKey;
+	local IGPlus_WeaponImplementation WImp;
+
+	WImp = GetWeaponImpl();
+	if (WImp == none || WImp.WeaponSettings == none) {
+		Sender.ClientMessage("Weapon settings unavailable");
+		return;
+	}
+
+	NormalKey = IGPlus_NormalizeWeaponSettingKey(Key);
+	if (NormalKey == "") {
+		Sender.ClientMessage("Unknown weapon setting:"@Key);
+		return;
+	}
+
+	WImp.WeaponSettings.SetPropertyText(NormalKey, Value);
+	WImp.WeaponSettings.SaveConfig();
+	IGPlus_ApplyWeaponSettings();
+	if (bSendFeedback)
+		Sender.ClientMessage(NormalKey$"="$WImp.WeaponSettings.GetPropertyText(NormalKey));
+}
+
 
 // ==================================================================================
 // Mutate - Accepts commands from the users
@@ -1168,6 +1395,8 @@ function Mutate(string MutateString, PlayerPawn Sender)
 		Sender.ClientMessage("Admin setting commands:");
 		Sender.ClientMessage("- mutate IGPlusServerGet <Setting>");
 		Sender.ClientMessage("- mutate IGPlusServerSet <Setting> <Value>");
+		Sender.ClientMessage("- mutate IGPlusWeaponGet <Setting>");
+		Sender.ClientMessage("- mutate IGPlusWeaponSet <Setting> <Value>");
 	}
 	else if (MutateString ~= "PingCompSettings")
 	{
@@ -1269,6 +1498,83 @@ function Mutate(string MutateString, PlayerPawn Sender)
 	else if (MutateString ~= "IGPlusServerSet")
 	{
 		Sender.ClientMessage("Usage: mutate IGPlusServerSet <Setting> <Value>");
+	}
+	else if (MutateString ~= "IGPlusWeaponGet")
+	{
+		Sender.ClientMessage("Usage: mutate IGPlusWeaponGet <Setting>");
+	}
+	else if (Left(MutateString, 16) ~= "IGPlusWeaponGet ")
+	{
+		if (Sender.bAdmin == false)
+		{
+			Sender.ClientMessage(BADminText);
+		}
+		else
+		{
+			zzS = class'StringUtils'.static.Trim(Mid(MutateString, 16));
+			if (zzS == "")
+				Sender.ClientMessage("Usage: mutate IGPlusWeaponGet <Setting>");
+			else
+				IGPlus_PrintWeaponSetting(Sender, zzS);
+		}
+	}
+	else if (Left(MutateString, 22) ~= "IGPlusWeaponSetSilent ")
+	{
+		if (Sender.bAdmin == false)
+		{
+			Sender.ClientMessage(BADminText);
+		}
+		else
+		{
+			zzS = class'StringUtils'.static.Trim(Mid(MutateString, 22));
+			zzi = InStr(zzS, " ");
+			if (zzi < 0)
+			{
+				Sender.ClientMessage("Usage: mutate IGPlusWeaponSetSilent <Setting> <Value>");
+			}
+			else
+			{
+				zzS2 = class'StringUtils'.static.Trim(Left(zzS, zzi));
+				zzS = class'StringUtils'.static.Trim(Mid(zzS, zzi + 1));
+				if (zzS2 == "" || zzS == "")
+					Sender.ClientMessage("Usage: mutate IGPlusWeaponSetSilent <Setting> <Value>");
+				else
+					IGPlus_SetWeaponSetting(Sender, zzS2, zzS, false);
+			}
+		}
+	}
+	else if (Left(MutateString, 16) ~= "IGPlusWeaponSet ")
+	{
+		if (Sender.bAdmin == false)
+		{
+			Sender.ClientMessage(BADminText);
+		}
+		else
+		{
+			zzS = class'StringUtils'.static.Trim(Mid(MutateString, 16));
+			zzi = InStr(zzS, " ");
+			if (zzi < 0)
+			{
+				Sender.ClientMessage("Usage: mutate IGPlusWeaponSet <Setting> <Value>");
+			}
+			else
+			{
+				zzS2 = class'StringUtils'.static.Trim(Left(zzS, zzi));
+				zzS = class'StringUtils'.static.Trim(Mid(zzS, zzi + 1));
+				if (zzS2 == "" || zzS == "")
+					Sender.ClientMessage("Usage: mutate IGPlusWeaponSet <Setting> <Value>");
+				else
+					IGPlus_SetWeaponSetting(Sender, zzS2, zzS, true);
+			}
+		}
+	}
+	else if (MutateString ~= "IGPlusWeaponSetSilent")
+	{
+		Sender.ClientMessage("Usage: mutate IGPlusWeaponSetSilent <Setting> <Value>");
+	}
+	else if (MutateString ~= "IGPlusWeaponSet")
+	{
+		Sender.ClientMessage("Usage: mutate IGPlusWeaponSet <Setting> <Value>");
 	}
 	else if (MutateString ~= "EnablePure")
 	{

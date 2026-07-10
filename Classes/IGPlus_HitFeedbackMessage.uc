@@ -1,4 +1,9 @@
-class IGPlus_HitFeedbackMessage extends LocalMessage;
+﻿class IGPlus_HitFeedbackMessage extends LocalMessage;
+
+const DMG_Disabled = 0;
+const DMG_SpecOnly = 1;
+const DMG_AlwaysHUD = 2;
+const DMG_AlwaysHUDConsole = 3;
 
 static function ClientReceive(
 	PlayerPawn P,
@@ -35,10 +40,11 @@ static function ClientReceive(
 		class'bbPlayerStatics'.static.PlayHitMarker(P, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
 
 
-	if (bbP != none && bbP.bEnableDamageDebugMode)
-		class'bbPlayerStatics'.static.PlayDamageMarker(P, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
+	if (bbP != none && (bbP.ShowDamageNumberMode == DMG_AlwaysHUD || bbP.ShowDamageNumberMode == DMG_AlwaysHUDConsole))
+		class'bbPlayerStatics'.static.PlayDamageMarker(P, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team, RelatedPRI_1);
+	else if (bViewTarget && bbCHSpectator(P) != none && Settings != none && Settings.bSpectatorShowDamageNumbers && bbCHSpectator(P).ShowDamageNumberMode != DMG_Disabled)
+		class'bbPlayerStatics'.static.PlayDamageMarker(P, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team, RelatedPRI_1);
 
 	if (bViewTarget || Settings == none || Settings.HitSoundSource == HSSRC_Server)
 		class'bbPlayerStatics'.static.PlayHitSound(P, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
 }
-

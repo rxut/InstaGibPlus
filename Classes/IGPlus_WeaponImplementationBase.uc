@@ -280,6 +280,7 @@ function EnhancedHurtRadius(
 	local actor Victim;
 	local float damageScale, dist;
 	local float DamageDiffraction;
+	local float EffectiveRadius;
 	local float MomentumScale;
 	local vector MomentumDelta, MomentumDir;
 	local vector Delta, DeltaXY;
@@ -369,8 +370,13 @@ function EnhancedHurtRadius(
 
 			dist = VSize(Delta);
 			dir = Normal(Delta);
+			EffectiveRadius = DamageRadius;
+			DamageDiffraction = 0.0;
 
 			if (FastTrace(Victim.Location, Source.Location) == false) {
+				EffectiveRadius = DamageRadius * WeaponSettings.SplashWraparoundRadiusScale;
+				if (EffectiveRadius <= 0.0 || dist > EffectiveRadius)
+					continue;
 
 				if (PureRef != None && PureRef.bCompensationIsActive)
 				{	
@@ -410,9 +416,9 @@ function EnhancedHurtRadius(
 			if (bIsRazor2Alt)
 				MomentumDir.Z = FMin(0.45, MomentumDir.Z);
 
-			damageScale = FMin(1.0 - dist/DamageRadius, 1.0); // apply upper bound to damage
+			damageScale = FMin(1.0 - dist/EffectiveRadius, 1.0); // apply upper bound to damage
 			damageScale *= (1.0 - DamageDiffraction);
-			MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - Victim.CollisionRadius)/DamageRadius, 0.0, 1.0);
+			MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - Victim.CollisionRadius)/EffectiveRadius, 0.0, 1.0);
 			MomentumScale *= (1.0 - DamageDiffraction);
 		}
 		

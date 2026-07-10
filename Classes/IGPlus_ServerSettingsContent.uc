@@ -1,4 +1,4 @@
-class IGPlus_ServerSettingsContent extends UMenuPageWindow;
+﻿class IGPlus_ServerSettingsContent extends UMenuPageWindow;
 
 enum EEditControlType {
 	ECT_Text,
@@ -21,12 +21,17 @@ var localized string MoreInformationText;
 var UWindowLabelControl Lbl_Login;
 var localized string LoginText;
 
-var IGPlus_ComboBox Cmb_AdminPassword;
+var IGPlus_PasswordComboBox Cmb_AdminPassword;
 var localized string AdminPasswordText;
 var localized string AdminPasswordHelp;
 var IGPlus_Button Btn_DeletePassword;
 var localized string DeletePasswordButtonText;
 var localized string DeletePasswordButtonHelp;
+var IGPlus_Button Btn_TogglePasswordVisibility;
+var localized string TogglePasswordShowText;
+var localized string TogglePasswordShowHelp;
+var localized string TogglePasswordHideText;
+var localized string TogglePasswordHideHelp;
 
 var IGPlus_Button Btn_AdminAuth;
 var localized string LoginButtonText;
@@ -85,7 +90,50 @@ var localized string HitFeedbackModeHelp;
 var localized string HitFeedbackModeDisabled;
 var localized string HitFeedbackModeVisibleOnly;
 var localized string HitFeedbackModeAlways;
+var IGPlus_ComboBox Cmb_ShowDamageNumberMode;
+var localized string ShowDamageNumberModeText;
+var localized string ShowDamageNumberModeHelp;
+var localized string ShowDamageNumberModeDisabled;
+var localized string ShowDamageNumberModeSpecOnly;
+var localized string ShowDamageNumberModeAlwaysHUD;
+var localized string ShowDamageNumberModeAlwaysHUDConsole;
 var localized string bEnablePingCompensatedSpawnHelp;
+
+var UWindowLabelControl Lbl_Gameplay;
+var localized string GameplayText;
+var UWindowCheckbox Chk_bWarmup;
+var localized string bWarmupText;
+var localized string bWarmupHelp;
+var IGPlus_EditControl Edit_WarmupTimeLimit;
+var localized string WarmupTimeLimitText;
+var localized string WarmupTimeLimitHelp;
+var UWindowCheckbox Chk_bCoaches;
+var localized string bCoachesText;
+var localized string bCoachesHelp;
+var IGPlus_EditControl Edit_Timeouts;
+var localized string TimeoutsText;
+var localized string TimeoutsHelp;
+var UWindowCheckbox Chk_bFastTeams;
+var localized string bFastTeamsText;
+var localized string bFastTeamsHelp;
+var UWindowCheckbox Chk_bUseClickboard;
+var localized string bUseClickboardText;
+var localized string bUseClickboardHelp;
+var UWindowCheckbox Chk_bAdvancedTeamSay;
+var localized string bAdvancedTeamSayText;
+var localized string bAdvancedTeamSayHelp;
+var UWindowCheckbox Chk_bAllowMultiWeapon;
+var localized string bAllowMultiWeaponText;
+var localized string bAllowMultiWeaponHelp;
+var UWindowCheckbox Chk_bDelayedPickupSpawn;
+var localized string bDelayedPickupSpawnText;
+var localized string bDelayedPickupSpawnHelp;
+var UWindowCheckbox Chk_bUseFastWeaponSwitch;
+var localized string bUseFastWeaponSwitchText;
+var localized string bUseFastWeaponSwitchHelp;
+var UWindowCheckbox Chk_bTellSpectators;
+var localized string bTellSpectatorsText;
+var localized string bTellSpectatorsHelp;
 
 var UWindowLabelControl Lbl_Movement;
 var localized string MovementText;
@@ -158,17 +206,27 @@ var UWindowCheckbox Chk_bEnableWarpFix;
 var localized string bEnableWarpFixText;
 var localized string bEnableWarpFixHelp;
 
+var UWindowLabelControl Lbl_ClientEnforcement;
+var localized string ClientEnforcementText;
+var IGPlus_EditControl Edit_MinClientRate;
+var localized string MinClientRateText;
+var localized string MinClientRateHelp;
+var IGPlus_EditControl Edit_MaxClientRate;
+var localized string MaxClientRateText;
+var localized string MaxClientRateHelp;
+var IGPlus_ComboBox Cmb_ForceSettingsLevel;
+var localized string ForceSettingsLevelText;
+var localized string ForceSettingsLevelHelp;
+var localized string ForceSettingsLevelOff;
+var localized string ForceSettingsLevelPostNetBeginPlay;
+var localized string ForceSettingsLevelSpawnNotify;
+var localized string ForceSettingsLevelIntervalled;
+
 var UWindowLabelControl Lbl_Debug;
 var localized string DebugText;
 var UWindowCheckbox Chk_ShowTouchedPackage;
 var localized string ShowTouchedPackageText;
 var localized string ShowTouchedPackageHelp;
-var UWindowCheckbox Chk_bEnableDamageDebugMode;
-var localized string bEnableDamageDebugModeText;
-var localized string bEnableDamageDebugModeHelp;
-var UWindowCheckbox Chk_bEnableDamageDebugConsoleMessages;
-var localized string bEnableDamageDebugConsoleMessagesText;
-var localized string bEnableDamageDebugConsoleMessagesHelp;
 var UWindowCheckbox Chk_bEnableHitboxDebugMode;
 var localized string bEnableHitboxDebugModeText;
 var localized string bEnableHitboxDebugModeHelp;
@@ -355,6 +413,21 @@ function UpdateAuthButton() {
 	}
 }
 
+function UpdateTogglePasswordButton() {
+	if (Btn_TogglePasswordVisibility == none || Cmb_AdminPassword == none)
+		return;
+
+	if (Cmb_AdminPassword.bMaskInput) {
+		Btn_TogglePasswordVisibility.SetText(TogglePasswordShowText);
+		Btn_TogglePasswordVisibility.SetHelpText(TogglePasswordShowHelp);
+		Btn_TogglePasswordVisibility.ToolTipString = TogglePasswordShowHelp;
+	} else {
+		Btn_TogglePasswordVisibility.SetText(TogglePasswordHideText);
+		Btn_TogglePasswordVisibility.SetHelpText(TogglePasswordHideHelp);
+		Btn_TogglePasswordVisibility.ToolTipString = TogglePasswordHideHelp;
+	}
+}
+
 function string BoolToString(bool B) {
 	if (B)
 		return "True";
@@ -407,6 +480,17 @@ function string HitFeedbackModeIndexToValue(int Index) {
 	}
 
 	return "HFM_Disabled";
+}
+
+function string ShowDamageNumberModeIndexToValue(int Index) {
+	switch (Clamp(Index, 0, 3)) {
+		case 0: return "DMG_Disabled";
+		case 1: return "DMG_SpecOnly";
+		case 2: return "DMG_AlwaysHUD";
+		case 3: return "DMG_AlwaysHUDConsole";
+	}
+
+	return "DMG_Disabled";
 }
 
 function PopulatePasswordHistory() {
@@ -530,7 +614,20 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bAlwaysRenderFlagCarrier", BoolToString(Chk_bAlwaysRenderFlagCarrier.bChecked));
 	SaveServerSettingIfChanged(S, "bAlwaysRenderDroppedFlags", BoolToString(Chk_bAlwaysRenderDroppedFlags.bChecked));
 	SaveServerSettingIfChanged(S, "HitFeedbackMode", HitFeedbackModeIndexToValue(Cmb_HitFeedbackMode.GetSelectedIndex()));
+	SaveServerSettingIfChanged(S, "ShowDamageNumberMode", ShowDamageNumberModeIndexToValue(Cmb_ShowDamageNumberMode.GetSelectedIndex()));
 	SaveServerSettingIfChanged(S, "bEnablePingCompensatedSpawn", BoolToString(Chk_bEnablePingCompensatedSpawn.bChecked));
+
+	SaveServerSettingIfChanged(S, "bWarmup", BoolToString(Chk_bWarmup.bChecked));
+	SaveServerSettingIfChanged(S, "WarmupTimeLimit", Edit_WarmupTimeLimit.GetValue());
+	SaveServerSettingIfChanged(S, "bCoaches", BoolToString(Chk_bCoaches.bChecked));
+	SaveServerSettingIfChanged(S, "Timeouts", Edit_Timeouts.GetValue());
+	SaveServerSettingIfChanged(S, "bFastTeams", BoolToString(Chk_bFastTeams.bChecked));
+	SaveServerSettingIfChanged(S, "bUseClickboard", BoolToString(Chk_bUseClickboard.bChecked));
+	SaveServerSettingIfChanged(S, "bAdvancedTeamSay", BoolToString(Chk_bAdvancedTeamSay.bChecked));
+	SaveServerSettingIfChanged(S, "bAllowMultiWeapon", BoolToString(Chk_bAllowMultiWeapon.bChecked));
+	SaveServerSettingIfChanged(S, "bDelayedPickupSpawn", BoolToString(Chk_bDelayedPickupSpawn.bChecked));
+	SaveServerSettingIfChanged(S, "bUseFastWeaponSwitch", BoolToString(Chk_bUseFastWeaponSwitch.bChecked));
+	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
 	SaveServerSettingIfChanged(S, "bOldLandingMomentum", BoolToString(Chk_bOldLandingMomentum.bChecked));
@@ -555,9 +652,11 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bEnableWarpFix", BoolToString(Chk_bEnableWarpFix.bChecked));
 	SaveServerSettingIfChanged(S, "WarpFixDelay", Edit_WarpFixDelay.GetValue());
 
+	SaveServerSettingIfChanged(S, "MinClientRate", Edit_MinClientRate.GetValue());
+	SaveServerSettingIfChanged(S, "MaxClientRate", Edit_MaxClientRate.GetValue());
+	SaveServerSettingIfChanged(S, "ForceSettingsLevel", string(Cmb_ForceSettingsLevel.GetSelectedIndex()));
+
 	SaveServerSettingIfChanged(S, "ShowTouchedPackage", BoolToString(Chk_ShowTouchedPackage.bChecked));
-	SaveServerSettingIfChanged(S, "bEnableDamageDebugMode", BoolToString(Chk_bEnableDamageDebugMode.bChecked));
-	SaveServerSettingIfChanged(S, "bEnableDamageDebugConsoleMessages", BoolToString(Chk_bEnableDamageDebugConsoleMessages.bChecked));
 	SaveServerSettingIfChanged(S, "bEnableHitboxDebugMode", BoolToString(Chk_bEnableHitboxDebugMode.bChecked));
 }
 
@@ -710,6 +809,32 @@ function IGPlus_ComboBox CreateComboBox(
 	return Cmb;
 }
 
+function IGPlus_PasswordComboBox CreatePasswordComboBox(
+	string T,
+	optional string HT,
+	optional bool bCanEdit,
+	optional float EditBoxWidth
+) {
+	local IGPlus_PasswordComboBox Cmb;
+
+	Cmb = IGPlus_PasswordComboBox(CreateControl(class'IGPlus_PasswordComboBox', PaddingX, ControlOffset, 200, 1));
+	Cmb.SetText(T);
+	Cmb.SetHelpText(HT);
+	Cmb.SetFont(F_Normal);
+	Cmb.Align = TA_Left;
+	Cmb.SetEditable(bCanEdit);
+
+	if (EditBoxWidth > 0) {
+		Cmb.EditBoxWidthFraction = 0.5;
+		Cmb.EditBoxMinWidth = EditBoxWidth;
+		Cmb.EditBoxMaxWidth = EditBoxWidth;
+	}
+
+	ControlOffset += LineSpacing;
+
+	return Cmb;
+}
+
 function IGPlus_Button CreateButton(string T, optional string HT) {
 	local IGPlus_Button Btn;
 
@@ -747,20 +872,24 @@ function LayoutPasswordControls(Canvas C, bool bVisible, float Width, out float 
 	local float Height;
 	local float Gap;
 	local float DeleteButtonWidth;
+	local float ToggleButtonWidth;
 	local float ComboWidth;
 
-	if (Cmb_AdminPassword == none || Btn_DeletePassword == none)
+	if (Cmb_AdminPassword == none || Btn_DeletePassword == none || Btn_TogglePasswordVisibility == none)
 		return;
 
 	if (bVisible) {
 		if (Cmb_AdminPassword.bWindowVisible == false)
 			Cmb_AdminPassword.ShowWindow();
+		if (Btn_TogglePasswordVisibility.bWindowVisible == false)
+			Btn_TogglePasswordVisibility.ShowWindow();
 		if (Btn_DeletePassword.bWindowVisible == false)
 			Btn_DeletePassword.ShowWindow();
 
 		Gap = 4;
 		DeleteButtonWidth = 20;
-		ComboWidth = FMax(Width - DeleteButtonWidth - Gap, 40);
+		ToggleButtonWidth = 40;
+		ComboWidth = FMax(Width - DeleteButtonWidth - ToggleButtonWidth - 2*Gap, 40);
 		ConfigurePasswordCombo(C, ComboWidth);
 
 		Cmb_AdminPassword.WinLeft = PaddingX;
@@ -768,7 +897,12 @@ function LayoutPasswordControls(Canvas C, bool bVisible, float Width, out float 
 		Height = FMax(Cmb_AdminPassword.WinHeight, 1);
 		Cmb_AdminPassword.SetSize(ComboWidth, Height);
 
-		Btn_DeletePassword.WinLeft = PaddingX + ComboWidth + Gap;
+		Btn_TogglePasswordVisibility.WinLeft = PaddingX + ComboWidth + Gap;
+		Btn_TogglePasswordVisibility.WinTop = Y;
+		Height = FMax(Btn_TogglePasswordVisibility.WinHeight, 1);
+		Btn_TogglePasswordVisibility.SetSize(ToggleButtonWidth, Height);
+
+		Btn_DeletePassword.WinLeft = PaddingX + ComboWidth + ToggleButtonWidth + 2*Gap;
 		Btn_DeletePassword.WinTop = Y;
 		Height = FMax(Btn_DeletePassword.WinHeight, 1);
 		Btn_DeletePassword.SetSize(DeleteButtonWidth, Height);
@@ -779,6 +913,8 @@ function LayoutPasswordControls(Canvas C, bool bVisible, float Width, out float 
 
 	if (Cmb_AdminPassword.bWindowVisible)
 		Cmb_AdminPassword.HideWindow();
+	if (Btn_TogglePasswordVisibility.bWindowVisible)
+		Btn_TogglePasswordVisibility.HideWindow();
 	if (Btn_DeletePassword.bWindowVisible)
 		Btn_DeletePassword.HideWindow();
 }
@@ -847,6 +983,7 @@ function ConfigureFixedWidthCombo(IGPlus_ComboBox Cmb, Canvas C, float ControlWi
 function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthCombo(Cmb_BrightskinMode, C, ControlWidth, 180);
 	ConfigureFixedWidthCombo(Cmb_HitFeedbackMode, C, ControlWidth, 180);
+	ConfigureFixedWidthCombo(Cmb_ShowDamageNumberMode, C, ControlWidth, 180);
 
 	ConfigureFixedWidthEdit(Edit_PauseTotalTime, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_PauseTime, C, ControlWidth, 80);
@@ -865,6 +1002,11 @@ function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_SnapshotInterpSendHz, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_SnapshotInterpRewindMs, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_WarpFixDelay, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_WarmupTimeLimit, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_Timeouts, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_MinClientRate, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_MaxClientRate, C, ControlWidth, 80);
+	ConfigureFixedWidthCombo(Cmb_ForceSettingsLevel, C, ControlWidth, 180);
 }
 
 function LoadServerSettings() {
@@ -888,6 +1030,20 @@ function LoadServerSettings() {
 	Chk_bAlwaysRenderFlagCarrier.bChecked = S.bAlwaysRenderFlagCarrier;
 	Chk_bAlwaysRenderDroppedFlags.bChecked = S.bAlwaysRenderDroppedFlags;
 	Cmb_HitFeedbackMode.SetSelectedIndex(Clamp(int(S.HitFeedbackMode), 0, 2));
+	Cmb_ShowDamageNumberMode.SetSelectedIndex(Clamp(int(S.ShowDamageNumberMode), 0, 3));
+	Chk_bEnablePingCompensatedSpawn.bChecked = S.bEnablePingCompensatedSpawn;
+
+	Chk_bWarmup.bChecked = S.bWarmup;
+	Edit_WarmupTimeLimit.SetValue(string(S.WarmupTimeLimit));
+	Chk_bCoaches.bChecked = S.bCoaches;
+	Edit_Timeouts.SetValue(string(S.Timeouts));
+	Chk_bFastTeams.bChecked = S.bFastTeams;
+	Chk_bUseClickboard.bChecked = S.bUseClickboard;
+	Chk_bAdvancedTeamSay.bChecked = S.bAdvancedTeamSay;
+	Chk_bAllowMultiWeapon.bChecked = S.bAllowMultiWeapon;
+	Chk_bDelayedPickupSpawn.bChecked = S.bDelayedPickupSpawn;
+	Chk_bUseFastWeaponSwitch.bChecked = S.bUseFastWeaponSwitch;
+	Chk_bTellSpectators.bChecked = S.bTellSpectators;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
 	Chk_bOldLandingMomentum.bChecked = S.bOldLandingMomentum;
@@ -896,7 +1052,6 @@ function LoadServerSettings() {
 	Chk_bEnableWallDodging.bChecked = S.bEnableWallDodging;
 	Chk_bDodgePreserveZMomentum.bChecked = S.bDodgePreserveZMomentum;
 	Edit_MaxMultiDodges.SetValue(string(S.MaxMultiDodges));
-	Chk_bEnablePingCompensatedSpawn.bChecked = S.bEnablePingCompensatedSpawn;
 
 	Edit_MaxHitError.SetValue(string(S.MaxHitError));
 	Edit_MaxJitterTime.SetValue(string(S.MaxJitterTime));
@@ -913,9 +1068,11 @@ function LoadServerSettings() {
 	Edit_SnapshotInterpRewindMs.SetValue(string(S.SnapshotInterpRewindMs));
 	Chk_bEnableWarpFix.bChecked = S.bEnableWarpFix;
 
+	Edit_MinClientRate.SetValue(string(S.MinClientRate));
+	Edit_MaxClientRate.SetValue(string(S.MaxClientRate));
+	Cmb_ForceSettingsLevel.SetSelectedIndex(Clamp(int(S.ForceSettingsLevel), 0, 3));
+
 	Chk_ShowTouchedPackage.bChecked = S.ShowTouchedPackage;
-	Chk_bEnableDamageDebugMode.bChecked = S.bEnableDamageDebugMode;
-	Chk_bEnableDamageDebugConsoleMessages.bChecked = S.bEnableDamageDebugConsoleMessages;
 	Chk_bEnableHitboxDebugMode.bChecked = S.bEnableHitboxDebugMode;
 
 	bLoadSucceeded = true;
@@ -938,12 +1095,14 @@ function Created() {
 	Lbl_MoreInformation.SetFont(F_Bold);
 
 	Lbl_Login = CreateSeparator(LoginText);
-	Cmb_AdminPassword = CreateComboBox(AdminPasswordText, AdminPasswordHelp, true);
+	Cmb_AdminPassword = CreatePasswordComboBox(AdminPasswordText, AdminPasswordHelp, true);
 	Cmb_AdminPassword.SetMaxLength(64);
 	Cmb_AdminPassword.SetNumericOnly(false);
 	Cmb_AdminPassword.EditBoxWidthFraction = 0.85;
 	Cmb_AdminPassword.EditBoxMinWidth = 70;
 	Cmb_AdminPassword.EditBoxMaxWidth = 65535;
+	Btn_TogglePasswordVisibility = CreateButton(TogglePasswordShowText, TogglePasswordShowHelp);
+	ControlOffset -= LineSpacing;
 	Btn_DeletePassword = CreateButton(DeletePasswordButtonText, DeletePasswordButtonHelp);
 	ControlOffset -= LineSpacing;
 	Btn_AdminAuth = CreateButton(LoginButtonText, LoginButtonHelp);
@@ -968,7 +1127,25 @@ function Created() {
 	Cmb_HitFeedbackMode.AddItem(HitFeedbackModeDisabled);
 	Cmb_HitFeedbackMode.AddItem(HitFeedbackModeVisibleOnly);
 	Cmb_HitFeedbackMode.AddItem(HitFeedbackModeAlways);
+	Cmb_ShowDamageNumberMode = CreateComboBox(ShowDamageNumberModeText, ShowDamageNumberModeHelp, false, 180);
+	Cmb_ShowDamageNumberMode.AddItem(ShowDamageNumberModeDisabled);
+	Cmb_ShowDamageNumberMode.AddItem(ShowDamageNumberModeSpecOnly);
+	Cmb_ShowDamageNumberMode.AddItem(ShowDamageNumberModeAlwaysHUD);
+	Cmb_ShowDamageNumberMode.AddItem(ShowDamageNumberModeAlwaysHUDConsole);
 	Chk_bEnablePingCompensatedSpawn = CreateCheckbox(bEnablePingCompensatedSpawnText, bEnablePingCompensatedSpawnHelp);
+
+	Lbl_Gameplay = CreateSeparator(GameplayText);
+	Chk_bWarmup = CreateCheckbox(bWarmupText, bWarmupHelp);
+	Edit_WarmupTimeLimit = CreateEdit(ECT_Integer, WarmupTimeLimitText, WarmupTimeLimitHelp, 6, 80);
+	Chk_bCoaches = CreateCheckbox(bCoachesText, bCoachesHelp);
+	Edit_Timeouts = CreateEdit(ECT_Integer, TimeoutsText, TimeoutsHelp, 6, 80);
+	Chk_bFastTeams = CreateCheckbox(bFastTeamsText, bFastTeamsHelp);
+	Chk_bUseClickboard = CreateCheckbox(bUseClickboardText, bUseClickboardHelp);
+	Chk_bAdvancedTeamSay = CreateCheckbox(bAdvancedTeamSayText, bAdvancedTeamSayHelp);
+	Chk_bAllowMultiWeapon = CreateCheckbox(bAllowMultiWeaponText, bAllowMultiWeaponHelp);
+	Chk_bDelayedPickupSpawn = CreateCheckbox(bDelayedPickupSpawnText, bDelayedPickupSpawnHelp);
+	Chk_bUseFastWeaponSwitch = CreateCheckbox(bUseFastWeaponSwitchText, bUseFastWeaponSwitchHelp);
+	Chk_bTellSpectators = CreateCheckbox(bTellSpectatorsText, bTellSpectatorsHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
 	Chk_bJumpingPreservesMomentum = CreateCheckbox(bJumpingPreservesMomentumText, bJumpingPreservesMomentumHelp);
@@ -995,10 +1172,17 @@ function Created() {
 	Chk_bEnableWarpFix = CreateCheckbox(bEnableWarpFixText, bEnableWarpFixHelp);
 	Edit_WarpFixDelay = CreateEdit(ECT_Real, WarpFixDelayText, WarpFixDelayHelp, 16, 80);
 
+	Lbl_ClientEnforcement = CreateSeparator(ClientEnforcementText);
+	Edit_MinClientRate = CreateEdit(ECT_Integer, MinClientRateText, MinClientRateHelp, 8, 80);
+	Edit_MaxClientRate = CreateEdit(ECT_Integer, MaxClientRateText, MaxClientRateHelp, 8, 80);
+	Cmb_ForceSettingsLevel = CreateComboBox(ForceSettingsLevelText, ForceSettingsLevelHelp, false, 180);
+	Cmb_ForceSettingsLevel.AddItem(ForceSettingsLevelOff);
+	Cmb_ForceSettingsLevel.AddItem(ForceSettingsLevelPostNetBeginPlay);
+	Cmb_ForceSettingsLevel.AddItem(ForceSettingsLevelSpawnNotify);
+	Cmb_ForceSettingsLevel.AddItem(ForceSettingsLevelIntervalled);
+
 	Lbl_Debug = CreateSeparator(DebugText);
 	Chk_ShowTouchedPackage = CreateCheckbox(ShowTouchedPackageText, ShowTouchedPackageHelp);
-	Chk_bEnableDamageDebugMode = CreateCheckbox(bEnableDamageDebugModeText, bEnableDamageDebugModeHelp);
-	Chk_bEnableDamageDebugConsoleMessages = CreateCheckbox(bEnableDamageDebugConsoleMessagesText, bEnableDamageDebugConsoleMessagesHelp);
 	Chk_bEnableHitboxDebugMode = CreateCheckbox(bEnableHitboxDebugModeText, bEnableHitboxDebugModeHelp);
 
 	ControlOffset += PaddingY - 4;
@@ -1040,6 +1224,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 
 	UpdateStatusText();
 	UpdateAuthButton();
+	UpdateTogglePasswordButton();
 	if (Btn_DeletePassword != none && Cmb_AdminPassword != none)
 		Btn_DeletePassword.bDisabled = (class'StringUtils'.static.Trim(Cmb_AdminPassword.GetValue()) == "");
 
@@ -1071,7 +1256,21 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bAlwaysRenderFlagCarrier, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bAlwaysRenderDroppedFlags, bShowSettings, WndWidth, Top);
 	LayoutControl(Cmb_HitFeedbackMode, bShowSettings, WndWidth, Top);
+	LayoutControl(Cmb_ShowDamageNumberMode, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePingCompensatedSpawn, bShowSettings, WndWidth, Top);
+
+	LayoutControl(Lbl_Gameplay, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bWarmup, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_WarmupTimeLimit, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bCoaches, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_Timeouts, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bFastTeams, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bUseClickboard, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bAdvancedTeamSay, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bAllowMultiWeapon, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bDelayedPickupSpawn, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bUseFastWeaponSwitch, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bTellSpectators, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bJumpingPreservesMomentum, bShowSettings, WndWidth, Top);
@@ -1098,10 +1297,13 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bEnableWarpFix, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_WarpFixDelay, bShowSettings, WndWidth, Top);
 
+	LayoutControl(Lbl_ClientEnforcement, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_MinClientRate, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_MaxClientRate, bShowSettings, WndWidth, Top);
+	LayoutControl(Cmb_ForceSettingsLevel, bShowSettings, WndWidth, Top);
+
 	LayoutControl(Lbl_Debug, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_ShowTouchedPackage, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableDamageDebugMode, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableDamageDebugConsoleMessages, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableHitboxDebugMode, bShowSettings, WndWidth, Top);
 
 	DesiredHeight = Top + PaddingY;
@@ -1117,6 +1319,11 @@ function Notify(UWindowDialogControl C, byte E) {
 			AdminLoginFromUI();
 	} else if (E == DE_Click && C == Btn_DeletePassword) {
 		DeletePasswordFromUI();
+	} else if (E == DE_Click && C == Btn_TogglePasswordVisibility) {
+		if (Cmb_AdminPassword != none) {
+			Cmb_AdminPassword.ToggleMaskInput();
+			UpdateTogglePasswordButton();
+		}
 	}
 }
 
@@ -1184,6 +1391,10 @@ defaultproperties
 	AdminPasswordHelp="Enter password"
 	DeletePasswordButtonText="X"
 	DeletePasswordButtonHelp="Delete this password from saved history"
+	TogglePasswordShowText="Show"
+	TogglePasswordShowHelp="Reveal the saved passwords (use only when not streaming)"
+	TogglePasswordHideText="Hide"
+	TogglePasswordHideHelp="Mask the saved passwords"
 	LoginButtonText="Login"
 	LoginButtonHelp="Log in as admin"
 	LogoutButtonText="Logout"
@@ -1224,7 +1435,38 @@ defaultproperties
 	HitFeedbackModeDisabled="Disabled"
 	HitFeedbackModeVisibleOnly="Visible Only"
 	HitFeedbackModeAlways="Always"
+	ShowDamageNumberModeText="Damage Number Mode"
+	ShowDamageNumberModeHelp="Controls who sees on-screen damage numbers and whether the dealer also gets text console messages\\nDisabled --> Nobody sees damage numbers\\nSpectators Only --> Only spectators (with their client toggle on) see numbers\\nAlways (HUD) --> Active players + spectators (client toggle still applies for spectators)\\nAlways (HUD + Console) --> As Always, plus '[Debug] Damage done: N' console messages for the dealer"
+	ShowDamageNumberModeDisabled="Disabled"
+	ShowDamageNumberModeSpecOnly="Spectators Only"
+	ShowDamageNumberModeAlwaysHUD="Always (HUD)"
+	ShowDamageNumberModeAlwaysHUDConsole="Always (HUD + Console)"
 	bEnablePingCompensatedSpawnHelp="If checked, enables ping-compensated spawn behavior"
+	bEnablePingCompensatedSpawnText="Enable Ping Compensated Spawn"
+
+	GameplayText="Gameplay"
+	bWarmupText="Enable Warmup"
+	bWarmupHelp="If checked, allows warmup period in tournament mode"
+	WarmupTimeLimitText="Warmup Time Limit"
+	WarmupTimeLimitHelp="Maximum warmup duration in seconds"
+	bCoachesText="Enable Coaches"
+	bCoachesHelp="If checked, allows coach slots in tournament team games"
+	TimeoutsText="Coach Timeouts"
+	TimeoutsHelp="Maximum timeouts per team when coaches are enabled"
+	bFastTeamsText="Fast Teams"
+	bFastTeamsHelp="If checked, allows quick team changes"
+	bUseClickboardText="Use Clickboard"
+	bUseClickboardHelp="If checked, enables clickboard in tournament mode"
+	bAdvancedTeamSayText="Advanced TeamSay"
+	bAdvancedTeamSayHelp="If checked, enables advanced TeamSay features"
+	bAllowMultiWeaponText="Allow Multi Weapon"
+	bAllowMultiWeaponHelp="If checked, allows the multiweapon bug on the server"
+	bDelayedPickupSpawnText="Delayed Pickup Spawn"
+	bDelayedPickupSpawnHelp="If checked, delays the first pickup spawn"
+	bUseFastWeaponSwitchText="Fast Weapon Switch"
+	bUseFastWeaponSwitchHelp="If checked, enables fast weapon switching"
+	bTellSpectatorsText="Tell Spectators on Kick"
+	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"
 
 	MovementText="Movement"
 	bJumpingPreservesMomentumText="Jumping Preserves Momentum"
@@ -1241,7 +1483,6 @@ defaultproperties
 	bDodgePreserveZMomentumHelp="If checked, dodge keeps more vertical momentum"
 	MaxMultiDodgesText="Max Multi Dodges"
 	MaxMultiDodgesHelp="Maximum allowed chained dodges before touching ground"
-	bEnablePingCompensatedSpawnText="Enable Ping Compensated Spawn"
 
 	NetworkingText="Networking"
 	MaxHitErrorText="Max Hit Error"
@@ -1273,13 +1514,21 @@ defaultproperties
 	bEnableWarpFixText="Enable Warp Fix"
 	bEnableWarpFixHelp="If checked, enables warp correction smoothing"
 
+	ClientEnforcementText="Client Enforcement"
+	MinClientRateText="Min Client Rate"
+	MinClientRateHelp="Minimum allowed client netspeed/rate"
+	MaxClientRateText="Max Client Rate"
+	MaxClientRateHelp="Maximum allowed client netspeed/rate"
+	ForceSettingsLevelText="Force Settings Level"
+	ForceSettingsLevelHelp="When to enforce client settings against defaults\\nOff --> Disabled\\nPostNetBeginPlay --> Check after PostNetBeginPlay\\nSpawnNotify --> Check on spawn\\nIntervalled --> Periodic checks"
+	ForceSettingsLevelOff="Off"
+	ForceSettingsLevelPostNetBeginPlay="PostNetBeginPlay"
+	ForceSettingsLevelSpawnNotify="SpawnNotify"
+	ForceSettingsLevelIntervalled="Intervalled"
+
 	DebugText="Debug"
 	ShowTouchedPackageText="Show Touched Package"
 	ShowTouchedPackageHelp="If checked, logs touched-package details for diagnostics"
-	bEnableDamageDebugModeText="Enable Damage Debug Mode"
-	bEnableDamageDebugModeHelp="If checked, enables server-side damage debug tracing"
-	bEnableDamageDebugConsoleMessagesText="Damage Debug Console Messages"
-	bEnableDamageDebugConsoleMessagesHelp="If checked, prints damage debug messages to client consoles"
 	bEnableHitboxDebugModeText="Enable Hitbox Debug Mode"
 	bEnableHitboxDebugModeHelp="If checked, enables hitbox debug diagnostics"
 

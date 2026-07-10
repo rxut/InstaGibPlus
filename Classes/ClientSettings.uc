@@ -1,4 +1,4 @@
-class ClientSettings extends Object
+﻿class ClientSettings extends Object
 	config(InstaGibPlus)
 	perobjectconfig;
 
@@ -70,6 +70,9 @@ var config float  FPSLocationX;
 var config float  FPSLocationY;
 var config int    FPSDetail;
 var config int    FPSCounterSmoothingStrength;
+var config bool   bSpectatorShowDamageNumbers;
+var config float  DamageNumberDuration;
+var config float  DamageNumberFade;
 var config float  KillCamMinDelay;
 var config bool   bReduceEyeHeightInAir;
 var config bool   bAllowWeaponShake;
@@ -381,6 +384,9 @@ simulated function string DumpSettings() {
 		GetSetting("FPSLocationY")$
 		GetSetting("FPSDetail")$
 		GetSetting("FPSCounterSmoothingStrength")$
+		GetSetting("bSpectatorShowDamageNumbers")$
+		GetSetting("DamageNumberDuration")$
+		GetSetting("DamageNumberFade")$
 		GetSetting("KillCamMinDelay")$
 		GetSetting("bReduceEyeHeightInAir")$
 		GetSetting("bAllowWeaponShake")$
@@ -481,6 +487,9 @@ defaultproperties
 	FPSLocationY=0.0
 	FPSDetail=0
 	FPSCounterSmoothingStrength=1000
+	bSpectatorShowDamageNumbers=False
+	DamageNumberDuration=2.5
+	DamageNumberFade=5.0
 	KillCamMinDelay=0.0
 	bReduceEyeHeightInAir=False
 	bAllowWeaponShake=True
