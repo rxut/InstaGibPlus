@@ -2908,9 +2908,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		// No-index move: bind to the currently active supported weapon.
 		V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 	}
-	if (V4Weapon != none && !IGPlus_V4ServerBindingValid(V4Weapon))
+	if (!IGPlus_V4ServerBindingValid(V4Weapon))
 		V4Weapon = none;
-	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+	bV4WeaponSupported = SM.bUseV4 && WImpBase != none && V4Weapon != none;
 	bV4WeaponIsEightball = bV4WeaponSupported && ST_UT_Eightball(V4Weapon) != none;
 	// The instant-mode bit is only encoded when the move is index-bound to
 	// the eightball; on other moves the machine falls back to the owner's
@@ -2972,8 +2972,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_LastAltEndHeld = bV4AltEndHeld;
 
 	// Single whole-move dispatch for transports without sub-step data (v3
-	// moves under ping comp). No longer selected by the client's bDetReady.
-	bDetFallback = !bV4WeaponSupported && V4Weapon != none && IGPlus_V4SupportsWeapon(V4Weapon);
+	// moves under ping comp).
+	bDetFallback = !bV4WeaponSupported && V4Weapon != none;
 
 	if (bDetFallback) {
 			IGPlus_V4ProcessWeaponStep(
@@ -4498,40 +4498,29 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		IGPlus_LastFireEndHeld = I.bFire;
 		IGPlus_LastAltEndHeld = I.bAFir;
 
-		if (Role == ROLE_Authority)
-			IGPlus_V4TrackPendingWeapon(I.TimeStamp);
+		// RemoteRole == ROLE_AutonomousProxy implies the server here.
+		IGPlus_V4TrackPendingWeapon(I.TimeStamp);
 
-			if (bDetFallback && Role == ROLE_Authority) {
-				IGPlus_V4ProcessWeaponStep(
-					V4Weapon,
-					I.TimeStamp,
-					I.SavedViewRotation,
-					Location,
-					bInputFireHeld,
-					bInputAltHeld,
-					bInputForceFire,
-					bInputForceAltFire,
-					true,
-					I.bDetReady,
-					I.V4ChargeData,
-					IGPlus_IsV4WeaponIndexEightball(I.V4WeaponIndex),
-					I.bV4EightballInstant
-				);
-					// Deterministic step path is authoritative; keep legacy fire latches
-					// clear to prevent duplicate server-side refire.
-					bFire = 0;
-					bAltFire = 0;
-			} else if (bDetFallback) {
-					// Client-side replay path must not emit deterministic shots.
-					if (bInputFireHeld)
-						bFire = 1;
-				else
-					bFire = 0;
-				if (bInputAltHeld)
-					bAltFire = 1;
-				else
-					bAltFire = 0;
-				} else {
+		if (bDetFallback) {
+			IGPlus_V4ProcessWeaponStep(
+				V4Weapon,
+				I.TimeStamp,
+				I.SavedViewRotation,
+				Location,
+				bInputFireHeld,
+				bInputAltHeld,
+				bInputForceFire,
+				bInputForceAltFire,
+				true,
+				I.bDetReady,
+				I.V4ChargeData,
+				IGPlus_IsV4WeaponIndexEightball(I.V4WeaponIndex),
+				I.bV4EightballInstant
+			);
+			// Keep legacy fire latches clear; the step path is authoritative.
+			bFire = 0;
+			bAltFire = 0;
+		} else {
 					// handle firing and alt-firing on server
 					if (bInputFireHeld) {
 						if (bFire == 0) {
@@ -5591,22 +5580,13 @@ function xxReplicateMove(
 		debugPlayerLocation = Location;
 	}
 
-	// Deterministic local prediction per input slice. The timeline encodes
-	// every slice (merged or not), so each step predicted here is replayed
-	// server-side; predicting per slice — instead of once per sent move with
-	// end-of-move state — keeps timestamps, view, and pre-movement location
-	// aligned with the server's replay, closing the mid-move divergence
-	// (server firing with an interpolated view the client never rendered).
-	// Gate on readiness only, matching the server's acceptance: deterministic
-	// dispatch runs on BOTH transports (v4 sub-step moves AND the v3
-	// whole-move bDetFallback when Level.ServerMoveVersion < 4), so a
-	// ServerMoveVersion condition here silently kills all client effects on
-	// v3-transport servers while the server keeps firing. Input replication
-	// is excluded because it predicts per input node instead.
-	if ((IGPlus_EnableInputReplication == false)
-		&& IGPlus_IsV4DetReady(Weapon)) {
+	// Predict deterministic fire per input slice; the server replays the same
+	// steps. Gate on readiness only — dispatch runs on both transports, so a
+	// ServerMoveVersion condition here kills client effects on v3 servers.
+	// Input replication is excluded: it predicts per input node instead.
+	if (IGPlus_EnableInputReplication == false) {
 		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
-		if (V4LocalWeapon != none) {
+		if (V4LocalWeapon != none && IGPlus_V4IsWeaponReady(V4LocalWeapon)) {
 			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
 			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
 			// Same tap rule as IGPlus_MergeMove: eightball taps are carried
@@ -12226,26 +12206,19 @@ simulated function ChangedWeapon() {
 
 	Super.ChangedWeapon();
 
-	// Keep bFire/bAltFire continuous when switching to a weapon the v4 path
-	// does not drive: v4-handled steps clear the flags, so without this the
-	// held button looks like a fresh press edge on the first legacy move and
-	// fires the new weapon mid-select (and mistimes the Translocator
-	// dual-button check).
-	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone
-		&& RemoteRole == ROLE_AutonomousProxy && !IGPlus_V4SupportsWeapon(Weapon)) {
-		if (IGPlus_LastFireEndHeld)
-			bFire = 1;
-		if (IGPlus_LastAltEndHeld)
-			bAltFire = 1;
-	}
-
-	// Bring-up gate for the incoming weapon (v5 fire-window invariant): the
-	// switch just completed, so deterministic dispatch may not fire it before
-	// the honest-client bring-up floor has elapsed in move time.
 	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone
 		&& RemoteRole == ROLE_AutonomousProxy) {
-		if (IGPlus_V4SupportsWeapon(Weapon))
+		if (IGPlus_V4SupportsWeapon(Weapon)) {
+			// Bring-up gate: no deterministic fire before the honest floor.
 			IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, CurrentTimeStamp + IGPlus_V4EntryGateSeconds());
+		} else {
+			// v4-handled steps clear bFire/bAltFire; restore held state so a
+			// legacy weapon doesn't see a fresh press edge mid-select.
+			if (IGPlus_LastFireEndHeld)
+				bFire = 1;
+			if (IGPlus_LastAltEndHeld)
+				bAltFire = 1;
+		}
 		IGPlus_V4PendingSeen = PendingWeapon;
 	}
 }
