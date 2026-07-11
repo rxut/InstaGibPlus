@@ -316,7 +316,7 @@ function V4HandleOutOfAmmo() {
 
 function Finish()
 {
-	if (IsPingCompEnabled() && PlayerPawn(Owner) != None)
+	if (IsV4Active() && PlayerPawn(Owner) != None)
 	{
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
