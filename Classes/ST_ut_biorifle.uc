@@ -58,6 +58,8 @@ function PostBeginPlay()
 // =========================================================================
 
 simulated function bool IsV4Active() {
+	if (Level != none && Level.NetMode == NM_Standalone)
+		return false;
 	if (!IsPingCompEnabled())
 		return false;
 	if (bbPlayer(Owner) == none)
