@@ -102,7 +102,8 @@ no-input settlement step required to release or cancel committed state.
 
 - Alt charge has levels 0..9 and reaches the stock 4.1 glob at roughly 4.5
   seconds / 10 ammo.
-- Switching away releases the paid charge and clears the cycle.
+- Switching away cancels the paid charge, keeps committed ammo spent, and
+  clears the cycle without spawning a glob from the outgoing weapon.
 
 ### Stock parity notes
 

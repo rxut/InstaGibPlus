@@ -26,6 +26,8 @@ var float V4LastStepDelta;
 var bool bV4WasFireHeld;
 var bool bV4WasAltHeld;
 var int V4CachedChargeData;
+var bool bV4PendingAltHeld;
+var bool bV4PendingAltTap;
 
 // Client ammo consumption reconstruction logic
 var int V4ClientConsumedAmmo;
@@ -143,6 +145,38 @@ simulated function V4ResetAltCycle(optional bool bClearHeld) {
 	}
 	V4AltLoadElapsed = 0.0;
 	V4ResetClientAmmoTracking();
+}
+
+simulated function V4ClearPendingAltInput() {
+	bV4PendingAltHeld = false;
+	bV4PendingAltTap = false;
+}
+
+// Preserve an honest AltFire tap that reaches the server after the bring-up
+// gate but before ChangedWeapon equips Eightball. Nothing may fire while pending.
+function bool V4TrackPendingAltInput(
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt
+) {
+	if (bFireHeld || bForceFire)
+		return false;
+	if (bForceAlt) {
+		bV4PendingAltHeld = false;
+		bV4PendingAltTap = true;
+		return true;
+	}
+	if (bAltHeld) {
+		bV4PendingAltHeld = true;
+		return true;
+	}
+	if (bV4PendingAltHeld) {
+		bV4PendingAltHeld = false;
+		bV4PendingAltTap = true;
+		return true;
+	}
+	return bV4PendingAltTap;
 }
 
 simulated function V4RefreshInternalBudget() {
@@ -406,6 +440,7 @@ simulated function V4CancelDeterministicLoad(bool bServerSide, optional int Move
 	bForceAltFire = false;
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
+	V4ClearPendingAltInput();
 
 	if (!bServerSide && (IsInState('ClientFiring') || IsInState('ClientAltFiring') || IsInState('ClientReload')))
 		GotoState('');
@@ -557,9 +592,36 @@ simulated function bool V4ProcessStep(
 
 	V4AdvanceStepClock(StepTS);
 
-	if (V4HasSwitchAwayRequest() && (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring'))) {
+	if (V4HasSwitchAwayRequest()
+		&& (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring')
+			|| bV4PendingAltHeld || bV4PendingAltTap)) {
 		V4CancelDeterministicLoad(bServerSide, V4ChargeData);
 		return true;
+	}
+
+	// Resolve input queued during the server's final pending-weapon window.
+	if (bServerSide && Pawn(Owner) != none && Pawn(Owner).Weapon == self) {
+		if (bV4PendingAltHeld) {
+			if (bFireHeld || bForceFire) {
+				// Stock precedence: a new primary press supersedes queued alt hold.
+				bV4PendingAltHeld = false;
+			} else if (!bAltHeld) {
+				bV4PendingAltHeld = false;
+				bV4PendingAltTap = true;
+			} else {
+				bV4PendingAltHeld = false;
+				bClientPredictedStep = true;
+			}
+		}
+		if (bV4PendingAltTap) {
+			if (V4CooldownRemaining > 0.0001)
+				return true;
+			bV4PendingAltTap = false;
+			V4CachedChargeData = 1;
+			HandleV4ServerAltFire(StepView, StepLoc, 1);
+			V4StartCooldown(V4PostFireInterval(1));
+			return true;
+		}
 	}
 
 	// Committed state returns from the held/falling branches before the
@@ -854,6 +916,7 @@ simulated function V4ResetDeterministicState() {
 	ClientRocketsLoaded = 0;
 	bClientDone = false;
 	bRotated = false;
+	V4ClearPendingAltInput();
 }
 
 function GiveTo(Pawn Other)

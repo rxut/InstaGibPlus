@@ -4953,8 +4953,15 @@ function IGPlus_V4ClearSwitchTrustState() {
 
 // Observe PendingWeapon transitions from move processing.
 function IGPlus_V4TrackPendingWeapon(float NowTS) {
+	local ST_UT_Eightball PendingEightball;
+
 	if (PendingWeapon == IGPlus_V4PendingSeen)
 		return;
+	PendingEightball = ST_UT_Eightball(IGPlus_V4PendingSeen);
+	if (PendingEightball != none
+		&& PendingWeapon != PendingEightball
+		&& !(PendingWeapon == none && Weapon == PendingEightball))
+		PendingEightball.V4ClearPendingAltInput();
 	// Canceling a switch re-arms the bring-up; toggling is never free.
 	if (IGPlus_V4PendingSeen != none && PendingWeapon == none)
 		IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, NowTS + IGPlus_V4EntryGateSeconds());
@@ -5136,9 +5143,16 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 		return true;
 	}
 
-	// A pending weapon cannot be client-vouched until it is equipped.
-	if (bServerSide && W != Weapon && W == PendingWeapon)
+	// Pending Eightball may remember AltFire edges, but may not fire until equipped.
+	if (bServerSide && W != Weapon && W == PendingWeapon) {
+		EB = ST_UT_Eightball(W);
+		if (EB != none && bClientPredictedStep
+			&& EB.V4TrackPendingAltInput(bFireHeld, bAltHeld, bForceFire, bForceAlt))
+			return true;
+
+		// Other pending fire intent remains untrusted until actual equip.
 		bClientPredictedStep = false;
+	}
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	if (WImpBase != none)

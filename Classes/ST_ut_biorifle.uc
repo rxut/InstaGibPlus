@@ -93,6 +93,11 @@ simulated function float PrimaryShotInterval() {
 	return 8.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
 }
 
+// Stock alt burst: 9-frame Fire sequence at 30 fps, played at rate 0.4.
+simulated function float AltShotInterval() {
+	return 8.0 / (30.0 * 0.4);
+}
+
 // Half-step charge ticks: 0..8 = 0.0..4.0, 9 = the 4.1 stock max (~4.5s).
 simulated final function int EncodeV4ChargeData(float ClientChargeSize) {
 	if (ClientChargeSize >= 4.05)
@@ -139,21 +144,16 @@ simulated function bool V4ProcessStep(
 	local float CS;
 	local int ActualCharge, TargetAmmoSpent;
 
-	// Switch-away releases the charge already paid for; before the readiness
-	// check so it can never go stale.
+	// Switching cancels the paid charge. Spawning a forwarded glob while the
+	// weapon is going down can collide at the owner's new weapon position.
 	if (bV4WasAltHeld
 		&& bbPlayer(Owner) != none
 		&& bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self)) {
 		bV4WasAltHeld = false;
-		if (bServerSide && V4AltAmmoSpent > 0) {
-			ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 9);
-			CS = float(ActualCharge) * 0.5;
-			if (ActualCharge >= 9)
-				CS = 4.1;
-			HandleV4ServerAltFire(StepView, StepLoc, CS);
-			V4AltAmmoSpent = 0;
-		}
-		NextV4FireTS = StepTS + 0.25;
+		V4AltAmmoSpent = 0;
+		V4CachedChargeData = 0;
+		V4AltChargeStartTS = 0.0;
+		NextV4FireTS = StepTS + AltShotInterval();
 		return true;
 	}
 
@@ -192,7 +192,7 @@ simulated function bool V4ProcessStep(
 				}
 				V4AltAmmoSpent = 0;
 			}
-			NextV4FireTS = StepTS + 0.25;
+			NextV4FireTS = StepTS + AltShotInterval();
 			return true;
 		}
 		// Still charging
@@ -201,6 +201,9 @@ simulated function bool V4ProcessStep(
 
 	// Alt rising edge; stock precedence: primary wins a simultaneous edge.
 	if (bWantsAlt && !bWantsPrimary) {
+		if (StepTS + 0.0001 < NextV4FireTS)
+			return true;
+
 		V4AltChargeStartTS = StepTS;
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
@@ -211,6 +214,8 @@ simulated function bool V4ProcessStep(
 				V4HandleOutOfAmmo();
 				return true;
 			}
+		} else {
+			HandleV4ClientAltStart();
 		}
 		bV4WasAltHeld = true;
 		return true;
@@ -302,6 +307,26 @@ simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
 		PlayerPawn(Owner).ClientInstantFlash(InstFlash, InstFog);
 	if (BP != none && BP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
 		SpawnClientDummyBioGel();
+}
+
+simulated function HandleV4ClientAltStart() {
+	local Pawn PawnOwner;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == none)
+		return;
+	if (AmmoType == none && AmmoName != none)
+		GiveAmmo(PawnOwner);
+	if (AmmoType == none || AmmoType.AmmoAmount <= 0)
+		return;
+
+	Instigator = PawnOwner;
+	AmmoType.UseAmmo(1);
+	V4ClientPredictedAmmo = AmmoType.AmmoAmount;
+	bPointing = true;
+	bCanClientFire = true;
+	GotoState('ClientAltFiring');
+	PlayAltFiring();
 }
 
 function V4HandleOutOfAmmo() {
@@ -405,7 +430,6 @@ simulated function SpawnClientDummyBioGel()
 simulated function bool ClientAltFire(float Value)
 {
 	local Pawn PawnOwner;
-	local bbPlayer bbP;
 
 	if (!bCanClientFire)
 		return false;
@@ -414,29 +438,9 @@ simulated function bool ClientAltFire(float Value)
 	if (PawnOwner == None)
 		return false;
 
+	// The deterministic step owns cooldown, ammo prediction, and state entry.
 	if (IsV4Active())
-	{
-		bbP = bbPlayer(PawnOwner);
-
-		if (Owner.Role == ROLE_AutonomousProxy && bbP != None)
-		{
-			if (AmmoType == None && AmmoName != None)
-				GiveAmmo(PawnOwner);
-
-				if (AmmoType != None && AmmoType.AmmoAmount > 0)
-				{
-					Instigator = PawnOwner;
-					AmmoType.UseAmmo(1);
-					V4ClientPredictedAmmo = AmmoType.AmmoAmount;
-					bPointing = true;
-					bCanClientFire = true;
-					GotoState('ClientAltFiring');
-				PlayAltFiring();
-				return true;
-			}
-			return false;
-		}
-	}
+		return true;
 
 	return Super.ClientAltFire(Value);
 }
@@ -675,6 +679,7 @@ simulated function PlaySelect() {
 simulated function TweenDown() {
 	local float TweenTime;
 
+	V4ResetDeterministicState();
 	TweenTime = 0.05;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
