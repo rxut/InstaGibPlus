@@ -4,10 +4,13 @@ var IGPlus_WeaponImplementation WImp;
 
 simulated function PostBeginPlay() {
 	local UTPure PureRef;
+	local bbPlayer bbP;
 
 	if (Instigator != none && Instigator.Role == ROLE_Authority) {
 
-		PureRef = bbPlayer(Instigator).zzUTPure;
+		bbP = bbPlayer(Instigator);
+		if (bbP != none)
+			PureRef = bbP.zzUTPure;
 		
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break;
@@ -35,8 +38,54 @@ auto state Pickup {
 	}
 
 	singular function Touch(Actor Other) {
-		if (Other.IsA('ST_HitTestHelper') == false)
-			super.Touch(Other);
+		local bool bMasterTouch;
+		local vector NewPos;
+		local UTPlusDummy Dummy;
+		local Pawn ActualPawn;
+
+		if (Other.IsA('ST_HitTestHelper'))
+			return;
+
+		if (Other.IsA('UTPlusDummy')) {
+			Dummy = UTPlusDummy(Other);
+			if (Dummy.Actual != none) {
+				ActualPawn = Dummy.Actual;
+				bMasterTouch = ActualPawn == Instigator;
+
+				if (Physics == PHYS_None) {
+					if (bMasterTouch) {
+						PlaySound(Sound'Botpack.Pickups.AmmoPick',,2.0);
+						Master.TTarget = none;
+						Master.bTTargetOut = false;
+						if (ActualPawn.IsA('PlayerPawn'))
+							PlayerPawn(ActualPawn).ClientWeaponEvent('TouchTarget');
+						destroy();
+					}
+					return;
+				}
+
+				if (bMasterTouch)
+					return;
+
+				NewPos = Dummy.Location;
+				NewPos.Z = Location.Z;
+				SetLocation(NewPos);
+				Velocity = vect(0,0,0);
+
+				if (Level.Game.bTeamGame
+					&& ActualPawn.PlayerReplicationInfo != none
+					&& Instigator.PlayerReplicationInfo != none
+					&& Instigator.PlayerReplicationInfo.Team == ActualPawn.PlayerReplicationInfo.Team)
+					return;
+
+				if (Instigator.IsA('Bot'))
+					Master.Translocate();
+
+				return;
+			}
+		}
+
+		super.Touch(Other);
 	}
 }
 
