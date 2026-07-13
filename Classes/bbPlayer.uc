@@ -452,7 +452,6 @@ struct ClientWeaponSettings {
 	var bool bFlakUseClientSideAnimations;
 	var bool bRocketUseClientSideAnimations;
 	var bool bSniperUseClientSideAnimations;
-	var bool bTranslocatorUseClientSideAnimations;
 };
 
 var ClientWeaponSettings ClientWeaponSettingsData;
@@ -1171,7 +1170,6 @@ simulated event PostNetBeginPlay()
 	ClientWeaponSettingsData.bFlakUseClientSideAnimations = Settings.bFlakUseClientSideAnimations;
 	ClientWeaponSettingsData.bRocketUseClientSideAnimations = Settings.bRocketUseClientSideAnimations;
 	ClientWeaponSettingsData.bSniperUseClientSideAnimations = Settings.bSniperUseClientSideAnimations;
-	ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = Settings.bTranslocatorUseClientSideAnimations;
 
 	if ( Role != ROLE_SimulatedProxy )	// Other players are Simulated, local player is Autonomous or Authority (if listen server which pure doesn't support anyway :P)
 	{
@@ -5101,19 +5099,6 @@ exec function EnableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Sniper (Forced:" $ ForcedValue $ "),";
     }
 
-	// --- Translocator ---
-    ForcedValue = GetForcedSettingValue("bTranslocatorUseClientSideAnimations");
-    if (ForcedValue == "") {
-        if (!Settings.bTranslocatorUseClientSideAnimations) {
-            Settings.bTranslocatorUseClientSideAnimations = true;
-            ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = true;
-            UpdatedSettings = UpdatedSettings $ " Translocator,";
-            bMadeChanges = true;
-        }
-    } else {
-        ForcedSettingsInfo = ForcedSettingsInfo $ " Translocator (Forced:" $ ForcedValue $ "),";
-    }
-
     // --- Report Results ---
     if (bMadeChanges) {
         IGPlus_SaveSettings();
@@ -5240,19 +5225,6 @@ exec function DisableClientSideAnimations() {
         ForcedSettingsInfo = ForcedSettingsInfo $ " Sniper (Forced:" $ ForcedValue $ "),";
     }
 
-	// --- Translocator ---
-    ForcedValue = GetForcedSettingValue("bTranslocatorUseClientSideAnimations");
-    if (ForcedValue == "") {
-        if (Settings.bTranslocatorUseClientSideAnimations) {
-            Settings.bTranslocatorUseClientSideAnimations = false;
-            ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = false;
-            UpdatedSettings = UpdatedSettings $ " Translocator,";
-            bMadeChanges = true;
-        }
-    } else {
-        ForcedSettingsInfo = ForcedSettingsInfo $ " Translocator (Forced:" $ ForcedValue $ "),";
-    }
-
     // --- Report Results ---
     if (bMadeChanges) {
         IGPlus_SaveSettings();
@@ -5287,8 +5259,6 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bRocketUseClientSideAnimations = bValue;
     } else if (Key ~= "bSniperUseClientSideAnimations") {
         ClientWeaponSettingsData.bSniperUseClientSideAnimations = bValue;
-    } else if (Key ~= "bTranslocatorUseClientSideAnimations") {
-        ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = bValue;
     }
 }
 
@@ -5527,34 +5497,6 @@ exec function SniperClientSideAnimations(bool b) {
 		ClientMessage("Sniper client-side animations enabled!", 'IGPlus');
 	else
 		ClientMessage("Sniper client-side animations disabled!", 'IGPlus');
-}
-
-exec function TranslocatorClientSideAnimations(bool b) {
-    local string ForcedValue;
-
-    ForcedValue = GetForcedSettingValue("bTranslocatorUseClientSideAnimations");
-	if (ForcedValue != "") {
-        ClientMessage("Cannot change Translocator animations: Setting is forced by the server to '" $ ForcedValue $ "'.", 'IGPlus');
-        return;
-    }
-
-	if (Settings.bTranslocatorUseClientSideAnimations == b) {
-		if (b)
-			ClientMessage("Translocator client-side animations are already enabled.", 'IGPlus');
-		else
-			ClientMessage("Translocator client-side animations are already disabled.", 'IGPlus');
-		return;
-	}
-
-	Settings.bTranslocatorUseClientSideAnimations = b;
-	ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = b;
-
-	IGPlus_SaveSettings();
-
-	if (b)
-		ClientMessage("Translocator client-side animations enabled!", 'IGPlus');
-	else
-		ClientMessage("Translocator client-side animations disabled!", 'IGPlus');
 }
 
 exec function setShockBeam(int sb) {

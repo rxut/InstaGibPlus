@@ -143,7 +143,6 @@ var config bool   bRipperUseClientSideAnimations;
 var config bool   bFlakUseClientSideAnimations;
 var config bool   bRocketUseClientSideAnimations;
 var config bool   bSniperUseClientSideAnimations;
-var config bool   bTranslocatorUseClientSideAnimations;
 
 var config float MenuX, MenuY, MenuWidth, MenuHeight;
 var config string ServerAdminPasswords[16];
@@ -426,7 +425,6 @@ simulated function string DumpSettings() {
 		GetSetting("bFlakUseClientSideAnimations")$
 		GetSetting("bRocketUseClientSideAnimations")$
 		GetSetting("bSniperUseClientSideAnimations")$
-		GetSetting("bTranslocatorUseClientSideAnimations")$
 		DumpCrosshairLayers();
 }
 
@@ -529,7 +527,6 @@ defaultproperties
 	bFlakUseClientSideAnimations=False
 	bRocketUseClientSideAnimations=False
 	bSniperUseClientSideAnimations=False
-	bTranslocatorUseClientSideAnimations=False
 
 	MenuX=200
 	MenuY=200

@@ -463,10 +463,6 @@ var localized string MoreInformationText;
 	var localized string SniperUseClientSideAnimationsText;
 	var localized string SniperUseClientSideAnimationsHelp;
 
-	var UWindowCheckbox Chk_TranslocatorUseClientSideAnimations;
-	var localized string TranslocatorUseClientSideAnimationsText;
-	var localized string TranslocatorUseClientSideAnimationsHelp;
-
 var float PaddingX;
 var float PaddingY;
 var float LineSpacing;
@@ -891,7 +887,6 @@ function Created() {
 	Chk_FlakUseClientSideAnimations = CreateCheckbox(FlakUseClientSideAnimationsText, FlakUseClientSideAnimationsHelp);
 	Chk_RocketUseClientSideAnimations = CreateCheckbox(RocketUseClientSideAnimationsText, RocketUseClientSideAnimationsHelp);
 	Chk_SniperUseClientSideAnimations = CreateCheckbox(SniperUseClientSideAnimationsText, SniperUseClientSideAnimationsHelp);
-	Chk_TranslocatorUseClientSideAnimations = CreateCheckbox(TranslocatorUseClientSideAnimationsText, TranslocatorUseClientSideAnimationsHelp);
 
 	Lbl_Advanced = CreateSeparator(AdvancedText);
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
@@ -1159,7 +1154,6 @@ function Load() {
 	Chk_FlakUseClientSideAnimations.bChecked = Settings.bFlakUseClientSideAnimations;
 	Chk_RocketUseClientSideAnimations.bChecked = Settings.bRocketUseClientSideAnimations;
 	Chk_SniperUseClientSideAnimations.bChecked = Settings.bSniperUseClientSideAnimations;
-	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
 
 	bLoadSucceeded = true;
 }
@@ -1283,7 +1277,6 @@ function Save() {
 	Settings.bFlakUseClientSideAnimations = Chk_FlakUseClientSideAnimations.bChecked;
 	Settings.bRocketUseClientSideAnimations = Chk_RocketUseClientSideAnimations.bChecked;
 	Settings.bSniperUseClientSideAnimations = Chk_SniperUseClientSideAnimations.bChecked;
-	Settings.bTranslocatorUseClientSideAnimations = Chk_TranslocatorUseClientSideAnimations.bChecked;
 
 	// Update replicated weapon settings data so server gets changes immediately
 	P = bbPlayer(GetPlayerOwner());
@@ -1296,7 +1289,6 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bFlakUseClientSideAnimations", Chk_FlakUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bRocketUseClientSideAnimations", Chk_RocketUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bSniperUseClientSideAnimations", Chk_SniperUseClientSideAnimations.bChecked);
-		P.UpdateReplicatedWeaponSetting("bTranslocatorUseClientSideAnimations", Chk_TranslocatorUseClientSideAnimations.bChecked);
 	}
 
 	Settings.SaveConfig();
@@ -1657,9 +1649,6 @@ defaultproperties
 
 		SniperUseClientSideAnimationsText="Client-Side Animations Sniper Rifle"
 		SniperUseClientSideAnimationsHelp="If checked, use client-side animations for Sniper Rifle"
-
-		TranslocatorUseClientSideAnimationsText="Client-Side Animations Translocator"
-		TranslocatorUseClientSideAnimationsHelp="If checked, use client-side animations for Translocator"
 
 	PaddingX=20
 	PaddingY=20
