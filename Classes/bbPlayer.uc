@@ -182,9 +182,6 @@ var bool IGPlus_DidTranslocate;
 var bool IGPlus_NotifiedTranslocate;
 var bool IGPlus_WantCAP;
 var bool IGPlus_SkipMovesUntilNextTick;
-var transient Weapon IGPlus_TraceClientWeapon;
-var transient Weapon IGPlus_TraceClientPendingWeapon;
-var transient bool IGPlus_TraceClientWeaponInitialized;
 
 // SSR Beam
 var float LastWeaponEffectCreated;
@@ -607,7 +604,6 @@ replication
 		DropFlag,
 		Go,
 		Hold,
-		IGPlus_ServerLogClientWeaponState,
 		IGPlus_ForcedSettingsRetry,
 		IGPlus_ForcedSettingsOK,
 		IGPlus_ForcedSettings_InitOK,
@@ -1664,68 +1660,7 @@ function xxSendSpreeToSpecs(optional int Sw, optional PlayerReplicationInfo Rela
 event PlayerTick( float Time )
 {
 	xxPlayerTickEvents(Time);
-	IGPlus_TraceClientWeaponState();
 	zzTick = Time;
-}
-
-simulated function string IGPlus_WeaponTraceName(Weapon W)
-{
-	if (W == none)
-		return "None";
-	return string(W.Name) $ "(" $ W.GetStateName() $ ")";
-}
-
-simulated function IGPlus_TraceClientWeaponState()
-{
-	if (Level.NetMode != NM_Client || Role != ROLE_AutonomousProxy)
-		return;
-
-	if (!IGPlus_TraceClientWeaponInitialized)
-	{
-		IGPlus_TraceClientWeapon = Weapon;
-		IGPlus_TraceClientPendingWeapon = ClientPending;
-		IGPlus_TraceClientWeaponInitialized = true;
-		return;
-	}
-
-	if (Weapon == IGPlus_TraceClientWeapon && ClientPending == IGPlus_TraceClientPendingWeapon)
-		return;
-
-	IGPlus_ServerLogClientWeaponState(
-		Level.TimeSeconds,
-		IGPlus_WeaponTraceName(IGPlus_TraceClientWeapon),
-		IGPlus_WeaponTraceName(IGPlus_TraceClientPendingWeapon),
-		IGPlus_WeaponTraceName(Weapon),
-		IGPlus_WeaponTraceName(ClientPending),
-		WeaponUpdate,
-		TlocCounter
-	);
-	IGPlus_TraceClientWeapon = Weapon;
-	IGPlus_TraceClientPendingWeapon = ClientPending;
-}
-
-function IGPlus_ServerLogClientWeaponState(
-	float ClientTime,
-	string OldWeapon,
-	string OldPending,
-	string NewWeapon,
-	string NewPending,
-	int ClientWeaponUpdate,
-	int ClientTlocCounter
-)
-{
-	Log(
-		"Weapon trace: Side=Client Event=WeaponStateChanged Player=" $ GetHumanName()
-		@ "ServerTime=" $ Level.TimeSeconds
-		@ "ClientTime=" $ ClientTime
-		@ "OldWeapon=" $ OldWeapon
-		@ "OldPending=" $ OldPending
-		@ "NewWeapon=" $ NewWeapon
-		@ "NewPending=" $ NewPending
-		@ "WeaponUpdate=" $ ClientWeaponUpdate
-		@ "TlocCounter=" $ ClientTlocCounter,
-		'IGPlus'
-	);
 }
 
 simulated function ClientDemoMessage(coerce string S, optional name Type, optional bool bBeep)
@@ -10985,34 +10920,12 @@ exec function NextWeapon()
 
 simulated function ChangedWeapon() {
 	local TournamentWeapon TW;
-	local Weapon OldWeapon, RequestedWeapon;
-
-	OldWeapon = Weapon;
-	RequestedWeapon = PendingWeapon;
 
 	if (Weapon != None && IGPlus_UseFastWeaponSwitch) {
 		Weapon.GotoState('');
 		ClientPutDown(none, PendingWeapon);
 	}
 	Super.ChangedWeapon();
-
-	if (Role == ROLE_Authority) {
-		Log(
-			"Weapon trace: Side=Server Event=ChangedWeapon Player=" $ GetHumanName()
-			@ "ServerTime=" $ Level.TimeSeconds
-			@ "OldWeapon=" $ IGPlus_WeaponTraceName(OldWeapon)
-			@ "RequestedWeapon=" $ IGPlus_WeaponTraceName(RequestedWeapon)
-			@ "NewWeapon=" $ IGPlus_WeaponTraceName(Weapon)
-			@ "PendingAfter=" $ IGPlus_WeaponTraceName(PendingWeapon)
-			@ "Fire=" $ bFire
-			@ "AltFire=" $ bAltFire
-			@ "RawFire=" $ IGPlus_ClientFireHeld
-			@ "RawAltFire=" $ IGPlus_ClientAltFireHeld
-			@ "FastSwitch=" $ IGPlus_UseFastWeaponSwitch
-			@ "TlocCounter=" $ TlocCounter,
-			'IGPlus'
-		);
-	}
 
 	// Explicit-fire weapons mask bFire/bAltFire to 0, so seed bForceFire from the raw
 	// flags to keep the SendFire block in TournamentWeapon.Active.Begin working.
@@ -11028,17 +10941,6 @@ simulated function ChangedWeapon() {
 }
 
 exec function Say(string Msg) {
-	if (Msg ~= "WEAPONBUG") {
-		Log(
-			"Weapon trace: Side=Server Event=PlayerMarker Player=" $ GetHumanName()
-			@ "ServerTime=" $ Level.TimeSeconds
-			@ "Weapon=" $ IGPlus_WeaponTraceName(Weapon)
-			@ "PendingWeapon=" $ IGPlus_WeaponTraceName(PendingWeapon)
-			@ "TlocCounter=" $ TlocCounter,
-			'IGPlus'
-		);
-	}
-
 	if (Msg ~= "r" ||
 		Msg ~= "rdy" ||
 		Msg ~= "ready" ||
