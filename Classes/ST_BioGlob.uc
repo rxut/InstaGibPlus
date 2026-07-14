@@ -9,17 +9,61 @@ function PostBeginPlay() {
 	MomentumTransfer = default.MomentumTransfer * WImp.WeaponSettings.BioAltMomentum;
 }
 
+simulated function PostNetBeginPlay()
+{
+	local PlayerPawn In;
+	local ST_ut_biorifle br;
+	local WeaponSettingsRepl WS;
+	local vector FakeLocation;
+
+	super(Projectile).PostNetBeginPlay();
+
+	WS = GetWeaponSettings();
+	if (WS != None && WS.BioCompensatePing && bbPlayer(Instigator) != None
+		&& bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations)
+	{
+		In = PlayerPawn(Instigator);
+		if (In != None && Viewport(In.Player) != None)
+			InstigatingPlayer = In;
+
+		if (InstigatingPlayer != None)
+		{
+			br = ST_ut_biorifle(InstigatingPlayer.Weapon);
+			if (br != None && br.LocalBioGlobDummy != None && !br.LocalBioGlobDummy.bDeleteMe)
+			{
+				FakeLocation = br.LocalBioGlobDummy.Location;
+				br.LocalBioGlobDummy.Destroy();
+				br.LocalBioGlobDummy = None;
+				SetLocation(FakeLocation);
+				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+			}
+		}
+	}
+	else
+		Disable('Tick');
+}
+
 auto state Flying
 {
 	function ProcessTouch (Actor Other, vector HitLocation) 
 	{ 
 		if ( Other.IsA('ST_BioSplash') )
 			return;
+		if (bClientVisualOnly)
+		{
+			Destroy();
+			return;
+		}
 		if ( Pawn(Other)!=Instigator || bOnGround) 
 			Global.Timer(); 
 	}
 	simulated function HitWall( vector HitNormal, actor Wall )
 	{
+		if (bClientVisualOnly)
+		{
+			Destroy();
+			return;
+		}
 
 		SetPhysics(PHYS_None);		
 		MakeNoise(1);	

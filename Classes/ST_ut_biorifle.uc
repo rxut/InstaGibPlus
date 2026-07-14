@@ -11,6 +11,8 @@ var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
 var ST_UT_BioGel LocalBioGelDummy;
+var ST_BioGlob LocalBioGlobDummy;
+var float ClientAltChargeTime;
 
 // Explicit client aim data (sent via ServerExplicitFire)
 var vector ExplicitClientLoc;
@@ -302,6 +304,43 @@ simulated function SpawnClientDummyBioGel()
 	LocalBioGelDummy.SetCollision(false, false, false);
 }
 
+simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
+{
+	local Pawn PawnOwner;
+	local vector X, Y, Z;
+	local vector Start;
+	local float Hand;
+
+	PawnOwner = Pawn(Owner);
+	if (PawnOwner == None)
+		return;
+
+	if (Owner.IsA('PlayerPawn'))
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	else
+		Hand = 1.0;
+
+	GetAxes(PawnOwner.ViewRotation, X, Y, Z);
+	if (bHideWeapon)
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	else
+		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+	if (bbPlayer(Owner) != None)
+		Start.Z += bbPlayer(Owner).GetMoverFireZOffset();
+
+	LocalBioGlobDummy = Spawn(class'ST_BioGlob', Owner,, Start, PawnOwner.ViewRotation);
+	if (LocalBioGlobDummy != None)
+	{
+		LocalBioGlobDummy.RemoteRole = ROLE_None;
+		LocalBioGlobDummy.Instigator = PawnOwner;
+		LocalBioGlobDummy.DrawScale = 1.0 + 0.8 * ClientChargeSize;
+		LocalBioGlobDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+		LocalBioGlobDummy.bClientVisualOnly = true;
+		LocalBioGlobDummy.bCollideWorld = false;
+		LocalBioGlobDummy.SetCollision(false, false, false);
+	}
+}
+
 state ClientActive
 {
 	simulated function AnimEnd()
@@ -317,6 +356,44 @@ simulated function ClientPutDown(Weapon NextWeapon)
 		PlayOwnedSound(Sound'Botpack.BioRifle.BioAltRep', SLOT_Misc, 0.0);
 
 	Super.ClientPutDown(NextWeapon);
+}
+
+state ClientAltFiring
+{
+	simulated function Tick(float DeltaTime)
+	{
+		local Pawn PawnOwner;
+		local TournamentPlayer T;
+		local bbPlayer bbP;
+		local bool bSwitching;
+
+		PawnOwner = Pawn(Owner);
+		if (!bBurst && bCanClientFire && PawnOwner != None)
+		{
+			if (PawnOwner.bAltFire != 0)
+				ClientAltChargeTime += DeltaTime;
+			else
+			{
+				T = TournamentPlayer(PawnOwner);
+				bSwitching = bChangeWeapon
+					|| (PawnOwner.PendingWeapon != None && PawnOwner.PendingWeapon != self)
+					|| (T != None && T.ClientPending != None && T.ClientPending != self);
+				bbP = bbPlayer(PawnOwner);
+				if (!bSwitching && IsPingCompEnabled() && bbP != None
+					&& bbP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
+					SpawnClientDummyBioGlob(FMin(4.1, 0.5 * int(ClientAltChargeTime / 0.5)));
+			}
+		}
+
+		Super.Tick(DeltaTime);
+	}
+
+	simulated function BeginState()
+	{
+		ClientAltChargeTime = 0.0;
+		bChangeWeapon = false;
+		Super.BeginState();
+	}
 }
 
 state AltFiring
