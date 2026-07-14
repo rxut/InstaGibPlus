@@ -311,6 +311,17 @@ state ClientActive
 	}
 }
 
+state AltFiring
+{
+	function Tick(float DeltaTime)
+	{
+		Super.Tick(DeltaTime);
+
+		if (bChangeWeapon)
+			GotoState('DownWeapon');
+	}
+}
+
 state ShootLoad
 {
 
