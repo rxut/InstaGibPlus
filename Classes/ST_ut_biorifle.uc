@@ -311,6 +311,14 @@ state ClientActive
 	}
 }
 
+simulated function ClientPutDown(Weapon NextWeapon)
+{
+	if (IsInState('ClientAltFiring'))
+		PlayOwnedSound(Sound'Botpack.BioRifle.BioAltRep', SLOT_Misc, 0.0);
+
+	Super.ClientPutDown(NextWeapon);
+}
+
 state AltFiring
 {
 	function Tick(float DeltaTime)
@@ -318,7 +326,10 @@ state AltFiring
 		Super.Tick(DeltaTime);
 
 		if (bChangeWeapon)
+		{
+			PlayOwnedSound(Sound'Botpack.BioRifle.BioAltRep', SLOT_Misc, 0.0);
 			GotoState('DownWeapon');
+		}
 	}
 }
 
