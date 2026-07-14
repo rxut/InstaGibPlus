@@ -415,10 +415,6 @@ var IGPlus_FlagSprite IGPlus_TeamFlagSprite[4];
 var bool IGPlus_EnableDualButtonSwitch;
 var bool IGPlus_UseFastWeaponSwitch;
 
-// Raw client fire flags, tracked even where explicit-fire weapons force bFire/bAltFire to 0
-var bool IGPlus_ClientFireHeld;
-var bool IGPlus_ClientAltFireHeld;
-
 var bool IGPlus_EnableInputReplication;
 var bool IGPlus_EnableSnapshotInterpolation;
 var bool IGPlus_PressedJumpSave;
@@ -2899,42 +2895,30 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				DoDodge = DODGE_None;
 
 			if (MoveIndex == FireIndex) {
-				IGPlus_ClientFireHeld = bFired;
-				if (!IsExplicitFireWeapon()) {
-					if (bFired) {
+				if (bFired) {
+					if (!IsExplicitFireWeapon()) {
 						if (bForceFire && (Weapon != None))
 							Weapon.ForceFire();
 						else if (bFire == 0)
 							Fire(0);
-						bFire = 1;
-					} else {
-						bFire = 0;
 					}
+					bFire = 1;
 				} else {
 					bFire = 0;
-					// Mirror held fire during the select so Active.Begin still sends SendFire,
-					// and a release before the weapon is ready cancels the pending shot
-					if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-						TournamentWeapon(Weapon).bForceFire = bFired;
 				}
 			}
 
 			if (MoveIndex == AltFireIndex) {
-				IGPlus_ClientAltFireHeld = bAltFired;
-				if (!IsExplicitAltFireWeapon()) {
-					if (bAltFired) {
+				if (bAltFired) {
+					if (!IsExplicitAltFireWeapon()) {
 						if (bForceAltFire && (Weapon != None))
 							Weapon.ForceAltFire();
 						else if (bAltFire == 0)
 							AltFire(0);
-						bAltFire = 1;
-					} else {
-						bAltFire = 0;
 					}
+					bAltFire = 1;
 				} else {
 					bAltFire = 0;
-					if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-						TournamentWeapon(Weapon).bForceAltFire = bAltFired;
 				}
 			}
 
@@ -3286,8 +3270,6 @@ function xxServerMoveDead(
 		bClientDead = true;
 		bFire = 0;
 		bAltFire = 0;
-		IGPlus_ClientFireHeld = false;
-		IGPlus_ClientAltFireHeld = false;
 	}
 
 	Acceleration = vect(0,0,0);
@@ -4309,44 +4291,32 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		}
 
 		// handle firing and alt-firing on server
-		IGPlus_ClientFireHeld = I.bFire;
-		IGPlus_ClientAltFireHeld = I.bAFir;
-		if (!IsExplicitFireWeapon()) {
-			if (I.bFire) {
+		if (I.bFire) {
+			if (!IsExplicitFireWeapon()) {
 				if (bFire == 0) {
 					if (I.bLive && I.bFFir && Weapon != none)
 						Weapon.ForceFire();
 					else
 						Fire(0);
 				}
-				bFire = 1;
-			} else {
-				bFire = 0;
 			}
+			bFire = 1;
 		} else {
 			bFire = 0;
-			// Mirror held fire during the select so Active.Begin still sends SendFire,
-			// and a release before the weapon is ready cancels the pending shot
-			if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-				TournamentWeapon(Weapon).bForceFire = I.bFire;
 		}
 
-		if (!IsExplicitAltFireWeapon()) {
-			if (I.bAFir) {
+		if (I.bAFir) {
+			if (!IsExplicitAltFireWeapon()) {
 				if (bAltFire == 0) {
 					if (I.bLive && I.bFAFr && Weapon != none)
 						Weapon.ForceAltFire();
 					else
 						AltFire(0);
 				}
-				bAltFire = 1;
-			} else {
-				bAltFire = 0;
 			}
+			bAltFire = 1;
 		} else {
 			bAltFire = 0;
-			if (TournamentWeapon(Weapon) != None && Weapon.IsInState('Active'))
-				TournamentWeapon(Weapon).bForceAltFire = I.bAFir;
 		}
 	} else if (RemoteRole == ROLE_Authority) {
 		// this assumes that you always replay up until the present, otherwise
@@ -10919,33 +10889,11 @@ exec function NextWeapon()
 }
 
 simulated function ChangedWeapon() {
-	local TournamentWeapon TW;
-
 	if (Weapon != None && IGPlus_UseFastWeaponSwitch) {
 		Weapon.GotoState('');
 		ClientPutDown(none, PendingWeapon);
 	}
 	Super.ChangedWeapon();
-
-	// Explicit-fire weapons mask bFire/bAltFire to 0, so seed bForceFire from the raw
-	// flags to keep the SendFire block in TournamentWeapon.Active.Begin working.
-	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone) {
-		TW = TournamentWeapon(Weapon);
-		if (TW != None) {
-			if (IGPlus_ClientFireHeld && IsExplicitFireWeapon())
-				TW.bForceFire = true;
-			if (IGPlus_ClientAltFireHeld && IsExplicitAltFireWeapon())
-				TW.bForceAltFire = true;
-		}
-
-		// Keep bFire/bAltFire continuous when leaving an explicit-fire weapon, so the unmask doesn't register as a fresh press
-		if (RemoteRole == ROLE_AutonomousProxy) {
-			if (IGPlus_ClientFireHeld && !IsExplicitFireWeapon())
-				bFire = 1;
-			if (IGPlus_ClientAltFireHeld && !IsExplicitAltFireWeapon())
-				bAltFire = 1;
-		}
-	}
 }
 
 exec function Say(string Msg) {
