@@ -12,7 +12,7 @@ Supported ST_ weapons use one deterministic model on client and server:
 2. `xxServerMove_v4` carries the edge timeline, bound weapon, view data,
    charge data, and optional Eightball shot pack.
 3. The client predicts each slice before movement and move merging.
-4. The server resolves the bound weapon and replays the same sub-steps.
+4. The server resolves the bound weapon and replays the same input slices.
 5. Fresh fire starts only on a client-predicted step. Non-hinted steps may
    advance or settle an already committed cycle, but cannot start one.
 
@@ -59,7 +59,7 @@ no-input settlement step required to release or cancel committed state.
 
 - Eightball release/cancel count is capped by server-observed load time. The
   client report may only lower it. Boundary slack is the larger of 60 ms and
-  the current sub-step delta.
+  the current input-slice delta.
 - Bio charge is derived from server-observed hold time at stock 0.5-second
   cadence. Client charge data may only lower it.
 
@@ -124,7 +124,7 @@ no-input settlement step required to release or cancel committed state.
 ## Transport deployment
 
 `UTPure` selects `ServerMoveVersion = 4` so edge timelines, interpolated
-sub-step views, and shot packs are active. Client fire gates must depend on
+input-slice views, and shot packs are active. Client fire gates must depend on
 readiness, never the transport version, because deterministic dispatch also
 supports the v3 fallback.
 
@@ -151,7 +151,7 @@ protocol negotiation differently.
   manual choice is not replaced by impact hammer.
 - Double-tap faster than one net update; both shots must register.
 - Exercise high-FPS/low-net-update flick shots and verify prediction matches
-  server sub-step position and view.
+  the server-replayed input-slice position and view.
 - Die holding fire, release while dead, and respawn; verify no phantom shot.
 - Drop each weapon mid-cycle and let another player pick it up; verify no
   inherited charge, cooldown, or held edge.

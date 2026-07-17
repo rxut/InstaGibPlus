@@ -82,9 +82,9 @@ simulated function float AltShotInterval() {
 	return FClamp(10.0 / (24.0 * RateScale), 0.05, 2.0);
 }
 
-// V4 step processing — called from bbPlayer.IGPlus_V4ProcessWeaponStep.
+// V4 input-slice processing — called from bbPlayer.IGPlus_V4ProcessWeaponInputSlice.
 // Returns true to suppress legacy fire, even if no shot is produced.
-simulated function bool V4ProcessStep(
+simulated function bool V4ProcessInputSlice(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,

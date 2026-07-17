@@ -128,7 +128,7 @@ function Projectile IGPlus_V4ProjectileFire(class<projectile> ProjClass, float P
 	return P;
 }
 
-simulated function bool V4ProcessStep(
+simulated function bool V4ProcessInputSlice(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,

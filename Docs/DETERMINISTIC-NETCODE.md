@@ -74,8 +74,8 @@ The important improvement is not simply sending more fire commands. It is
 giving both sides a shared timeline.
 
 UT does not use a modern fixed weapon tick in the same way as Source. Here,
-being “in sync” means that the client and server advance weapon state at the
-same reconstructed movement sub-step, with the same held input, aim, weapon,
+being “in sync” means that the client and server advance weapon state for the
+same reconstructed input slice, with the same held input, aim, weapon,
 charge, and cooldown state.
 
 For example, imagine a player presses and releases Shock primary while turning
@@ -86,7 +86,7 @@ actions belonged inside the update. The shot may be evaluated from the end of
 the move, after the player has already turned.
 
 With ServerMove v4, the server knows where the press and release occurred. It
-reconstructs the matching sub-step and interpolates the player's aim between
+reconstructs the matching input slice and interpolates the player's aim between
 the start and end of the move. The predicted client beam and authoritative
 server beam are therefore based on the same moment.
 

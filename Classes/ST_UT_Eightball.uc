@@ -2,7 +2,7 @@
 // Stats.ST_UT_Eightball
 // V4 deterministic fire for Eightball rocket launcher.
 // Edge-only design: server spawns rockets from rising/falling edge
-// detection in sub-steps; client runs the same edge logic as a
+// detection in input slices; client runs the same edge logic as a
 // shared duration-based controller while the legacy
 // ClientFiring state machine handles animations.
 // ===============================================================
@@ -577,7 +577,7 @@ simulated function V4PlayServerChargeSound(bool bRotate) {
 }
 
 // =========================================================================
-// V4ProcessStep — runs on BOTH client and server
+// V4ProcessInputSlice — runs on BOTH client and server
 //
 // Server (bServerSide=true): spawns authoritative rockets via HandleV4ServerFire.
 // Client (bServerSide=false): only tracks edge state and advances the shared
@@ -610,7 +610,7 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	BudgetLimit = Max(1, V4InternalBudget);
 	MoveCharge = Clamp(MoveChargeData, 0, 6);
 
-	// Client report may only lower the count; sub-step-sized slack so coarse
+	// Client report may only lower the count; input-slice-sized slack so coarse
 	// steps don't shave a rocket off an honest volley.
 	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + FMax(0.06, V4LastStepDelta));
 	if (MoveCharge > 0)
@@ -623,7 +623,7 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	return Min(Clamp(NumRockets, 1, 6), BudgetLimit);
 }
 
-simulated function bool V4ProcessStep(
+simulated function bool V4ProcessInputSlice(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,
@@ -751,7 +751,7 @@ simulated function bool V4ProcessStep(
 		}
 
 			NumRockets = V4CalculateCharge(V4PrimaryLoadElapsed);
-			// Sample alt only on the sub-step where a new rocket actually loads,
+			// Sample alt only on the input slice where a new rocket actually loads,
 			// mirroring base UT99's per-AnimEnd sample so a brief tap doesn't latch.
 			if (NumRockets > V4PrimaryPredictedLoaded && bAltHeld)
 				bV4PrimaryTightLatched = true;
@@ -937,21 +937,21 @@ function bool V4RecoverPackedShot(
 			V4StartCooldown(V4PostFireInterval(RecoveredRockets));
 	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED) {
 		if (!V4HasCommittedPrimary())
-			V4ProcessStep(
+			V4ProcessInputSlice(
 				StepTS, StepView, StepLoc,
 				true, false, false, false,
 				true, true, 0, true, false);
 		if (bTight)
 			bV4PrimaryTightLatched = true;
 		if (V4HasCommittedPrimary())
-			V4ProcessStep(
+			V4ProcessInputSlice(
 				StepTS, StepView, StepLoc,
 				false, false, false, false,
 				true, true, NumRockets, true, false);
 	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT) {
 		if (!V4OwnerInstantEnabled() || V4HasCommittedPrimary())
 			return false;
-		V4ProcessStep(
+		V4ProcessInputSlice(
 			StepTS, StepView, StepLoc,
 			true, false, false, false,
 			true, true, 1, true, true);
@@ -962,10 +962,10 @@ function bool V4RecoverPackedShot(
 	return V4ServerShotSerial != ShotSerial;
 }
 
-// Client-side instant rocket fire driven by V4ProcessStep.
+// Client-side instant rocket fire driven by V4ProcessInputSlice.
 // Plays the fire animation and spawns visual-only rockets, then the
 // ClientV4InstantFire state handles the reload anim before going idle.
-// V4ProcessStep calls this again when the next cooldown expires.
+// V4ProcessInputSlice calls this again when the next cooldown expires.
 simulated function HandleV4ClientFire() {
 	local bbPlayer bbP;
 
@@ -992,7 +992,7 @@ simulated function HandleV4ClientFire() {
 		GotoState('ClientV4InstantFire');
 }
 
-// Client-side loaded rocket fire driven by V4ProcessStep's falling edge.
+// Client-side loaded rocket fire driven by V4ProcessInputSlice's falling edge.
 // Syncs ClientRocketsLoaded to the server's count before firing so both
 // sides agree on the number of rockets/grenades spawned.
 simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional bool bTight) {
@@ -1161,7 +1161,7 @@ simulated function bool ClientFire( float Value )
 		return false;
 
 	// Deterministic primary load/fire is driven only by step processing.
-	// Instant rockets: V4ProcessStep drives fire timing via HandleV4ClientFire.
+	// Instant rockets: V4ProcessInputSlice drives fire timing via HandleV4ClientFire.
 	if (V4ShouldBypassLegacyClientInput())
 		return true;
 
@@ -1770,7 +1770,7 @@ simulated function bool V4HandleClientLoadAnimEnd(bool bAltLoad) {
 // =========================================================================
 
 // Lightweight state for instant rocket V4 fire+reload animation cycle.
-// V4ProcessStep drives fire timing via HandleV4ClientFire; this state
+// V4ProcessInputSlice drives fire timing via HandleV4ClientFire; this state
 // just sequences fire anim → reload anim → idle.
 state ClientV4InstantFire
 {

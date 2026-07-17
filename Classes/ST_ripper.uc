@@ -90,7 +90,7 @@ simulated function V4PlayFireAnim(bool bAlt) {
 	}
 }
 
-simulated function bool V4ProcessStep(
+simulated function bool V4ProcessInputSlice(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,

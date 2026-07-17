@@ -2991,11 +2991,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_LastFireEndHeld = bV4FireEndHeld;
 	IGPlus_LastAltEndHeld = bV4AltEndHeld;
 
-	// Whole-move dispatch for transports without sub-step data (v3 moves).
+	// Whole-move dispatch for transports without input-slice data (v3 moves).
 	bDetFallback = !bV4WeaponSupported && V4Weapon != none;
 
 	if (bDetFallback) {
-			IGPlus_V4ProcessWeaponStep(
+			IGPlus_V4ProcessWeaponInputSlice(
 				V4Weapon,
 				SM.TimeStamp,
 				ViewRotation,
@@ -3083,17 +3083,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 			bV4HandledStep = false;
 			if (bV4WeaponSupported) {
-				StepTS = WImpBase.IGPlus_V4ComputeStepTimestamp(SM.TimeStamp, DeltaTime, MoveIndex, MergeCount);
-				StepView = WImpBase.IGPlus_V4InterpolateStepView(SM.ViewStart, SM.View, MoveIndex, MergeCount);
+				StepTS = WImpBase.IGPlus_V4ComputeSliceTimestamp(SM.TimeStamp, DeltaTime, MoveIndex, MergeCount);
+				StepView = WImpBase.IGPlus_V4InterpolateSliceView(SM.ViewStart, SM.View, MoveIndex, MergeCount);
 				StepLoc = Location;
 				if (bV4HasEdgeTimeline) {
-					bStepFireHeld = IGPlus_V4HeldAtStep(
+					bStepFireHeld = IGPlus_V4HeldAtSlice(
 						bV4FireStartHeld,
 						V4FirePressIndex,
 						V4FireReleaseIndex,
 						MoveIndex
 					);
-					bStepAltHeld = IGPlus_V4HeldAtStep(
+					bStepAltHeld = IGPlus_V4HeldAtSlice(
 						bV4AltStartHeld,
 						V4AltPressIndex,
 						V4AltReleaseIndex,
@@ -3127,7 +3127,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 						// path fire it once instead of canceling and charging it here.
 						bV4HandledStep = true;
 					} else {
-						bV4HandledStep = IGPlus_V4ProcessWeaponStep(
+						bV4HandledStep = IGPlus_V4ProcessWeaponInputSlice(
 							V4Weapon,
 							StepTS,
 							StepView,
@@ -4529,7 +4529,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 		IGPlus_V4TrackPendingWeapon(I.TimeStamp);
 
 		if (bV4Dispatch) {
-			IGPlus_V4ProcessWeaponStep(
+			IGPlus_V4ProcessWeaponInputSlice(
 				V4Weapon,
 				I.TimeStamp,
 				I.SavedViewRotation,
@@ -5278,7 +5278,7 @@ simulated function bool IGPlus_IsV4ActiveWeapon(optional Weapon W) {
 	return false;
 }
 
-simulated function bool IGPlus_V4ProcessWeaponStep(
+simulated function bool IGPlus_V4ProcessWeaponInputSlice(
 	Weapon W,
 	float StepTS,
 	rotator StepView,
@@ -5312,14 +5312,14 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS)) {
 		EB = ST_UT_Eightball(W);
 		if (EB != none && EB.V4HasSwitchAwayRequest())
-			return EB.V4ProcessStep(
+			return EB.V4ProcessInputSlice(
 				StepTS, StepView, StepLoc,
 				false, false, false, false,
 				true, false, V4ChargeData,
 				bHasEightballInstant, bEightballInstant);
 		BR = ST_ut_biorifle(W);
 		if (BR != none && BR.bV4WasAltHeld && IGPlus_V4SwitchAwayFrom(BR))
-			return BR.V4ProcessStep(
+			return BR.V4ProcessInputSlice(
 				StepTS, StepView, StepLoc,
 				false, false, false, false,
 				true, false, V4ChargeData);
@@ -5343,23 +5343,23 @@ simulated function bool IGPlus_V4ProcessWeaponStep(
 
 	SR = ST_ShockRifle(W);
 	if (SR != none)
-		return SR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
+		return SR.V4ProcessInputSlice(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	RP = ST_ripper(W);
 	if (RP != none)
-		return RP.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
+		return RP.V4ProcessInputSlice(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	FC = ST_UT_FlakCannon(W);
 	if (FC != none)
-		return FC.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
+		return FC.V4ProcessInputSlice(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	BR = ST_ut_biorifle(W);
 	if (BR != none)
-		return BR.V4ProcessStep(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep, V4ChargeData);
+		return BR.V4ProcessInputSlice(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep, V4ChargeData);
 
 	EB = ST_UT_Eightball(W);
 	if (EB != none)
-		return EB.V4ProcessStep(
+		return EB.V4ProcessInputSlice(
 			StepTS,
 			StepView,
 			StepLoc,
@@ -5383,7 +5383,7 @@ simulated function int IGPlus_V4FlagDecodeIndex(int V4Flags, int PresenceMask, i
 	return (V4Flags >>> Shift) & IGPLUS_V4FLAG_INDEX_MASK;
 }
 
-simulated function bool IGPlus_V4HeldAtStep(
+simulated function bool IGPlus_V4HeldAtSlice(
 	bool bStartHeld,
 	int PressIndex,
 	int ReleaseIndex,
@@ -5736,7 +5736,7 @@ function IGPlus_ReplicateInput(float Delta) {
 					else
 						V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
 					if (V4Weapon != none) {
-						IGPlus_V4ProcessWeaponStep(
+						IGPlus_V4ProcessWeaponInputSlice(
 							V4Weapon,
 							SerializedInput.TimeStamp,
 							SerializedInput.SavedViewRotation,
@@ -5836,7 +5836,7 @@ function xxReplicateMove(
 			// Merge tap rule: eightball taps ride the edge timeline.
 			bForceFireTap = bJustFired && !bLocalEightball;
 			bForceAltTap = bJustAltFired && !bLocalEightball;
-			IGPlus_V4ProcessWeaponStep(
+			IGPlus_V4ProcessWeaponInputSlice(
 				V4LocalWeapon,
 				Level.TimeSeconds,
 				ViewRotation,

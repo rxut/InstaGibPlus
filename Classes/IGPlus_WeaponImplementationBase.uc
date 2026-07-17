@@ -1494,7 +1494,7 @@ simulated function int IGPlus_V4YawDelta16(int StartYaw, int EndYaw) {
 	return Delta;
 }
 
-simulated function float IGPlus_V4ComputeStepTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount) {
+simulated function float IGPlus_V4ComputeSliceTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount) {
 	local float StartTS;
 	local float StepT;
 
@@ -1506,7 +1506,7 @@ simulated function float IGPlus_V4ComputeStepTimestamp(float MoveTS, float MoveD
 	return StartTS + StepT * MoveDelta;
 }
 
-simulated function rotator IGPlus_V4InterpolateStepView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount) {
+simulated function rotator IGPlus_V4InterpolateSliceView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount) {
 	local rotator R;
 	local float T;
 	local int StartPitch;
