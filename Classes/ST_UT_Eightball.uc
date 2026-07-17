@@ -214,24 +214,18 @@ simulated function V4PrimaryStartCycle(bool bMoveInstant, bool bServerSide) {
 	bV4SuppressPrimaryFirstBudgetAuto = (V4PrimaryCycleStartBudget <= 1);
 
 	bInstantRocket = bV4PrimaryLatchedInstant;
-	if (!bV4PrimaryLatchedInstant) {
-		bV4PrimaryCycleActive = true;
-		V4PrimaryLoadElapsed = 0.0;
-		if (!bServerSide) {
-			// Deterministic primary cycle owns the first-rocket consume.
-			// This must happen after tracking reset so finalize doesn't
-			// synthesize an extra missing consume.
-			V4ResetClientAmmoTracking();
-			V4ConsumeClientAmmo(1);
-		}
-	} else {
-		bV4PrimaryCycleActive = false;
-		V4PrimaryLoadElapsed = 0.0;
+	bV4PrimaryCycleActive = !bV4PrimaryLatchedInstant;
+	V4PrimaryLoadElapsed = 0.0;
+	if (bV4PrimaryCycleActive && !bServerSide) {
+		// Deterministic primary cycle owns the first-rocket consume; reset
+		// tracking first so finalize doesn't synthesize an extra consume.
+		V4ResetClientAmmoTracking();
+		V4ConsumeClientAmmo(1);
 	}
 }
 
 simulated function V4PrimaryRecordPrediction(int NumRockets, bool bAutoEnded) {
-	V4PrimaryLastPredictedCycleId = V4PrimaryCycleId & 255;
+	V4PrimaryLastPredictedCycleId = V4PrimaryCycleId;
 	V4PrimaryLastPredictedRockets = Clamp(NumRockets, 1, 6);
 	bV4PrimaryLastPredictedInstant = bV4PrimaryLatchedInstant;
 	bV4PrimaryLastPredictedAuto = bAutoEnded;
@@ -243,7 +237,7 @@ simulated function V4PrimarySendServerConfirm(int NumRockets, bool bAutoEnded) {
 		return;
 
 	ClientV4PrimaryShotConfirm(
-		byte(V4PrimaryCycleId & 255),
+		byte(V4PrimaryCycleId),
 		byte(Clamp(NumRockets, 1, 6)),
 		bAutoEnded,
 		bV4PrimaryLatchedInstant
@@ -257,10 +251,7 @@ simulated function ClientV4PrimaryShotConfirm(
 	bool bInstant
 ) {
 	local int ConfirmedRockets;
-	local int ConfirmCycleId;
-	local int ActiveCycleId;
 	local bool bMismatch;
-	local bool bCycleMatch;
 
 	if (Role == ROLE_Authority)
 		return;
@@ -268,29 +259,17 @@ simulated function ClientV4PrimaryShotConfirm(
 		return;
 
 	ConfirmedRockets = Clamp(int(Rockets), 1, 6);
-	ConfirmCycleId = int(CycleId) & 255;
-	ActiveCycleId = V4PrimaryCycleId & 255;
 
 	// Ignore confirms for a finished cycle once a newer primary cycle is
 	// already loading. Applying those confirms here would reset local ammo
 	// tracking mid-load and can cause an extra client-side consume.
-	if (bV4PrimaryCycleActive && ConfirmCycleId != ActiveCycleId)
+	if (bV4PrimaryCycleActive && int(CycleId) != V4PrimaryCycleId)
 		return;
 
-	bCycleMatch = ((V4PrimaryLastPredictedCycleId & 255) == ConfirmCycleId);
-	bMismatch = false;
-	if (!bCycleMatch)
-		bMismatch = true;
-	if (V4PrimaryLastPredictedRockets != ConfirmedRockets)
-		bMismatch = true;
-	if (bV4PrimaryLastPredictedInstant) {
-		if (!bInstant)
-			bMismatch = true;
-	} else if (bInstant) {
-		bMismatch = true;
-	}
-	if (bV4PrimaryLastPredictedAuto != bAutoEnded)
-		bMismatch = true;
+	bMismatch = V4PrimaryLastPredictedCycleId != int(CycleId)
+		|| V4PrimaryLastPredictedRockets != ConfirmedRockets
+		|| bV4PrimaryLastPredictedInstant != bInstant
+		|| bV4PrimaryLastPredictedAuto != bAutoEnded;
 
 	// Base UT behavior: client HUD ammo follows replicated server ammo.
 	// Do not mutate client ammo here for primary confirm.
@@ -300,7 +279,7 @@ simulated function ClientV4PrimaryShotConfirm(
 	V4PrimaryPredictedLoaded = ConfirmedRockets;
 	V4CachedChargeData = ConfirmedRockets;
 	ClientRocketsLoaded = ConfirmedRockets;
-	if (bV4PrimaryCycleActive && ConfirmCycleId == ActiveCycleId) {
+	if (bV4PrimaryCycleActive) {
 		bV4PrimaryCycleActive = false;
 		V4PrimaryLoadElapsed = 0.0;
 	}
@@ -548,13 +527,10 @@ simulated function V4AdvanceStepClock(float StepTS) {
 
 	V4LastStepTS = StepTS;
 
-	if (StepDelta < 0.0)
-		StepDelta = 0.0;
-
+	StepDelta = FMax(StepDelta, 0.0);
 	V4LastStepDelta = StepDelta;
 
-	if (V4CooldownRemaining > 0.0)
-		V4CooldownRemaining = FMax(0.0, V4CooldownRemaining - StepDelta);
+	V4CooldownRemaining = FMax(0.0, V4CooldownRemaining - StepDelta);
 
 	if (bV4PrimaryCycleActive)
 		V4PrimaryLoadElapsed += StepDelta;
@@ -576,28 +552,13 @@ simulated function V4PlayServerChargeSound(bool bRotate) {
 		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 }
 
-// =========================================================================
-// V4ProcessInputSlice — runs on BOTH client and server
-//
-// Server (bServerSide=true): spawns authoritative rockets via HandleV4ServerFire.
-// Client (bServerSide=false): only tracks edge state and advances the shared
-// duration clocks from the same per-step timestamps used by the server.
-//   Client weapon states handle animations and visual rockets only; refire
-//   and cooldown ownership stays in deterministic step processing.
-// =========================================================================
-simulated function float GetV4ChargeInterval() {
-	return 0.9;
-}
+// V4ProcessInputSlice runs on both sides: the server spawns authoritative
+// rockets; the client tracks edges/clocks and drives animation states only.
+const V4ChargeInterval = 0.9;
 
 simulated function int V4CalculateCharge(float LoadElapsed) {
-	local int Charge;
-	local int FinalCharge;
-
 	V4RefreshInternalBudget();
-
-	Charge = 1 + int(LoadElapsed / GetV4ChargeInterval());
-	FinalCharge = Min(Clamp(Charge, 1, 6), Max(1, V4InternalBudget));
-	return FinalCharge;
+	return Min(Clamp(1 + int(LoadElapsed / V4ChargeInterval), 1, 6), Max(1, V4InternalBudget));
 }
 
 simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
@@ -614,7 +575,7 @@ simulated function int V4ResolvePrimaryEdgeCharge(optional int MoveChargeData) {
 	// steps don't shave a rocket off an honest volley.
 	TimeAllowedCharge = V4CalculateCharge(V4PrimaryLoadElapsed + FMax(0.06, V4LastStepDelta));
 	if (MoveCharge > 0)
-		return Min(Min(Clamp(MoveCharge, 1, 6), TimeAllowedCharge), BudgetLimit);
+		return Min(Min(MoveCharge, TimeAllowedCharge), BudgetLimit);
 
 	if (V4PrimaryPredictedLoaded > 0)
 		NumRockets = Max(NumRockets, V4PrimaryPredictedLoaded);
@@ -769,7 +730,7 @@ simulated function bool V4ProcessInputSlice(
 			if (bV4SuppressPrimaryFirstBudgetAuto
 				&& bBudgetLimitReached
 				&& NumRockets <= 1
-				&& V4PrimaryLoadElapsed < GetV4ChargeInterval())
+				&& V4PrimaryLoadElapsed < V4ChargeInterval)
 				bBudgetLimitReached = false;
 		if (V4InternalBudget > 1 || NumRockets > 1)
 			bV4SuppressPrimaryFirstBudgetAuto = false;
@@ -836,7 +797,7 @@ simulated function bool V4ProcessInputSlice(
 			V4EnsureClientLoadState(true);
 
 		bBudgetLimitReached = NumRockets >= V4InternalBudget;
-			if (bBudgetLimitReached && NumRockets <= 1 && V4AltLoadElapsed < GetV4ChargeInterval())
+			if (bBudgetLimitReached && NumRockets <= 1 && V4AltLoadElapsed < V4ChargeInterval)
 				bBudgetLimitReached = false;
 
 		if (NumRockets >= 6 || bBudgetLimitReached) {
@@ -873,7 +834,7 @@ simulated function V4EmitClientAuthoritativeShot(int ShotKind, int NumRockets, o
 
 	if (Role == ROLE_Authority)
 		return;
-	if (!IsV4Active() || !UsesServerMoveV4())
+	if (!UsesServerMoveV4())
 		return;
 
 	bbP = bbPlayer(Owner);
@@ -971,10 +932,7 @@ simulated function HandleV4ClientFire() {
 
 	V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT, 1);
 
-	if (IsV4Active())
-		V4ConsumeClientAmmo(1);
-	else if (AmmoType != None)
-		AmmoType.AmmoAmount--;
+	V4ConsumeClientAmmo(1);
 
 	V4CachedChargeData = 1;
 	ClientRocketsLoaded = 1;
@@ -1334,7 +1292,6 @@ state FireRockets
 		local Projectile SpawnedRockets[6];
 		local int NumSpawnedRockets;
 		local rotator AimRot;
-		local bool bUseStepFireData;
 
 		if (bCanClientFire == false)
 		{
@@ -1358,11 +1315,10 @@ state FireRockets
 		if ( PlayerOwner == None )
 			bTightWad = ( FRand() * 4 < PawnOwner.skill );
 
-		bUseStepFireData = bUseV4ServerFireData;
-		if ( !bUseStepFireData && PawnOwner.bAltFire != 0 )
+		if ( !bUseV4ServerFireData && PawnOwner.bAltFire != 0 )
 			bTightWad = true;
 
-		if (bUseStepFireData)
+		if (bUseV4ServerFireData)
 		{
 			AimRot = V4ServerFireRot;
 			StartLoc = V4ServerFireLoc + CalcDrawOffset();
