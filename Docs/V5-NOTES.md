@@ -66,13 +66,20 @@ no-input settlement step required to release or cancel committed state.
 ## Recovery behavior
 
 - Edge state self-heals a lost release on the next move.
-- Eightball shot packs carry sequence and charge data in `V4AuxData` without
-  replacing the carrying move's weapon/readiness data.
-- A pack on a move bound to another weapon produces one no-input Eightball
-  recovery step when the binding is still valid.
+- Eightball shot packs carry sequence, charge, shot kind, and tight-spread state in `V4AuxData`
+  without replacing the carrying move's weapon/readiness data.
+- A pack on a move bound to another weapon runs deduplicated Eightball recovery
+  only inside the normal current/previous-weapon firing window.
+- Shot-producing Eightball edges flush immediately, and packs cannot attach to
+  a movement sample older than the predicted shot. The newest eligible marker
+  takes the shot-producing carrier; older unacknowledged markers retry later.
+- Rejected movement and rejected recovery do not mutate or acknowledge the
+  shot sequence; acknowledgement follows an authoritative shot only.
 - Old-move replay remains enabled on shot-pack moves.
 - Primary shot confirmation is reliable so client rocket/load visuals
   reconcile after a volley.
+- A rejected switch-race prediction receives a reliable, refund-only ammo
+  correction on the player channel; settlement also retires pre-switch markers.
 - A merged move contains at most one press and one release of each fire type;
   another edge forces a packet split.
 
@@ -95,6 +102,7 @@ no-input settlement step required to release or cancel committed state.
 - Primary rocket count and instant/tight state are latched for a cycle.
 - Grenade and rocket loads settle through switch-away and keep committed ammo
   spent.
+- Charge rotation/load sounds are replayed by the server for non-owning clients.
 - The complete volley is consumed at fire time from a frozen cycle budget.
   Mid-load ammo pickups intentionally do not extend that volley.
 

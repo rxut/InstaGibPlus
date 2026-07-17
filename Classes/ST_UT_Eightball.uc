@@ -31,6 +31,8 @@ var bool bV4PendingAltTap;
 
 // Client ammo consumption reconstruction logic
 var int V4ClientConsumedAmmo;
+var int V4ClientAmmoSpentSinceDown;
+var float V4ClientLastDownTS;
 var int V4InternalBudget;
 var bool bV4SuppressPrimaryFirstBudgetAuto;
 
@@ -45,6 +47,13 @@ var int V4PrimaryLastPredictedRockets;
 var bool bV4PrimaryLastPredictedInstant;
 var bool bV4PrimaryLastPredictedAuto;
 var bool bV4PrimaryTightLatched;
+var int V4ServerShotSerial;
+var int V4ServerLastShotKind;
+var bool bV4SwitchSettlementPending;
+
+const IGPLUS_EB_SHOT_KIND_ALT = 0;
+const IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED = 1;
+const IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT = 2;
 
 simulated function bool V4OwnerInstantEnabled() {
 	local TournamentPlayer TP;
@@ -303,6 +312,20 @@ simulated function ClientV4PrimaryShotConfirm(
 	}
 }
 
+simulated function V4ApplyClientAmmoRefund(int ServerAmmo) {
+	local int RefundFloor;
+
+	if (Role == ROLE_Authority || AmmoType == none)
+		return;
+
+	// This correction follows ClientPutDown on the owning player's reliable
+	// channel. Only refund missing ammo; never overwrite a newer pickup or shot.
+	RefundFloor = Max(0, ServerAmmo - V4ClientAmmoSpentSinceDown);
+	AmmoType.AmmoAmount = Max(AmmoType.AmmoAmount, RefundFloor);
+	if (bbPlayer(Owner) != none)
+		bbPlayer(Owner).IGPlus_PruneEightballShotQueueThrough(V4ClientLastDownTS);
+}
+
 simulated function int V4GetChargeDataForMove() {
 	local int Charge;
 	Charge = Clamp(V4CachedChargeData, 0, 7);
@@ -325,6 +348,7 @@ simulated function bool V4ConsumeClientAmmo(int Amount) {
 	ActualAmount = Min(Amount, AmmoType.AmmoAmount);
 	AmmoType.AmmoAmount -= ActualAmount;
 	V4ClientConsumedAmmo += ActualAmount;
+	V4ClientAmmoSpentSinceDown += ActualAmount;
 	return true;
 }
 
@@ -360,7 +384,7 @@ simulated function V4EnsureClientLoadState(bool bAltLoad) {
 
 replication
 {
-	// Reliable: a lost confirm desyncs load visuals until the next volley.
+	// Reliable: a lost confirm leaves predicted load state stale.
 	reliable if(Role == ROLE_Authority)
 		ClientV4PrimaryShotConfirm;
 }
@@ -412,8 +436,13 @@ simulated function bool V4HasSwitchAwayRequest() {
 	return bbPlayer(Owner) != none && bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self);
 }
 
+simulated function bool V4HasCommittedPrimary() {
+	return bV4PrimaryCycleActive || bV4WasFireHeld;
+}
+
 simulated function V4CancelDeterministicLoad(bool bServerSide, optional int MoveChargeData) {
 	local int CancelCount;
+	local bbPlayer bbP;
 
 	if (bServerSide && AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bV4PrimaryCycleActive || bV4WasFireHeld) {
@@ -441,9 +470,22 @@ simulated function V4CancelDeterministicLoad(bool bServerSide, optional int Move
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
 	V4ClearPendingAltInput();
+	bV4SwitchSettlementPending = false;
+	if (bServerSide && AmmoType != none) {
+		bbP = bbPlayer(Owner);
+		if (bbP != none)
+			bbP.IGPlus_ClientEightballAmmoRefund(self, AmmoType.AmmoAmount);
+	}
 
 	if (!bServerSide && (IsInState('ClientFiring') || IsInState('ClientAltFiring') || IsInState('ClientReload')))
 		GotoState('');
+}
+
+function V4FinalizeSwitchSettlement() {
+	if (Role != ROLE_Authority || !bV4SwitchSettlementPending)
+		return;
+
+	V4CancelDeterministicLoad(true, V4GetChargeDataForMove());
 }
 
 
@@ -524,6 +566,16 @@ simulated function V4StartCooldown(float Interval) {
 	V4CooldownRemaining = FMax(0.0, Interval);
 }
 
+simulated function V4PlayServerChargeSound(bool bRotate) {
+	if (Role != ROLE_Authority || Owner == none || Pawn(Owner) == none)
+		return;
+
+	if (bRotate)
+		Owner.PlayOwnedSound(Misc3Sound, SLOT_None, 0.1 * Pawn(Owner).SoundDampening);
+	else
+		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
+}
+
 // =========================================================================
 // V4ProcessStep — runs on BOTH client and server
 //
@@ -594,7 +646,9 @@ simulated function bool V4ProcessStep(
 
 	if (V4HasSwitchAwayRequest()
 		&& (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring')
-			|| bV4PendingAltHeld || bV4PendingAltTap)) {
+			|| bV4PendingAltHeld || bV4PendingAltTap
+			|| (V4HasCommittedPrimary()
+				&& (!bClientPredictedStep || bFireHeld || bForceFire)))) {
 		V4CancelDeterministicLoad(bServerSide, V4ChargeData);
 		return true;
 	}
@@ -618,6 +672,8 @@ simulated function bool V4ProcessStep(
 				return true;
 			bV4PendingAltTap = false;
 			V4CachedChargeData = 1;
+			if (AmmoType != none && AmmoType.AmmoAmount > 0)
+				V4PlayServerChargeSound(true);
 			HandleV4ServerAltFire(StepView, StepLoc, 1);
 			V4StartCooldown(V4PostFireInterval(1));
 			return true;
@@ -679,8 +735,11 @@ simulated function bool V4ProcessStep(
 			V4StartCooldown(V4PostFireInterval(1));
 			bV4WasFireHeld = false;
 			V4ResetPrimaryCycle(false);
-		} else if (!bServerSide) {
-			V4EnsureClientLoadState(false);
+		} else {
+			if (bServerSide)
+				V4PlayServerChargeSound(true);
+			else
+				V4EnsureClientLoadState(false);
 		}
 		return true;
 	}
@@ -696,6 +755,8 @@ simulated function bool V4ProcessStep(
 			// mirroring base UT99's per-AnimEnd sample so a brief tap doesn't latch.
 			if (NumRockets > V4PrimaryPredictedLoaded && bAltHeld)
 				bV4PrimaryTightLatched = true;
+			if (bServerSide && NumRockets > V4PrimaryPredictedLoaded)
+				V4PlayServerChargeSound(false);
 			V4PrimaryPredictedLoaded = NumRockets;
 			if (!bServerSide && ClientRocketsLoaded > NumRockets)
 				ClientRocketsLoaded = NumRockets;
@@ -732,6 +793,8 @@ simulated function bool V4ProcessStep(
 		bV4WasFireHeld = false;
 		if (bV4PrimaryCycleActive) {
 			NumRockets = V4ResolvePrimaryEdgeCharge(V4ChargeData);
+			if (bServerSide && NumRockets > V4PrimaryPredictedLoaded)
+				V4PlayServerChargeSound(false);
 			if (bServerSide) {
 				HandleV4ServerFire(StepView, StepLoc, NumRockets, bV4PrimaryTightLatched || bAltHeld);
 				V4PrimarySendServerConfirm(NumRockets, false);
@@ -749,7 +812,9 @@ simulated function bool V4ProcessStep(
 	if (bAltHeld && !bV4WasAltHeld) {
 		V4AltLoadElapsed = 0.0;
 		V4CachedChargeData = 1;
-		if (!bServerSide) {
+		if (bServerSide)
+			V4PlayServerChargeSound(true);
+		else {
 			// Mirror primary: deterministic cycle owns initial consume.
 			V4ResetClientAmmoTracking();
 			V4ConsumeClientAmmo(1);
@@ -760,8 +825,10 @@ simulated function bool V4ProcessStep(
 	}
 
 	if (bAltHeld && bV4WasAltHeld) {
-			NumRockets = V4CalculateCharge(V4AltLoadElapsed);
-			if (!bServerSide && ClientRocketsLoaded > NumRockets)
+		NumRockets = V4CalculateCharge(V4AltLoadElapsed);
+		if (bServerSide && NumRockets > V4CachedChargeData)
+			V4PlayServerChargeSound(false);
+		if (!bServerSide && ClientRocketsLoaded > NumRockets)
 				ClientRocketsLoaded = NumRockets;
 		V4CachedChargeData = NumRockets;
 
@@ -786,6 +853,10 @@ simulated function bool V4ProcessStep(
 		if (!bAltHeld && bV4WasAltHeld) {
 			bV4WasAltHeld = false;
 			NumRockets = V4CalculateCharge(V4AltLoadElapsed);
+			if (V4ChargeData > 0)
+				NumRockets = Min(NumRockets, Clamp(V4ChargeData, 1, 6));
+			if (bServerSide && NumRockets > V4CachedChargeData)
+				V4PlayServerChargeSound(false);
 			if (bServerSide) HandleV4ServerAltFire(StepView, StepLoc, NumRockets);
 			else HandleV4ClientLoadedFire(true, NumRockets, false);
 			V4StartCooldown(V4PostFireInterval(NumRockets));
@@ -796,7 +867,7 @@ simulated function bool V4ProcessStep(
 	return true;
 }
 
-simulated function V4EmitClientAuthoritativeShot(int NumRockets) {
+simulated function V4EmitClientAuthoritativeShot(int ShotKind, int NumRockets, optional bool bTight) {
 	local bbPlayer bbP;
 	local Pawn PawnOwner;
 
@@ -809,11 +880,86 @@ simulated function V4EmitClientAuthoritativeShot(int NumRockets) {
 	PawnOwner = Pawn(Owner);
 	if (bbP == none || PawnOwner == none || NumRockets <= 0)
 		return;
+	if (bbP.IGPlus_EnableInputReplication) {
+		bbP.IGPlus_PruneEightballShotQueue(true);
+		return;
+	}
 
 	bbP.IGPlus_QueueEightballAuthoritativeShot(
+		ShotKind,
 		Level.TimeSeconds,
-		Clamp(NumRockets, 1, 6)
+		Clamp(NumRockets, 1, 6),
+		bTight
 	);
+}
+
+function bool V4RecoverPackedShot(
+	int ShotKind,
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	int NumRockets,
+	optional bool bTight
+) {
+	local int ShotSerial;
+	local int RecoveredRockets;
+	local bool bHadAltCycle;
+
+	if (Role != ROLE_Authority || !UsesServerMoveV4())
+		return false;
+	if (AmmoType == none || AmmoType.AmmoAmount <= 0)
+		return false;
+
+	ShotSerial = V4ServerShotSerial;
+	if (ShotKind == IGPLUS_EB_SHOT_KIND_ALT) {
+		// bbPlayer already validated the normal current/previous fire window.
+		// Resolve the packed release directly so live switch-cancel input does
+		// not discard a release that was predicted before the switch.
+		V4AdvanceStepClock(StepTS);
+		if (V4CooldownRemaining > 0.0001)
+			return false;
+		bHadAltCycle = bV4WasAltHeld;
+		V4RefreshInternalBudget();
+		if (bHadAltCycle)
+			RecoveredRockets = V4CalculateCharge(V4AltLoadElapsed);
+		else
+			RecoveredRockets = 1;
+		RecoveredRockets = Min(RecoveredRockets, Clamp(NumRockets, 1, 6));
+		if (!bHadAltCycle)
+			V4PlayServerChargeSound(true);
+		else if (RecoveredRockets > V4CachedChargeData)
+			V4PlayServerChargeSound(false);
+		bV4WasAltHeld = false;
+		V4AltLoadElapsed = 0.0;
+		V4CachedChargeData = RecoveredRockets;
+		HandleV4ServerAltFire(StepView, StepLoc, RecoveredRockets);
+		if (V4ServerShotSerial != ShotSerial)
+			V4StartCooldown(V4PostFireInterval(RecoveredRockets));
+	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED) {
+		if (!V4HasCommittedPrimary())
+			V4ProcessStep(
+				StepTS, StepView, StepLoc,
+				true, false, false, false,
+				true, true, 0, true, false);
+		if (bTight)
+			bV4PrimaryTightLatched = true;
+		if (V4HasCommittedPrimary())
+			V4ProcessStep(
+				StepTS, StepView, StepLoc,
+				false, false, false, false,
+				true, true, NumRockets, true, false);
+	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT) {
+		if (!V4OwnerInstantEnabled() || V4HasCommittedPrimary())
+			return false;
+		V4ProcessStep(
+			StepTS, StepView, StepLoc,
+			true, false, false, false,
+			true, true, 1, true, true);
+	} else {
+		return false;
+	}
+
+	return V4ServerShotSerial != ShotSerial;
 }
 
 // Client-side instant rocket fire driven by V4ProcessStep.
@@ -822,6 +968,8 @@ simulated function V4EmitClientAuthoritativeShot(int NumRockets) {
 // V4ProcessStep calls this again when the next cooldown expires.
 simulated function HandleV4ClientFire() {
 	local bbPlayer bbP;
+
+	V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT, 1);
 
 	if (IsV4Active())
 		V4ConsumeClientAmmo(1);
@@ -861,7 +1009,9 @@ simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional 
 		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 
 	if (bAlt)
-		V4EmitClientAuthoritativeShot(NumRockets);
+		V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_ALT, NumRockets);
+	else
+		V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED, NumRockets, bTight);
 
 	V4FinalizeClientLoadedAmmo(NumRockets);
 
@@ -881,6 +1031,12 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc, int NumRockets, bo
 	if (!V4PrepareServerFireContext(StepView, StepLoc, NumRockets, P))
 		return;
 
+	V4ServerShotSerial = (V4ServerShotSerial + 1) & 0x7FFFFFFF;
+	if (bV4PrimaryLatchedInstant)
+		V4ServerLastShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT;
+	else
+		V4ServerLastShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED;
+	bV4SwitchSettlementPending = false;
 	V4ArmServerFireState(NumRockets, true, bTight);
 	if (P.PendingWeapon != none && P.PendingWeapon != self) {
 		P.PlayRecoil(FiringSpeed);
@@ -896,6 +1052,9 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, int NumRockets)
 	if (!V4PrepareServerFireContext(StepView, StepLoc, NumRockets, P))
 		return;
 
+	V4ServerShotSerial = (V4ServerShotSerial + 1) & 0x7FFFFFFF;
+	V4ServerLastShotKind = IGPLUS_EB_SHOT_KIND_ALT;
+	bV4SwitchSettlementPending = false;
 	V4ArmServerFireState(NumRockets, false);
 	// Ammo is already consumed: spawn the volley, then switch (stock order).
 	if (P.PendingWeapon != none && P.PendingWeapon != self)
@@ -913,10 +1072,15 @@ simulated function V4ResetDeterministicState() {
 	V4LastStepDelta = 0.0;
 	V4CachedChargeData = 0;
 	V4InternalBudget = 0;
+	V4ClientAmmoSpentSinceDown = 0;
+	V4ClientLastDownTS = 0.0;
 	ClientRocketsLoaded = 0;
 	bClientDone = false;
 	bRotated = false;
 	V4ClearPendingAltInput();
+	bV4SwitchSettlementPending = false;
+	V4ServerShotSerial = 0;
+	V4ServerLastShotKind = -1;
 }
 
 function GiveTo(Pawn Other)
@@ -1420,6 +1584,7 @@ Begin:
 	bWeaponUp = True;
 	PlayPostSelect();
 	FinishAnim();
+	bCanClientFire = true;
 	if (UsesServerMoveV4() && (Pawn(Owner).bFire != 0 || Pawn(Owner).bAltFire != 0)) {
 		// Suppress eager auto-fire when weapon comes up deterministic style
 		GotoState('Idle');
@@ -1495,11 +1660,14 @@ PendingLock:
 }
 
 simulated function PlaySelect() {
+	if (Role == ROLE_Authority && bV4SwitchSettlementPending)
+		V4FinalizeSwitchSettlement();
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
+	bV4SwitchSettlementPending = false;
 	if (Pawn(Owner) != none) {
 		if (Pawn(Owner).bFire != 0 && !V4OwnerInstantEnabled())
 			bV4SuppressPrimaryFirstBudgetAuto = true;
@@ -1515,7 +1683,8 @@ simulated function PlaySelect() {
 simulated function TweenDown() {
 	local float TweenTime;
 
-	V4ResetPrimaryCycle(true);
+	if (Role < ROLE_Authority || !UsesServerMoveV4())
+		V4ResetPrimaryCycle(true);
 	TweenTime = 0.05;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
@@ -1834,7 +2003,10 @@ state DownWeapon
 {
 	function BeginState()
 	{
-		V4ResetPrimaryCycle(true);
+		if (Role == ROLE_Authority && UsesServerMoveV4())
+			bV4SwitchSettlementPending = true;
+		else
+			V4ResetPrimaryCycle(true);
 		Super.BeginState();
 	}
 }
@@ -1843,7 +2015,11 @@ state ClientDown
 {
 	simulated function BeginState()
 	{
+		if (Level != none)
+			V4ClientLastDownTS = Level.TimeSeconds;
 		V4ResetPrimaryCycle(true);
+		V4ResetAltCycle(true);
+		V4ClientAmmoSpentSinceDown = 0;
 		Super.BeginState();
 	}
 }
