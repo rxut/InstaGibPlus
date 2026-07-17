@@ -60,9 +60,14 @@ The client predicts the weapon step immediately, so firing and animations do
 not wait for a network round trip.
 
 When the update reaches the server, the server divides the combined movement
-back into the same smaller steps. It reconstructs the time and aim for each
-step, advances movement in the same order, and runs the same weapon state
+back into the same input slices. It reconstructs the time and aim for each
+slice, advances movement in the same order, and runs the same weapon state
 machine.
+
+Fire-bearing updates also keep a complete redundant copy for the following
+movement packet. If the original packet is lost, the server can replay that
+input slice timeline before applying the newer move instead of guessing fire
+state from movement-only redundancy.
 
 The server then performs the real shot. It spends authoritative ammo, creates
 gameplay projectiles, traces hits, and awards damage. Client-side projectiles

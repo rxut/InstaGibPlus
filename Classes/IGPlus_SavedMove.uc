@@ -27,6 +27,14 @@ var bool bDetReady;
 var int V4WeaponIndex;
 var int V4ChargeData;
 var bool bUseServerMoveV4;
+var bool bV4PackedForResend;
+var int V4PackedMoveDeltaTime;
+var int V4PackedMiscData;
+var int V4PackedMiscData2;
+var int V4PackedView;
+var int V4PackedViewStart;
+var int V4PackedFlags;
+var int V4PackedAuxData;
 
 function Clear2() {
     Clear();
@@ -48,6 +56,14 @@ function Clear2() {
     bV4AltEndHeld = false;
     bV4EightballInstant = false;
     bUseServerMoveV4 = false;
+    bV4PackedForResend = false;
+    V4PackedMoveDeltaTime = 0;
+    V4PackedMiscData = 0;
+    V4PackedMiscData2 = 0;
+    V4PackedView = 0;
+    V4PackedViewStart = 0;
+    V4PackedFlags = 0;
+    V4PackedAuxData = 0;
 }
 
 defaultproperties

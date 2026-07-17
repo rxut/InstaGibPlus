@@ -1479,11 +1479,11 @@ simulated function Actor TraceShotClient(out vector HitLocation, out vector HitN
 	);
 }
 
-simulated function int IGPlus_V4DecodeSigned16(int Value) {
+static simulated function int IGPlus_V4DecodeSigned16(int Value) {
 	return (Value << 16) >> 16;
 }
 
-simulated function int IGPlus_V4YawDelta16(int StartYaw, int EndYaw) {
+static simulated function int IGPlus_V4YawDelta16(int StartYaw, int EndYaw) {
 	local int Delta;
 
 	Delta = (EndYaw & 0xFFFF) - (StartYaw & 0xFFFF);
@@ -1494,7 +1494,7 @@ simulated function int IGPlus_V4YawDelta16(int StartYaw, int EndYaw) {
 	return Delta;
 }
 
-simulated function float IGPlus_V4ComputeSliceTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount) {
+static simulated function float IGPlus_V4ComputeSliceTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount) {
 	local float StartTS;
 	local float StepT;
 
@@ -1502,11 +1502,11 @@ simulated function float IGPlus_V4ComputeSliceTimestamp(float MoveTS, float Move
 		return MoveTS;
 
 	StartTS = MoveTS - MoveDelta;
-	StepT = FClamp(float(MoveIndex) / float(MergeCount), 0.0, 1.0);
+	StepT = FClamp(float(MoveIndex + 1) / float(MergeCount), 0.0, 1.0);
 	return StartTS + StepT * MoveDelta;
 }
 
-simulated function rotator IGPlus_V4InterpolateSliceView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount) {
+static simulated function rotator IGPlus_V4InterpolateSliceView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount) {
 	local rotator R;
 	local float T;
 	local int StartPitch;
@@ -1521,10 +1521,10 @@ simulated function rotator IGPlus_V4InterpolateSliceView(int ViewStartPacked, in
 	StartYaw = ViewStartPacked & 0xFFFF;
 	EndYaw = ViewEndPacked & 0xFFFF;
 
-	if (MergeCount <= 0)
+	if (MergeCount <= 1)
 		T = 1.0;
 	else
-		T = FClamp(float(MoveIndex) / float(MergeCount), 0.0, 1.0);
+		T = FClamp(float(MoveIndex) / float(MergeCount - 1), 0.0, 1.0);
 
 	PitchSigned = StartPitch + int(float(EndPitch - StartPitch) * T);
 	YawUnwrapped = StartYaw + int(float(IGPlus_V4YawDelta16(StartYaw, EndYaw)) * T);

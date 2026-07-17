@@ -17,6 +17,33 @@ function bool TestDataBuffer() {
 	return true;
 }
 
+function bool TestV4InputSliceReplay() {
+	local float SingleTS;
+	local float FirstTS;
+	local float LastTS;
+	local rotator FirstView;
+	local rotator LastView;
+
+	SingleTS = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4ComputeSliceTimestamp(10.0, 0.02, 0, 1);
+	FirstTS = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4ComputeSliceTimestamp(10.0, 0.02, 0, 2);
+	LastTS = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4ComputeSliceTimestamp(10.0, 0.02, 1, 2);
+	FirstView = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4InterpolateSliceView(0, 16384, 0, 2);
+	LastView = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4InterpolateSliceView(0, 16384, 1, 2);
+
+	LogTestResult(Abs(SingleTS - 10.0) < 0.0001, "V4_single_slice_timestamp");
+	LogTestResult(Abs(FirstTS - 9.99) < 0.0001, "V4_first_slice_timestamp");
+	LogTestResult(Abs(LastTS - 10.0) < 0.0001, "V4_last_slice_timestamp");
+	LogTestResult(FirstView.Yaw == 0, "V4_first_slice_view");
+	LogTestResult(LastView.Yaw == 16384, "V4_last_slice_view");
+	LogTestResult(
+		class'bbPlayer'.static.IGPlus_V4HeldAtSlice(false, 0, 1, 0)
+			&& !class'bbPlayer'.static.IGPlus_V4HeldAtSlice(false, 0, 1, 1),
+		"V4_press_release_timeline"
+	);
+
+	return true;
+}
+
 function bool TestFunction(int test[3], int expected0, int expected1, int expected2) {
 	return test[0] == expected0 && test[1] == expected1 && test[2] == expected2;
 }
@@ -98,5 +125,6 @@ function bool DataBuffer_stores_more_than_32_bits() {
 
 event int main(string Params) {
 	TestDataBuffer();
+	TestV4InputSliceReplay();
 	return 0;
 }

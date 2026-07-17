@@ -66,6 +66,10 @@ no-input settlement step required to release or cancel committed state.
 ## Recovery behavior
 
 - Edge state self-heals a lost release on the next move.
+- Fire-bearing v4 moves resend one complete packed timeline before the next
+  move, preserving the original binding, edges, aim, charge data, and shot pack.
+- After a movement gap, missing movement is advanced first and the received
+  move's input slices replay only across that move's packed duration.
 - Eightball shot packs carry sequence, charge, shot kind, and tight-spread state in `V4AuxData`
   without replacing the carrying move's weapon/readiness data.
 - A pack on a move bound to another weapon runs deduplicated Eightball recovery
@@ -82,6 +86,8 @@ no-input settlement step required to release or cancel committed state.
   correction on the player channel; settlement also retires pre-switch markers.
 - A merged move contains at most one press and one release of each fire type;
   another edge forces a packet split.
+- Input-slice timestamps end at the move timestamp, view interpolation reaches
+  both packed endpoints, and paired edges are not collapsed by legacy resampling.
 
 ## Weapon behavior
 

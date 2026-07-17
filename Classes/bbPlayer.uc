@@ -658,6 +658,7 @@ replication
 		Hold,
 		ServerSetTraceInput,
 		IGPlus_ForcedSettingsRetry,
+		xxServerMove_v4_redundant,
 		IGPlus_ForcedSettingsOK,
 		IGPlus_ForcedSettings_InitOK,
 		PrintWeaponState,
@@ -2688,6 +2689,8 @@ function IGPlus_AfterTranslocate() {
 function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local float ServerDeltaTime;
 	local float DeltaTime;
+	local float InputSliceDelta;
+	local float MovementCatchupDelta;
 	local float SimTime;
 	local float SimStep;
 	local rotator DeltaRot;
@@ -2755,6 +2758,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local Weapon V4Weapon;
 	local int V4Flags;
 	local bool bV4HasEdgeTimeline;
+	local bool bV4HasPairedEdge;
 	local bool bV4FireStartHeld;
 	local bool bV4FireEndHeld;
 	local bool bV4AltStartHeld;
@@ -2833,7 +2837,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 
 	bV4HasShotPack = SM.bUseV4 && ((SM.V4Flags & IGPLUS_V4FLAG_EB_SHOTPACK_PRESENT) != 0);
-	if (bWasPaused == false && IGPlus_SkipMovesUntilNextTick == false) {
+	if (!SM.bRedundantReplay && bWasPaused == false && IGPlus_SkipMovesUntilNextTick == false) {
 		// Old-move data is populated on shot-pack moves too (pack rides V4AuxData).
 		if (IGPlus_OldServerMove(SM.TimeStamp, SM.OldMoveData1, SM.OldMoveData2)) {
 			xxFakeCAP(CurrentTimeStamp);
@@ -2851,7 +2855,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	ExtrapolationDelta += (ServerDeltaTime - DeltaTime);
 
-	if ( ServerTimeStamp > 0 ) {
+	if (ServerTimeStamp > 0) {
 		// allow 1% error
 		TimeMargin += DeltaTime - 1.01 * ServerDeltaTime;
 		if ( TimeMargin > MaxTimeMargin ) {
@@ -2865,15 +2869,24 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			ClientDebugMessage("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"MaxTimeMargin exceeded ("$TimeMargin$")", 'IGPlus');
 		}
 	}
+	InputSliceDelta = DeltaTime;
+	MovementCatchupDelta = 0.0;
+	if (SM.bUseV4 && SM.MoveDeltaTime > 0.0
+		&& DeltaTime > SM.MoveDeltaTime + 0.001) {
+		InputSliceDelta = SM.MoveDeltaTime;
+		MovementCatchupDelta = DeltaTime - InputSliceDelta;
+	}
 	bV4MoveAcceptedForFire = Level.Pauser == ""
 		&& DeltaTime > 0
 		&& !IGPlus_SkipMovesUntilNextTick;
 
-	bHaveReceivedServerMove = true;
-	LastServerMoveParams.Location = SM.ClientLocation;
-	LastServerMoveParams.Base = SM.ClientBase;
-	LastServerMoveParams.Physics = ClientPhysics;
-	LastServerMoveParams.TlocCounter = ClientTlocCounter;
+	if (!SM.bRedundantReplay) {
+		bHaveReceivedServerMove = true;
+		LastServerMoveParams.Location = SM.ClientLocation;
+		LastServerMoveParams.Base = SM.ClientBase;
+		LastServerMoveParams.Physics = ClientPhysics;
+		LastServerMoveParams.TlocCounter = ClientTlocCounter;
+	}
 
 	// View components
 	ViewPitch = (SM.View >>> 16);
@@ -2956,6 +2969,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			V4AltPressIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_PRESS, IGPLUS_V4FLAG_ALT_PRESS_SHIFT);
 			V4AltReleaseIndex = IGPlus_V4FlagDecodeIndex(V4Flags, IGPLUS_V4FLAG_HAS_ALT_RELEASE, IGPLUS_V4FLAG_ALT_RELEASE_SHIFT);
 		}
+		bV4HasPairedEdge = bV4HasEdgeTimeline
+			&& ((V4FirePressIndex >= 0 && V4FireReleaseIndex >= 0)
+				|| (V4AltPressIndex >= 0 && V4AltReleaseIndex >= 0));
 		if (bV4HasShotPack && bV4MoveAcceptedForFire) {
 			// Resolve the pack's eightball via binding rules; ack only applied packs.
 			if (bV4WeaponIsEightball) {
@@ -3023,7 +3039,16 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// Predict new position
 	if ((Level.Pauser == "") && (DeltaTime > 0) && (IGPlus_SkipMovesUntilNextTick == false)) {
-		if (zzUTPure.Settings.bEnableJitterBounding && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
+		// A received v4 move describes only its packed tail. Advance any missing
+		// movement first, then replay this move's input slices over their own time.
+		if (bV4WeaponSupported && MovementCatchupDelta > 0.0) {
+			SimMoveAutonomous(MovementCatchupDelta);
+			DeltaTime = InputSliceDelta;
+		}
+
+		// Do not discard the front of a v4 input timeline. Its weapon slices must
+		// remain paired with the movement interval the client predicted.
+		if (!bV4WeaponSupported && zzUTPure.Settings.bEnableJitterBounding && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
 			SimTime = DeltaTime - zzUTPure.Settings.MaxJitterTime;
 			if (SimTime >= 0.005 || bIs469Server) {
 				SimMoveAutonomous(SimTime);
@@ -3035,7 +3060,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 		SimStep = DeltaTime / float(MergeCount);
 
-			if (bIs469Server == false && SimStep < 0.005) {
+			if (bIs469Server == false && SimStep < 0.005 && !bV4HasPairedEdge) {
 			JumpPos = float(JumpIndex) / float(MergeCount);
 			DodgePos = float(DodgeIndex) / float(MergeCount);
 			RunChangePos = float(RunChangeIndex) / float(MergeCount);
@@ -3083,8 +3108,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 			bV4HandledStep = false;
 			if (bV4WeaponSupported) {
-				StepTS = WImpBase.IGPlus_V4ComputeSliceTimestamp(SM.TimeStamp, DeltaTime, MoveIndex, MergeCount);
-				StepView = WImpBase.IGPlus_V4InterpolateSliceView(SM.ViewStart, SM.View, MoveIndex, MergeCount);
+				StepTS = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4ComputeSliceTimestamp(SM.TimeStamp, DeltaTime, MoveIndex, MergeCount);
+				StepView = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4InterpolateSliceView(SM.ViewStart, SM.View, MoveIndex, MergeCount);
 				StepLoc = Location;
 				if (bV4HasEdgeTimeline) {
 					bStepFireHeld = IGPlus_V4HeldAtSlice(
@@ -3486,6 +3511,7 @@ function xxServerMove(
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
 	SM.bUseV4 = false;
+	SM.bRedundantReplay = false;
 
 	IGPlus_ApplyServerMove(SM);
 	IGPlus_DestroyServerMove(SM);
@@ -3535,11 +3561,50 @@ function xxServerMove_v4(
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
 	SM.bUseV4 = true;
+	SM.bRedundantReplay = false;
 
 	IGPlus_ApplyServerMove(SM);
 	IGPlus_DestroyServerMove(SM);
 
 	IGPlus_WarpFixUpdate = true;
+}
+
+function xxServerMove_v4_redundant(
+	float TimeStamp,
+	int MoveDeltaTime,
+	vector Accel,
+	int MiscData,
+	int MiscData2,
+	int View,
+	int ViewStart,
+	int V4Flags,
+	int V4AuxData
+) {
+	local IGPlus_ServerMove SM;
+
+	SM = IGPlus_CreateServerMove();
+	SM.TimeStamp = TimeStamp;
+	SM.bDetReady = (MoveDeltaTime & 0x01) != 0;
+	SM.V4WeaponIndex = (MoveDeltaTime & 0x0E) >> 1;
+	SM.V4ChargeData = (MoveDeltaTime & 0xF0) >> 4;
+	SM.MoveDeltaTime = (MoveDeltaTime >>> 8) * 0.0000152587890625;
+	SM.ClientAcceleration = Accel * 0.1;
+	SM.ClientLocation = Location;
+	SM.ClientVelocity = Velocity;
+	SM.MiscData = MiscData;
+	SM.MiscData2 = MiscData2;
+	SM.View = View;
+	SM.ViewStart = ViewStart;
+	SM.V4Flags = V4Flags;
+	SM.V4AuxData = V4AuxData;
+	SM.ClientBase = Base;
+	SM.OldMoveData1 = 0;
+	SM.OldMoveData2 = 0;
+	SM.bUseV4 = true;
+	SM.bRedundantReplay = true;
+
+	IGPlus_ApplyServerMove(SM);
+	IGPlus_DestroyServerMove(SM);
 }
 
 function xxServerMoveDead(
@@ -4905,9 +4970,17 @@ simulated function bool IGPlus_ShouldForceFlushV4Move(IGPlus_SavedMove Move) {
 		return false;
 	if (IGPlus_IsV4WeaponIndexEightball(Move.V4WeaponIndex)
 		&& (Move.V4FirePressIndex >= 0 || Move.V4FireReleaseIndex >= 0
-			|| Move.V4AltPressIndex >= 0 || Move.V4AltReleaseIndex >= 0))
+			|| Move.V4AltPressIndex >= 0 || Move.V4AltReleaseIndex >= 0
+			|| Move.bForceFire || Move.bForceAltFire))
 		return true;
 	return IGPlus_HasEligibleEightballShotForMove(Move.TimeStamp);
+}
+
+simulated function bool IGPlus_V4MoveHasFireEvent(IGPlus_SavedMove Move) {
+	return Move != none && Move.bUseServerMoveV4
+		&& (Move.V4FirePressIndex >= 0 || Move.V4FireReleaseIndex >= 0
+			|| Move.V4AltPressIndex >= 0 || Move.V4AltReleaseIndex >= 0
+			|| Move.bForceFire || Move.bForceAltFire);
 }
 
 function bool IGPlus_ServerHasEightballShotSeq(int Seq) {
@@ -5383,7 +5456,7 @@ simulated function int IGPlus_V4FlagDecodeIndex(int V4Flags, int PresenceMask, i
 	return (V4Flags >>> Shift) & IGPLUS_V4FLAG_INDEX_MASK;
 }
 
-simulated function bool IGPlus_V4HeldAtSlice(
+static simulated function bool IGPlus_V4HeldAtSlice(
 	bool bStartHeld,
 	int PressIndex,
 	int ReleaseIndex,
@@ -5496,6 +5569,12 @@ simulated function bool IGPlus_V4RecordEdge(
 }
 
 function IGPlus_SavedMove PickRedundantMove(IGPlus_SavedMove Old, IGPlus_SavedMove M, vector Accel, EDodgeDir DodgeMove) {
+	// A full v4 resend can recover the weapon timeline of one lost move.
+	// Prefer a move with an actual edge over movement-only redundancy.
+	if (IGPlus_V4MoveHasFireEvent(M))
+		return M;
+	if (IGPlus_V4MoveHasFireEvent(Old))
+		return Old;
 	if (M.bPressedJump || (bDodging && M.DodgeMove >= DODGE_Left && M.DodgeMove <= DODGE_Back)) {
 		return M;
 	}
@@ -5621,13 +5700,8 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	}
 	PendMove.bDuck = (bDuck > 0);
 
-	if (ST_UT_Eightball(Weapon) != none && PendMove.bUseServerMoveV4) {
-		bForceFireTap = false;
-		bForceAltTap = false;
-	} else {
-		bForceFireTap = bJustFired;
-		bForceAltTap = bJustAltFired;
-	}
+	bForceFireTap = bJustFired;
+	bForceAltTap = bJustAltFired;
 
 	// Keep merged hold bits aligned with suppression-aware effective held state.
 	bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
@@ -5833,9 +5907,8 @@ function xxReplicateMove(
 			bLocalEightball = ST_UT_Eightball(V4LocalWeapon) != none;
 			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
 			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
-			// Merge tap rule: eightball taps ride the edge timeline.
-			bForceFireTap = bJustFired && !bLocalEightball;
-			bForceAltTap = bJustAltFired && !bLocalEightball;
+			bForceFireTap = bJustFired;
+			bForceAltTap = bJustAltFired;
 			IGPlus_V4ProcessWeaponInputSlice(
 				V4LocalWeapon,
 				Level.TimeSeconds,
@@ -5915,13 +5988,8 @@ function xxReplicateMove(
 
 			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
 			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
-			if (ST_UT_Eightball(Weapon) != none && NewMove.bUseServerMoveV4) {
-				bForceFireTap = false;
-				bForceAltTap = false;
-			} else {
-				bForceFireTap = bJustFired;
-				bForceAltTap = bJustAltFired;
-			}
+			bForceFireTap = bJustFired;
+			bForceAltTap = bJustAltFired;
 
 			NewMove.bFire = (bForceFireTap || bMoveFireHeld);
 			NewMove.bForceFire = bForceFireTap;
@@ -6134,6 +6202,35 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 					V4AuxData or_eq IGPLUS_EB_SHOT_TIGHT_MASK;
 			}
 		}
+	}
+
+	// Fire-bearing v4 moves get one full redundant replay opportunity. Unlike
+	// OldMoveData, this preserves their binding, edge timeline, aim, and pack.
+	if (OldMove != none && OldMove != Move
+		&& OldMove.bV4PackedForResend
+		&& IGPlus_V4MoveHasFireEvent(OldMove)) {
+		xxServerMove_v4_redundant(
+			OldMove.TimeStamp,
+			OldMove.V4PackedMoveDeltaTime,
+			OldMove.Acceleration * 10.0,
+			OldMove.V4PackedMiscData,
+			OldMove.V4PackedMiscData2,
+			OldMove.V4PackedView,
+			OldMove.V4PackedViewStart,
+			OldMove.V4PackedFlags,
+			OldMove.V4PackedAuxData
+		);
+	}
+
+	Move.bV4PackedForResend = Move.bUseServerMoveV4;
+	if (Move.bV4PackedForResend) {
+		Move.V4PackedMoveDeltaTime = MoveDeltaTime;
+		Move.V4PackedMiscData = MiscData;
+		Move.V4PackedMiscData2 = MiscData2;
+		Move.V4PackedView = ViewPacked;
+		Move.V4PackedViewStart = ViewStartPacked;
+		Move.V4PackedFlags = V4Flags;
+		Move.V4PackedAuxData = V4AuxData;
 	}
 
 	if (Move.bUseServerMoveV4) {
@@ -8002,6 +8099,30 @@ state FeigningDeath
 				OldMoveData2);
 		}
 
+	function xxServerMove_v4_redundant(
+		float TimeStamp,
+		int MoveDeltaTime,
+		vector Accel,
+		int MiscData,
+		int MiscData2,
+		int View,
+		int ViewStart,
+		int V4Flags,
+		int V4AuxData
+	) {
+		Global.xxServerMove_v4_redundant(
+			TimeStamp,
+			MoveDeltaTime,
+			Accel,
+			MiscData,
+			MiscData2,
+			((Rotation.Pitch & 0xFFFF) << 16) | (Rotation.Yaw & 0xFFFF),
+			((Rotation.Pitch & 0xFFFF) << 16) | (Rotation.Yaw & 0xFFFF),
+			V4Flags,
+			V4AuxData
+		);
+	}
+
 	function PlayerMove( float DeltaTime)
 	{
 		local rotator currentRot;
@@ -9145,6 +9266,30 @@ state Dying
 					OldMoveData2);
 		}
 
+	function xxServerMove_v4_redundant(
+		float TimeStamp,
+		int MoveDeltaTime,
+		vector Accel,
+		int MiscData,
+		int MiscData2,
+		int View,
+		int ViewStart,
+		int V4Flags,
+		int V4AuxData
+	) {
+		Global.xxServerMove_v4_redundant(
+			TimeStamp,
+			MoveDeltaTime,
+			Accel,
+			MiscData & 0xFFFF,
+			MiscData2,
+			View,
+			ViewStart,
+			V4Flags,
+			V4AuxData
+		);
+	}
+
 	function FindGoodView()
 	{
 		local vector cameraLoc;
@@ -9315,6 +9460,30 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 					OldMoveData1,
 					OldMoveData2);
 		}
+
+	function xxServerMove_v4_redundant(
+		float TimeStamp,
+		int MoveDeltaTime,
+		vector Accel,
+		int MiscData,
+		int MiscData2,
+		int View,
+		int ViewStart,
+		int V4Flags,
+		int V4AuxData
+	) {
+		Global.xxServerMove_v4_redundant(
+			TimeStamp,
+			MoveDeltaTime,
+			Accel,
+			MiscData,
+			MiscData2,
+			((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF),
+			((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF),
+			V4Flags,
+			V4AuxData
+		);
+	}
 
 	function FindGoodView()
 	{

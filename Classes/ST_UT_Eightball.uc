@@ -720,7 +720,7 @@ simulated function bool V4ProcessInputSlice(
 	// Skip the rising edge while an alt (grenade) cycle is loading so the
 	// alt branches below keep updating charge and can auto-fire at 6.
 	// Stock precedence: primary wins a simultaneous idle edge.
-	if (bFireHeld && !bV4WasFireHeld && !bV4WasAltHeld) {
+	if ((bFireHeld || bForceFire) && !bV4WasFireHeld && !bV4WasAltHeld) {
 		V4RefreshInternalBudget();
 		V4PrimaryStartCycle(bMoveInstant, bServerSide);
 		bV4WasFireHeld = true;
@@ -809,7 +809,7 @@ simulated function bool V4ProcessInputSlice(
 	}
 
 	// ── ALT FIRE (GRENADES) ──
-	if (bAltHeld && !bV4WasAltHeld) {
+	if ((bAltHeld || bForceAlt) && !bV4WasAltHeld) {
 		V4AltLoadElapsed = 0.0;
 		V4CachedChargeData = 1;
 		if (bServerSide)

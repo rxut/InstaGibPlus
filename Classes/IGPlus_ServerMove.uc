@@ -19,6 +19,7 @@ var bool bDetReady;
 var int V4WeaponIndex;
 var int V4ChargeData;
 var bool bUseV4;
+var bool bRedundantReplay;
 var IGPlus_ServerMove Next;
 
 defaultproperties {
