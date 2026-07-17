@@ -5,7 +5,6 @@
 class ST_ShockRifle extends ShockRifle;
 
 var IGPlus_WeaponImplementation WImp;
-var IGPlus_WeaponImplementationBase WImpBase;
 var WeaponSettingsRepl WSettings;
 
 var float yMod;
@@ -41,13 +40,9 @@ simulated function bool IsPingCompEnabled() {
 }
 
 simulated function bool IsV4Active() {
-	if (Level != none && Level.NetMode == NM_Standalone)
-		return false;
-	if (!IsPingCompEnabled())
-		return false;
-	if (bbPlayer(Owner) == none)
-		return false;
-	return true;
+	return Level.NetMode != NM_Standalone
+		&& IsPingCompEnabled()
+		&& bbPlayer(Owner) != none;
 }
 
 // One owner's deterministic state must never transfer to the next
@@ -67,19 +62,11 @@ function DropFrom(vector StartLocation) {
 }
 
 simulated function float PrimaryShotInterval() {
-	local float RateScale;
-	RateScale = 0.30 + 0.30 * FireAdjust;
-	if (RateScale <= 0.001)
-		return 0.65;
-	return FClamp(10.0 / (21.0 * RateScale), 0.05, 2.0);
+	return FClamp(10.0 / (21.0 * (0.30 + 0.30 * FireAdjust)), 0.05, 2.0);
 }
 
 simulated function float AltShotInterval() {
-	local float RateScale;
-	RateScale = 0.40 + 0.40 * FireAdjust;
-	if (RateScale <= 0.001)
-		return 0.65;
-	return FClamp(10.0 / (24.0 * RateScale), 0.05, 2.0);
+	return FClamp(10.0 / (24.0 * (0.40 + 0.40 * FireAdjust)), 0.05, 2.0);
 }
 
 // V4 input-slice processing — called from bbPlayer.IGPlus_V4ProcessWeaponInputSlice.
@@ -119,7 +106,7 @@ simulated function bool V4ProcessInputSlice(
 		else
 			HandleV4ClientFire(bAlt, StepView, StepLoc);
 	} else if (bServerSide) {
-		bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+		BP.IGPlus_V4HandleOutOfAmmo(self);
 	}
 
 	NextV4FireTS = StepTS + Interval;
@@ -127,29 +114,24 @@ simulated function bool V4ProcessInputSlice(
 }
 
 simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
-	local Pawn PawnOwner;
 	local bbPlayer BP;
 
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
-	BP = bbPlayer(PawnOwner);
+	BP = bbPlayer(Owner);
 
 	bPointing = true;
 	if (bRapidFire || (FiringSpeed > 0))
-		PawnOwner.PlayRecoil(FiringSpeed);
+		BP.PlayRecoil(FiringSpeed);
 	if (Affector != none)
 		Affector.FireEffect();
-	if (PlayerPawn(Owner) != none)
-		PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
+	BP.ClientInstantFlash(-0.4, vect(450, 190, 650));
 
 	if (bAlt) {
 		PlayAltFiring();
-		if (BP != none && BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
+		if (BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects(true, StepView, StepLoc);
 	} else {
 		PlayFiring();
-		if (BP != none && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire(true, StepView, StepLoc);
 	}
 }
@@ -158,8 +140,6 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
 
 	AmmoType.UseAmmo(1);
 
@@ -171,20 +151,14 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 
 	if (bAlt) {
 		PlayAltFiring();
-		DeterministicProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget, StepLoc, StepView);
+		DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
 	} else {
 		PlayFiring();
 		DeterministicTraceFire(0.0, StepView, StepLoc);
 	}
 }
 
-function Projectile DeterministicProjectileFire(
-	class<projectile> ProjClass,
-	float ProjSpeed,
-	bool bWarn,
-	vector ShotLoc,
-	rotator ShotRot
-) {
+function Projectile DeterministicProjectileFire(class<projectile> ProjClass, vector ShotLoc, rotator ShotRot) {
 	local vector Start, X, Y, Z;
 	local Pawn PawnOwner;
 
@@ -203,7 +177,6 @@ function PostBeginPlay()
 
 	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 		break;
-	WImpBase = IGPlus_WeaponImplementationBase(WImp);
 }
 
 simulated function yModInit() {
@@ -635,18 +608,12 @@ function SetSwitchPriority(pawn Other)
 
 function Finish()
 {
-	if (IsV4Active() && PlayerPawn(Owner) != None)
+	if (IsV4Active())
 	{
+		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
-		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
-		{
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
-			if (bChangeWeapon)
-				GotoState('DownWeapon');
-			else
-				GotoState('Idle');
-		}
 		else
 			GotoState('Idle');
 		return;

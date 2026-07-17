@@ -48,13 +48,9 @@ function PostBeginPlay()
 
 
 simulated function bool IsV4Active() {
-	if (Level != none && Level.NetMode == NM_Standalone)
-		return false;
-	if (!IsPingCompEnabled())
-		return false;
-	if (bbPlayer(Owner) == none)
-		return false;
-	return true;
+	return Level.NetMode != NM_Standalone
+		&& IsPingCompEnabled()
+		&& bbPlayer(Owner) != none;
 }
 
 // One owner's deterministic state must never transfer to the next.
@@ -76,9 +72,6 @@ function DropFrom(vector StartLocation) {
 // Flakm mesh: 'AltFire' = 10 frames, base rate 24fps (RATE=24)
 // Flakm mesh: 'Loading' = 15 frames, base rate 30fps (no RATE directive, default)
 // Duration = NumFrames / (BaseRate * PlayRate)
-//
-// Primary cycle: Fire(0.9) + Loading(1.4 via PlayFastReloading)
-// Alt cycle:     AltFire(1.3) + Loading(0.7 via PlayReloading)
 
 simulated function float PrimaryShotInterval() {
 	// Fire: 10 / (30 * 0.9) = 0.370s
@@ -131,7 +124,7 @@ simulated function bool V4ProcessInputSlice(
 		else
 			HandleV4ClientFire(bAlt, StepView, StepLoc);
 	} else if (bServerSide) {
-		bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+		BP.IGPlus_V4HandleOutOfAmmo(self);
 	}
 
 	NextV4FireTS = StepTS + Interval;
@@ -139,29 +132,24 @@ simulated function bool V4ProcessInputSlice(
 }
 
 simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
-	local Pawn PawnOwner;
 	local bbPlayer BP;
 
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
-	BP = bbPlayer(PawnOwner);
+	BP = bbPlayer(Owner);
 
 	bPointing = true;
 	if (FiringSpeed > 0)
-		PawnOwner.PlayRecoil(FiringSpeed);
+		BP.PlayRecoil(FiringSpeed);
 	if (Affector != none)
 		Affector.FireEffect();
-	if (PlayerPawn(Owner) != none)
-		PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(650, 450, 190));
+	BP.ClientInstantFlash(-0.4, vect(650, 450, 190));
 
 	if (bAlt) {
 		PlayAltFiring();
-		if (BP != none && BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
+		if (BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
 			SpawnClientSideSlug();
 	} else {
 		PlayFiring();
-		if (BP != none && BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
+		if (BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
 			SpawnClientSideChunks();
 	}
 }
@@ -170,12 +158,8 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
 
-	if (bbPlayer(Owner) != none)
-		StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-
+	StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	AmmoType.UseAmmo(1);
 
 	bPointing = true;
@@ -337,18 +321,12 @@ function SpawnServerSlugAt(vector Start, rotator AimRot, rotator OffsetRot)
 
 function Finish()
 {
-	if (IsV4Active() && PlayerPawn(Owner) != None)
+	if (IsV4Active())
 	{
+		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
-		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
-		{
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
-			if (bChangeWeapon)
-				GotoState('DownWeapon');
-			else
-				GotoState('Idle');
-		}
 		else
 			GotoState('Idle');
 		return;
@@ -699,31 +677,21 @@ state Idle
 			return;
 		}
 
-		if (IsV4Active() && PlayerPawn(Owner) != None)
+		bPointing = false;
+		if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
+			Pawn(Owner).SwitchToBestWeapon();
+		if (!IsV4Active())
 		{
-			bPointing = false;
-
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
-				Pawn(Owner).SwitchToBestWeapon();
-
-			Disable('AnimEnd');
-			PlayIdleAnim();
-		}
-		else
-		{
-			bPointing = False;
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
-				Pawn(Owner).SwitchToBestWeapon();
 			if ( Pawn(Owner).bFire != 0 ) Fire(0.0);
-			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);	
-			Disable('AnimEnd');
-			PlayIdleAnim();
+			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);
 		}
+		Disable('AnimEnd');
+		PlayIdleAnim();
 	}
 
 	function AnimEnd()
 	{
-		if (IsV4Active() && PlayerPawn(Owner) != None)
+		if (IsV4Active())
 			PlayIdleAnim();
 		else
 			Super.AnimEnd();
