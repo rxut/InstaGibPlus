@@ -2754,7 +2754,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bStepForceAltFire;
 	local float StepTS;
 	local rotator StepView;
-	local vector StepLoc;
 	local Weapon V4Weapon;
 	local int V4Flags;
 	local bool bV4HasEdgeTimeline;
@@ -3110,7 +3109,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			if (bV4WeaponSupported) {
 				StepTS = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4ComputeSliceTimestamp(SM.TimeStamp, DeltaTime, MoveIndex, MergeCount);
 				StepView = class'IGPlus_WeaponImplementationBase'.static.IGPlus_V4InterpolateSliceView(SM.ViewStart, SM.View, MoveIndex, MergeCount);
-				StepLoc = Location;
 				if (bV4HasEdgeTimeline) {
 					bStepFireHeld = IGPlus_V4HeldAtSlice(
 						bV4FireStartHeld,
@@ -3156,7 +3154,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 							V4Weapon,
 							StepTS,
 							StepView,
-							StepLoc,
+							Location,
 						bStepFireHeld,
 						bStepAltHeld,
 						bStepForceFire,
@@ -4761,10 +4759,6 @@ simulated function int IGPlus_GetV4ChargeData() {
 		return Index == IGPLUS_V4WEAPON_Eightball;
 	}
 
-simulated function int IGPlus_SeqForward8(int FromSeq, int ToSeq) {
-	return (ToSeq - FromSeq) & 255;
-}
-
 simulated function int IGPlus_SeqBackward8(int BaseSeq, int Seq) {
 	return (BaseSeq - Seq) & 255;
 }
@@ -4785,26 +4779,16 @@ simulated function bool IGPlus_IsEightballShotAcked(int Seq, int AckBaseSeq, int
 	return (AckMask & BitMask) != 0;
 }
 
+// Every reader gates on bActive first, and queueing rewrites the whole slot.
 simulated function IGPlus_ClearEightballShotEntry(int Index) {
-	if (Index < 0 || Index >= IGPLUS_EB_SHOT_QUEUE_SIZE)
-		return;
-
 	IGPlus_EBShotPending[Index].bActive = false;
-	IGPlus_EBShotPending[Index].Seq = 0;
-	IGPlus_EBShotPending[Index].Kind = 0;
-	IGPlus_EBShotPending[Index].bTight = false;
-	IGPlus_EBShotPending[Index].ShotTS = 0.0;
-	IGPlus_EBShotPending[Index].Charge = 0;
-	IGPlus_EBShotPending[Index].LastSendTS = 0.0;
 }
 
 simulated function IGPlus_PruneEightballShotQueue(optional bool bForceClear) {
 	local int i;
 	local float NowTS;
 
-	NowTS = 0.0;
-	if (Level != none)
-		NowTS = Level.TimeSeconds;
+	NowTS = Level.TimeSeconds;
 
 	for (i = 0; i < IGPLUS_EB_SHOT_QUEUE_SIZE; i++) {
 		if (!IGPlus_EBShotPending[i].bActive)
@@ -4824,16 +4808,6 @@ simulated function IGPlus_PruneEightballShotQueueThrough(float CutoffTS) {
 			&& IGPlus_EBShotPending[i].ShotTS <= CutoffTS + 0.0001)
 			IGPlus_ClearEightballShotEntry(i);
 	}
-}
-
-simulated function bool IGPlus_HasPendingEightballShots() {
-	local int i;
-
-	for (i = 0; i < IGPLUS_EB_SHOT_QUEUE_SIZE; i++) {
-		if (IGPlus_EBShotPending[i].bActive)
-			return true;
-	}
-	return false;
 }
 
 simulated function int IGPlus_QueueEightballAuthoritativeShot(
@@ -4872,9 +4846,6 @@ simulated function int IGPlus_QueueEightballAuthoritativeShot(
 		}
 	}
 
-	if (SlotIdx < 0)
-		return -1;
-
 	IGPlus_EBShotPending[SlotIdx].bActive = true;
 	IGPlus_EBShotPending[SlotIdx].Seq = Seq;
 	IGPlus_EBShotPending[SlotIdx].Kind = ShotKind & 3;
@@ -4900,8 +4871,7 @@ simulated function bool IGPlus_HasEligibleEightballShotForMove(float CarrierTS) 
 	local float NowTS;
 
 	IGPlus_PruneEightballShotQueue();
-	if (Level != none)
-		NowTS = Level.TimeSeconds;
+	NowTS = Level.TimeSeconds;
 
 	for (i = 0; i < IGPLUS_EB_SHOT_QUEUE_SIZE; i++) {
 		if (IGPlus_EightballShotEligibleForMove(i, CarrierTS, NowTS))
@@ -4931,9 +4901,7 @@ simulated function bool IGPlus_SelectEightballShotForMove(
 
 	IGPlus_PruneEightballShotQueue();
 
-	NowTS = 0.0;
-	if (Level != none)
-		NowTS = Level.TimeSeconds;
+	NowTS = Level.TimeSeconds;
 
 	BestIdx = -1;
 	BestAge = 256;
@@ -5053,7 +5021,7 @@ function bool IGPlus_ServerRegisterEightballShotSeq(int Seq) {
 	}
 
 	if (Back > 127) {
-		Forward = IGPlus_SeqForward8(IGPlus_EBShotRecvBase, Seq);
+		Forward = (Seq - IGPlus_EBShotRecvBase) & 255;
 		if (Forward >= 32)
 			IGPlus_EBShotRecvMask = 0;
 		else
@@ -5067,17 +5035,6 @@ function bool IGPlus_ServerRegisterEightballShotSeq(int Seq) {
 	}
 
 	return false;
-}
-
-// Returns the effective held state used for ServerMove_v4 fire timeline.
-// Keep this bound to physical held input only. Eightball shot-time pulses
-// carry queued refire intent explicitly.
-simulated function bool IGPlus_V4EffectiveFireHeld() {
-	return bFire != 0;
-}
-
-simulated function bool IGPlus_V4EffectiveAltHeld() {
-	return bAltFire != 0;
 }
 
 	// Decode V4 weapon index back to the actual weapon in inventory.
@@ -5273,7 +5230,6 @@ simulated function int IGPlus_V4IntervalShotDue(
 ) {
 	local bool bWantsPrimary;
 	local bool bWantsAlt;
-	local bool bAlt;
 
 	bWantsPrimary = bFireHeld || bForceFire;
 	bWantsAlt = bAltHeld || bForceAlt;
@@ -5282,13 +5238,11 @@ simulated function int IGPlus_V4IntervalShotDue(
 	if (StepTS + 0.0001 < NextFireTS)
 		return 0;
 
-	bAlt = bWantsAlt && !bWantsPrimary;
-	if (bAlt)
+	if (bWantsAlt && !bWantsPrimary) {
 		ShotInterval = AltInterval;
-	else
-		ShotInterval = PrimaryInterval;
-	if (bAlt)
 		return 2;
+	}
+	ShotInterval = PrimaryInterval;
 	return 1;
 }
 
@@ -5498,8 +5452,6 @@ simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred
 }
 
 simulated function IGPlus_MarkDeterministicSwitchGuard(optional float GuardSeconds) {
-	if (Level == none)
-		return;
 	if (GuardSeconds <= 0.0)
 		GuardSeconds = 0.12;
 	IGPlus_DeterministicSwitchGuardUntil = FMax(
@@ -5509,17 +5461,11 @@ simulated function IGPlus_MarkDeterministicSwitchGuard(optional float GuardSecon
 }
 
 simulated function bool IGPlus_IsDeterministicSwitchGuardActive() {
-	return Level != none && Level.TimeSeconds < IGPlus_DeterministicSwitchGuardUntil;
+	return Level.TimeSeconds < IGPlus_DeterministicSwitchGuardUntil;
 }
 
 simulated function bool IGPlus_IsV4DetReady(optional Weapon Preferred) {
-	local Weapon Candidate;
-
-	Candidate = IGPlus_FindV4SupportedWeapon(Preferred);
-	if (Candidate == none)
-		return false;
-
-	return IGPlus_V4IsWeaponReady(Candidate);
+	return IGPlus_V4IsWeaponReady(Preferred);
 }
 
 function IGPlus_V4FillMoveBinding(IGPlus_SavedMove M) {
@@ -5609,8 +5555,8 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 	// most two transitions per merged move (press and release). Split before a
 	// third transition would make edge timing ambiguous.
 	if (Pending.bUseServerMoveV4 && Pending.bDetReady) {
-		bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
-		bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
+		bCurrentFireHeld = (bFire != 0);
+		bCurrentAltHeld = (bAltFire != 0);
 
 		// Eightball timing is edge-sensitive (load start/release fire).
 		// Never merge across a hold-state transition so edge timestamps are
@@ -5704,8 +5650,8 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 	bForceAltTap = bJustAltFired;
 
 	// Keep merged hold bits aligned with suppression-aware effective held state.
-	bCurrentFireHeld = IGPlus_V4EffectiveFireHeld();
-	bCurrentAltHeld = IGPlus_V4EffectiveAltHeld();
+	bCurrentFireHeld = (bFire != 0);
+	bCurrentAltHeld = (bAltFire != 0);
 
 	bFireNew = PendMove.bFire || bForceFireTap || bCurrentFireHeld;
 	if (bFireNew != PendMove.bFire && PendMove.FireIndex < 0) {
@@ -5796,12 +5742,8 @@ function IGPlus_ReplicateInput(float Delta) {
 	IGPlus_InputReplicationBuffer.Reset();
 	ReferenceInput = IGPlus_SavedInputChain.SerializeNodes(10, IGPlus_InputReplicationBuffer);
 
-	// Run deterministic local prediction only for inputs that are actually
-	// Serialized/sent. This prevents client-only predicted shots from unsent
-	// local slices during rapid switch/fire races.
-	// Resolve V4Weapon per-input using V4WeaponIndex so that a weapon switch
-	// mid-batch doesn't cause the wrong weapon to fire (e.g. Ripper razor
-	// predicted when the input was actually for ShockRifle).
+	// Predict only serialized inputs, resolving the weapon per-input — protects
+	// against unsent slices and mid-batch switches.
 		if (ReferenceInput != none) {
 			for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
 				if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
@@ -5905,8 +5847,8 @@ function xxReplicateMove(
 		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		if (V4LocalWeapon != none && IGPlus_V4IsWeaponReady(V4LocalWeapon)) {
 			bLocalEightball = ST_UT_Eightball(V4LocalWeapon) != none;
-			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
-			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
+			bMoveFireHeld = (bFire != 0);
+			bMoveAltHeld = (bAltFire != 0);
 			bForceFireTap = bJustFired;
 			bForceAltTap = bJustAltFired;
 			IGPlus_V4ProcessWeaponInputSlice(
@@ -5986,8 +5928,8 @@ function xxReplicateMove(
 		if (bPressedJump)
 			NewMove.JumpIndex = 0;
 
-			bMoveFireHeld = IGPlus_V4EffectiveFireHeld();
-			bMoveAltHeld = IGPlus_V4EffectiveAltHeld();
+			bMoveFireHeld = (bFire != 0);
+			bMoveAltHeld = (bAltFire != 0);
 			bForceFireTap = bJustFired;
 			bForceAltTap = bJustAltFired;
 
@@ -6185,8 +6127,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		V4Flags = IGPlus_V4EncodeEdgeIndex(V4Flags, Move.V4AltPressIndex, IGPLUS_V4FLAG_HAS_ALT_PRESS, IGPLUS_V4FLAG_ALT_PRESS_SHIFT);
 		V4Flags = IGPlus_V4EncodeEdgeIndex(V4Flags, Move.V4AltReleaseIndex, IGPLUS_V4FLAG_HAS_ALT_RELEASE, IGPLUS_V4FLAG_ALT_RELEASE_SHIFT);
 
-			if (IGPlus_IsV4WeaponIndexEightball(Move.V4WeaponIndex) || ST_UT_Eightball(Weapon) != none || IGPlus_HasPendingEightballShots()) {
-				if (IGPlus_SelectEightballShotForMove(
+			if (IGPlus_SelectEightballShotForMove(
 					Move.TimeStamp,
 					V4ShotSeq,
 					V4ShotChargeBits,
@@ -6201,7 +6142,6 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 				if (V4ShotTight != 0)
 					V4AuxData or_eq IGPLUS_EB_SHOT_TIGHT_MASK;
 			}
-		}
 	}
 
 	// Fire-bearing v4 moves get one full redundant replay opportunity. Unlike
@@ -6302,9 +6242,7 @@ exec function ThrowWeapon()
 		|| !Weapon.bCanThrow || (IGPlus_UseFastWeaponSwitch == false && Weapon.IsInState('Idle') == false) )
 		return;
 
-	// Stale deterministic fire intent cannot leak to another weapon: dispatch
-	// requires the equipped/grace weapon binding, and the switch guard covers
-	// the toss itself. Held fire resuming on the next weapon is stock behavior.
+	// Switch guard covers the toss; held fire resuming on the next weapon is stock.
 	IGPlus_MarkDeterministicSwitchGuard();
 	bForcePacketSplit = true;
 	bFire = 0;
@@ -12607,14 +12545,8 @@ simulated function ChangedWeapon() {
 			IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, CurrentTimeStamp + IGPlus_V4EntryGateSeconds());
 		} else {
 			// v4 steps clear bFire/bAltFire; restore held state for legacy weapons.
-			if (IGPlus_LastFireEndHeld)
-				bFire = 1;
-			else
-				bFire = 0;
-			if (IGPlus_LastAltEndHeld)
-				bAltFire = 1;
-			else
-				bAltFire = 0;
+			bFire = byte(IGPlus_LastFireEndHeld);
+			bAltFire = byte(IGPlus_LastAltEndHeld);
 		}
 		IGPlus_V4PendingSeen = PendingWeapon;
 	}
