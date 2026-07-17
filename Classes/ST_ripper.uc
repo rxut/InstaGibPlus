@@ -7,8 +7,6 @@ class ST_ripper extends ripper;
 var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
-var ST_Razor2 LocalRazor2Dummy;
-var ST_Razor2Alt LocalRazor2AltDummy;
 
 var float NextV4FireTS;
 
@@ -37,13 +35,9 @@ simulated function bool IsPingCompEnabled() {
 }
 
 simulated function bool IsV4Active() {
-	if (Level != none && Level.NetMode == NM_Standalone)
-		return false;
-	if (!IsPingCompEnabled())
-		return false;
-	if (bbPlayer(Owner) == none)
-		return false;
-	return true;
+	return Level.NetMode != NM_Standalone
+		&& IsPingCompEnabled()
+		&& bbPlayer(Owner) != none;
 }
 
 // One owner's deterministic state must never transfer to the next.
@@ -61,23 +55,13 @@ function DropFrom(vector StartLocation) {
 	Super.DropFrom(StartLocation);
 }
 
-// Ripper 'Fire' anim: NumFrames=15, Rate=30fps (default)
-// Unreal play duration is based on the last frame index, so use
-// (NumFrames - 1) / (Rate * PlayRate) to match stock refire timing.
+// 'Fire' anim: 15 frames at 30fps; UE plays to the last frame index, so refire = 14/(30*PlayRate).
 simulated function float PrimaryShotInterval() {
-	local float RateScale;
-	RateScale = 0.7 + 0.6 * FireAdjust;
-	if (RateScale <= 0.001)
-		return 0.50;
-	return FClamp(14.0 / (30.0 * RateScale), 0.05, 2.0);
+	return FClamp(14.0 / (30.0 * (0.7 + 0.6 * FireAdjust)), 0.05, 2.0);
 }
 
 simulated function float AltShotInterval() {
-	local float RateScale;
-	RateScale = 0.4 + 0.3 * FireAdjust;
-	if (RateScale <= 0.001)
-		return 0.50;
-	return FClamp(14.0 / (30.0 * RateScale), 0.05, 2.0);
+	return FClamp(14.0 / (30.0 * (0.4 + 0.3 * FireAdjust)), 0.05, 2.0);
 }
 
 simulated function V4PlayFireAnim(bool bAlt) {
@@ -131,7 +115,7 @@ simulated function bool V4ProcessInputSlice(
 		else
 			HandleV4ClientFire(bAlt, StepView, StepLoc);
 	} else if (bServerSide) {
-		bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+		BP.IGPlus_V4HandleOutOfAmmo(self);
 	}
 
 	NextV4FireTS = StepTS + Interval;
@@ -139,53 +123,34 @@ simulated function bool V4ProcessInputSlice(
 }
 
 simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
-	local Pawn PawnOwner;
 	local bbPlayer BP;
 
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
-	BP = bbPlayer(PawnOwner);
+	BP = bbPlayer(Owner);
 
 	bPointing = true;
-	if (bRapidFire || (FiringSpeed > 0))
-		PawnOwner.PlayRecoil(FiringSpeed);
+	BP.PlayRecoil(FiringSpeed);
 	if (Affector != none)
 		Affector.FireEffect();
-	if (PlayerPawn(Owner) != none)
-		PlayerPawn(Owner).ClientInstantFlash(-0.4, vect(450, 190, 650));
+	BP.ClientInstantFlash(-0.4, vect(450, 190, 650));
 
-	if (bAlt) {
-		V4PlayFireAnim(true);
-		if (BP != none && BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
-			SpawnClientSideRazorAlt(true, StepView, StepLoc);
-	} else {
-		V4PlayFireAnim(false);
-		if (BP != none && BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
-			SpawnClientSideRazor(true, StepView, StepLoc);
-	}
+	V4PlayFireAnim(bAlt);
+	if (BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
+		SpawnClientSideRazorAt(bAlt, StepView, StepLoc);
 }
 
 function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
 
 	AmmoType.UseAmmo(1);
 
 	bPointing = true;
-	if (bRapidFire || (FiringSpeed > 0))
-		PawnOwner.PlayRecoil(FiringSpeed);
+	PawnOwner.PlayRecoil(FiringSpeed);
 	if (Affector != none)
 		Affector.FireEffect();
 
-	if (bAlt) {
-		V4PlayFireAnim(true);
-	} else {
-		V4PlayFireAnim(false);
-	}
+	V4PlayFireAnim(bAlt);
 	SpawnServerRazorAt(bAlt, StepLoc, StepView, StepView);
 }
 
@@ -247,18 +212,12 @@ function SpawnServerRazorAt(bool bAlt, vector ShotLoc, rotator AimRot, rotator O
 
 function Finish()
 {
-	if (IsV4Active() && PlayerPawn(Owner) != None)
+	if (IsV4Active())
 	{
+		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
-		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
-		{
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
-			if (bChangeWeapon)
-				GotoState('DownWeapon');
-			else
-				GotoState('Idle');
-		}
 		else
 			GotoState('Idle');
 		return;
@@ -378,104 +337,43 @@ state ClientAltFiring
 	}
 }
 
-simulated function SpawnClientSideRazor(
-	optional bool bUseShotData,
-	optional rotator ShotView,
-	optional vector ShotLoc
-)
+simulated function SpawnClientSideRazorAt(bool bAlt, rotator ShotView, vector ShotLoc)
 {
-	local Pawn PawnOwner;
 	local vector X, Y, Z;
 	local vector Start;
 	local float Hand;
 	local bbPlayer bbP;
-	local rotator AimRot;
-	local vector AimLoc;
+	local ST_Razor2 Dummy;
+	local ST_Razor2Alt AltDummy;
+	local Projectile Razor;
 
-	PawnOwner = Pawn(Owner);
-	bbP = bbPlayer(PawnOwner);
+	bbP = bbPlayer(Owner);
+	if (Role >= ROLE_Authority || bbP == None || !bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
+		return;
 
-	if (Role < ROLE_Authority && bbP != None && bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
-	{
-		// SetHand never runs on the client instance, so FireOffset.Y is still
-		// the unmirrored default here and must be multiplied by Handedness.
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
+	// SetHand never runs on the client instance, so FireOffset.Y is still
+	// the unmirrored default here and must be multiplied by Handedness.
+	Hand = FClamp(bbP.Handedness, -1.0, 1.0);
 
-		if (bUseShotData) {
-			AimRot = ShotView;
-			AimLoc = ShotLoc;
-		} else {
-			AimRot = PawnOwner.ViewRotation;
-			AimLoc = Owner.Location;
-		}
+	GetAxes(ShotView, X, Y, Z);
+	if (bHideWeapon)
+		Start = ShotLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	else
+		Start = ShotLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+	Start.Z += bbP.GetMoverFireZOffset();
 
-		GetAxes(AimRot, X, Y, Z);
-		if (bHideWeapon)
-			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
-		else
-			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-		if (bbP != None)
-			Start.Z += bbP.GetMoverFireZOffset();
-
-		LocalRazor2Dummy = Spawn(class'ST_Razor2', Owner,, Start, AimRot);
-		LocalRazor2Dummy.RemoteRole = ROLE_None;
-		LocalRazor2Dummy.bClientVisualOnly = true;
-		LocalRazor2Dummy.SetCollision(false, false, false);
-		LocalRazor2Dummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+	if (bAlt) {
+		AltDummy = Spawn(class'ST_Razor2Alt', Owner,, Start, ShotView);
+		AltDummy.bClientVisualOnly = true;
+		Razor = AltDummy;
+	} else {
+		Dummy = Spawn(class'ST_Razor2', Owner,, Start, ShotView);
+		Dummy.bClientVisualOnly = true;
+		Razor = Dummy;
 	}
-}
-
-simulated function SpawnClientSideRazorAlt(
-	optional bool bUseShotData,
-	optional rotator ShotView,
-	optional vector ShotLoc
-)
-{
-	local Pawn PawnOwner;
-	local vector X, Y, Z;
-	local vector Start;
-	local float Hand;
-	local bbPlayer bbP;
-	local rotator AimRot;
-	local vector AimLoc;
-
-	PawnOwner = Pawn(Owner);
-	bbP = bbPlayer(PawnOwner);
-
-	if (Role < ROLE_Authority && bbP != None && bbP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
-	{
-		// SetHand never runs on the client instance, so FireOffset.Y is still
-		// the unmirrored default here and must be multiplied by Handedness.
-		if (Owner.IsA('PlayerPawn'))
-			Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
-		else
-			Hand = 1.0;
-
-		if (bUseShotData) {
-			AimRot = ShotView;
-			AimLoc = ShotLoc;
-		} else {
-			AimRot = PawnOwner.ViewRotation;
-			AimLoc = Owner.Location;
-		}
-
-		GetAxes(AimRot, X, Y, Z);
-		if (bHideWeapon)
-			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
-		else
-			Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-		if (bbP != None)
-			Start.Z += bbP.GetMoverFireZOffset();
-
-		LocalRazor2AltDummy = Spawn(class'ST_Razor2Alt', Owner,, Start, AimRot);
-		LocalRazor2AltDummy.RemoteRole = ROLE_None;
-		LocalRazor2AltDummy.bClientVisualOnly = true;
-		LocalRazor2AltDummy.SetCollision(false, false, false);
-		LocalRazor2AltDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-	}
+	Razor.RemoteRole = ROLE_None;
+	Razor.SetCollision(false, false, false);
+	Razor.LifeSpan = bbP.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 }
 
 state Idle
@@ -489,24 +387,15 @@ state Idle
 		}
 
 		bPointing = false;
-
-		if (IsV4Active())
+		if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
+			Pawn(Owner).SwitchToBestWeapon();
+		if (!IsV4Active())
 		{
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
-				Pawn(Owner).SwitchToBestWeapon();
-
-			Disable('AnimEnd');
-			PlayIdleAnim();
-		}
-		else
-		{
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) ) 
-				Pawn(Owner).SwitchToBestWeapon();
 			if ( Pawn(Owner).bFire != 0 ) Fire(0.0);
-			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);	
-			Disable('AnimEnd');
-			PlayIdleAnim();
+			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);
 		}
+		Disable('AnimEnd');
+		PlayIdleAnim();
 	}
 
 	function AnimEnd()
