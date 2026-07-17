@@ -53,18 +53,12 @@ function PostBeginPlay()
 		break;
 }
 
-// =========================================================================
-// V4 Deterministic Fire — Primary (Interval) + Alt (Charge)
-// =========================================================================
+// V4 deterministic fire — primary (interval) + alt (charge).
 
 simulated function bool IsV4Active() {
-	if (Level != none && Level.NetMode == NM_Standalone)
-		return false;
-	if (!IsPingCompEnabled())
-		return false;
-	if (bbPlayer(Owner) == none)
-		return false;
-	return true;
+	return Level.NetMode != NM_Standalone
+		&& IsPingCompEnabled()
+		&& bbPlayer(Owner) != none;
 }
 
 // One owner's deterministic state must never transfer to the next.
@@ -116,10 +110,11 @@ function IGPlus_ApplyProjectilePingComp(Projectile P) {
 		WImp.SimulateProjectile(P, bbP.PingAverage);
 }
 
-function Projectile IGPlus_V4ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn, vector StepLoc, rotator StepView) {
+function Projectile IGPlus_V4ProjectileFire(class<projectile> ProjClass, vector StepLoc, rotator StepView) {
 	local Projectile P;
 	local vector Start, X, Y, Z;
 
+	StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	Owner.MakeNoise(Pawn(Owner).SoundDampening);
 	GetAxes(StepView, X, Y, Z);
 	Start = StepLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
@@ -141,8 +136,7 @@ simulated function bool V4ProcessInputSlice(
 	optional int V4ChargeData
 ) {
 	local bool bWantsAlt, bWantsPrimary;
-	local float CS;
-	local int ActualCharge, TargetAmmoSpent;
+	local int TargetAmmoSpent;
 
 	// Switching cancels the paid charge. Spawning a forwarded glob while the
 	// weapon is going down can collide at the owner's new weapon position.
@@ -181,15 +175,10 @@ simulated function bool V4ProcessInputSlice(
 			// Falling edge: alt released → fire charged glob
 			bV4WasAltHeld = false;
 			if (bServerSide) {
-				if (V4AltAmmoSpent > 0) {
-					ActualCharge = Clamp(V4AltAmmoSpent - 1, 0, 9);
-					CS = float(ActualCharge) * 0.5;
-					if (ActualCharge >= 9)
-						CS = 4.1;
-					HandleV4ServerAltFire(StepView, StepLoc, CS);
-				} else {
-					V4HandleOutOfAmmo();
-				}
+				if (V4AltAmmoSpent > 0)
+					HandleV4ServerAltFire(StepView, StepLoc, FMin(Clamp(V4AltAmmoSpent - 1, 0, 9) * 0.5, 4.1));
+				else
+					bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 				V4AltAmmoSpent = 0;
 			}
 			NextV4FireTS = StepTS + AltShotInterval();
@@ -211,7 +200,7 @@ simulated function bool V4ProcessInputSlice(
 				V4AltAmmoSpent = 1;
 			} else {
 				V4AltAmmoSpent = 0;
-				V4HandleOutOfAmmo();
+				bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 				return true;
 			}
 		} else {
@@ -233,7 +222,7 @@ simulated function bool V4ProcessInputSlice(
 			AmmoType.UseAmmo(1);
 			HandleV4ServerFire(StepView, StepLoc);
 		} else {
-			V4HandleOutOfAmmo();
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 		}
 	} else {
 		HandleV4ClientFire(StepView, StepLoc);
@@ -244,37 +233,21 @@ simulated function bool V4ProcessInputSlice(
 }
 
 function HandleV4ServerFire(rotator StepView, vector StepLoc) {
-	local PlayerPawn P;
-
-	P = PlayerPawn(Owner);
-	if (P == none)
-		return;
-	if (bbPlayer(Owner) != none)
-		StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-
 	bCanClientFire = true;
 	bPointing = true;
 
-	P.PlayRecoil(FiringSpeed);
+	PlayerPawn(Owner).PlayRecoil(FiringSpeed);
 	V4PlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
-	IGPlus_V4ProjectileFire(ProjectileClass, ProjectileSpeed, bWarnTarget, StepLoc, StepView);
+	IGPlus_V4ProjectileFire(ProjectileClass, StepLoc, StepView);
 	GoToState('NormalFire');
 }
 
 function HandleV4ServerAltFire(rotator StepView, vector StepLoc, float CS) {
-	local PlayerPawn P;
 	local Projectile Gel;
 
-	P = PlayerPawn(Owner);
-	if (P == none)
-		return;
-	if (bbPlayer(Owner) != none)
-		StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-
-	Owner.MakeNoise(P.SoundDampening);
-	Gel = IGPlus_V4ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget, StepLoc, StepView);
+	Gel = IGPlus_V4ProjectileFire(AltProjectileClass, StepLoc, StepView);
 	if (Gel != none)
 		Gel.DrawScale = 1.0 + 0.8 * CS;
 	if (Affector != none)
@@ -289,23 +262,18 @@ simulated function V4PlayPrimaryFiringAnim() {
 }
 
 simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
-	local Pawn PawnOwner;
 	local bbPlayer BP;
 
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == none)
-		return;
-	BP = bbPlayer(PawnOwner);
+	BP = bbPlayer(Owner);
 
 	bPointing = true;
 	if (FiringSpeed > 0)
-		PawnOwner.PlayRecoil(FiringSpeed);
+		BP.PlayRecoil(FiringSpeed);
 	V4PlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
-	if (PlayerPawn(Owner) != none)
-		PlayerPawn(Owner).ClientInstantFlash(InstFlash, InstFog);
-	if (BP != none && BP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
+	BP.ClientInstantFlash(InstFlash, InstFog);
+	if (BP.ClientWeaponSettingsData.bBioUseClientSideAnimations)
 		SpawnClientDummyBioGel();
 }
 
@@ -322,37 +290,20 @@ simulated function HandleV4ClientAltStart() {
 
 	Instigator = PawnOwner;
 	AmmoType.UseAmmo(1);
-	V4ClientPredictedAmmo = AmmoType.AmmoAmount;
 	bPointing = true;
 	bCanClientFire = true;
 	GotoState('ClientAltFiring');
 	PlayAltFiring();
 }
 
-function V4HandleOutOfAmmo() {
-	local Pawn P;
-	P = Pawn(Owner);
-	if (P == none)
-		return;
-	P.StopFiring();
-	if (P.PendingWeapon == none || P.PendingWeapon == self)
-		P.SwitchToBestWeapon();
-}
-
 function Finish()
 {
-	if (IsV4Active() && PlayerPawn(Owner) != None)
+	if (IsV4Active())
 	{
+		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
-		else if ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))
-		{
-			V4HandleOutOfAmmo();
-			if (bChangeWeapon)
-				GotoState('DownWeapon');
-			else
-				GotoState('Idle');
-		}
 		else
 			GotoState('Idle');
 		return;
@@ -488,10 +439,7 @@ state Idle
 	function BeginState()
 	{
 		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
-		{
 			GotoState('DownWeapon');
-			return;
-		}
 	}
 }
 
@@ -568,11 +516,6 @@ state ClientAltFiring
 		ChargeSize = 0.0;
 		Count = 0.0;
 		V4CachedChargeData = 0;
-		V4ClientPredictedAmmo = -1;
-	}
-
-	simulated function EndState()
-	{
 		V4ClientPredictedAmmo = -1;
 	}
 }
