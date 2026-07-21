@@ -143,6 +143,8 @@ simulated function bool V4ProcessInputSlice(
 	if (bV4WasAltHeld
 		&& bbPlayer(Owner) != none
 		&& bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self)) {
+		if (!bServerSide)
+			StopChargeSound();
 		bV4WasAltHeld = false;
 		V4AltAmmoSpent = 0;
 		V4CachedChargeData = 0;
@@ -526,6 +528,34 @@ state ClientActive
 	{
 		bCanClientFire = true;
 		Super.AnimEnd();
+	}
+}
+
+// Playing the looping charge sound at zero volume in its slot silences it.
+simulated function StopChargeSound()
+{
+	PlayOwnedSound(Sound'Botpack.BioRifle.BioAltRep', SLOT_Misc, 0.0);
+}
+
+simulated function ClientPutDown(Weapon NextWeapon)
+{
+	if (IsInState('ClientAltFiring'))
+		StopChargeSound();
+
+	Super.ClientPutDown(NextWeapon);
+}
+
+state AltFiring
+{
+	function Tick(float DeltaTime)
+	{
+		Super.Tick(DeltaTime);
+
+		if (bChangeWeapon)
+		{
+			StopChargeSound();
+			GotoState('DownWeapon');
+		}
 	}
 }
 
