@@ -674,15 +674,19 @@ simulated function bool V4ProcessInputSlice(
 		bMoveInstant = bInstantRocket;
 
 	if (V4CooldownRemaining > 0.0001) {
-		// Bank taps like stock's reload-state ForceFire latch instead of
-		// swallowing the slice: master fired banked taps at reload-end, so
-		// continuous tapping reached the full interval rate. Primary press
-		// supersedes a banked alt, matching stock precedence.
-		if (bFireHeld || bForceFire) {
-			bV4CooldownFireTap = true;
-			bV4CooldownAltTap = false;
-		} else if (bAltHeld || bForceAlt)
-			bV4CooldownAltTap = true;
+		// Stock banks a press EVENT that lands during the reload leg (the
+		// ClientReload ForceFire latch) and fires it at reload-end. Taps in
+		// the fire-anim leg drop, and a held button banks nothing. The move
+		// force bits carry exactly the press events (bJustFired), so bank on
+		// those alone, only within the reload leg (0.05 tween + 0.4 Load1
+		// anim). Primary press supersedes a banked alt, stock precedence.
+		if (V4CooldownRemaining <= 0.45) {
+			if (bForceFire) {
+				bV4CooldownFireTap = true;
+				bV4CooldownAltTap = false;
+			} else if (bForceAlt)
+				bV4CooldownAltTap = true;
+		}
 		return true;
 	}
 
@@ -1662,6 +1666,10 @@ simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
+	// A tap banked during cooldown must not survive into a fresh equip —
+	// stock clears its force latches here too.
+	bV4CooldownFireTap = false;
+	bV4CooldownAltTap = false;
 	V4ResetPrimaryCycle(true);
 	V4ResetAltCycle(true);
 	bV4SwitchSettlementPending = false;
