@@ -5521,7 +5521,16 @@ simulated function IGPlus_V4TrackClientPendingSwitch() {
 	// (0.12s fast switch / 0.25s normal). Without this, the non-fast-switch
 	// path predicts rockets inside the server's closed window and they vanish.
 	if (Weapon != IGPlus_V4ClientWeaponSeen) {
-		IGPlus_MarkDeterministicSwitchGuard(IGPlus_V4EntryGateSeconds());
+		// Trans-source equip on the slow path: the trans has no deterministic
+		// fire to guard, and the server's entry gate (anchored at the earlier
+		// server-side flip) expires by select-end anyway. This mirror arms a
+		// tick after the flip, so it alone overshoots select-end; skipping it
+		// restores the historic trans->weapon first-shot timing. Fast switch
+		// keeps the mirror: there the gate is a real floor, and dropping only
+		// the client half would let prediction outrun the server.
+		if (IGPlus_UseFastWeaponSwitch
+			|| Translocator(IGPlus_V4ClientWeaponSeen) == none)
+			IGPlus_MarkDeterministicSwitchGuard(IGPlus_V4EntryGateSeconds());
 		IGPlus_V4ClientWeaponSeen = Weapon;
 	}
 	if (PendingWeapon != none && Weapon != none && !Weapon.bChangeWeapon
