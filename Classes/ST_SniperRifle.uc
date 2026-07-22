@@ -22,6 +22,8 @@ var WeaponSettingsRepl WSettings;
 var Rotator GV;
 var float yMod; // For handedness calculations
 
+var float NextV4FireTS;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -37,6 +39,133 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 
 	WSettings = FindWeaponSettings();
 	return WSettings;
+}
+
+simulated function bool IsPingCompEnabled() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	return WS != None && WS.bEnablePingCompensation;
+}
+
+simulated function bool IsV4Active() {
+	return Level.NetMode != NM_Standalone
+		&& IsPingCompEnabled()
+		&& bbPlayer(Owner) != none;
+}
+
+// One owner's deterministic state must never transfer to the next
+// (dropped weapons are reused as pickups — SpawnCopy returns self).
+simulated function V4ResetDeterministicState() {
+	NextV4FireTS = 0.0;
+}
+
+function GiveTo(Pawn Other) {
+	V4ResetDeterministicState();
+	Super.GiveTo(Other);
+}
+
+function DropFrom(vector StartLocation) {
+	V4ResetDeterministicState();
+	Super.DropFrom(StartLocation);
+}
+
+// The legacy path refires at fire-anim end, and SniperReloadAnimSpeed scales
+// the anim so its duration equals the configured SniperReloadTime (stock 2/3s).
+simulated function float PrimaryShotInterval() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == none)
+		return class'WeaponSettingsRepl'.default.SniperReloadTime;
+	return FClamp(WS.SniperReloadTime, 0.05, 2.0);
+}
+
+// V4 input-slice processing — called from bbPlayer.IGPlus_V4ProcessWeaponInputSlice.
+// Returns true to suppress legacy fire, even if no shot is produced.
+// Alt-fire is client-side zoom and must never produce a shot.
+simulated function bool V4ProcessInputSlice(
+	float StepTS,
+	rotator StepView,
+	vector StepLoc,
+	bool bFireHeld,
+	bool bAltHeld,
+	bool bForceFire,
+	bool bForceAlt,
+	bool bServerSide,
+	optional bool bClientPredictedStep
+) {
+	local bbPlayer BP;
+	local int FireMode;
+	local float Interval;
+
+	if (!bClientPredictedStep)
+		return true;
+
+	BP = bbPlayer(Owner);
+	if (BP == none)
+		return true;
+	FireMode = BP.IGPlus_V4IntervalShotDue(
+		StepTS, bFireHeld, false, bForceFire, false,
+		PrimaryShotInterval(), PrimaryShotInterval(), NextV4FireTS, Interval);
+	if (FireMode == 0)
+		return true;
+
+	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+		// Holster hold equals the reload anim, whose duration is the interval.
+		BP.IGPlus_V4NoteShot(StepTS, Interval);
+		if (bServerSide)
+			HandleV4ServerFire(StepView, StepLoc);
+		else
+			HandleV4ClientFire(StepView, StepLoc);
+	} else if (bServerSide) {
+		BP.IGPlus_V4HandleOutOfAmmo(self);
+	}
+
+	NextV4FireTS = StepTS + Interval;
+	return true;
+}
+
+simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
+	local bbPlayer BP;
+	local PlayerPawn P;
+	local vector X, Y, Z;
+
+	BP = bbPlayer(Owner);
+	P = PlayerPawn(Owner);
+
+	Instigator = Pawn(Owner);
+	bPointing = true;
+	if (bRapidFire || (FiringSpeed > 0))
+		BP.PlayRecoil(FiringSpeed);
+	if (Affector != none)
+		Affector.FireEffect();
+
+	PlayFiring();
+
+	if (P != none && BP.ClientWeaponSettingsData.bSniperUseClientSideAnimations) {
+		yModInit();
+		GetAxes(GV, X, Y, Z);
+		DoClientShellCase(P, Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * yMod + 5.0) * Y - Z * 1, X, Y, Z);
+	}
+}
+
+function HandleV4ServerFire(rotator StepView, vector StepLoc) {
+	local Pawn PawnOwner;
+
+	PawnOwner = Pawn(Owner);
+
+	AmmoType.UseAmmo(1);
+
+	Instigator = PawnOwner; // ProcessTraceHit's headshot check reads Instigator
+	bPointing = true;
+	if (bRapidFire || (FiringSpeed > 0))
+		PawnOwner.PlayRecoil(FiringSpeed);
+	if (Affector != none)
+		Affector.FireEffect();
+
+	PlayFiring();
+	DeterministicTraceFire(StepView, StepLoc);
 }
 
 function PostBeginPlay()
@@ -62,17 +191,6 @@ simulated function yModInit()
 		yMod = 0;
 }
 
-simulated function RenderOverlays(Canvas Canvas)
-{
-	Super.RenderOverlays(Canvas);
-
-	yModInit();
-
-	if (Role < ROLE_Authority && bbPlayer(Owner) != None && bbPlayer(Owner).bFire != 0 && !IsInState('ClientFiring')) {
-		ClientFire(1);
-	}
-}
-
 simulated function DoClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, Vector Y, Vector Z)
 {
 	local UT_ShellCase s;
@@ -91,15 +209,26 @@ simulated function DoClientShellCase(PlayerPawn Pwner, vector HitLoc, Vector X, 
 simulated function bool ClientFire(float Value)
 {
 	local bbPlayer bbP;
-	
+	local TournamentPlayer TP;
+
 	if (!bCanClientFire)
 		return false;
 
 	if (Owner.IsA('Bot'))
 		return Super.ClientFire(Value);
-		
+
+	TP = TournamentPlayer(Owner);
+	if (bChangeWeapon
+		|| (Pawn(Owner) != none && Pawn(Owner).PendingWeapon != none && Pawn(Owner).PendingWeapon != self)
+		|| (TP != none && TP.ClientPending != none && TP.ClientPending != self))
+		return false;
+
 	bbP = bbPlayer(Owner);
-	
+
+	// Under V4 the predicted input slices drive fire anims; nothing to do here.
+	if (IsV4Active() && Owner.Role == ROLE_AutonomousProxy && bbP != None)
+		return true;
+
 	if (bbP != None && GetWeaponSettings().bEnablePingCompensation)
 	{
 		if (Role < ROLE_Authority && bbP.ClientWeaponSettingsData.bSniperUseClientSideAnimations)
@@ -151,6 +280,16 @@ simulated function ClientPlayEffects()
 }
 
 function TraceFire(float Accuracy) {
+	if (Role == ROLE_Authority && Level.NetMode != NM_Client && IsV4Active())
+		return;
+	TraceFireAt(Pawn(Owner).ViewRotation, Owner.Location, true);
+}
+
+function DeterministicTraceFire(rotator ShotRot, vector ShotLoc) {
+	TraceFireAt(ShotRot, ShotLoc, false);
+}
+
+function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 	local vector HitLocation, HitNormal, StartTrace, EndTrace, X,Y,Z;
 	local actor Other;
 	local Pawn PawnOwner;
@@ -159,14 +298,17 @@ function TraceFire(float Accuracy) {
 	PawnOwner = Pawn(Owner);
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
-	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
-	StartTrace = Owner.Location + PawnOwner.Eyeheight * vect(0,0,1);
+	GetAxes(AimRot,X,Y,Z);
+	StartTrace = BaseLoc + PawnOwner.Eyeheight * vect(0,0,1);
 	if (WImp != None && WImp.WeaponSettings.bEnablePingCompensation)
 	{
 		RewindMs = WImp.IGPlus_GetHitscanRewindMs(PawnOwner);
 		StartTrace = WImp.IGPlus_AdjustLocationToHistoricalMoverFrame(PawnOwner, StartTrace, RewindMs);
 	}
-	AdjustedAim = PawnOwner.AdjustAim(1000000, StartTrace, 2*AimError, False, False);	
+	if (bUseAdjustAim)
+		AdjustedAim = PawnOwner.AdjustAim(1000000, StartTrace, 2*AimError, False, False);
+	else
+		AdjustedAim = AimRot;
 	X = vector(AdjustedAim);
 	EndTrace = StartTrace + 100000 * X;
 	if (WImp.WeaponSettings.SniperUseReducedHitbox)
@@ -277,6 +419,60 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
     return WImp.CheckHeadShot(P, HitLocation, BulletDir);
 }
 
+function Fire(float Value) {
+	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+		return;
+	Super.Fire(Value);
+}
+
+function AltFire(float Value) {
+	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+		return;
+	Super.AltFire(Value);
+}
+
+function Finish()
+{
+	if (IsV4Active())
+	{
+		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
+			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+		if (bChangeWeapon)
+			GotoState('DownWeapon');
+		else
+			GotoState('Idle');
+		return;
+	}
+	Super.Finish();
+}
+
+function bool PutDown()
+{
+	local bbPlayer BP;
+
+	BP = bbPlayer(Owner);
+	if (BP != none)
+		BP.IGPlus_MarkDeterministicSwitchGuard();
+
+	bCanClientFire = false;
+	return Super.PutDown();
+}
+
+// Bounce pending switches to DownWeapon before the inherited Idle label
+// clobbers a manual weapon choice.
+state Idle
+{
+	function BeginState()
+	{
+		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
+		{
+			GotoState('DownWeapon');
+			return;
+		}
+		Super.BeginState();
+	}
+}
+
 function SetSwitchPriority(pawn Other)
 {	// Make sure "old" priorities are kept.
 	local int i;
@@ -338,6 +534,7 @@ simulated function TweenDown() {
 	local float TweenTime;
 
 	TweenTime = 0.05;
+	bCanClientFire = false;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
 
@@ -412,6 +609,12 @@ state ClientFiring
 	simulated function bool ClientAltFire(float Value) { return false; }
 
 	simulated function AnimEnd() {
+		if (IsV4Active()) {
+			PlayIdleAnim();
+			GotoState('');
+			return;
+		}
+
 		if ((Pawn(Owner) == None) || ((AmmoType != None) && (AmmoType.AmmoAmount <= 0))) {
 			PlayIdleAnim();
 			GotoState('');

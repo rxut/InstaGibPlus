@@ -298,6 +298,7 @@ const IGPLUS_V4FLAG_ALT_PRESS_SHIFT = 18;
 	const IGPLUS_V4WEAPON_FlakCannon = 3;
 	const IGPLUS_V4WEAPON_BioRifle = 4;
 	const IGPLUS_V4WEAPON_Eightball = 5;
+	const IGPLUS_V4WEAPON_SniperRifle = 6; // wire format caps indices at 7 (3 bits)
 
 var Utilities Utils;
 var StringUtils StringUtils;
@@ -3869,7 +3870,6 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 		|| Weapon.IsA('NN_SuperShockRifle')
 		|| Weapon.IsA('NN_SniperRifle')
 		|| Weapon.IsA('NN_ASMD')
-		|| Weapon.IsA('ST_SniperRifle')
 		|| Weapon.IsA('NN_ShockDOMRifle')
 	);
 }
@@ -4750,6 +4750,8 @@ function IGPlus_SavedMove xxGetFreeMove() {
 			return IGPLUS_V4WEAPON_BioRifle;
 		if (ST_UT_Eightball(W) != none)
 			return IGPLUS_V4WEAPON_Eightball;
+		if (ST_SniperRifle(W) != none)
+			return IGPLUS_V4WEAPON_SniperRifle;
 		return IGPLUS_V4WEAPON_None;
 	}
 
@@ -5081,6 +5083,8 @@ function bool IGPlus_ServerRegisterEightballShotSeq(int Seq) {
 				return Weapon(Inv);
 			if (Index == IGPLUS_V4WEAPON_Eightball && ST_UT_Eightball(Inv) != none)
 				return Weapon(Inv);
+			if (Index == IGPLUS_V4WEAPON_SniperRifle && ST_SniperRifle(Inv) != none)
+				return Weapon(Inv);
 		}
 		return none;
 	}
@@ -5192,6 +5196,8 @@ function IGPlus_V4ClearSwitchTrustState() {
 			ST_ut_biorifle(Item).V4ResetDeterministicState();
 		else if (ST_UT_Eightball(Item) != none)
 			ST_UT_Eightball(Item).V4ResetDeterministicState();
+		else if (ST_SniperRifle(Item) != none)
+			ST_SniperRifle(Item).V4ResetDeterministicState();
 	}
 }
 
@@ -5313,6 +5319,7 @@ simulated function bool IGPlus_IsV4ActiveWeapon(optional Weapon W) {
 	local ST_UT_FlakCannon FC;
 	local ST_ut_biorifle BR;
 	local ST_UT_Eightball EB;
+	local ST_SniperRifle SN;
 
 	if (W == none)
 		return false;
@@ -5332,6 +5339,9 @@ simulated function bool IGPlus_IsV4ActiveWeapon(optional Weapon W) {
 	EB = ST_UT_Eightball(W);
 	if (EB != none)
 		return EB.IsV4Active();
+	SN = ST_SniperRifle(W);
+	if (SN != none)
+		return SN.IsV4Active();
 
 	return false;
 }
@@ -5356,6 +5366,7 @@ simulated function bool IGPlus_V4ProcessWeaponInputSlice(
 	local ST_UT_FlakCannon FC;
 	local ST_ut_biorifle BR;
 	local ST_UT_Eightball EB;
+	local ST_SniperRifle SN;
 	local IGPlus_WeaponImplementationBase WImpBase;
 
 	if (W == none)
@@ -5419,6 +5430,10 @@ simulated function bool IGPlus_V4ProcessWeaponInputSlice(
 	RP = ST_ripper(W);
 	if (RP != none)
 		return RP.V4ProcessInputSlice(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
+
+	SN = ST_SniperRifle(W);
+	if (SN != none)
+		return SN.V4ProcessInputSlice(StepTS, StepView, StepLoc, bFireHeld, bAltHeld, bForceFire, bForceAlt, bServerSide, bClientPredictedStep);
 
 	FC = ST_UT_FlakCannon(W);
 	if (FC != none)
@@ -10006,7 +10021,7 @@ function ApplyBrightskins(PlayerReplicationInfo PRI) {
 		P.Weapon.bUnlit = false;
 }
 
-function bool IGPlus_ShouldUseSnapshotInterpForProxy(optional bbPlayer P) {
+simulated function bool IGPlus_ShouldUseSnapshotInterpForProxy(optional bbPlayer P) {
 	if (P == none)
 		P = self;
 
@@ -11375,6 +11390,21 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			IGPlus_SnapInterp_LastInterpMode = InterpMode;
 			HintAgeSec = FMax(0.0, Level.TimeSeconds - OutHintTime);
 			IGPlus_SnapInterp_LastHintAgeMs = int(HintAgeSec * 1000.0 + 0.5);
+		}
+	}
+
+	if (IGPlus_LocationOffsetFix_Moved == false)
+		return;
+
+	if (IGPlus_LocationOffsetFix_CollisionDummy != none) {
+		IGPlus_LocationOffsetFix_CollisionDummy.bCollideWorld = false;
+		IGPlus_LocationOffsetFix_CollisionDummy.SetCollision(false, false, false);
+	}
+
+	// Stats and stress-boost only when the result is actually applied;
+	// the PreRender fallback call would otherwise double-count every frame.
+	if (IGPlus_SnapInterp_Count >= 2) {
+		if (bHasInterpolated) {
 			if (InterpMode == 1)
 				IGPlus_SnapInterp_StatInterp += 1;
 			else if (InterpMode == 2) {
@@ -11388,14 +11418,6 @@ simulated function IGPlus_SnapInterp_After(float DeltaTime) {
 			IGPlus_SnapInterp_StatFail += 1;
 			IGPlus_SnapInterp_BoostDelayForStress();
 		}
-	}
-
-	if (IGPlus_LocationOffsetFix_Moved == false)
-		return;
-
-	if (IGPlus_LocationOffsetFix_CollisionDummy != none) {
-		IGPlus_LocationOffsetFix_CollisionDummy.bCollideWorld = false;
-		IGPlus_LocationOffsetFix_CollisionDummy.SetCollision(false, false, false);
 	}
 
 	if (IGPlus_SnapInterp_Count < 2) {
