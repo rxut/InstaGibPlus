@@ -28,6 +28,10 @@ var bool bV4WasAltHeld;
 var int V4CachedChargeData;
 var bool bV4PendingAltHeld;
 var bool bV4PendingAltTap;
+// Stock ForceFire parity (bJustFired): a tap that lands inside the post-fire
+// cooldown banks here and replays as a force edge on the first free slice.
+var bool bV4CooldownFireTap;
+var bool bV4CooldownAltTap;
 
 // Client ammo consumption reconstruction logic
 var int V4ClientConsumedAmmo;
@@ -161,6 +165,8 @@ simulated function V4ResetAltCycle(optional bool bClearHeld) {
 simulated function V4ClearPendingAltInput() {
 	bV4PendingAltHeld = false;
 	bV4PendingAltTap = false;
+	bV4CooldownFireTap = false;
+	bV4CooldownAltTap = false;
 }
 
 // Preserve an honest AltFire tap that reaches the server after the bring-up
@@ -449,6 +455,8 @@ simulated function V4CancelDeterministicLoad(bool bServerSide, optional int Move
 	V4CachedChargeData = 0;
 	ClientRocketsLoaded = 0;
 	bClientDone = false;
+	bV4CooldownFireTap = false;
+	bV4CooldownAltTap = false;
 	bRotated = false;
 	bForceFire = false;
 	bForceAltFire = false;
@@ -665,8 +673,30 @@ simulated function bool V4ProcessInputSlice(
 	else
 		bMoveInstant = bInstantRocket;
 
-	if (V4CooldownRemaining > 0.0001)
+	if (V4CooldownRemaining > 0.0001) {
+		// Bank taps like stock's reload-state ForceFire latch instead of
+		// swallowing the slice: master fired banked taps at reload-end, so
+		// continuous tapping reached the full interval rate. Primary press
+		// supersedes a banked alt, matching stock precedence.
+		if (bFireHeld || bForceFire) {
+			bV4CooldownFireTap = true;
+			bV4CooldownAltTap = false;
+		} else if (bAltHeld || bForceAlt)
+			bV4CooldownAltTap = true;
 		return true;
+	}
+
+	// Replay a banked tap as a force edge; the rising edge starts the cycle
+	// and, with the button already released, the next slice's falling edge
+	// fires the single rocket/grenade — reload-end timing, like stock.
+	if (bV4CooldownFireTap) {
+		bV4CooldownFireTap = false;
+		bV4CooldownAltTap = false;
+		bForceFire = true;
+	} else if (bV4CooldownAltTap) {
+		bV4CooldownAltTap = false;
+		bForceAlt = true;
+	}
 
 		if (AmmoType == none || AmmoType.AmmoAmount <= 0) {
 			if (!bV4WasFireHeld && !bV4WasAltHeld) {
