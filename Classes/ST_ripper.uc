@@ -110,6 +110,11 @@ simulated function bool V4ProcessInputSlice(
 	bAlt = FireMode == 2;
 
 	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+		// Fire-anim length from stock mesh data; see bbPlayer.IGPlus_V4NoteShot.
+		if (bAlt)
+			BP.IGPlus_V4NoteShot(StepTS, 0.72);
+		else
+			BP.IGPlus_V4NoteShot(StepTS, 0.41);
 		if (bServerSide)
 			HandleV4ServerFire(bAlt, StepView, StepLoc);
 		else

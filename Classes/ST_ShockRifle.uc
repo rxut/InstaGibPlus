@@ -101,6 +101,13 @@ simulated function bool V4ProcessInputSlice(
 	bAlt = FireMode == 2;
 
 	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
+		// Fire-anim length from stock mesh data; see bbPlayer.IGPlus_V4NoteShot.
+		// Primary is capped at 0.5: legacy IG+ NormalFire ran a 0.5s fallback
+		// timer that always beat the 0.71s Fire1 anim, so 0.5 is the old feel.
+		if (bAlt)
+			BP.IGPlus_V4NoteShot(StepTS, 0.52);
+		else
+			BP.IGPlus_V4NoteShot(StepTS, 0.50);
 		if (bServerSide)
 			HandleV4ServerFire(bAlt, StepView, StepLoc);
 		else

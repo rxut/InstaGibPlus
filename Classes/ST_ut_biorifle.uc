@@ -177,8 +177,10 @@ simulated function bool V4ProcessInputSlice(
 			// Falling edge: alt released → fire charged glob
 			bV4WasAltHeld = false;
 			if (bServerSide) {
-				if (V4AltAmmoSpent > 0)
+				if (V4AltAmmoSpent > 0) {
+					bbPlayer(Owner).IGPlus_V4NoteShot(StepTS, 0.30);
 					HandleV4ServerAltFire(StepView, StepLoc, FMin(Clamp(V4AltAmmoSpent - 1, 0, 9) * 0.5, 4.1));
+				}
 				else
 					bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 				V4AltAmmoSpent = 0;
@@ -222,11 +224,13 @@ simulated function bool V4ProcessInputSlice(
 	if (bServerSide) {
 		if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 			AmmoType.UseAmmo(1);
+			bbPlayer(Owner).IGPlus_V4NoteShot(StepTS, 0.30);
 			HandleV4ServerFire(StepView, StepLoc);
 		} else {
 			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
 		}
 	} else {
+		bbPlayer(Owner).IGPlus_V4NoteShot(StepTS, 0.30);
 		HandleV4ClientFire(StepView, StepLoc);
 	}
 
