@@ -4069,9 +4069,11 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 	local WeaponSettingsRepl WS;
 	local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
+	local IGPlus_WeaponImplementationBase WImpBase;
+	local int RewindMs;
 
 	WS = GetWeaponSettings();
-	
+
 	bSProjBlocks = true;
 	if (WS != none)
 		bSProjBlocks = GetWeaponSettings().ShockProjectileBlockBullets;
@@ -4080,7 +4082,11 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 
 	if (WS != none && WS.bEnablePingCompensation && zzUTPure != None)
 	{
-		zzUTPure.CompensateFor(PingAverage, self);
+		RewindMs = PingAverage;
+		WImpBase = IGPlus_GetWeaponImplementationBase();
+		if (WImpBase != None)
+			RewindMs = int(WImpBase.IGPlus_GetHitscanRewindMs(self));
+		zzUTPure.CompensateFor(RewindMs, self);
 		
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {	
 			if (A == self) {
