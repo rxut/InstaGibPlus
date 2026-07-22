@@ -70,7 +70,9 @@ simulated function bool V4OwnerInstantEnabled() {
 
 simulated function bool V4ShouldBypassLegacyClientInput() {
 	bInstantRocket = V4OwnerInstantEnabled();
-	return UsesServerMoveV4();
+	// Client prediction runs whenever the deterministic system is active,
+	// on both the v4 and fallback transports — legacy input must stand down.
+	return IsV4Active();
 }
 
 function V4ClearPendingServerFireState() {
@@ -402,13 +404,11 @@ simulated function bool IsV4Active() {
 	return true;
 }
 
+// True only when the v4 move transport carries weapon data (edge timelines,
+// shot packs). Currently off: movement rides the proven v3 ServerMove and the
+// deterministic weapons run whole-move dispatch, so packs have no carrier.
 simulated function bool UsesServerMoveV4() {
-	if (!IsV4Active())
-		return false;
-
-	// Deterministic Eightball authority must stay active for both
-	// ServerMove_v4 and input-replication transport modes.
-	return int(Level.ServerMoveVersion) >= 4;
+	return false;
 }
 
 simulated function bool V4HasSwitchAwayRequest() {
@@ -422,6 +422,12 @@ simulated function bool V4HasCommittedPrimary() {
 simulated function V4CancelDeterministicLoad(bool bServerSide, optional int MoveChargeData) {
 	local int CancelCount;
 	local bbPlayer bbP;
+	local bool bHadCommittedState;
+
+	// A settlement with nothing committed has nothing to charge or refund;
+	// skip the reliable refund RPC that would otherwise fire on every switch.
+	bHadCommittedState = bV4PrimaryCycleActive || bV4WasFireHeld || bV4WasAltHeld
+		|| V4CachedChargeData > 0 || ClientRocketsLoaded > 0;
 
 	if (bServerSide && AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bV4PrimaryCycleActive || bV4WasFireHeld) {
@@ -450,7 +456,7 @@ simulated function V4CancelDeterministicLoad(bool bServerSide, optional int Move
 	V4ResetAltCycle(true);
 	V4ClearPendingAltInput();
 	bV4SwitchSettlementPending = false;
-	if (bServerSide && AmmoType != none) {
+	if (bServerSide && AmmoType != none && bHadCommittedState) {
 		bbP = bbPlayer(Owner);
 		if (bbP != none)
 			bbP.IGPlus_ClientEightballAmmoRefund(self, AmmoType.AmmoAmount);
@@ -605,11 +611,16 @@ simulated function bool V4ProcessInputSlice(
 
 	V4AdvanceStepClock(StepTS);
 
+	// Predicted steps were recorded before the client committed to the switch
+	// (det-ready stamping stops the moment ClientPending is set), so they must
+	// keep a live cycle alive: the release edge right behind them fires the
+	// volley the client already predicted. Only unpredicted steps — or a fresh
+	// force tap — prove the player is still holding through the switch.
 	if (V4HasSwitchAwayRequest()
-		&& (bV4WasAltHeld || bAltHeld || IsInState('ClientAltFiring')
+		&& (IsInState('ClientAltFiring')
 			|| bV4PendingAltHeld || bV4PendingAltTap
-			|| (V4HasCommittedPrimary()
-				&& (!bClientPredictedStep || bFireHeld || bForceFire)))) {
+			|| ((bV4WasAltHeld || bAltHeld || V4HasCommittedPrimary())
+				&& (!bClientPredictedStep || bForceFire || bForceAlt)))) {
 		V4CancelDeterministicLoad(bServerSide, V4ChargeData);
 		return true;
 	}
@@ -1095,16 +1106,16 @@ function Finish()
 
 function Fire( float Value )
 {
-	if (UsesServerMoveV4()) {
+	if (IsV4Active()) {
 		return;
 	}
-		
+
 	Super.Fire(Value);
 }
 
 function AltFire( float Value )
 {
-	if (UsesServerMoveV4()) {
+	if (IsV4Active()) {
 		return;
 	}
 
@@ -1298,7 +1309,7 @@ state FireRockets
 			V4ResetFireRocketsState();
 			return;
 		}
-			
+
 		PawnOwner = Pawn(Owner);
 		if (PawnOwner == None)
 		{
@@ -1541,7 +1552,7 @@ Begin:
 	PlayPostSelect();
 	FinishAnim();
 	bCanClientFire = true;
-	if (UsesServerMoveV4() && (Pawn(Owner).bFire != 0 || Pawn(Owner).bAltFire != 0)) {
+	if (IsV4Active() && (Pawn(Owner).bFire != 0 || Pawn(Owner).bAltFire != 0)) {
 		// Suppress eager auto-fire when weapon comes up deterministic style
 		GotoState('Idle');
 	} else {
@@ -1592,7 +1603,7 @@ state Idle
 	}
 
 Begin:
-	if (UsesServerMoveV4()) {
+	if (IsV4Active()) {
 		if (Pawn(Owner) != none && Pawn(Owner).bFire != 0) bPointing = true;
 		if (Pawn(Owner) != none && Pawn(Owner).bAltFire != 0) bPointing = true;
 	} else {
@@ -1639,7 +1650,7 @@ simulated function PlaySelect() {
 simulated function TweenDown() {
 	local float TweenTime;
 
-	if (Role < ROLE_Authority || !UsesServerMoveV4())
+	if (Role < ROLE_Authority || !IsV4Active())
 		V4ResetPrimaryCycle(true);
 	TweenTime = 0.05;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
@@ -1959,7 +1970,10 @@ state DownWeapon
 {
 	function BeginState()
 	{
-		if (Role == ROLE_Authority && UsesServerMoveV4())
+		// Authority guard, not transport: the deterministic cycle must survive
+		// the switch on the fallback (v3) transport too, or in-flight releases
+		// find no committed cycle and the volley is lost/undercounted.
+		if (Role == ROLE_Authority && IsV4Active())
 			bV4SwitchSettlementPending = true;
 		else
 			V4ResetPrimaryCycle(true);
