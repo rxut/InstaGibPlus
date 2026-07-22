@@ -5562,6 +5562,12 @@ simulated function IGPlus_V4NoteShot(float TS, float FireAnimTime) {
 simulated function bool IGPlus_V4SwitchDeferActive() {
 	local float NowTS;
 
+	// Fast weapon switch force-completes switches in move processing and has
+	// never waited for fire states in any era — the holster deferral is a
+	// non-FWS (slow-path) behavior only. Without this, the deferral's client
+	// guard would delay post-fire switch fire on FWS servers.
+	if (IGPlus_UseFastWeaponSwitch)
+		return false;
 	if (!IGPlus_IsV4ActiveWeapon(Weapon))
 		return false;
 	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone)
