@@ -74,6 +74,13 @@ var float zzGrappleTime;
 var float LastFireTimeStamp;
 var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
+var Weapon IGPlus_V4ClientPendingSeen;
+var Weapon IGPlus_V4ClientWeaponSeen;
+var float IGPlus_V4PendingFireTapTS;
+var float IGPlus_V4LastShotTS;
+var float IGPlus_V4HolsterHoldUntilTS;
+var float IGPlus_V4PendingStuckSince;
+var float IGPlus_V4LastWedgeDumpTS;
 // Server-side v4 binding invariants: weapon switched away from (grace window
 // for in-flight steps, move-timestamp domain) and the last move's held state
 // (fire continuity when switching to a weapon the v4 path does not drive).
@@ -603,6 +610,7 @@ replication
 		xxClientSwJumpPad,
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
+		xxClientSwitchPending,
 		xxSetTeleRadius,
 		xxSetTimes,
 		FRandValues,
@@ -2472,6 +2480,19 @@ function TakeFallingDamage()
 		MakeNoise(0.35);
 }
 
+// The switch execs run server-side only and PendingWeapon never replicates,
+// so during a deferred holster the client's sole switch notification (stock
+// ClientPutDown from DownWeapon.BeginState) arrives after the deferral —
+// leaving the client predicting fire from a weapon the server is holstering.
+// Tell the owning client immediately: block prediction until the flip-gate
+// takes over.
+simulated function xxClientSwitchPending(Weapon PendW, float GuardSecs) {
+	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone)
+		return;
+	ClientPending = PendW;
+	IGPlus_MarkDeterministicSwitchGuard(GuardSecs);
+}
+
 function xxSetPendingWeapon(Weapon W)
 {
 	PendingWeapon = W;
@@ -2740,7 +2761,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bAltFired;
 	local bool bForceAltFire;
 
-	local bool bDetFallback;
+	local bool bDetWholeMove;
 	local IGPlus_WeaponImplementationBase WImpBase;
 	local bool bV4WeaponSupported;
 	local bool bV4WeaponIsEightball;
@@ -2925,6 +2946,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	SetRotation(Rot);
 
 	IGPlus_V4TrackPendingWeapon(CurrentTimeStamp);
+	IGPlus_V4CheckSwitchWedge();
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// bDetReady marks client-predicted steps; trust is the binding/window gates.
@@ -3007,9 +3029,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_LastAltEndHeld = bV4AltEndHeld;
 
 	// Whole-move dispatch for transports without input-slice data (v3 moves).
-	bDetFallback = !bV4WeaponSupported && V4Weapon != none;
+	bDetWholeMove = !bV4WeaponSupported && V4Weapon != none;
 
-	if (bDetFallback) {
+	if (bDetWholeMove) {
 			IGPlus_V4ProcessWeaponInputSlice(
 				V4Weapon,
 				SM.TimeStamp,
@@ -3174,7 +3196,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 					}
 				}
 
-			if (!bV4HandledStep && MoveIndex == FireIndex && !bDetFallback) {
+			if (!bV4HandledStep && MoveIndex == FireIndex && !bDetWholeMove) {
 				if (bV4BlockLegacyFire) {
 					bFire = 0;
 				} else {
@@ -3190,7 +3212,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				}
 			}
 
-				if (!bV4HandledStep && MoveIndex == AltFireIndex && !bDetFallback) {
+				if (!bV4HandledStep && MoveIndex == AltFireIndex && !bDetWholeMove) {
 					if (bV4BlockLegacyFire) {
 						bAltFire = 0;
 					} else {
@@ -5149,6 +5171,9 @@ function IGPlus_V4ClearSwitchTrustState() {
 	IGPlus_V4PendingSeenTS = 0;
 	IGPlus_LastFireEndHeld = false;
 	IGPlus_LastAltEndHeld = false;
+	IGPlus_V4PendingFireTapTS = 0.0;
+	IGPlus_V4LastShotTS = 0.0;
+	IGPlus_V4HolsterHoldUntilTS = 0.0;
 
 	for (Item = Inventory; Item != none; Item = Item.Inventory) {
 		if (ST_ShockRifle(Item) != none)
@@ -5337,6 +5362,8 @@ simulated function bool IGPlus_V4ProcessWeaponInputSlice(
 	// Closed window: no fire intent; switched-away charge weapons get one
 	// no-input step to settle an in-flight load.
 	if (bServerSide && !IGPlus_V4FireWindowOpen(W, StepTS)) {
+		if (bForceFire)
+			IGPlus_V4LatchFireTap(StepTS);
 		EB = ST_UT_Eightball(W);
 		if (EB != none && EB.V4HasSwitchAwayRequest())
 			return EB.V4ProcessInputSlice(
@@ -5362,6 +5389,17 @@ simulated function bool IGPlus_V4ProcessWeaponInputSlice(
 
 		// Other pending fire intent remains untrusted until actual equip.
 		bClientPredictedStep = false;
+	}
+
+	// Queue a tap that arrives on an untrusted step (select anim in progress);
+	// replay a queued tap once the equipped weapon sees a trusted step.
+	if (bServerSide) {
+		if (!bClientPredictedStep) {
+			if (bForceFire)
+				IGPlus_V4LatchFireTap(StepTS);
+		} else if (W == Weapon && IGPlus_V4ConsumePendingFireTap(StepTS)) {
+			bForceFire = true;
+		}
 	}
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
@@ -5449,6 +5487,107 @@ simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred
 	if (IGPlus_V4SupportsWeapon(Preferred))
 		return Preferred;
 	return none;
+}
+
+// Mirror the server's "toggling is never free" bring-up rule on the client,
+// scoped to the one deceptive case: ClientPending set to the weapon that is
+// still equipped (an A-B-A toggle faster than Weapon replication). Readiness
+// already blocks all other transitions via ClientPending != Weapon, so plain
+// switches gain no extra delay from this guard.
+simulated function IGPlus_V4TrackClientPendingSwitch() {
+	// Client mirror of the server's bring-up entry gate: fresh-fire prediction
+	// must not start earlier after an equip than the server will accept
+	// (0.12s fast switch / 0.25s normal). Without this, the non-fast-switch
+	// path predicts rockets inside the server's closed window and they vanish.
+	if (Weapon != IGPlus_V4ClientWeaponSeen) {
+		IGPlus_MarkDeterministicSwitchGuard(IGPlus_V4EntryGateSeconds());
+		IGPlus_V4ClientWeaponSeen = Weapon;
+	}
+	if (PendingWeapon != none && Weapon != none && !Weapon.bChangeWeapon
+		&& !Weapon.IsInState('DownWeapon') && !IGPlus_V4SwitchDeferActive())
+		Weapon.PutDown();
+	if (ClientPending == IGPlus_V4ClientPendingSeen)
+		return;
+	if (ClientPending != none && ClientPending == Weapon)
+		IGPlus_MarkDeterministicSwitchGuard();
+	IGPlus_V4ClientPendingSeen = ClientPending;
+}
+
+// Watchdog for pending switches: completes holsters deferred past the
+// fire-anim window, and self-heals a weapon stranded outside its state
+// machine (which could never honor bChangeWeapon and would otherwise hang
+// the switch until death). Runs once per received move.
+function IGPlus_V4CheckSwitchWedge() {
+	if (PendingWeapon == none) {
+		IGPlus_V4PendingStuckSince = 0.0;
+		return;
+	}
+	// Complete a holster that was deferred for the fire-anim window.
+	if (Weapon != none && !Weapon.bChangeWeapon
+		&& !Weapon.IsInState('DownWeapon') && !IGPlus_V4SwitchDeferActive())
+		Weapon.PutDown();
+	if (IGPlus_V4PendingStuckSince <= 0.0) {
+		IGPlus_V4PendingStuckSince = Level.TimeSeconds;
+		return;
+	}
+	if (Weapon == none || TournamentWeapon(Weapon) == none
+		|| Level.TimeSeconds - IGPlus_V4PendingStuckSince < 1.0
+		|| Level.TimeSeconds - IGPlus_V4LastWedgeDumpTS < 1.0)
+		return;
+
+	IGPlus_V4LastWedgeDumpTS = Level.TimeSeconds;
+
+	// Self-heal: a weapon stranded outside its state machine (state '') can
+	// never honor bChangeWeapon, so the pending switch would hang until death.
+	// Re-enter the machine at DownWeapon; its Begin completes the switch.
+	if (!Weapon.IsInState('DownWeapon')) {
+		Log("[EB-WEDGE] recover: forcing "$Weapon.Name$" ("$Weapon.GetStateName()
+			$") to DownWeapon for pending "$PendingWeapon.Name);
+		Weapon.bChangeWeapon = true;
+		Weapon.GotoState('DownWeapon');
+	}
+}
+
+// Stock holster parity: a weapon cannot start going down while its fire
+// animation still plays. Stock's global PutDown latches bChangeWeapon and the
+// fire state's AnimEnd completes the switch, so the wait equals the fire-anim
+// remainder. FireAnimTime per weapon is derived from the stock mesh sequences
+// (tween 0.05 + (frames-1)/(seqRate*playRate), FireAdjust=1). The Eightball
+// already defers via its FireRockets state; this covers the interval weapons.
+simulated function IGPlus_V4NoteShot(float TS, float FireAnimTime) {
+	IGPlus_V4LastShotTS = TS;
+	IGPlus_V4HolsterHoldUntilTS = TS + FireAnimTime;
+}
+
+simulated function bool IGPlus_V4SwitchDeferActive() {
+	local float NowTS;
+
+	if (!IGPlus_IsV4ActiveWeapon(Weapon))
+		return false;
+	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone)
+		NowTS = CurrentTimeStamp;
+	else
+		NowTS = Level.TimeSeconds;
+	return NowTS >= IGPlus_V4LastShotTS
+		&& NowTS < IGPlus_V4HolsterHoldUntilTS;
+}
+
+// Stock ForceFire parity for deterministic weapons: a fire tap that lands
+// while the weapon is not ready (select anim, bring-up gate) is queued and
+// replayed as a force tap on the first accepted step, instead of being
+// silently dropped. One slot, short expiry — matches bJustFired semantics.
+simulated function IGPlus_V4LatchFireTap(float NowTS) {
+	IGPlus_V4PendingFireTapTS = NowTS;
+}
+
+simulated function bool IGPlus_V4ConsumePendingFireTap(float NowTS) {
+	local float TapTS;
+
+	TapTS = IGPlus_V4PendingFireTapTS;
+	if (TapTS <= 0.0)
+		return false;
+	IGPlus_V4PendingFireTapTS = 0.0;
+	return NowTS - TapTS <= 0.8;
 }
 
 simulated function IGPlus_MarkDeterministicSwitchGuard(optional float GuardSeconds) {
@@ -5609,8 +5748,8 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 
 	PendMove.TimeStamp = Level.TimeSeconds;
 	PendMove.IGPlus_MergeCount += 1;
-	PendMove.bUseServerMoveV4 = PendMove.bUseServerMoveV4
-		|| ((IGPlus_EnableInputReplication == false) && (int(Level.ServerMoveVersion) >= 4));
+	// v4 move transport disabled: movement rides the proven v3 ServerMove;
+	// deterministic weapons run whole-move dispatch server-side.
 
 	TotalTime = PendMove.Delta + DeltaTime;
 	if (TotalTime != 0)
@@ -5704,10 +5843,13 @@ function IGPlus_ReplicateInput(float Delta) {
 	local vector NewOffset, TargetLoc;
 	local ReplBuffer B;
 	local int i;
+	local bool bPredForceFire;
 
 	// Shot markers belong only to ServerMove_v4; never carry them across a
 	// transport-mode change into a later movement epoch.
 	IGPlus_PruneEightballShotQueue(true);
+
+	IGPlus_V4TrackClientPendingSwitch();
 
 	// Higor: process smooth adjustment.
 	if (VSize(IGPlus_AdjustLocationOffset) > 0) {
@@ -5746,32 +5888,39 @@ function IGPlus_ReplicateInput(float Delta) {
 	// against unsent slices and mid-batch switches.
 		if (ReferenceInput != none) {
 			for (SerializedInput = ReferenceInput.Next; SerializedInput != none; SerializedInput = SerializedInput.Next) {
-				if (!SerializedInput.bDetPredictedLocal && SerializedInput.bDetReady) {
+				if (!SerializedInput.bDetPredictedLocal) {
+					if (SerializedInput.bDetReady) {
 						if (SerializedInput.V4WeaponIndex != IGPLUS_V4WEAPON_None)
 							V4Weapon = IGPlus_V4WeaponByIndex(SerializedInput.V4WeaponIndex);
-					else
-						V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
-					if (V4Weapon != none) {
-						IGPlus_V4ProcessWeaponInputSlice(
-							V4Weapon,
-							SerializedInput.TimeStamp,
-							SerializedInput.SavedViewRotation,
-							SerializedInput.SavedLocation,
-						SerializedInput.bFire,
-						SerializedInput.bAFir,
-							SerializedInput.bForceFireTap,
+						else
+							V4Weapon = IGPlus_FindV4SupportedWeapon(Weapon);
+						if (V4Weapon != none) {
+							bPredForceFire = SerializedInput.bForceFireTap
+								|| IGPlus_V4ConsumePendingFireTap(SerializedInput.TimeStamp);
+							IGPlus_V4ProcessWeaponInputSlice(
+								V4Weapon,
+								SerializedInput.TimeStamp,
+								SerializedInput.SavedViewRotation,
+								SerializedInput.SavedLocation,
+								SerializedInput.bFire,
+								SerializedInput.bAFir,
+								bPredForceFire,
 								SerializedInput.bForceAltTap,
-							false,
-							SerializedInput.bDetReady,
-							SerializedInput.V4ChargeData,
-							IGPlus_IsV4WeaponIndexEightball(SerializedInput.V4WeaponIndex),
-							SerializedInput.bV4EightballInstant
-						);
+								false,
+								SerializedInput.bDetReady,
+								SerializedInput.V4ChargeData,
+								IGPlus_IsV4WeaponIndexEightball(SerializedInput.V4WeaponIndex),
+								SerializedInput.bV4EightballInstant
+							);
+						}
+					} else if (SerializedInput.bForceFireTap) {
+						// Tap on a not-ready input frame: queue for first ready frame.
+						IGPlus_V4LatchFireTap(SerializedInput.TimeStamp);
+					}
 				}
+				SerializedInput.bDetPredictedLocal = true;
 			}
-			SerializedInput.bDetPredictedLocal = true;
 		}
-	}
 
 	if (IGPlus_InputReplicationBuffer.NumBits > 0) {
 		for (i = 0; i < arraycount(B.Data); i++)
@@ -5841,15 +5990,16 @@ function xxReplicateMove(
 		debugPlayerLocation = Location;
 	}
 
-	// Predict per slice, gated on readiness only — a ServerMoveVersion gate
-	// here kills client effects on v3 servers (input-rep predicts per node).
+	// Predict per slice, gated on readiness only (input-rep predicts per node).
 	if (IGPlus_EnableInputReplication == false) {
+		IGPlus_V4TrackClientPendingSwitch();
 		V4LocalWeapon = IGPlus_FindV4SupportedWeapon(Weapon);
 		if (V4LocalWeapon != none && IGPlus_V4IsWeaponReady(V4LocalWeapon)) {
 			bLocalEightball = ST_UT_Eightball(V4LocalWeapon) != none;
 			bMoveFireHeld = (bFire != 0);
 			bMoveAltHeld = (bAltFire != 0);
-			bForceFireTap = bJustFired;
+			bForceFireTap = bJustFired
+				|| IGPlus_V4ConsumePendingFireTap(Level.TimeSeconds);
 			bForceAltTap = bJustAltFired;
 			IGPlus_V4ProcessWeaponInputSlice(
 				V4LocalWeapon,
@@ -5866,6 +6016,12 @@ function xxReplicateMove(
 				bLocalEightball,
 				IGPlus_IsEightballInstantMode(Weapon)
 			);
+		} else if (bJustFired
+			&& (V4LocalWeapon != none
+				|| IGPlus_V4SupportsWeapon(PendingWeapon)
+				|| IGPlus_V4SupportsWeapon(ClientPending))) {
+			// Tap during select/bring-up: queue for the first ready frame.
+			IGPlus_V4LatchFireTap(Level.TimeSeconds);
 		}
 	}
 
@@ -5909,7 +6065,7 @@ function xxReplicateMove(
 		// Set this move's data.
 		NewMove.TimeStamp = Level.TimeSeconds;
 		NewMove.IGPlus_SavedViewRotationStart = ViewRotation;
-		NewMove.bUseServerMoveV4 = (IGPlus_EnableInputReplication == false) && (int(Level.ServerMoveVersion) >= 4);
+		NewMove.bUseServerMoveV4 = false; // movement stays on v3 ServerMove
 
 		NewMove.SavedDodging = bDodging;
 		NewMove.DodgeMove = DodgeMove;
@@ -12323,7 +12479,11 @@ exec function GetWeapon(class<Weapon> NewWeaponClass )
 			if (Weapon != None)
 			{
 				IGPlus_MarkDeterministicSwitchGuard();
-				Weapon.PutDown();
+				if (IGPlus_V4SwitchDeferActive())
+					xxClientSwitchPending(PendingWeapon,
+						IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+				else
+					Weapon.PutDown();
 			}
 			return;
 		}
@@ -12356,8 +12516,13 @@ exec function SwitchWeapon(byte F)
 	} else if ( Weapon != newWeapon ) {
 		PendingWeapon = newWeapon;
 		IGPlus_MarkDeterministicSwitchGuard();
-		if ( Weapon != None && !Weapon.PutDown() )
-			PendingWeapon = None;
+		if ( Weapon != None ) {
+			if (IGPlus_V4SwitchDeferActive())
+				xxClientSwitchPending(PendingWeapon,
+					IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+			else if (!Weapon.PutDown())
+				PendingWeapon = None;
+		}
 	}
 }
 
@@ -12438,7 +12603,11 @@ exec function PrevWeapon()
 		return;
 
 	IGPlus_MarkDeterministicSwitchGuard();
-	Weapon.PutDown();
+	if (IGPlus_V4SwitchDeferActive())
+		xxClientSwitchPending(PendingWeapon,
+			IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+	else
+		Weapon.PutDown();
 }
 
 exec function NextWeapon()
@@ -12519,7 +12688,11 @@ exec function NextWeapon()
 		return;
 
 	IGPlus_MarkDeterministicSwitchGuard();
-	Weapon.PutDown();
+	if (IGPlus_V4SwitchDeferActive())
+		xxClientSwitchPending(PendingWeapon,
+			IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+	else
+		Weapon.PutDown();
 }
 
 simulated function ChangedWeapon() {
