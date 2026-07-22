@@ -129,10 +129,16 @@ no-input settlement step required to release or cancel committed state.
 
 ## Transport deployment
 
-`UTPure` selects `ServerMoveVersion = 4` so edge timelines, interpolated
-input-slice views, and shot packs are active. Client fire gates must depend on
-readiness, never the transport version, because deterministic dispatch also
-supports the v3 fallback.
+Movement rides the stock v3 `xxServerMove`; deterministic weapons run
+whole-move dispatch (`bDetWholeMove`). The v4 slice transport (edge
+timelines, interpolated slice views, shot packs) is dormant behind
+`UsesServerMoveV4()` returning false — re-enable it there plus the two
+`bUseServerMoveV4` assignment sites in bbPlayer, after the slice-replay
+movement glitches get their own investigation. `Level.ServerMoveVersion`
+cannot carry the signal: the 469 engine owns that variable and resets
+script writes (clients always saw 3). No negotiation is needed anyway —
+both sides always run the same package. Client fire gates must depend on
+readiness, never the transport.
 
 Before broad deployment, test all supported 469 client revisions and a
 spectator. Spectators force version 0 locally and exercise engine movement

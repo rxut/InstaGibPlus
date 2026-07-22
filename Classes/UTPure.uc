@@ -162,10 +162,6 @@ function PostBeginPlay()
 	}
 	xxLog("#");
 
-	// v4 input-slice transport: clients send xxServerMove_v4 when >= 4 (default 3).
-	if (Level.NetMode != NM_Standalone)
-		Level.SetPropertyText("ServerMoveVersion", "4");
-
 	if (Settings.AdvertiseMsg == 0)
 		sTag = "[CSHP]";
 	else if (Settings.AdvertiseMsg == 1)
