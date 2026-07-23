@@ -155,7 +155,10 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	if (Affector != none)
 		Affector.FireEffect();
 
-	V4PlayFireAnim(bAlt);
+	// Mid-switch shot: no fire anim, or it hijacks the holster schedule
+	// (see ST_ShockRifle.HandleV4ServerFire).
+	if (!bChangeWeapon && !IsInState('DownWeapon'))
+		V4PlayFireAnim(bAlt);
 	SpawnServerRazorAt(bAlt, StepLoc, StepView, StepView);
 }
 

@@ -164,7 +164,10 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc) {
 	if (Affector != none)
 		Affector.FireEffect();
 
-	PlayFiring();
+	// Mid-switch shot: no fire anim, or it hijacks the holster schedule
+	// (see ST_ShockRifle.HandleV4ServerFire).
+	if (!bChangeWeapon && !IsInState('DownWeapon'))
+		PlayFiring();
 	DeterministicTraceFire(StepView, StepLoc);
 }
 

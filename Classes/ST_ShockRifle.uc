@@ -156,11 +156,17 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	if (Affector != none)
 		Affector.FireEffect();
 
+	// A mid-switch shot (in-flight allowance) must not play fire anims: they
+	// hijack DownWeapon's AnimEnd and restart the holster behind the fire
+	// anim, while the client's ClientDown tween proceeds — the resulting flip
+	// skew anchors the next weapon's fire cadence apart on the two sides.
 	if (bAlt) {
-		PlayAltFiring();
+		if (!bChangeWeapon && !IsInState('DownWeapon'))
+			PlayAltFiring();
 		DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
 	} else {
-		PlayFiring();
+		if (!bChangeWeapon && !IsInState('DownWeapon'))
+			PlayFiring();
 		DeterministicTraceFire(0.0, StepView, StepLoc);
 	}
 }

@@ -243,11 +243,15 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc) {
 	bPointing = true;
 
 	PlayerPawn(Owner).PlayRecoil(FiringSpeed);
-	V4PlayPrimaryFiringAnim();
+	// Mid-switch shot: no fire anim or state change, or the holster schedule
+	// is hijacked (see ST_ShockRifle.HandleV4ServerFire).
+	if (!bChangeWeapon && !IsInState('DownWeapon'))
+		V4PlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
 	IGPlus_V4ProjectileFire(ProjectileClass, StepLoc, StepView);
-	GoToState('NormalFire');
+	if (!bChangeWeapon && !IsInState('DownWeapon'))
+		GoToState('NormalFire');
 }
 
 function HandleV4ServerAltFire(rotator StepView, vector StepLoc, float CS) {
@@ -258,8 +262,12 @@ function HandleV4ServerAltFire(rotator StepView, vector StepLoc, float CS) {
 		Gel.DrawScale = 1.0 + 0.8 * CS;
 	if (Affector != none)
 		Affector.FireEffect();
-	PlayAltBurst();
-	GotoState('NormalFire');
+	// Mid-switch shot: no fire anim or state change, or the holster schedule
+	// is hijacked (see ST_ShockRifle.HandleV4ServerFire).
+	if (!bChangeWeapon && !IsInState('DownWeapon')) {
+		PlayAltBurst();
+		GotoState('NormalFire');
+	}
 }
 
 simulated function V4PlayPrimaryFiringAnim() {
