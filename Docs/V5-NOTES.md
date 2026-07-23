@@ -46,17 +46,13 @@ be client-vouched before `ChangedWeapon` equips it.
 
 `IGPlus_V4FireWindowOpen` decides when a valid binding may step:
 
-- bring-up is gated by the incoming weapon's real replicated `SelectTime`
+- bring-up is gated by the incoming weapon's replicated `SelectTime`
   (effective anim duration, speed-cap floored). The server computes the gate
   once in `ChangedWeapon` and replicates the exact timestamp to the owning
-  client (`xxClientV4EntryGate`), so both sides hold the same number instead
-  of re-deriving it from their own anim state machines. This removed the old
-  0.12/0.25 hardcoded floor, the client notice-time mirror (and its
-  trans-source exception), and the `SelectTime >= 0.25` config constraint —
-  admins may configure any select time and first-shot timing matches the
-  legacy anim-driven path exactly. The 0.12/0.25 values survive only as
-  `IGPlus_V4EntryGateSeconds`, the conservative fallback for the
-  pending-weapon pre-equip window and cancel re-arm;
+  client (`xxClientV4EntryGate`), so both sides hold the same number and any
+  configured select time is safe. `IGPlus_V4EntryGateSeconds` (0.12/0.25) is
+  the conservative fallback for the pending-weapon pre-equip window and
+  cancel re-arm;
 - starting a switch closes the equipped weapon after the in-flight allowance;
 - previous-weapon grace accepts only pre-switch timestamped steps; and
 - canceling a pending switch re-arms the equipped weapon's gate.

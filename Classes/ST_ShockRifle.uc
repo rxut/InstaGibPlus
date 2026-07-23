@@ -157,9 +157,8 @@ function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 		Affector.FireEffect();
 
 	// A mid-switch shot (in-flight allowance) must not play fire anims: they
-	// hijack DownWeapon's AnimEnd and restart the holster behind the fire
-	// anim, while the client's ClientDown tween proceeds — the resulting flip
-	// skew anchors the next weapon's fire cadence apart on the two sides.
+	// hijack DownWeapon's AnimEnd and restart the holster server-side only
+	// (the client's ClientDown tween is unaffected by its own shot).
 	if (bAlt) {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
 			PlayAltFiring();

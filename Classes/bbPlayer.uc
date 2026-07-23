@@ -5568,11 +5568,8 @@ simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred
 	return none;
 }
 
-// Client-side switch bookkeeping. The bring-up entry gate is no longer
-// re-derived here from observing the equip flip — the server replicates its
-// exact gate timestamp via xxClientV4EntryGate, which both removes the
-// move-tick of extra delay the local mirror added and closes the skew window
-// that made the mirror necessary (including the old trans-source exception).
+// Client-side switch bookkeeping. The bring-up entry gate is replicated
+// (xxClientV4EntryGate); the client does not re-derive it from the flip.
 simulated function IGPlus_V4TrackClientPendingSwitch() {
 	if (PendingWeapon != none && Weapon != none && !Weapon.bChangeWeapon
 		&& !Weapon.IsInState('DownWeapon') && !IGPlus_V4SwitchDeferActive())
