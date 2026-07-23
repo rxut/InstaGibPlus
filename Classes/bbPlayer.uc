@@ -14327,6 +14327,12 @@ exec function TraceInput() {
 }
 
 function ServerSetTraceInput(bool bEnable) {
+	// Server-side tracing writes ~7.5 MB/min per traced player; do not let
+	// an unprivileged client start it.
+	if (bAdmin == false) {
+		ClientMessage("Admin only");
+		return;
+	}
 	bTraceInput = bEnable;
 	if (IGPlus_InputLogFile != none) {
 		if (bEnable)
