@@ -75,7 +75,9 @@ var float LastFireTimeStamp;
 var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
 var Weapon IGPlus_V4ClientPendingSeen;
-var Weapon IGPlus_V4ClientWeaponSeen;
+// Bring-up entry gate replicated from the server (move-timestamp domain,
+// which is the client's own clock). Client prediction may not fire before it.
+var float IGPlus_V4ClientEntryGateTS;
 var float IGPlus_V4PendingFireTapTS;
 var float IGPlus_V4LastShotTS;
 var float IGPlus_V4HolsterHoldUntilTS;
@@ -612,6 +614,7 @@ replication
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
 		xxClientSwitchPending,
+		xxClientV4EntryGate,
 		xxSetTeleRadius,
 		xxSetTimes,
 		FRandValues,
@@ -5133,12 +5136,51 @@ simulated function bool IGPlus_V4SwitchAwayFrom(Weapon W) {
 	return W.IsInState('DownWeapon') || W.IsInState('ClientDown');
 }
 
-// Bring-up gate, honest-client floor: 0.12s fast-switch guard, else a
-// conservative fraction of any select anim.
+// Conservative fallback gate for paths without a replicated entry gate:
+// the pending-weapon pre-equip window and cancel re-arm.
 simulated function float IGPlus_V4EntryGateSeconds() {
 	if (IGPlus_UseFastWeaponSwitch)
 		return 0.12;
 	return 0.25;
+}
+
+// Anim playback speed is FMin(100, Default/Config), so the effective
+// duration is FMax(Config, Default/100); Config <= 0 plays at the speed cap.
+static final function float IGPlus_V4EffectiveAnimTime(float ConfigTime, float DefaultTime) {
+	if (ConfigTime <= 0.0)
+		return DefaultTime * 0.01;
+	return FMax(ConfigTime, DefaultTime * 0.01);
+}
+
+// Select duration of a v4 weapon from replicated config — the entry gate is
+// computed once server-side from this and replicated verbatim, so client and
+// server hold the same timestamp instead of re-deriving it from each side's
+// own anim state machine.
+simulated function float IGPlus_V4SelectTimeFor(Weapon W) {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == none)
+		return IGPlus_V4EntryGateSeconds();
+	if (ST_ShockRifle(W) != none)
+		return IGPlus_V4EffectiveAnimTime(WS.ShockSelectTime, WS.default.ShockSelectTime);
+	if (ST_ripper(W) != none)
+		return IGPlus_V4EffectiveAnimTime(WS.RipperSelectTime, WS.default.RipperSelectTime);
+	if (ST_UT_FlakCannon(W) != none)
+		return IGPlus_V4EffectiveAnimTime(WS.FlakSelectTime, WS.default.FlakSelectTime);
+	if (ST_ut_biorifle(W) != none)
+		return IGPlus_V4EffectiveAnimTime(WS.BioSelectTime, WS.default.BioSelectTime);
+	if (ST_UT_Eightball(W) != none)
+		return IGPlus_V4EffectiveAnimTime(WS.EightballSelectTime, WS.default.EightballSelectTime);
+	if (ST_SniperRifle(W) != none)
+		return IGPlus_V4EffectiveAnimTime(WS.SniperSelectTime, WS.default.SniperSelectTime);
+	return IGPlus_V4EntryGateSeconds();
+}
+
+// Server -> client: the authoritative bring-up entry gate for the weapon just
+// equipped. Reliable and ordered after the switch RPCs that precede it.
+function xxClientV4EntryGate(float GateTS) {
+	IGPlus_V4ClientEntryGateTS = FMax(IGPlus_V4ClientEntryGateTS, GateTS);
 }
 
 function IGPlus_V4FinalizeExpiredPrevWeapon(optional bool bForce) {
@@ -5213,8 +5255,10 @@ function IGPlus_V4TrackPendingWeapon(float NowTS) {
 		&& !(PendingWeapon == none && Weapon == PendingEightball))
 		PendingEightball.V4ClearPendingAltInput();
 	// Canceling a switch re-arms the bring-up; toggling is never free.
-	if (IGPlus_V4PendingSeen != none && PendingWeapon == none)
+	if (IGPlus_V4PendingSeen != none && PendingWeapon == none) {
 		IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, NowTS + IGPlus_V4EntryGateSeconds());
+		xxClientV4EntryGate(IGPlus_V4WeaponGateTS);
+	}
 	IGPlus_V4PendingSeen = PendingWeapon;
 	if (PendingWeapon != none && PendingWeapon != Weapon)
 		IGPlus_V4PendingSeenTS = NowTS;
@@ -5298,6 +5342,10 @@ simulated function bool IGPlus_V4IsWeaponReady(Weapon W) {
 
 	BP = bbPlayer(PawnOwner);
 	if (BP != none && BP.IGPlus_IsDeterministicSwitchGuardActive())
+		return false;
+	// Server-replicated bring-up gate (set only on owning clients; stays 0
+	// server-side, where FireWindowOpen enforces the same timestamp).
+	if (BP != none && BP.Level.TimeSeconds < BP.IGPlus_V4ClientEntryGateTS)
 		return false;
 
 	TP = TournamentPlayer(PawnOwner);
@@ -5510,29 +5558,12 @@ simulated function Weapon IGPlus_FindV4SupportedWeapon(optional Weapon Preferred
 	return none;
 }
 
-// Mirror the server's "toggling is never free" bring-up rule on the client,
-// scoped to the one deceptive case: ClientPending set to the weapon that is
-// still equipped (an A-B-A toggle faster than Weapon replication). Readiness
-// already blocks all other transitions via ClientPending != Weapon, so plain
-// switches gain no extra delay from this guard.
+// Client-side switch bookkeeping. The bring-up entry gate is no longer
+// re-derived here from observing the equip flip — the server replicates its
+// exact gate timestamp via xxClientV4EntryGate, which both removes the
+// move-tick of extra delay the local mirror added and closes the skew window
+// that made the mirror necessary (including the old trans-source exception).
 simulated function IGPlus_V4TrackClientPendingSwitch() {
-	// Client mirror of the server's bring-up entry gate: fresh-fire prediction
-	// must not start earlier after an equip than the server will accept
-	// (0.12s fast switch / 0.25s normal). Without this, the non-fast-switch
-	// path predicts rockets inside the server's closed window and they vanish.
-	if (Weapon != IGPlus_V4ClientWeaponSeen) {
-		// Trans-source equip on the slow path: the trans has no deterministic
-		// fire to guard, and the server's entry gate (anchored at the earlier
-		// server-side flip) expires by select-end anyway. This mirror arms a
-		// tick after the flip, so it alone overshoots select-end; skipping it
-		// restores the historic trans->weapon first-shot timing. Fast switch
-		// keeps the mirror: there the gate is a real floor, and dropping only
-		// the client half would let prediction outrun the server.
-		if (IGPlus_UseFastWeaponSwitch
-			|| Translocator(IGPlus_V4ClientWeaponSeen) == none)
-			IGPlus_MarkDeterministicSwitchGuard(IGPlus_V4EntryGateSeconds());
-		IGPlus_V4ClientWeaponSeen = Weapon;
-	}
 	if (PendingWeapon != none && Weapon != none && !Weapon.bChangeWeapon
 		&& !Weapon.IsInState('DownWeapon') && !IGPlus_V4SwitchDeferActive())
 		Weapon.PutDown();
@@ -12758,7 +12789,10 @@ simulated function ChangedWeapon() {
 	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone
 		&& RemoteRole == ROLE_AutonomousProxy) {
 		if (IGPlus_V4SupportsWeapon(Weapon)) {
-			IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, CurrentTimeStamp + IGPlus_V4EntryGateSeconds());
+			// Gate from the real select duration, not a floor; replicate the
+			// post-FMax value so the client holds the server's exact gate.
+			IGPlus_V4WeaponGateTS = FMax(IGPlus_V4WeaponGateTS, CurrentTimeStamp + IGPlus_V4SelectTimeFor(Weapon));
+			xxClientV4EntryGate(IGPlus_V4WeaponGateTS);
 		} else {
 			// v4 steps clear bFire/bAltFire; restore held state for legacy weapons.
 			bFire = byte(IGPlus_LastFireEndHeld);
