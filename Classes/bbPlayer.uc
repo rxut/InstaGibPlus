@@ -1424,6 +1424,7 @@ event Possess()
 	class'ClientSuperShockBeam'.static.Cleanup();
 
 	IGPlus_InputLogFile = Spawn(class'IGPlus_InputLogFile');
+	IGPlus_InputLogFile.PlayerRef = self;
 	if (Level.NetMode == NM_Client)
 		IGPlus_InputLogFile.LogId = "ClientInput";
 	else
@@ -2955,6 +2956,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	IGPlus_V4TrackPendingWeapon(CurrentTimeStamp);
 	IGPlus_V4CheckSwitchWedge();
+
+	// The v4 ServerMove transport bypasses ServerApplyInput, so trace here or
+	// server captures stay header-only on non-input-replication presets.
+	if (bTraceInput && IGPlus_InputLogFile != none)
+		IGPlus_InputLogFile.LogServerMove(SM);
 
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// bDetReady marks client-predicted steps; trust is the binding/window gates.
