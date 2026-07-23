@@ -2490,6 +2490,10 @@ function TakeFallingDamage()
 // leaving the client predicting fire from a weapon the server is holstering.
 // Tell the owning client immediately: block prediction until the flip-gate
 // takes over.
+// GuardSecs must cover only the holster hold plus the standard pulse.
+// ClientPending blocks readiness for the rest of the transition and the
+// replicated entry gate covers bring-up; a guard that outlasts the incoming
+// weapon's down+select over-gates its first shot past master timing.
 simulated function xxClientSwitchPending(Weapon PendW, float GuardSecs) {
 	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone)
 		return;
@@ -12555,7 +12559,7 @@ exec function GetWeapon(class<Weapon> NewWeaponClass )
 				IGPlus_MarkDeterministicSwitchGuard();
 				if (IGPlus_V4SwitchDeferActive())
 					xxClientSwitchPending(PendingWeapon,
-						IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+						IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.12);
 				else
 					Weapon.PutDown();
 			}
@@ -12593,7 +12597,7 @@ exec function SwitchWeapon(byte F)
 		if ( Weapon != None ) {
 			if (IGPlus_V4SwitchDeferActive())
 				xxClientSwitchPending(PendingWeapon,
-					IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+					IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.12);
 			else if (!Weapon.PutDown())
 				PendingWeapon = None;
 		}
@@ -12679,7 +12683,7 @@ exec function PrevWeapon()
 	IGPlus_MarkDeterministicSwitchGuard();
 	if (IGPlus_V4SwitchDeferActive())
 		xxClientSwitchPending(PendingWeapon,
-			IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+			IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.12);
 	else
 		Weapon.PutDown();
 }
@@ -12764,7 +12768,7 @@ exec function NextWeapon()
 	IGPlus_MarkDeterministicSwitchGuard();
 	if (IGPlus_V4SwitchDeferActive())
 		xxClientSwitchPending(PendingWeapon,
-			IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.5);
+			IGPlus_V4HolsterHoldUntilTS - CurrentTimeStamp + 0.12);
 	else
 		Weapon.PutDown();
 }
