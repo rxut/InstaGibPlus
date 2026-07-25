@@ -1,4 +1,4 @@
-# ServerMove v4/v5 deterministic weapons
+# Deterministic weapons
 
 This document describes the current system. Development chronology belongs in
 Git history; the production contract, known policy choices, and release checks
@@ -8,17 +8,16 @@ live here.
 
 Supported ST_ weapons use one deterministic model on client and server:
 
-1. The client records physical fire/alt edges for each input slice.
-2. `xxServerMove_v4` carries the edge timeline, bound weapon, view data,
-   charge data, and optional Eightball shot pack.
-3. The client predicts each slice before movement and move merging.
-4. The server resolves the bound weapon and replays the same input slices.
-5. Fresh fire starts only on a client-predicted step. Non-hinted steps may
+1. The stock v3 `xxServerMove` carries the bound weapon, readiness bit, view,
+   and charge data in its existing bit fields.
+2. The client predicts the weapon step before movement and move merging.
+3. The server resolves the bound weapon and runs one whole-move weapon step
+   with the move's timestamp and view.
+4. Fresh fire starts only on a client-predicted step. Non-hinted steps may
    advance or settle an already committed cycle, but cannot start one.
 
-The whole-move path remains the fallback for v3 transport. Ping compensation
-off uses legacy weapon fire. NewNet client-authoritative weapons are a separate
-system.
+Ping compensation off uses legacy weapon fire. NewNet client-authoritative
+weapons are a separate system.
 
 Supported weapons are:
 
@@ -64,35 +63,31 @@ no-input settlement step required to release or cancel committed state.
 
 - Eightball release/cancel count is capped by server-observed load time. The
   client report may only lower it. Boundary slack is the larger of 60 ms and
-  the current input-slice delta.
+  the current move delta.
 - Bio charge is derived from server-observed hold time at stock 0.5-second
   cadence. Client charge data may only lower it.
 
 ## Recovery behavior
 
-- Edge state self-heals a lost release on the next move.
-- Fire-bearing v4 moves resend one complete packed timeline before the next
-  move, preserving the original binding, edges, aim, charge data, and shot pack.
-- After a movement gap, missing movement is advanced first and the received
-  move's input slices replay only across that move's packed duration.
-- Eightball shot packs carry sequence, charge, shot kind, and tight-spread state in `V4AuxData`
-  without replacing the carrying move's weapon/readiness data.
-- A pack on a move bound to another weapon runs deduplicated Eightball recovery
-  only inside the normal current/previous-weapon firing window.
-- Shot-producing Eightball edges flush immediately, and packs cannot attach to
-  a movement sample older than the predicted shot. The newest eligible marker
-  takes the shot-producing carrier; older unacknowledged markers retry later.
-- Rejected movement and rejected recovery do not mutate or acknowledge the
-  shot sequence; acknowledgement follows an authoritative shot only.
-- Old-move replay remains enabled on shot-pack moves.
+- Redundancy is the stock `OldMoveData` movement heuristic. A lost fire-bearing
+  move is lost, same as stock.
+- A fire tap sets `bForceFire`, and `CanMergeMove` refuses to merge a move that
+  carries one, so a tap always ends its move. Double-taps faster than one net
+  update still produce two moves.
+- Merging also splits on a deterministic-ready transition, so a switch during
+  fire spam cannot produce a client-only predicted shot.
 - Primary shot confirmation is reliable so client rocket/load visuals
   reconcile after a volley.
 - A rejected switch-race prediction receives a reliable, refund-only ammo
-  correction on the player channel; settlement also retires pre-switch markers.
-- A merged move contains at most one press and one release of each fire type;
-  another edge forces a packet split.
-- Input-slice timestamps end at the move timestamp, view interpolation reaches
-  both packed endpoints, and paired edges are not collapsed by legacy resampling.
+  correction on the player channel.
+
+### Known gap
+
+Releases do not force a packet split — `bJustFired` latches presses only. A
+bio/eightball release inside a merged move resolves at the move's end
+timestamp, bounded by move length. This is stock-parity, not a regression. If
+it ever matters, the fix is to set `bForcePacketSplit` on a release edge in
+`IGPlus_MergeMove`.
 
 ## Weapon behavior
 
@@ -132,18 +127,26 @@ no-input settlement step required to release or cancel committed state.
 - Shock/Flak interval constants intentionally remain as currently measured;
   change them only after an in-engine timestamp trace.
 
-## Transport deployment
+## Transport
 
-Movement rides the stock v3 `xxServerMove`; deterministic weapons run
-whole-move dispatch (`bDetWholeMove`). The v4 slice transport (edge
-timelines, interpolated slice views, shot packs) is dormant behind
-`UsesServerMoveV4()` returning false — re-enable it there plus the two
-`bUseServerMoveV4` assignment sites in bbPlayer, after the slice-replay
-movement glitches get their own investigation. `Level.ServerMoveVersion`
-cannot carry the signal: the 469 engine owns that variable and resets
-script writes (clients always saw 3). No negotiation is needed anyway —
-both sides always run the same package. Client fire gates must depend on
-readiness, never the transport.
+Movement and weapons both ride the stock v3 `xxServerMove`. Deterministic
+weapons run whole-move dispatch (`bDetWholeMove`): one weapon step per move,
+using the move's timestamp and end-of-move view.
+
+The sub-step slice transport (`xxServerMove_v4`, edge timelines, interpolated
+slice views, Eightball shot packs) was removed — it was permanently disabled,
+and enabling it re-plumbed the movement path (splitting each move into a
+catch-up sim plus slice replay, and skipping jitter bounding), which broke
+movement in testing. It bought sub-move aim precision and shot-pack loss
+recovery: an improvement over stock, not a fix for a regression. The code is
+on the `xxServerMove_v4` branch if it is ever revisited.
+
+If it is revisited, do not name it after a protocol version.
+`Level.ServerMoveVersion` cannot carry the signal — the 469 engine owns that
+variable and resets script writes, so clients always saw 3 — and no
+negotiation is needed anyway, since both sides always run the same package.
+
+Client fire gates must depend on readiness, never the transport.
 
 Before broad deployment, test all supported 469 client revisions and a
 spectator. Spectators force version 0 locally and exercise engine movement
@@ -158,8 +161,8 @@ protocol negotiation differently.
 - Spam A-B-A switching while holding fire; verify no holstered-weapon shots.
 - Load/release Eightball at every count; test tightwad, grenades, instant mode,
   switch cancel, and drop/pickup state reset.
-- Repeat Eightball tests with loss and a simulated lag spike; verify shot-pack
-  recovery, confirmation, and boundary counts.
+- Repeat Eightball tests with loss and a simulated lag spike; verify
+  confirmation and boundary counts.
 - Release a rocket volley, immediately switch, and fire the new weapon under
   loss; verify no misrouted edge or under-fired volley.
 - Charge/release Bio at every level, including full charge and out-of-ammo;
@@ -168,13 +171,14 @@ protocol negotiation differently.
   manual choice is not replaced by impact hammer.
 - Double-tap faster than one net update; both shots must register.
 - Exercise high-FPS/low-net-update flick shots and verify prediction matches
-  the server-replayed input-slice position and view.
+  the server-replayed position and view. Aim resolves at the end-of-move view,
+  same as stock.
 - Die holding fire, release while dead, and respawn; verify no phantom shot.
 - Drop each weapon mid-cycle and let another player pick it up; verify no
   inherited charge, cooldown, or held edge.
 - Disable ping compensation per weapon and globally; legacy fire must remain
   active.
-- Run the 469a-e client matrix plus a spectator on a version-4 server.
+- Run the 469a-e client matrix plus a spectator.
 
 ## Future automation
 

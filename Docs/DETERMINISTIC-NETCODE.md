@@ -1,8 +1,8 @@
 # Deterministic weapon netcode
 
 InstaGibPlus adds a new weapon networking system called **deterministic weapon
-netcode**. It uses **ServerMove v4** to keep the client and server on the same
-weapon timeline while preserving the fast feel of local prediction.
+netcode**. It keeps the client and server on the same weapon timeline while
+preserving the fast feel of local prediction.
 
 ## Why it is needed
 
@@ -42,32 +42,21 @@ in this system.
 
 ## How it works
 
-The client records weapon input in small slices alongside movement. It keeps
-not only whether fire is held at the end of an update, but also when primary or
-alt fire was pressed and released inside it.
-
-The client still combines movement slices to avoid sending a packet every
-frame. ServerMove v4 adds enough information to preserve the important weapon
-timeline:
+The movement update carries, alongside the usual movement data:
 
 - the weapon that owned the input;
-- fire and alt-fire edges;
-- the start and end view;
 - whether the weapon appeared ready;
-- and limited charge or recovery data when needed.
+- and limited charge data when needed.
 
 The client predicts the weapon step immediately, so firing and animations do
 not wait for a network round trip.
 
-When the update reaches the server, the server divides the combined movement
-back into the same input slices. It reconstructs the time and aim for each
-slice, advances movement in the same order, and runs the same weapon state
-machine.
+When the update reaches the server, the server resolves the bound weapon and
+runs the same weapon state machine for that update, using the update's
+timestamp and view.
 
-Fire-bearing updates also keep a complete redundant copy for the following
-movement packet. If the original packet is lost, the server can replay that
-input slice timeline before applying the newer move instead of guessing fire
-state from movement-only redundancy.
+The client still combines frames into one update to avoid sending a packet
+every frame, but a fire tap ends its update, so quick taps are not merged away.
 
 The server then performs the real shot. It spends authoritative ammo, creates
 gameplay projectiles, traces hits, and awards damage. Client-side projectiles
@@ -80,22 +69,14 @@ giving both sides a shared timeline.
 
 UT does not use a modern fixed weapon tick in the same way as Source. Here,
 being “in sync” means that the client and server advance weapon state for the
-same reconstructed input slice, with the same held input, aim, weapon,
-charge, and cooldown state.
+same movement update, with the same held input, aim, weapon, charge, and
+cooldown state.
 
-For example, imagine a player presses and releases Shock primary while turning
-during one combined movement update.
+Aim resolves at the update's view, the same as the base game. What changes is
+that both machines run the *same weapon rules* from the same bound weapon and
+the same timestamp, so they reach the same decision.
 
-In the base-style path, the server has less information about where those
-actions belonged inside the update. The shot may be evaluated from the end of
-the move, after the player has already turned.
-
-With ServerMove v4, the server knows where the press and release occurred. It
-reconstructs the matching input slice and interpolates the player's aim between
-the start and end of the move. The predicted client beam and authoritative
-server beam are therefore based on the same moment.
-
-This same ordering also matters for weapon switches. Input is tied to the
+Ordering also matters for weapon switches. Input is tied to the
 weapon that produced it. A late packet cannot freely turn an old press into a
 shot from the newly selected weapon. Short switch windows allow valid
 in-flight input while rejecting impossible early or holstered-weapon shots.
@@ -125,20 +106,17 @@ The server controls:
 - and all hits and damage.
 
 If prediction disagrees with the server, the server wins and replicated state
-corrects the client. Eightball also carries small recovery and confirmation
-data so a lost packet does not permanently desynchronize a resolved volley.
+corrects the client. Eightball carries confirmation data so client rocket and
+load visuals reconcile after a volley.
 
 ## Benefits over the base game
 
 - **More immediate firing:** local prediction does not wait for ping.
-- **More consistent aim:** shots use the reconstructed view and position from
-  the relevant movement step.
-- **Reliable quick input:** short presses and releases survive move merging.
+- **Reliable quick input:** a fire tap ends its update, so short presses survive
+  move merging.
 - **Safer switching:** input stays associated with the correct weapon.
 - **Consistent charging:** client visuals and server charge follow the same
   timed cycle.
-- **Better loss recovery:** important Eightball shot state can be confirmed and
-  resent.
 - **Server authority:** clients never decide hits, damage, or authoritative
   projectile state.
 - **Compatibility:** unsupported weapons or disabled ping compensation can
@@ -173,8 +151,7 @@ The deterministic model currently covers:
 - Bio Rifle; and
 - Eightball.
 
-It operates through ServerMove v4 or the input-replication path. When the
-required transport is unavailable, a reduced whole-move fallback can be used.
+It operates through the stock movement update or the input-replication path.
 When ping compensation is disabled, or a weapon is unsupported, legacy weapon
 handling remains available.
 

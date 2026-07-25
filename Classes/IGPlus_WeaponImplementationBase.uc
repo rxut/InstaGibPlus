@@ -1479,63 +1479,8 @@ simulated function Actor TraceShotClient(out vector HitLocation, out vector HitN
 	);
 }
 
-static simulated function int IGPlus_V4DecodeSigned16(int Value) {
-	return (Value << 16) >> 16;
-}
-
-static simulated function int IGPlus_V4YawDelta16(int StartYaw, int EndYaw) {
-	local int Delta;
-
-	Delta = (EndYaw & 0xFFFF) - (StartYaw & 0xFFFF);
-	if (Delta > 32767)
-		Delta -= 65536;
-	else if (Delta < -32768)
-		Delta += 65536;
-	return Delta;
-}
-
-static simulated function float IGPlus_V4ComputeSliceTimestamp(float MoveTS, float MoveDelta, int MoveIndex, int MergeCount) {
-	local float StartTS;
-	local float StepT;
-
-	if (MergeCount <= 0 || MoveDelta <= 0.0)
-		return MoveTS;
-
-	StartTS = MoveTS - MoveDelta;
-	StepT = FClamp(float(MoveIndex + 1) / float(MergeCount), 0.0, 1.0);
-	return StartTS + StepT * MoveDelta;
-}
-
-static simulated function rotator IGPlus_V4InterpolateSliceView(int ViewStartPacked, int ViewEndPacked, int MoveIndex, int MergeCount) {
-	local rotator R;
-	local float T;
-	local int StartPitch;
-	local int EndPitch;
-	local int StartYaw;
-	local int EndYaw;
-	local int PitchSigned;
-	local int YawUnwrapped;
-
-	StartPitch = IGPlus_V4DecodeSigned16((ViewStartPacked >>> 16) & 0xFFFF);
-	EndPitch = IGPlus_V4DecodeSigned16((ViewEndPacked >>> 16) & 0xFFFF);
-	StartYaw = ViewStartPacked & 0xFFFF;
-	EndYaw = ViewEndPacked & 0xFFFF;
-
-	if (MergeCount <= 1)
-		T = 1.0;
-	else
-		T = FClamp(float(MoveIndex) / float(MergeCount - 1), 0.0, 1.0);
-
-	PitchSigned = StartPitch + int(float(EndPitch - StartPitch) * T);
-	YawUnwrapped = StartYaw + int(float(IGPlus_V4YawDelta16(StartYaw, EndYaw)) * T);
-
-	R.Pitch = PitchSigned & 0xFFFF;
-	R.Yaw = YawUnwrapped & 0xFFFF;
-	R.Roll = 0;
-	return R;
-}
-
-// Quantize view to 16-bit to match ServerMove_v4 packed format.
+// Quantize view to the 16-bit precision the ServerMove packs, so client
+// prediction and the server replay start from the same aim.
 simulated function rotator IGPlus_V4QuantizeView(rotator InRot) {
 	local rotator Q;
 	local int PitchSigned;

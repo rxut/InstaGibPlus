@@ -110,29 +110,19 @@ function LogSavedMove(IGPlus_SavedMove M) {
 		"|"$M.IGPlus_SavedVelocity$
 		"|"$M.SavedDodging$
 		"|"$M.DodgeMove$
-		"|"$PawnCols(M.bDetReady,
-			M.V4WeaponIndex$","$M.V4FirePressIndex$","$M.V4FireReleaseIndex
-			$","$M.V4AltPressIndex$","$M.V4AltReleaseIndex);
+		"|"$PawnCols(M.bDetReady, ""$M.V4WeaponIndex);
 
 	FileLog(Row);
 }
 
-// v4 ServerMove transport rows (server side). Fire/AltFire show the packed
-// end-held bits; V4Data carries the raw flags word for offline edge decoding.
+// ServerMove rows (server side).
 function LogServerMove(IGPlus_ServerMove SM) {
-	local string RowType;
-
 	if (bStarted == false)
 		StartLog();
 
-	if (SM.bRedundantReplay)
-		RowType = "ServerMoveR";
-	else
-		RowType = "ServerMove";
-
-	FileLog(++Line$"|"$RowType$"|"$SM.TimeStamp$"|"$SM.MoveDeltaTime
+	FileLog(++Line$"|ServerMove|"$SM.TimeStamp$"|"$SM.MoveDeltaTime
 		$"||||||||"
-		$"|"$((SM.V4Flags & 0x2) != 0)$"|"$((SM.V4Flags & 0x8) != 0)$"||"
+		$"||||"
 		$"||"$SM.ClientLocation$"|"$SM.ClientVelocity$"|||"
-		$PawnCols(SM.bDetReady, SM.V4WeaponIndex$",f="$SM.V4Flags));
+		$PawnCols(SM.bDetReady, ""$SM.V4WeaponIndex));
 }

@@ -309,8 +309,6 @@ simulated function V4ApplyClientAmmoRefund(int ServerAmmo) {
 	// channel. Only refund missing ammo; never overwrite a newer pickup or shot.
 	RefundFloor = Max(0, ServerAmmo - V4ClientAmmoSpentSinceDown);
 	AmmoType.AmmoAmount = Max(AmmoType.AmmoAmount, RefundFloor);
-	if (bbPlayer(Owner) != none)
-		bbPlayer(Owner).IGPlus_PruneEightballShotQueueThrough(V4ClientLastDownTS);
 }
 
 simulated function int V4GetChargeDataForMove() {
@@ -413,10 +411,6 @@ simulated function bool IsV4Active() {
 // True only when the v4 move transport carries weapon data (edge timelines,
 // shot packs). Currently off: movement rides the proven v3 ServerMove and the
 // deterministic weapons run whole-move dispatch, so packs have no carrier.
-simulated function bool UsesServerMoveV4() {
-	return false;
-}
-
 simulated function bool V4HasSwitchAwayRequest() {
 	return bbPlayer(Owner) != none && bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self);
 }
@@ -873,109 +867,12 @@ simulated function bool V4ProcessInputSlice(
 	return true;
 }
 
-simulated function V4EmitClientAuthoritativeShot(int ShotKind, int NumRockets, optional bool bTight) {
-	local bbPlayer bbP;
-	local Pawn PawnOwner;
-
-	if (Role == ROLE_Authority)
-		return;
-	if (!UsesServerMoveV4())
-		return;
-
-	bbP = bbPlayer(Owner);
-	PawnOwner = Pawn(Owner);
-	if (bbP == none || PawnOwner == none || NumRockets <= 0)
-		return;
-	if (bbP.IGPlus_EnableInputReplication) {
-		bbP.IGPlus_PruneEightballShotQueue(true);
-		return;
-	}
-
-	bbP.IGPlus_QueueEightballAuthoritativeShot(
-		ShotKind,
-		Level.TimeSeconds,
-		Clamp(NumRockets, 1, 6),
-		bTight
-	);
-}
-
-function bool V4RecoverPackedShot(
-	int ShotKind,
-	float StepTS,
-	rotator StepView,
-	vector StepLoc,
-	int NumRockets,
-	optional bool bTight
-) {
-	local int ShotSerial;
-	local int RecoveredRockets;
-	local bool bHadAltCycle;
-
-	if (Role != ROLE_Authority || !UsesServerMoveV4())
-		return false;
-	if (AmmoType == none || AmmoType.AmmoAmount <= 0)
-		return false;
-
-	ShotSerial = V4ServerShotSerial;
-	if (ShotKind == IGPLUS_EB_SHOT_KIND_ALT) {
-		// bbPlayer already validated the normal current/previous fire window.
-		// Resolve the packed release directly so live switch-cancel input does
-		// not discard a release that was predicted before the switch.
-		V4AdvanceStepClock(StepTS);
-		if (V4CooldownRemaining > 0.0001)
-			return false;
-		bHadAltCycle = bV4WasAltHeld;
-		V4RefreshInternalBudget();
-		if (bHadAltCycle)
-			RecoveredRockets = V4CalculateCharge(V4AltLoadElapsed);
-		else
-			RecoveredRockets = 1;
-		RecoveredRockets = Min(RecoveredRockets, Clamp(NumRockets, 1, 6));
-		if (!bHadAltCycle)
-			V4PlayServerChargeSound(true);
-		else if (RecoveredRockets > V4CachedChargeData)
-			V4PlayServerChargeSound(false);
-		bV4WasAltHeld = false;
-		V4AltLoadElapsed = 0.0;
-		V4CachedChargeData = RecoveredRockets;
-		HandleV4ServerAltFire(StepView, StepLoc, RecoveredRockets);
-		if (V4ServerShotSerial != ShotSerial)
-			V4StartCooldown(V4PostFireInterval(RecoveredRockets));
-	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED) {
-		if (!V4HasCommittedPrimary())
-			V4ProcessInputSlice(
-				StepTS, StepView, StepLoc,
-				true, false, false, false,
-				true, true, 0, true, false);
-		if (bTight)
-			bV4PrimaryTightLatched = true;
-		if (V4HasCommittedPrimary())
-			V4ProcessInputSlice(
-				StepTS, StepView, StepLoc,
-				false, false, false, false,
-				true, true, NumRockets, true, false);
-	} else if (ShotKind == IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT) {
-		if (!V4OwnerInstantEnabled() || V4HasCommittedPrimary())
-			return false;
-		V4ProcessInputSlice(
-			StepTS, StepView, StepLoc,
-			true, false, false, false,
-			true, true, 1, true, true);
-	} else {
-		return false;
-	}
-
-	return V4ServerShotSerial != ShotSerial;
-}
-
 // Client-side instant rocket fire driven by V4ProcessInputSlice.
 // Plays the fire animation and spawns visual-only rockets, then the
 // ClientV4InstantFire state handles the reload anim before going idle.
 // V4ProcessInputSlice calls this again when the next cooldown expires.
 simulated function HandleV4ClientFire() {
 	local bbPlayer bbP;
-
-	V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT, 1);
 
 	V4ConsumeClientAmmo(1);
 
@@ -1010,11 +907,6 @@ simulated function HandleV4ClientLoadedFire(bool bAlt, int NumRockets, optional 
 		&& bRotated && NumRockets > ClientRocketsLoaded
 		&& Owner != None && Pawn(Owner) != None)
 		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
-
-	if (bAlt)
-		V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_ALT, NumRockets);
-	else
-		V4EmitClientAuthoritativeShot(IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED, NumRockets, bTight);
 
 	V4FinalizeClientLoadedAmmo(NumRockets);
 
