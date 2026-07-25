@@ -13,13 +13,13 @@ var WeaponSettingsRepl WSettings;
 var ST_UT_BioGel LocalBioGelDummy;
 var ST_BioGlob LocalBioGlobDummy;
 
-// V4 deterministic fire
-var float NextV4FireTS;
-var bool bV4WasAltHeld;
-var int V4CachedChargeData;
-var int V4AltAmmoSpent;
-var int V4ClientPredictedAmmo;
-var float V4AltChargeStartTS;
+// Det deterministic fire
+var float NextDetFireTS;
+var bool bDetWasAltHeld;
+var int DetCachedChargeData;
+var int DetAltAmmoSpent;
+var int DetClientPredictedAmmo;
+var float DetAltChargeStartTS;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -53,31 +53,31 @@ function PostBeginPlay()
 		break;
 }
 
-// V4 deterministic fire — primary (interval) + alt (charge).
+// Det deterministic fire — primary (interval) + alt (charge).
 
-simulated function bool IsV4Active() {
+simulated function bool IsDetActive() {
 	return Level.NetMode != NM_Standalone
 		&& IsPingCompEnabled()
 		&& bbPlayer(Owner) != none;
 }
 
 // One owner's deterministic state must never transfer to the next.
-simulated function V4ResetDeterministicState() {
-	NextV4FireTS = 0.0;
-	bV4WasAltHeld = false;
-	V4CachedChargeData = 0;
-	V4AltAmmoSpent = 0;
-	V4ClientPredictedAmmo = 0;
-	V4AltChargeStartTS = 0.0;
+simulated function DetResetDeterministicState() {
+	NextDetFireTS = 0.0;
+	bDetWasAltHeld = false;
+	DetCachedChargeData = 0;
+	DetAltAmmoSpent = 0;
+	DetClientPredictedAmmo = 0;
+	DetAltChargeStartTS = 0.0;
 }
 
 function GiveTo(Pawn Other) {
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	Super.GiveTo(Other);
 }
 
 function DropFrom(vector StartLocation) {
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	Super.DropFrom(StartLocation);
 }
 
@@ -93,7 +93,7 @@ simulated function float AltShotInterval() {
 }
 
 // Half-step charge ticks: 0..8 = 0.0..4.0, 9 = the 4.1 stock max (~4.5s).
-simulated final function int EncodeV4ChargeData(float ClientChargeSize) {
+simulated final function int EncodeDetChargeData(float ClientChargeSize) {
 	if (ClientChargeSize >= 4.05)
 		return 9;
 	return Clamp(int(ClientChargeSize * 2.0 + 0.0001), 0, 8);
@@ -110,7 +110,7 @@ function IGPlus_ApplyProjectilePingComp(Projectile P) {
 		WImp.SimulateProjectile(P, bbP.PingAverage);
 }
 
-function Projectile IGPlus_V4ProjectileFire(class<projectile> ProjClass, vector StepLoc, rotator StepView) {
+function Projectile IGPlus_DetProjectileFire(class<projectile> ProjClass, vector StepLoc, rotator StepView) {
 	local Projectile P;
 	local vector Start, X, Y, Z;
 
@@ -123,7 +123,7 @@ function Projectile IGPlus_V4ProjectileFire(class<projectile> ProjClass, vector 
 	return P;
 }
 
-simulated function bool V4ProcessInputSlice(
+simulated function bool DetProcessStep(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,
@@ -133,59 +133,59 @@ simulated function bool V4ProcessInputSlice(
 	bool bForceAlt,
 	bool bServerSide,
 	optional bool bClientPredictedStep,
-	optional int V4ChargeData
+	optional int DetChargeData
 ) {
 	local bool bWantsAlt, bWantsPrimary;
 	local int TargetAmmoSpent;
 
 	// Switching cancels the paid charge. Spawning a forwarded glob while the
 	// weapon is going down can collide at the owner's new weapon position.
-	if (bV4WasAltHeld
+	if (bDetWasAltHeld
 		&& bbPlayer(Owner) != none
-		&& bbPlayer(Owner).IGPlus_V4SwitchAwayFrom(self)) {
+		&& bbPlayer(Owner).IGPlus_DetSwitchAwayFrom(self)) {
 		if (!bServerSide)
 			StopChargeSound();
-		bV4WasAltHeld = false;
-		V4AltAmmoSpent = 0;
-		V4CachedChargeData = 0;
-		V4AltChargeStartTS = 0.0;
-		NextV4FireTS = StepTS + AltShotInterval();
+		bDetWasAltHeld = false;
+		DetAltAmmoSpent = 0;
+		DetCachedChargeData = 0;
+		DetAltChargeStartTS = 0.0;
+		NextDetFireTS = StepTS + AltShotInterval();
 		return true;
 	}
 
-	if (!bClientPredictedStep && !bV4WasAltHeld)
+	if (!bClientPredictedStep && !bDetWasAltHeld)
 		return true;
 
 	bWantsAlt = bAltHeld || bForceAlt;
 	bWantsPrimary = bFireHeld || bForceFire;
 
 	// --- Alt fire charge tracking (higher priority during active charge) ---
-	if (bV4WasAltHeld) {
+	if (bDetWasAltHeld) {
 		if (bServerSide) {
 			// Stock cadence: 1 ammo + 1 per 0.5s; client report may only lower it.
-			TargetAmmoSpent = 1 + Clamp(int((StepTS - V4AltChargeStartTS) / 0.5), 0, 9);
-			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(V4ChargeData, 0, 9));
-			while (V4AltAmmoSpent < TargetAmmoSpent
+			TargetAmmoSpent = 1 + Clamp(int((StepTS - DetAltChargeStartTS) / 0.5), 0, 9);
+			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(DetChargeData, 0, 9));
+			while (DetAltAmmoSpent < TargetAmmoSpent
 				&& AmmoType != none
 				&& AmmoType.AmmoAmount > 0) {
 				AmmoType.UseAmmo(1);
-				V4AltAmmoSpent++;
+				DetAltAmmoSpent++;
 			}
 		}
 
 		if (!bWantsAlt) {
 			// Falling edge: alt released → fire charged glob
-			bV4WasAltHeld = false;
+			bDetWasAltHeld = false;
 			if (bServerSide) {
-				if (V4AltAmmoSpent > 0) {
-					bbPlayer(Owner).IGPlus_V4NoteShot(StepTS, 0.30);
-					HandleV4ServerAltFire(StepView, StepLoc, FMin(Clamp(V4AltAmmoSpent - 1, 0, 9) * 0.5, 4.1));
+				if (DetAltAmmoSpent > 0) {
+					bbPlayer(Owner).IGPlus_DetNoteShot(StepTS, 0.30);
+					HandleDetServerAltFire(StepView, StepLoc, FMin(Clamp(DetAltAmmoSpent - 1, 0, 9) * 0.5, 4.1));
 				}
 				else
-					bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
-				V4AltAmmoSpent = 0;
+					bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
+				DetAltAmmoSpent = 0;
 			}
-			NextV4FireTS = StepTS + AltShotInterval();
+			NextDetFireTS = StepTS + AltShotInterval();
 			return true;
 		}
 		// Still charging
@@ -194,23 +194,23 @@ simulated function bool V4ProcessInputSlice(
 
 	// Alt rising edge; stock precedence: primary wins a simultaneous edge.
 	if (bWantsAlt && !bWantsPrimary) {
-		if (StepTS + 0.0001 < NextV4FireTS)
+		if (StepTS + 0.0001 < NextDetFireTS)
 			return true;
 
-		V4AltChargeStartTS = StepTS;
+		DetAltChargeStartTS = StepTS;
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 				AmmoType.UseAmmo(1);
-				V4AltAmmoSpent = 1;
+				DetAltAmmoSpent = 1;
 			} else {
-				V4AltAmmoSpent = 0;
-				bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+				DetAltAmmoSpent = 0;
+				bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
 				return true;
 			}
 		} else {
-			HandleV4ClientAltStart();
+			HandleDetClientAltStart();
 		}
-		bV4WasAltHeld = true;
+		bDetWasAltHeld = true;
 		return true;
 	}
 
@@ -218,64 +218,64 @@ simulated function bool V4ProcessInputSlice(
 	if (!bWantsPrimary)
 		return true;
 
-	if (StepTS + 0.0001 < NextV4FireTS)
+	if (StepTS + 0.0001 < NextDetFireTS)
 		return true;
 
 	if (bServerSide) {
 		if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 			AmmoType.UseAmmo(1);
-			bbPlayer(Owner).IGPlus_V4NoteShot(StepTS, 0.30);
-			HandleV4ServerFire(StepView, StepLoc);
+			bbPlayer(Owner).IGPlus_DetNoteShot(StepTS, 0.30);
+			HandleDetServerFire(StepView, StepLoc);
 		} else {
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+			bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
 		}
 	} else {
-		bbPlayer(Owner).IGPlus_V4NoteShot(StepTS, 0.30);
-		HandleV4ClientFire(StepView, StepLoc);
+		bbPlayer(Owner).IGPlus_DetNoteShot(StepTS, 0.30);
+		HandleDetClientFire(StepView, StepLoc);
 	}
 
-	NextV4FireTS = StepTS + PrimaryShotInterval();
+	NextDetFireTS = StepTS + PrimaryShotInterval();
 	return true;
 }
 
-function HandleV4ServerFire(rotator StepView, vector StepLoc) {
+function HandleDetServerFire(rotator StepView, vector StepLoc) {
 	bCanClientFire = true;
 	bPointing = true;
 
 	PlayerPawn(Owner).PlayRecoil(FiringSpeed);
 	// Mid-switch shot: no fire anim or state change, or the holster schedule
-	// is hijacked (see ST_ShockRifle.HandleV4ServerFire).
+	// is hijacked (see ST_ShockRifle.HandleDetServerFire).
 	if (!bChangeWeapon && !IsInState('DownWeapon'))
-		V4PlayPrimaryFiringAnim();
+		DetPlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
-	IGPlus_V4ProjectileFire(ProjectileClass, StepLoc, StepView);
+	IGPlus_DetProjectileFire(ProjectileClass, StepLoc, StepView);
 	if (!bChangeWeapon && !IsInState('DownWeapon'))
 		GoToState('NormalFire');
 }
 
-function HandleV4ServerAltFire(rotator StepView, vector StepLoc, float CS) {
+function HandleDetServerAltFire(rotator StepView, vector StepLoc, float CS) {
 	local Projectile Gel;
 
-	Gel = IGPlus_V4ProjectileFire(AltProjectileClass, StepLoc, StepView);
+	Gel = IGPlus_DetProjectileFire(AltProjectileClass, StepLoc, StepView);
 	if (Gel != none)
 		Gel.DrawScale = 1.0 + 0.8 * CS;
 	if (Affector != none)
 		Affector.FireEffect();
 	// Mid-switch shot: no fire anim or state change, or the holster schedule
-	// is hijacked (see ST_ShockRifle.HandleV4ServerFire).
+	// is hijacked (see ST_ShockRifle.HandleDetServerFire).
 	if (!bChangeWeapon && !IsInState('DownWeapon')) {
 		PlayAltBurst();
 		GotoState('NormalFire');
 	}
 }
 
-simulated function V4PlayPrimaryFiringAnim() {
+simulated function DetPlayPrimaryFiringAnim() {
 	PlayOwnedSound(AltFireSound, SLOT_None, 1.7 * Pawn(Owner).SoundDampening);
 	PlayAnim('Fire', 0.65 + 0.4 * FireAdjust, 0.05);
 }
 
-simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
+simulated function HandleDetClientFire(rotator StepView, vector StepLoc) {
 	local bbPlayer BP;
 
 	BP = bbPlayer(Owner);
@@ -283,7 +283,7 @@ simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
 	bPointing = true;
 	if (FiringSpeed > 0)
 		BP.PlayRecoil(FiringSpeed);
-	V4PlayPrimaryFiringAnim();
+	DetPlayPrimaryFiringAnim();
 	if (Affector != none)
 		Affector.FireEffect();
 	BP.ClientInstantFlash(InstFlash, InstFog);
@@ -291,7 +291,7 @@ simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
 		SpawnClientDummyBioGel();
 }
 
-simulated function HandleV4ClientAltStart() {
+simulated function HandleDetClientAltStart() {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
@@ -312,10 +312,10 @@ simulated function HandleV4ClientAltStart() {
 
 function Finish()
 {
-	if (IsV4Active())
+	if (IsDetActive())
 	{
 		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+			bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
 		else
@@ -327,7 +327,7 @@ function Finish()
 
 function Fire( float Value )
 {
-	if (Role == ROLE_Authority && IsV4Active())
+	if (Role == ROLE_Authority && IsDetActive())
 		return;
 
 	Super.Fire(Value);
@@ -335,7 +335,7 @@ function Fire( float Value )
 
 function AltFire( float Value )
 {
-	if (Role == ROLE_Authority && IsV4Active())
+	if (Role == ROLE_Authority && IsDetActive())
 		return;
 
 	Super.AltFire(Value);
@@ -352,8 +352,8 @@ function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed,
 
 simulated function bool ClientFire(float Value)
 {
-	// V4 handles primary fire visuals through HandleV4ClientFire.
-	if (IsV4Active())
+	// Det handles primary fire visuals through HandleDetClientFire.
+	if (IsDetActive())
 		return true;
 
 	return Super.ClientFire(Value);
@@ -404,7 +404,7 @@ simulated function bool ClientAltFire(float Value)
 		return false;
 
 	// The deterministic step owns cooldown, ammo prediction, and state entry.
-	if (IsV4Active())
+	if (IsDetActive())
 		return true;
 
 	return Super.ClientAltFire(Value);
@@ -479,7 +479,7 @@ state ClientAltFiring
 			Count += DeltaTime;
 			if (Count > 0.5 && AmmoType != None && AmmoType.AmmoAmount > 0) {
 				AmmoType.UseAmmo(1);
-				V4ClientPredictedAmmo = AmmoType.AmmoAmount;
+				DetClientPredictedAmmo = AmmoType.AmmoAmount;
 				ChargeSize += Count;
 				Count = 0;
 			}
@@ -487,11 +487,11 @@ state ClientAltFiring
 
 		// Keep local HUD responsive while charging. Server ammo is authoritative,
 		// but it can arrive slightly delayed and briefly overwrite local prediction.
-		if (AmmoType != none && V4ClientPredictedAmmo >= 0 && AmmoType.AmmoAmount > V4ClientPredictedAmmo)
-			AmmoType.AmmoAmount = V4ClientPredictedAmmo;
+		if (AmmoType != none && DetClientPredictedAmmo >= 0 && AmmoType.AmmoAmount > DetClientPredictedAmmo)
+			AmmoType.AmmoAmount = DetClientPredictedAmmo;
 
-		// Update V4 charge data every tick for tick-order-safe capture.
-		V4CachedChargeData = EncodeV4ChargeData(ChargeSize);
+		// Update Det charge data every tick for tick-order-safe capture.
+		DetCachedChargeData = EncodeDetChargeData(ChargeSize);
 
 		if (PawnOwner.bAltFire == 0) {
 			ChargeSize = FMin(ChargeSize, 4.1);
@@ -529,8 +529,8 @@ state ClientAltFiring
 	{
 		ChargeSize = 0.0;
 		Count = 0.0;
-		V4CachedChargeData = 0;
-		V4ClientPredictedAmmo = -1;
+		DetCachedChargeData = 0;
+		DetClientPredictedAmmo = -1;
 	}
 }
 
@@ -664,7 +664,7 @@ simulated function PlaySelect() {
 simulated function TweenDown() {
 	local float TweenTime;
 
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	TweenTime = 0.05;
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;

@@ -13,7 +13,7 @@ var vector CDO;
 var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
 
-var float NextV4FireTS;
+var float NextDetFireTS;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -39,7 +39,7 @@ simulated function bool IsPingCompEnabled() {
 	return WS != None && WS.bEnablePingCompensation;
 }
 
-simulated function bool IsV4Active() {
+simulated function bool IsDetActive() {
 	return Level.NetMode != NM_Standalone
 		&& IsPingCompEnabled()
 		&& bbPlayer(Owner) != none;
@@ -47,17 +47,17 @@ simulated function bool IsV4Active() {
 
 // One owner's deterministic state must never transfer to the next
 // (dropped weapons are reused as pickups — SpawnCopy returns self).
-simulated function V4ResetDeterministicState() {
-	NextV4FireTS = 0.0;
+simulated function DetResetDeterministicState() {
+	NextDetFireTS = 0.0;
 }
 
 function GiveTo(Pawn Other) {
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	Super.GiveTo(Other);
 }
 
 function DropFrom(vector StartLocation) {
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	Super.DropFrom(StartLocation);
 }
 
@@ -69,9 +69,9 @@ simulated function float AltShotInterval() {
 	return FClamp(10.0 / (24.0 * (0.40 + 0.40 * FireAdjust)), 0.05, 2.0);
 }
 
-// V4 input-slice processing — called from bbPlayer.IGPlus_V4ProcessWeaponInputSlice.
+// Deterministic step processing — called from bbPlayer.IGPlus_DetProcessStep.
 // Returns true to suppress legacy fire, even if no shot is produced.
-simulated function bool V4ProcessInputSlice(
+simulated function bool DetProcessStep(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,
@@ -93,34 +93,34 @@ simulated function bool V4ProcessInputSlice(
 	BP = bbPlayer(Owner);
 	if (BP == none)
 		return true;
-	FireMode = BP.IGPlus_V4IntervalShotDue(
+	FireMode = BP.IGPlus_DetIntervalShotDue(
 		StepTS, bFireHeld, bAltHeld, bForceFire, bForceAlt,
-		PrimaryShotInterval(), AltShotInterval(), NextV4FireTS, Interval);
+		PrimaryShotInterval(), AltShotInterval(), NextDetFireTS, Interval);
 	if (FireMode == 0)
 		return true;
 	bAlt = FireMode == 2;
 
 	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
-		// Fire-anim length from stock mesh data; see bbPlayer.IGPlus_V4NoteShot.
+		// Fire-anim length from stock mesh data; see bbPlayer.IGPlus_DetNoteShot.
 		// Primary is capped at 0.5: legacy IG+ NormalFire ran a 0.5s fallback
 		// timer that always beat the 0.71s Fire1 anim, so 0.5 is the old feel.
 		if (bAlt)
-			BP.IGPlus_V4NoteShot(StepTS, 0.52);
+			BP.IGPlus_DetNoteShot(StepTS, 0.52);
 		else
-			BP.IGPlus_V4NoteShot(StepTS, 0.50);
+			BP.IGPlus_DetNoteShot(StepTS, 0.50);
 		if (bServerSide)
-			HandleV4ServerFire(bAlt, StepView, StepLoc);
+			HandleDetServerFire(bAlt, StepView, StepLoc);
 		else
-			HandleV4ClientFire(bAlt, StepView, StepLoc);
+			HandleDetClientFire(bAlt, StepView, StepLoc);
 	} else if (bServerSide) {
-		BP.IGPlus_V4HandleOutOfAmmo(self);
+		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
 
-	NextV4FireTS = StepTS + Interval;
+	NextDetFireTS = StepTS + Interval;
 	return true;
 }
 
-simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLoc) {
+simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local bbPlayer BP;
 
 	BP = bbPlayer(Owner);
@@ -143,7 +143,7 @@ simulated function HandleV4ClientFire(bool bAlt, rotator StepView, vector StepLo
 	}
 }
 
-function HandleV4ServerFire(bool bAlt, rotator StepView, vector StepLoc) {
+function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
@@ -225,7 +225,7 @@ simulated function bool ClientFire(float Value) {
 	bbP = bbPlayer(PawnOwner);
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
-		if (IsV4Active()) {
+		if (IsDetActive()) {
 			return true;
 		}
 
@@ -352,7 +352,7 @@ simulated function bool ClientAltFire(float Value) {
 	bbP = bbPlayer(PawnOwner);
 
 	if (IsPingCompEnabled() && Owner.Role == ROLE_AutonomousProxy && bbP != None) {
-		if (IsV4Active()) {
+		if (IsDetActive()) {
 			return true;
 		}
 
@@ -426,7 +426,7 @@ function TraceFire(float Accuracy) {
 
 	if (Role == ROLE_Authority
 		&& Level.NetMode != NM_Client
-		&& IsV4Active())
+		&& IsDetActive())
 		return;
 
 	TraceFireAt(Accuracy, PawnOwner.ViewRotation, Owner.Location, CalcDrawOffset());
@@ -620,10 +620,10 @@ function SetSwitchPriority(pawn Other)
 
 function Finish()
 {
-	if (IsV4Active())
+	if (IsDetActive())
 	{
 		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+			bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
 		else
@@ -709,7 +709,7 @@ state ClientFiring {
 
 	simulated function AnimEnd()
 	{
-		if (IsV4Active()) {
+		if (IsDetActive()) {
 			PlayIdleAnim();
 			GotoState('');
 			return;
@@ -745,7 +745,7 @@ state ClientAltFiring {
 
 	simulated function AnimEnd()
     {
-		if (IsV4Active()) {
+		if (IsDetActive()) {
 			PlayIdleAnim();
 			GotoState('');
 			return;
@@ -798,14 +798,14 @@ simulated function vector CalcDrawOffsetClient() {
 
 function Fire(float Value)
 {
-	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+	if (IsDetActive() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.Fire(Value);
 }
 
 function AltFire(float Value)
 {
-	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+	if (IsDetActive() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.AltFire(Value);
 }

@@ -1481,7 +1481,7 @@ simulated function Actor TraceShotClient(out vector HitLocation, out vector HitN
 
 // Quantize view to the 16-bit precision the ServerMove packs, so client
 // prediction and the server replay start from the same aim.
-simulated function rotator IGPlus_V4QuantizeView(rotator InRot) {
+simulated function rotator IGPlus_DetQuantizeView(rotator InRot) {
 	local rotator Q;
 	local int PitchSigned;
 	PitchSigned = InRot.Pitch << 16 >> 16;

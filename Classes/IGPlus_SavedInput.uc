@@ -33,9 +33,9 @@ var bool bForceFireTap;
 var bool bForceAltTap;
 var bool bDetReady;
 var bool bDetPredictedLocal;
-var bool bV4EightballInstant;
-var int V4WeaponIndex;
-var int V4ChargeData;
+var bool bDetEightballInstant;
+var int DetWeaponIndex;
+var int DetChargeData;
 
 var int SerializedBits;
 
@@ -74,7 +74,7 @@ function CopyFrom(float Delta, bbPlayer P) {
 	bJump = (P.aUp > 1.0) || P.IGPlus_PressedJumpSave;
 	bDodg = P.bPressedDodge;
 	EB = ST_UT_Eightball(P.Weapon);
-	if (EB != none && EB.IsV4Active()) {
+	if (EB != none && EB.IsDetActive()) {
 		bForceFireTap = false;
 		bForceAltTap = false;
 		if (P.bTraceInput && (P.bJustFired || P.bJustAltFired))
@@ -89,12 +89,12 @@ function CopyFrom(float Delta, bbPlayer P) {
 		bAFir = (P.bAltFire != 0) || bForceAltTap;
 		self.bForceFireTap = bForceFireTap;
 		self.bForceAltTap = bForceAltTap;
-		bDetReady = P.IGPlus_V4IsWeaponReady(P.Weapon);
-		V4WeaponIndex = P.IGPlus_GetV4WeaponIndex(P.Weapon);
-		bV4EightballInstant = bDetReady
-			&& P.IGPlus_IsV4WeaponIndexEightball(V4WeaponIndex)
+		bDetReady = P.IGPlus_DetIsWeaponReady(P.Weapon);
+		DetWeaponIndex = P.IGPlus_GetDetWeaponIndex(P.Weapon);
+		bDetEightballInstant = bDetReady
+			&& P.IGPlus_IsDetWeaponIndexEightball(DetWeaponIndex)
 			&& P.IGPlus_IsEightballInstantMode(P.Weapon);
-		V4ChargeData = P.IGPlus_GetV4ChargeData();
+		DetChargeData = P.IGPlus_GetDetChargeData();
 		bDetPredictedLocal = false;
 
 	P.bJustFired = false;
@@ -123,9 +123,9 @@ function SerializeTo(IGPlus_DataBuffer B, out float DeltaError) {
 	B.AddBit(bForceFireTap);
 	B.AddBit(bForceAltTap);
 	B.AddBit(bDetReady);
-	B.AddBit(bV4EightballInstant);
-	B.AddBits(3, V4WeaponIndex);
-	B.AddBits(4, V4ChargeData);
+	B.AddBit(bDetEightballInstant);
+	B.AddBits(3, DetWeaponIndex);
+	B.AddBits(4, DetChargeData);
 	Temp = SavedViewRotation.Pitch << 16 >> 16;
 	Temp = Clamp(Temp, -16384, 16383);
 	B.AddBits(15, Temp);
@@ -150,9 +150,9 @@ function DeserializeFrom(IGPlus_DataBuffer B) {
 	B.ConsumeBit(Temp); bForceFireTap = Temp != 0;
 	B.ConsumeBit(Temp); bForceAltTap = Temp != 0;
 	B.ConsumeBit(Temp); bDetReady = Temp != 0;
-	B.ConsumeBit(Temp); bV4EightballInstant = Temp != 0;
-	B.ConsumeBits(3, V4WeaponIndex);
-	B.ConsumeBits(4, V4ChargeData);
+	B.ConsumeBit(Temp); bDetEightballInstant = Temp != 0;
+	B.ConsumeBits(3, DetWeaponIndex);
+	B.ConsumeBits(4, DetChargeData);
 	B.ConsumeBits(15, SavedViewRotation.Pitch); SavedViewRotation.Pitch = SavedViewRotation.Pitch << 17 >> 17;
 	B.ConsumeBits(16, SavedViewRotation.Yaw);
 	SavedViewRotation.Roll = 0;
@@ -174,9 +174,9 @@ function bool IsSimilarTo(IGPlus_SavedInput Other) {
 			bForceFireTap == Other.bForceFireTap &&
 			bForceAltTap == Other.bForceAltTap &&
 			bDetReady == Other.bDetReady &&
-			bV4EightballInstant == Other.bV4EightballInstant &&
-			V4WeaponIndex == Other.V4WeaponIndex &&
-			V4ChargeData == Other.V4ChargeData &&
+			bDetEightballInstant == Other.bDetEightballInstant &&
+			DetWeaponIndex == Other.DetWeaponIndex &&
+			DetChargeData == Other.DetChargeData &&
 			SavedViewRotation.Pitch == Other.SavedViewRotation.Pitch &&
 			SavedViewRotation.Yaw == Other.SavedViewRotation.Yaw;
 }

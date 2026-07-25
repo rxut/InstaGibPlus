@@ -22,7 +22,7 @@ var WeaponSettingsRepl WSettings;
 var Rotator GV;
 var float yMod; // For handedness calculations
 
-var float NextV4FireTS;
+var float NextDetFireTS;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -48,7 +48,7 @@ simulated function bool IsPingCompEnabled() {
 	return WS != None && WS.bEnablePingCompensation;
 }
 
-simulated function bool IsV4Active() {
+simulated function bool IsDetActive() {
 	return Level.NetMode != NM_Standalone
 		&& IsPingCompEnabled()
 		&& bbPlayer(Owner) != none;
@@ -56,17 +56,17 @@ simulated function bool IsV4Active() {
 
 // One owner's deterministic state must never transfer to the next
 // (dropped weapons are reused as pickups — SpawnCopy returns self).
-simulated function V4ResetDeterministicState() {
-	NextV4FireTS = 0.0;
+simulated function DetResetDeterministicState() {
+	NextDetFireTS = 0.0;
 }
 
 function GiveTo(Pawn Other) {
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	Super.GiveTo(Other);
 }
 
 function DropFrom(vector StartLocation) {
-	V4ResetDeterministicState();
+	DetResetDeterministicState();
 	Super.DropFrom(StartLocation);
 }
 
@@ -81,10 +81,10 @@ simulated function float PrimaryShotInterval() {
 	return FClamp(WS.SniperReloadTime, 0.05, 2.0);
 }
 
-// V4 input-slice processing — called from bbPlayer.IGPlus_V4ProcessWeaponInputSlice.
+// Deterministic step processing — called from bbPlayer.IGPlus_DetProcessStep.
 // Returns true to suppress legacy fire, even if no shot is produced.
 // Alt-fire is client-side zoom and must never produce a shot.
-simulated function bool V4ProcessInputSlice(
+simulated function bool DetProcessStep(
 	float StepTS,
 	rotator StepView,
 	vector StepLoc,
@@ -105,28 +105,28 @@ simulated function bool V4ProcessInputSlice(
 	BP = bbPlayer(Owner);
 	if (BP == none)
 		return true;
-	FireMode = BP.IGPlus_V4IntervalShotDue(
+	FireMode = BP.IGPlus_DetIntervalShotDue(
 		StepTS, bFireHeld, false, bForceFire, false,
-		PrimaryShotInterval(), PrimaryShotInterval(), NextV4FireTS, Interval);
+		PrimaryShotInterval(), PrimaryShotInterval(), NextDetFireTS, Interval);
 	if (FireMode == 0)
 		return true;
 
 	if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 		// Holster hold equals the reload anim, whose duration is the interval.
-		BP.IGPlus_V4NoteShot(StepTS, Interval);
+		BP.IGPlus_DetNoteShot(StepTS, Interval);
 		if (bServerSide)
-			HandleV4ServerFire(StepView, StepLoc);
+			HandleDetServerFire(StepView, StepLoc);
 		else
-			HandleV4ClientFire(StepView, StepLoc);
+			HandleDetClientFire(StepView, StepLoc);
 	} else if (bServerSide) {
-		BP.IGPlus_V4HandleOutOfAmmo(self);
+		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
 
-	NextV4FireTS = StepTS + Interval;
+	NextDetFireTS = StepTS + Interval;
 	return true;
 }
 
-simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
+simulated function HandleDetClientFire(rotator StepView, vector StepLoc) {
 	local bbPlayer BP;
 	local PlayerPawn P;
 	local vector X, Y, Z;
@@ -150,7 +150,7 @@ simulated function HandleV4ClientFire(rotator StepView, vector StepLoc) {
 	}
 }
 
-function HandleV4ServerFire(rotator StepView, vector StepLoc) {
+function HandleDetServerFire(rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
 
 	PawnOwner = Pawn(Owner);
@@ -165,7 +165,7 @@ function HandleV4ServerFire(rotator StepView, vector StepLoc) {
 		Affector.FireEffect();
 
 	// Mid-switch shot: no fire anim, or it hijacks the holster schedule
-	// (see ST_ShockRifle.HandleV4ServerFire).
+	// (see ST_ShockRifle.HandleDetServerFire).
 	if (!bChangeWeapon && !IsInState('DownWeapon'))
 		PlayFiring();
 	DeterministicTraceFire(StepView, StepLoc);
@@ -228,8 +228,8 @@ simulated function bool ClientFire(float Value)
 
 	bbP = bbPlayer(Owner);
 
-	// Under V4 the predicted input slices drive fire anims; nothing to do here.
-	if (IsV4Active() && Owner.Role == ROLE_AutonomousProxy && bbP != None)
+	// Under Det the predicted steps drive fire anims; nothing to do here.
+	if (IsDetActive() && Owner.Role == ROLE_AutonomousProxy && bbP != None)
 		return true;
 
 	if (bbP != None && GetWeaponSettings().bEnablePingCompensation)
@@ -283,7 +283,7 @@ simulated function ClientPlayEffects()
 }
 
 function TraceFire(float Accuracy) {
-	if (Role == ROLE_Authority && Level.NetMode != NM_Client && IsV4Active())
+	if (Role == ROLE_Authority && Level.NetMode != NM_Client && IsDetActive())
 		return;
 	TraceFireAt(Pawn(Owner).ViewRotation, Owner.Location, true);
 }
@@ -423,23 +423,23 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
 }
 
 function Fire(float Value) {
-	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+	if (IsDetActive() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.Fire(Value);
 }
 
 function AltFire(float Value) {
-	if (IsV4Active() && Role == ROLE_Authority && Level.NetMode != NM_Client)
+	if (IsDetActive() && Role == ROLE_Authority && Level.NetMode != NM_Client)
 		return;
 	Super.AltFire(Value);
 }
 
 function Finish()
 {
-	if (IsV4Active())
+	if (IsDetActive())
 	{
 		if (!bChangeWeapon && AmmoType != None && AmmoType.AmmoAmount <= 0)
-			bbPlayer(Owner).IGPlus_V4HandleOutOfAmmo(self);
+			bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
 		if (bChangeWeapon)
 			GotoState('DownWeapon');
 		else
@@ -612,7 +612,7 @@ state ClientFiring
 	simulated function bool ClientAltFire(float Value) { return false; }
 
 	simulated function AnimEnd() {
-		if (IsV4Active()) {
+		if (IsDetActive()) {
 			PlayIdleAnim();
 			GotoState('');
 			return;

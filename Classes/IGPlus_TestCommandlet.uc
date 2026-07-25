@@ -96,28 +96,28 @@ function bool DataBuffer_stores_more_than_32_bits() {
 	return B.NumBits == B.NumBitsConsumed;
 }
 
-function bool TestV4EffectiveAnimTime() {
+function bool TestDetEffectiveAnimTime() {
 	LogTestResult(
-		Abs(class'bbPlayer'.static.IGPlus_V4EffectiveAnimTime(0.25, 0.5) - 0.25) < 0.0001,
-		"V4_anim_time_config_below_default"
+		Abs(class'bbPlayer'.static.IGPlus_DetEffectiveAnimTime(0.25, 0.5) - 0.25) < 0.0001,
+		"Det_anim_time_config_below_default"
 	);
 	LogTestResult(
-		Abs(class'bbPlayer'.static.IGPlus_V4EffectiveAnimTime(0.75, 0.5) - 0.75) < 0.0001,
-		"V4_anim_time_config_above_default"
+		Abs(class'bbPlayer'.static.IGPlus_DetEffectiveAnimTime(0.75, 0.5) - 0.75) < 0.0001,
+		"Det_anim_time_config_above_default"
 	);
 	LogTestResult(
-		Abs(class'bbPlayer'.static.IGPlus_V4EffectiveAnimTime(0.0, 0.5) - 0.005) < 0.0001,
-		"V4_anim_time_zero_config_hits_speed_cap"
+		Abs(class'bbPlayer'.static.IGPlus_DetEffectiveAnimTime(0.0, 0.5) - 0.005) < 0.0001,
+		"Det_anim_time_zero_config_hits_speed_cap"
 	);
 	LogTestResult(
-		Abs(class'bbPlayer'.static.IGPlus_V4EffectiveAnimTime(0.001, 0.5) - 0.005) < 0.0001,
-		"V4_anim_time_tiny_config_hits_speed_cap"
+		Abs(class'bbPlayer'.static.IGPlus_DetEffectiveAnimTime(0.001, 0.5) - 0.005) < 0.0001,
+		"Det_anim_time_tiny_config_hits_speed_cap"
 	);
 	return true;
 }
 
 event int main(string Params) {
 	TestDataBuffer();
-	TestV4EffectiveAnimTime();
+	TestDetEffectiveAnimTime();
 	return 0;
 }

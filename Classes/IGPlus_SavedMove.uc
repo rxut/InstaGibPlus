@@ -14,8 +14,8 @@ var int AltFireIndex;
 
 var bool SavedDodging;
 var bool bDetReady;
-var int V4WeaponIndex;
-var int V4ChargeData;
+var int DetWeaponIndex;
+var int DetChargeData;
 
 function Clear2() {
     Clear();

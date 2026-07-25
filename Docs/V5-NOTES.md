@@ -31,8 +31,8 @@ Supported weapons are:
 
 ### Binding and activation
 
-`IGPlus_V4ResolveBoundWeapon` requires a supported, active ST_ weapon. In
-server context, `IGPlus_V4ServerBindingValid` further restricts it to:
+`IGPlus_DetResolveBoundWeapon` requires a supported, active ST_ weapon. In
+server context, `IGPlus_DetServerBindingValid` further restricts it to:
 
 - the equipped weapon;
 - the incoming `PendingWeapon`; or
@@ -43,13 +43,13 @@ be client-vouched before `ChangedWeapon` equips it.
 
 ### Fire windows
 
-`IGPlus_V4FireWindowOpen` decides when a valid binding may step:
+`IGPlus_DetFireWindowOpen` decides when a valid binding may step:
 
 - bring-up is gated by the incoming weapon's replicated `SelectTime`
   (effective anim duration, speed-cap floored). The server computes the gate
   once in `ChangedWeapon` and replicates the exact timestamp to the owning
-  client (`xxClientV4EntryGate`), so both sides hold the same number and any
-  configured select time is safe. `IGPlus_V4EntryGateSeconds` (0.12/0.25) is
+  client (`xxClientDetEntryGate`), so both sides hold the same number and any
+  configured select time is safe. `IGPlus_DetEntryGateSeconds` (0.12/0.25) is
   the conservative fallback for the pending-weapon pre-equip window and
   cancel re-arm;
 - starting a switch closes the equipped weapon after the in-flight allowance;

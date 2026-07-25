@@ -13,8 +13,8 @@ var int OldMoveData1;
 var int OldMoveData2;
 
 var bool bDetReady;
-var int V4WeaponIndex;
-var int V4ChargeData;
+var int DetWeaponIndex;
+var int DetChargeData;
 var IGPlus_ServerMove Next;
 
 defaultproperties {
