@@ -26,6 +26,14 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
     return WSettings;
 }
 
+// ChunkTrail is its own actor -- destroying the owner only orphans it.
+simulated function Destroyed()
+{
+	if (bClientVisualOnly && Trail != None)
+		Trail.Destroy();
+	Super.Destroyed();
+}
+
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
@@ -46,12 +54,6 @@ simulated function PostNetBeginPlay()
 			{
 				// Store fake's current position for smooth hand-off
 				FakeLocation = FC.LocalSlugDummy.Location;
-
-				if (FC.LocalSlugDummy.Trail != None)
-				{
-					FC.LocalSlugDummy.Trail.Destroy();
-					FC.LocalSlugDummy.Trail = None;
-				}
 
 				// Destroy the fake projectile
 				FC.LocalSlugDummy.Destroy();

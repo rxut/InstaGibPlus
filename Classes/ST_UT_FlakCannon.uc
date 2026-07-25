@@ -652,12 +652,11 @@ simulated function SpawnClientSideSlug()
         LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
         LocalSlugDummy.RemoteRole = ROLE_None;
         LocalSlugDummy.Instigator = PawnOwner;
-        //LocalSlugDummy.bMeshEnviroMap = true;
-        //LocalSlugDummy.Texture = Texture'UWindow.Icons.MenuHighlight';
         LocalSlugDummy.bClientVisualOnly = true;
         LocalSlugDummy.bCollideWorld = false;
         LocalSlugDummy.SetCollision(false, false, false);
-        LocalSlugDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+        // Floor: 25% slack over the RTT is under one net update at low ping.
+        LocalSlugDummy.LifeSpan = FMax(0.15, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;
     }
 }
 
