@@ -1586,6 +1586,21 @@ Begin:
 	PlayPostSelect();
 	FinishAnim();
 	bCanClientFire = true;
+	// Stock Active tail (TournamentWeapon): tell the owning client which weapon
+	// is really up. Without it a client that dropped its Weapon pointer never
+	// gets it back — feign death blanks it every tick. The v4 path syncs
+	// without the fire kick, which would be the eager auto-fire we suppress.
+	if ( (Level.Netmode != NM_Standalone) && Owner != None && Owner.IsA('TournamentPlayer')
+		&& (PlayerPawn(Owner).Player != None)
+		&& !PlayerPawn(Owner).Player.IsA('ViewPort') )
+	{
+		if ( !IsV4Active() && (bForceFire || (Pawn(Owner).bFire != 0)) )
+			TournamentPlayer(Owner).SendFire(self);
+		else if ( !IsV4Active() && (bForceAltFire || (Pawn(Owner).bAltFire != 0)) )
+			TournamentPlayer(Owner).SendAltFire(self);
+		else if ( !bChangeWeapon )
+			TournamentPlayer(Owner).UpdateRealWeapon(self);
+	}
 	if (IsV4Active() && (Pawn(Owner).bFire != 0 || Pawn(Owner).bAltFire != 0)) {
 		// Suppress eager auto-fire when weapon comes up deterministic style
 		GotoState('Idle');

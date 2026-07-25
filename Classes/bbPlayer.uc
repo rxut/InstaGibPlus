@@ -90,6 +90,11 @@ var Weapon IGPlus_V4PrevWeapon;
 var float IGPlus_V4PrevWeaponUntilTS;
 var bool IGPlus_LastFireEndHeld;
 var bool IGPlus_LastAltEndHeld;
+// Feign death: a button already held when the feign began (server-side), and
+// the weapon we went down holding (client-side).
+var bool IGPlus_FeignFireHeld;
+var bool IGPlus_FeignAltFireHeld;
+var Weapon IGPlus_FeignWeapon;
 // ServerMove v4 deterministic fire-window state (move-timestamp domain).
 var float IGPlus_V4WeaponGateTS;
 var Weapon IGPlus_V4PendingSeen;
@@ -8177,19 +8182,31 @@ event ServerTick(float DeltaTime) {
 state FeigningDeath
 {
 	// Fix: Base PlayerPawn.AltFire() incorrectly sets bJustFired instead of bJustAltFired
+	// A button already held when the feign began is not a press: ServerMove
+	// calls Fire() on the 0 -> held edge of the server's bFire latch, and that
+	// latch is cleared both on entry (multiweapon guard below) and by every v4
+	// step. Ignore it until the client reports the button released.
 	exec function Fire(optional float F)
 	{
+		if (IGPlus_FeignFireHeld)
+			return;
 		bJustFired = true;
 	}
 
 	exec function AltFire(optional float F)
 	{
+		if (IGPlus_FeignAltFireHeld)
+			return;
 		bJustAltFired = true;
 	}
 
 	// Fix: Base ProcessMove only checks bJustFired, need to also check bJustAltFired
 	function ProcessMove(float DeltaTime, vector NewAccel, eDodgeDir DodgeMove, rotator DeltaRot)
 	{
+		if (!IGPlus_LastFireEndHeld)
+			IGPlus_FeignFireHeld = false;
+		if (!IGPlus_LastAltEndHeld)
+			IGPlus_FeignAltFireHeld = false;
 		if (bJustFired || bJustAltFired || bPressedJump || (NewAccel.Z > 0))
 			Rise();
 		Acceleration = vect(0,0,0);
@@ -8329,6 +8346,16 @@ state FeigningDeath
 
 	function BeginState()
 	{
+		if (Weapon != none)
+			IGPlus_FeignWeapon = Weapon;
+		// Remote clients only. A locally controlled pawn (listen host, offline)
+		// calls Fire() straight from the keypress and never reports held state
+		// back through IGPlus_LastFireEndHeld — latching here would lock it out
+		// of rising by fire entirely.
+		IGPlus_FeignFireHeld = RemoteRole == ROLE_AutonomousProxy
+			&& (bFire != 0 || IGPlus_LastFireEndHeld);
+		IGPlus_FeignAltFireHeld = RemoteRole == ROLE_AutonomousProxy
+			&& (bAltFire != 0 || IGPlus_LastAltEndHeld);
 		Super.BeginState();
 		// Stop weapon firing
 		//UsAaR33: prevent weapon from firing (brought on by missing bchangedweapon checks)
@@ -8348,6 +8375,16 @@ state FeigningDeath
 
 	function EndState()
 	{
+		// The client blanks Weapon every tick while feigning (stock
+		// PlayerPawn.FeigningDeath.PlayerTick). The server's restored Weapon
+		// can replicate before the state change reaches us — then it is
+		// blanked again and, being unchanged server-side, never resent.
+		if (Role < ROLE_Authority && Weapon == none
+			&& IGPlus_FeignWeapon != none && IGPlus_FeignWeapon.Owner == self)
+			Weapon = IGPlus_FeignWeapon;
+		IGPlus_FeignWeapon = none;
+		IGPlus_FeignFireHeld = false;
+		IGPlus_FeignAltFireHeld = false;
 		zzbForceUpdate = true;
 		Super.EndState();
 	}
