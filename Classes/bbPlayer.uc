@@ -4658,9 +4658,25 @@ simulated function bool IGPlus_DetSupportsWeapon(Weapon W) {
 }
 
 function IGPlus_DetHandleOutOfAmmo(Weapon W) {
+	local float Rating;
+	local int UseAlt;
+
 	StopFiring();
-	if (PendingWeapon == none || PendingWeapon == W)
-		SwitchToBestWeapon();
+	if (PendingWeapon != none && PendingWeapon != W)
+		return;
+
+	// Stock switches out of an empty weapon from Idle's Begin — after the fire
+	// anim. SwitchToBestWeapon holsters immediately, which would beat a manual
+	// switch pressed at the same moment, so while the deferral is up only pick
+	// the weapon; IGPlus_DetCheckSwitchWedge holsters once the anim ends.
+	if (IGPlus_DetSwitchDeferActive() && Inventory != none) {
+		PendingWeapon = Inventory.RecommendWeapon(Rating, UseAlt);
+		if (PendingWeapon == Weapon)
+			PendingWeapon = none;
+		return;
+	}
+
+	SwitchToBestWeapon();
 }
 
 // 0 = no shot, 1 = primary, 2 = alt.

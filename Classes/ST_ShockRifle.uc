@@ -112,6 +112,11 @@ simulated function bool DetProcessStep(
 			HandleDetServerFire(bAlt, StepView, StepLoc);
 		else
 			HandleDetClientFire(bAlt, StepView, StepLoc);
+		// No fire state here, so neither Finish() nor Idle's Begin runs — the
+		// stock post-shot switch happens here. Must follow the shot: the switch
+		// sets bChangeWeapon, which suppresses the fire anim.
+		if (bServerSide && AmmoType.AmmoAmount <= 0)
+			BP.IGPlus_DetHandleOutOfAmmo(self);
 	} else if (bServerSide) {
 		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}

@@ -128,6 +128,9 @@ simulated function bool DetProcessStep(
 			HandleDetServerFire(bAlt, StepView, StepLoc);
 		else
 			HandleDetClientFire(bAlt, StepView, StepLoc);
+		// Post-shot switch (see ST_ShockRifle.DetProcessStep).
+		if (bServerSide && AmmoType.AmmoAmount <= 0)
+			BP.IGPlus_DetHandleOutOfAmmo(self);
 	} else if (bServerSide) {
 		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
