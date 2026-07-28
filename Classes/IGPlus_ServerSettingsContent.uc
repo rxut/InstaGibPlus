@@ -190,9 +190,12 @@ var localized string bEnableServerExtrapolationHelp;
 var UWindowCheckbox Chk_bPlayersAlwaysRelevant;
 var localized string bPlayersAlwaysRelevantText;
 var localized string bPlayersAlwaysRelevantHelp;
-var UWindowCheckbox Chk_bEnableJitterBounding;
-var localized string bEnableJitterBoundingText;
-var localized string bEnableJitterBoundingHelp;
+var IGPlus_ComboBox Cmb_JitterBoundingMode;
+var localized string JitterBoundingModeText;
+var localized string JitterBoundingModeHelp;
+var localized string JitterBoundingModeNone;
+var localized string JitterBoundingModeCarrierOnly;
+var localized string JitterBoundingModeAll;
 var UWindowCheckbox Chk_bEnableSnapshotInterpolation;
 var localized string bEnableSnapshotInterpolationText;
 var localized string bEnableSnapshotInterpolationHelp;
@@ -472,6 +475,16 @@ function bool SaveServerSettingIfChanged(ServerSettings S, string Key, string Va
 	return false;
 }
 
+function string JitterBoundingModeIndexToValue(int Index) {
+	switch (Clamp(Index, 0, 2)) {
+		case 0: return "JB_None";
+		case 1: return "JB_CarrierOnly";
+		case 2: return "JB_All";
+	}
+
+	return "JB_None";
+}
+
 function string HitFeedbackModeIndexToValue(int Index) {
 	switch (Clamp(Index, 0, 2)) {
 		case 0: return "HFM_Disabled";
@@ -643,7 +656,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "MaxNetUpdateRate", Edit_MaxNetUpdateRate.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableServerExtrapolation", BoolToString(Chk_bEnableServerExtrapolation.bChecked));
 	SaveServerSettingIfChanged(S, "bPlayersAlwaysRelevant", BoolToString(Chk_bPlayersAlwaysRelevant.bChecked));
-	SaveServerSettingIfChanged(S, "bEnableJitterBounding", BoolToString(Chk_bEnableJitterBounding.bChecked));
+	SaveServerSettingIfChanged(S, "JitterBoundingMode", JitterBoundingModeIndexToValue(Cmb_JitterBoundingMode.GetSelectedIndex()));
 	SaveServerSettingIfChanged(S, "MaxJitterTime", Edit_MaxJitterTime.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableInputReplication", BoolToString(Chk_bEnableInputReplication.bChecked));
 	SaveServerSettingIfChanged(S, "bEnableSnapshotInterpolation", BoolToString(Chk_bEnableSnapshotInterpolation.bChecked));
@@ -982,6 +995,7 @@ function ConfigureFixedWidthCombo(IGPlus_ComboBox Cmb, Canvas C, float ControlWi
 
 function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthCombo(Cmb_BrightskinMode, C, ControlWidth, 180);
+	ConfigureFixedWidthCombo(Cmb_JitterBoundingMode, C, ControlWidth, 180);
 	ConfigureFixedWidthCombo(Cmb_HitFeedbackMode, C, ControlWidth, 180);
 	ConfigureFixedWidthCombo(Cmb_ShowDamageNumberMode, C, ControlWidth, 180);
 
@@ -1062,7 +1076,7 @@ function LoadServerSettings() {
 	Chk_bEnableInputReplication.bChecked = S.bEnableInputReplication;
 	Chk_bEnableServerExtrapolation.bChecked = S.bEnableServerExtrapolation;
 	Chk_bPlayersAlwaysRelevant.bChecked = S.bPlayersAlwaysRelevant;
-	Chk_bEnableJitterBounding.bChecked = S.bEnableJitterBounding;
+	Cmb_JitterBoundingMode.SetSelectedIndex(Clamp(int(S.JitterBoundingMode), 0, 2));
 	Chk_bEnableSnapshotInterpolation.bChecked = S.bEnableSnapshotInterpolation;
 	Edit_SnapshotInterpSendHz.SetValue(string(S.SnapshotInterpSendHz));
 	Edit_SnapshotInterpRewindMs.SetValue(string(S.SnapshotInterpRewindMs));
@@ -1163,7 +1177,10 @@ function Created() {
 	Edit_MaxNetUpdateRate = CreateEdit(ECT_Real, MaxNetUpdateRateText, MaxNetUpdateRateHelp, 16, 80);
 	Chk_bEnableServerExtrapolation = CreateCheckbox(bEnableServerExtrapolationText, bEnableServerExtrapolationHelp);
 	Chk_bPlayersAlwaysRelevant = CreateCheckbox(bPlayersAlwaysRelevantText, bPlayersAlwaysRelevantHelp);
-	Chk_bEnableJitterBounding = CreateCheckbox(bEnableJitterBoundingText, bEnableJitterBoundingHelp);
+	Cmb_JitterBoundingMode = CreateComboBox(JitterBoundingModeText, JitterBoundingModeHelp, false, 180);
+	Cmb_JitterBoundingMode.AddItem(JitterBoundingModeNone);
+	Cmb_JitterBoundingMode.AddItem(JitterBoundingModeCarrierOnly);
+	Cmb_JitterBoundingMode.AddItem(JitterBoundingModeAll);
 	Edit_MaxJitterTime = CreateEdit(ECT_Real, MaxJitterTimeText, MaxJitterTimeHelp, 16, 80);
 	Chk_bEnableInputReplication = CreateCheckbox(bEnableInputReplicationText, bEnableInputReplicationHelp);
 	Chk_bEnableSnapshotInterpolation = CreateCheckbox(bEnableSnapshotInterpolationText, bEnableSnapshotInterpolationHelp);
@@ -1288,7 +1305,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_MaxNetUpdateRate, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableServerExtrapolation, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bPlayersAlwaysRelevant, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableJitterBounding, bShowSettings, WndWidth, Top);
+	LayoutControl(Cmb_JitterBoundingMode, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxJitterTime, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableInputReplication, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableSnapshotInterpolation, bShowSettings, WndWidth, Top);
@@ -1503,8 +1520,11 @@ defaultproperties
 	bEnableServerExtrapolationHelp="If checked, server extrapolates movement between updates"
 	bPlayersAlwaysRelevantText="Players Always Relevant"
 	bPlayersAlwaysRelevantHelp="If checked, players stay network relevant regardless of distance"
-	bEnableJitterBoundingText="Enable Jitter Bounding"
-	bEnableJitterBoundingHelp="If checked, bounds movement jitter spikes"
+	JitterBoundingModeText="Jitter Bounding Mode"
+	JitterBoundingModeHelp="Which players get movement jitter spikes bounded to Max Jitter Time"
+	JitterBoundingModeNone="Disabled"
+	JitterBoundingModeCarrierOnly="Flag Carriers Only"
+	JitterBoundingModeAll="All Players"
 	bEnableSnapshotInterpolationText="Enable Snapshot Interpolation"
 	bEnableSnapshotInterpolationHelp="If checked, clients smooth movement using snapshot interpolation"
 	SnapshotInterpSendHzText="Snapshot Send Hz"

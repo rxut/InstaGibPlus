@@ -2543,6 +2543,29 @@ function IGPlus_MoveAutonomous(
 	CorrectTeleporterVelocity();
 }
 
+function bool IGPlus_IsFlagCarrier() {
+	local CTFFlag F;
+
+	if (PlayerReplicationInfo == none)
+		return false;
+
+	F = CTFFlag(PlayerReplicationInfo.HasFlag);
+
+	return F != none && F.Holder == self;
+}
+
+function bool IGPlus_ShouldJitterBound() {
+	if (zzUTPure == none || zzUTPure.Settings == none)
+		return false;
+
+	switch (zzUTPure.Settings.JitterBoundingMode) {
+		case JB_All:         return true;
+		case JB_CarrierOnly: return IGPlus_IsFlagCarrier();
+	}
+
+	return false;
+}
+
 /**
  * Splits a large DeltaTime into chunks reasonable enough for MoveAutonomous,
  * so players dont warp through walls
@@ -2917,7 +2940,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// Predict new position
 	if ((Level.Pauser == "") && (DeltaTime > 0) && (IGPlus_SkipMovesUntilNextTick == false)) {
-		if (zzUTPure.Settings.bEnableJitterBounding && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
+		if (IGPlus_ShouldJitterBound() && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
 			SimTime = DeltaTime - zzUTPure.Settings.MaxJitterTime;
 			if (SimTime >= 0.005 || bIs469Server) {
 				SimMoveAutonomous(SimTime);
@@ -3163,7 +3186,7 @@ function bool IGPlus_OldServerMove(float TimeStamp, int OldMoveData1, int OldMov
 
 	UndoExtrapolation();
 
-	if (zzUTPure.Settings.bEnableJitterBounding && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
+	if (IGPlus_ShouldJitterBound() && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
 		SimTime = DeltaTime - zzUTPure.Settings.MaxJitterTime;
 		if (SimTime >= 0.005 || bIs469Server) {
 			SimMoveAutonomous(SimTime);
@@ -3405,7 +3428,7 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 		ExtrapolationDelta = 0.0;
 	}
 
-	if (zzUTPure.Settings.bEnableJitterBounding) {
+	if (IGPlus_ShouldJitterBound()) {
 		LostTime = -Old.TimeStamp;
 		IGPlus_SavedInputChain.RemoveOutdatedNodes(CurrentTimeStamp + ExtrapolationDelta - zzUTPure.Settings.MaxJitterTime);
 		Old = IGPlus_SavedInputChain.Oldest;
@@ -12783,8 +12806,8 @@ exec function MaxJitterTime(optional string Value) {
 	IGPlus_SetNetcodeSetting("MaxJitterTime", Value);
 }
 
-exec function bEnableJitterBounding(optional string Value) {
-	IGPlus_SetNetcodeSetting("bEnableJitterBounding", Value);
+exec function JitterBoundingMode(optional string Value) {
+	IGPlus_SetNetcodeSetting("JitterBoundingMode", Value);
 }
 
 exec function NetcodeHelp() {
@@ -12818,7 +12841,7 @@ function IGPlus_PrintNetcodeHelp() {
 	ClientMessage("SnapshotInterpSendHz="$S.GetPropertyText("SnapshotInterpSendHz"));
 	ClientMessage("SnapshotInterpRewindMs="$S.GetPropertyText("SnapshotInterpRewindMs"));
 	ClientMessage("MaxJitterTime="$S.GetPropertyText("MaxJitterTime"));
-	ClientMessage("bEnableJitterBounding="$S.GetPropertyText("bEnableJitterBounding"));
+	ClientMessage("JitterBoundingMode="$S.GetPropertyText("JitterBoundingMode")$" (JB_None|JB_CarrierOnly|JB_All)");
 	ClientMessage("SnapInterpDebug (toggle client report + server echo + proxy status)");
 	ClientMessage("SnapInterpStatus [NameFilter] (one-shot proxy runtime status)");
 	ClientMessage("SnapInterpNetStatus [NameFilter] (client report + server echo + proxy status)");
@@ -12855,7 +12878,7 @@ function string IGPlus_NormalizeNetcodeKey(string Key) {
 	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
 	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";
 	if (Key ~= "MaxJitterTime") return "MaxJitterTime";
-	if (Key ~= "bEnableJitterBounding") return "bEnableJitterBounding";
+	if (Key ~= "JitterBoundingMode") return "JitterBoundingMode";
 	return "";
 }
 
@@ -13013,7 +13036,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
-	IGPlus_ServerSendSetting("bEnableJitterBounding");
+	IGPlus_ServerSendSetting("JitterBoundingMode");
 	IGPlus_ServerSendSetting("bEnableSnapshotInterpolation");
 	IGPlus_ServerSendSetting("SnapshotInterpSendHz");
 	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");

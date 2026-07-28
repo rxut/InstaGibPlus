@@ -72,7 +72,6 @@ var config bool  bEnableInputReplication;
 var config bool  bEnableServerExtrapolation;
 var config bool  bPlayersAlwaysRelevant;
 var config bool  bEnablePingCompensatedSpawn;
-var config bool  bEnableJitterBounding;
 var config bool  bEnableSnapshotInterpolation;
 var config float SnapshotInterpSendHz;
 var config float SnapshotInterpRewindMs;
@@ -80,6 +79,14 @@ var config bool  bEnableWarpFix;
 var config bool  bEnableCarcassCollision;
 var config bool  ShowTouchedPackage;
 var config bool  bEnableHitboxDebugMode;
+
+enum EJitterBoundingMode {
+	JB_None,
+	JB_CarrierOnly,
+	JB_All
+};
+
+var config EJitterBoundingMode JitterBoundingMode;
 
 enum EHitFeedbackMode {
 	HFM_Disabled,
@@ -155,7 +162,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bEnableServerExtrapolation");
 	DumpSetting(P, "bPlayersAlwaysRelevant");
 	DumpSetting(P, "bEnablePingCompensatedSpawn");
-	DumpSetting(P, "bEnableJitterBounding");
+	DumpSetting(P, "JitterBoundingMode");
 	DumpSetting(P, "bEnableSnapshotInterpolation");
 	DumpSetting(P, "SnapshotInterpSendHz");
 	DumpSetting(P, "SnapshotInterpRewindMs");
@@ -226,7 +233,7 @@ defaultproperties
 	bEnableServerExtrapolation=False
 	bPlayersAlwaysRelevant=True
 	bEnablePingCompensatedSpawn=True
-	bEnableJitterBounding=False
+	JitterBoundingMode=JB_None
 	bEnableSnapshotInterpolation=False
 	SnapshotInterpSendHz=30.0
 	SnapshotInterpRewindMs=66.0

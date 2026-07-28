@@ -1026,7 +1026,7 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bEnableServerExtrapolation") return "bEnableServerExtrapolation";
 	if (Key ~= "bPlayersAlwaysRelevant") return "bPlayersAlwaysRelevant";
 	if (Key ~= "bEnablePingCompensatedSpawn") return "bEnablePingCompensatedSpawn";
-	if (Key ~= "bEnableJitterBounding") return "bEnableJitterBounding";
+	if (Key ~= "JitterBoundingMode") return "JitterBoundingMode";
 	if (Key ~= "bEnableSnapshotInterpolation") return "bEnableSnapshotInterpolation";
 	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
 	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";

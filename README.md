@@ -875,7 +875,7 @@ Parameters marked `optional` do not have to be supplied.
 1. [SnapshotInterpSendHz](#snapshotinterpsendhz-command)
 1. [SnapshotInterpRewindMs](#snapshotinterprewindms-command)
 1. [MaxJitterTime](#maxjittertime-command)
-1. [bEnableJitterBounding](#benablejitterbounding-command)
+1. [JitterBoundingMode](#jitterboundingmode-command)
 1. [SnapInterpDebug](#snapinterpdebug)
 1. [SnapInterpStatus](#snapinterpstatus)
 1. [SnapInterpNetStatus](#snapinterpnetstatus)
@@ -1093,10 +1093,10 @@ Read/set server setting [SnapshotInterpRewindMs](#snapshotinterprewindms) (admin
 
 Read/set server setting [MaxJitterTime](#maxjittertime) (admin only).
 
-## bEnableJitterBounding (command)
+## JitterBoundingMode (command)
 **Parameters: (optional string Value)**
 
-Read/set server setting [bEnableJitterBounding](#benablejitterbounding) (admin only).
+Read/set server setting [JitterBoundingMode](#jitterboundingmode) (admin only).
 
 ## SnapInterpDebug
 Toggles snapshot interpolation debug reporting.
@@ -1253,7 +1253,7 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bEnableServerExtrapolation](#benableserverextrapolation)
 1. [bPlayersAlwaysRelevant](#bplayersalwaysrelevant)
 1. [bEnablePingCompensatedSpawn](#benablepingcompensatedspawn)
-1. [bEnableJitterBounding](#benablejitterbounding)
+1. [JitterBoundingMode](#jitterboundingmode)
 1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation)
 1. [SnapshotInterpSendHz](#snapshotinterpsendhz)
 1. [SnapshotInterpRewindMs](#snapshotinterprewindms)
@@ -1701,14 +1701,22 @@ If disabled, players will stand on their spawn-point visible to other players wi
 
 Disable to restore default netcode behavior.
 
-## bEnableJitterBounding
+## JitterBoundingMode
 
-**Type: bool**  
-**Default: False**  
+**Type: enum**  
+**Default: JB_None**  
 
-If enabled, updates by clients over more than [MaxJitterTime](#maxjittertime) will be cut down to MaxJitterTime in order to reduce visible warping for other players.
+Selects which players get updates over more than [MaxJitterTime](#maxjittertime) cut down to MaxJitterTime, in order to reduce visible warping for other players.
 
-Disable to restore default netcode behavior.
+| Value | Effect |
+| --- | --- |
+| `JB_None` | Disabled. Default netcode behavior. |
+| `JB_CarrierOnly` | Bounds CTF flag carriers only. |
+| `JB_All` | Bounds every player. |
+
+`JB_CarrierOnly` is intended for CTF, where a lagging flag carrier warps and becomes hard to hit. Bounding costs the bounded player a position correction when it triggers, so restricting it to carriers keeps that cost off everyone else.
+
+All modes share [MaxJitterTime](#maxjittertime).
 
 ## bEnableSnapshotInterpolation
 

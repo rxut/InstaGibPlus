@@ -1107,7 +1107,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
-	IGPlus_ServerSendSetting("bEnableJitterBounding");
+	IGPlus_ServerSendSetting("JitterBoundingMode");
 	IGPlus_ServerSendSetting("bEnableSnapshotInterpolation");
 	IGPlus_ServerSendSetting("SnapshotInterpSendHz");
 	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");
