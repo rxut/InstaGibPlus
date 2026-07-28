@@ -810,6 +810,9 @@ simulated function bool DetProcessStep(
 
 	// ── ALT FIRE (GRENADES) ──
 	if ((bAltHeld || bForceAlt) && !bDetWasAltHeld) {
+		// Stock's AltFiring.Begin drops the icon here; LockedTarget itself dies
+		// in FireRockets on the !bFireLoad path.
+		bLockedOn = false;
 		DetAltLoadElapsed = 0.0;
 		DetCachedChargeData = 1;
 		if (bServerSide)
@@ -1287,8 +1290,10 @@ state FireRockets
 		}
 		else if ( LockedTarget != None )
 		{
+			// No seeker without the icon: Idle.Timer can clear bLockedOn and leave
+			// LockedTarget set, and Det has no NormalFire.AnimEnd to clean it up.
 			BestTarget = Pawn(CheckTarget());
-			if ( (LockedTarget!=None) && (LockedTarget != BestTarget) ) 
+			if ( !bLockedOn || (LockedTarget != BestTarget) )
 			{
 				LockedTarget = None;
 				bLockedOn=False;
@@ -1503,6 +1508,28 @@ Begin:
 
 state Idle
 {
+	// The only place a lock is acquired. Stock leaves Idle for NormalFire the
+	// instant Fire is pressed so it can't run mid-load; Det stays in Idle, so
+	// gate it on the load cycle instead. A load may lose a lock, never gain one.
+	function Timer()
+	{
+		if (IsDetActive() && (DetHasCommittedPrimary() || bDetWasAltHeld)) {
+			// The revalidation stock does per rocket loaded in NormalFire.AnimEnd.
+			if (LockedTarget != None && CheckTarget() != LockedTarget) {
+				if (bLockedOn)
+					Owner.PlaySound(Misc2Sound, SLOT_None, Pawn(Owner).SoundDampening);
+				LockedTarget = None;
+				bLockedOn = False;
+			}
+			// Loads that never reach FireRockets (fire with no ammo) skip Idle's
+			// Begin refresh; a stale candidate would lock in one tick, not two.
+			OldTarget = None;
+			return;
+		}
+
+		Super.Timer();
+	}
+
 	function BeginState()
 	{
 		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
