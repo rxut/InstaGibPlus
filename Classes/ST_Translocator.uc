@@ -157,6 +157,12 @@ simulated function ClientThrowTarget()
 	}
 }
 
+// Keep both press and release boundaries: combining disjoint holds must
+// never activate the stock return-to-previous-weapon shortcut.
+static final function bool CanMergeFireInput(bool OldFire, bool OldAltFire, bool NewFire, bool NewAltFire) {
+	return OldFire == NewFire && OldAltFire == NewAltFire;
+}
+
 function ReturnToPreviousWeapon()
 {
 	if (Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_EnableDualButtonSwitch == false)

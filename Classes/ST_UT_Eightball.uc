@@ -419,7 +419,12 @@ simulated function bool DetHasCommittedPrimary() {
 	return bDetPrimaryCycleActive || bDetWasFireHeld;
 }
 
-simulated function DetCancelDeterministicLoad(bool bServerSide, optional int MoveChargeData) {
+// Settle a committed load on switch-away. Stock keeps loading through a
+// switch request and fires the volley on release before holstering; the
+// nearest cheap equivalent is firing the committed count at the settlement
+// point (bFireLoad), so the player gets the shot instead of losing the ammo.
+// Drop/throw paths settle without firing.
+simulated function DetCancelDeterministicLoad(bool bServerSide, optional int MoveChargeData, optional bool bFireLoad, optional rotator FireView, optional vector FireLoc) {
 	local int CancelCount;
 	local bbPlayer bbP;
 	local bool bHadCommittedState;
@@ -429,10 +434,18 @@ simulated function DetCancelDeterministicLoad(bool bServerSide, optional int Mov
 	bHadCommittedState = bDetPrimaryCycleActive || bDetWasFireHeld || bDetWasAltHeld
 		|| DetCachedChargeData > 0 || ClientRocketsLoaded > 0;
 
+	// Only fire from a weapon that is still equipped or holstering; once
+	// ChangedWeapon has run, FireRockets would park this weapon in Idle.
+	if (bFireLoad && (Pawn(Owner) == none || Pawn(Owner).Weapon != self))
+		bFireLoad = false;
+
 	if (bServerSide && AmmoType != none && AmmoType.AmmoAmount > 0) {
 		if (bDetPrimaryCycleActive || bDetWasFireHeld) {
 			CancelCount = Clamp(DetResolvePrimaryEdgeCharge(MoveChargeData), 1, 6);
-			AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
+			if (bFireLoad)
+				HandleDetServerFire(FireView, FireLoc, CancelCount, bDetPrimaryTightLatched); // uses the ammo itself
+			else
+				AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
 		} else if (bDetWasAltHeld) {
 			// Base UT style: consume what is currently loaded, not a
 			// time-recomputed charge that can overshoot on switch.
@@ -441,7 +454,10 @@ simulated function DetCancelDeterministicLoad(bool bServerSide, optional int Mov
 				CancelCount = Clamp(DetCachedChargeData, 1, 6);
 			else if (ClientRocketsLoaded > 0)
 				CancelCount = Clamp(ClientRocketsLoaded, 1, 6);
-			AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
+			if (bFireLoad)
+				HandleDetServerAltFire(FireView, FireLoc, CancelCount);
+			else
+				AmmoType.UseAmmo(Min(CancelCount, AmmoType.AmmoAmount));
 		}
 	}
 
@@ -472,7 +488,10 @@ function DetFinalizeSwitchSettlement() {
 	if (Role != ROLE_Authority || !bDetSwitchSettlementPending)
 		return;
 
-	DetCancelDeterministicLoad(true, DetGetChargeDataForMove());
+	if (Pawn(Owner) != none)
+		DetCancelDeterministicLoad(true, DetGetChargeDataForMove(), true, Pawn(Owner).ViewRotation, Owner.Location);
+	else
+		DetCancelDeterministicLoad(true, DetGetChargeDataForMove());
 }
 
 
@@ -623,7 +642,7 @@ simulated function bool DetProcessStep(
 			|| bDetPendingAltHeld || bDetPendingAltTap
 			|| ((bDetWasAltHeld || bAltHeld || DetHasCommittedPrimary())
 				&& (!bClientPredictedStep || bForceFire || bForceAlt)))) {
-		DetCancelDeterministicLoad(bServerSide, DetChargeData);
+		DetCancelDeterministicLoad(bServerSide, DetChargeData, true, StepView, StepLoc);
 		return true;
 	}
 

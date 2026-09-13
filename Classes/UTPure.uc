@@ -530,14 +530,15 @@ function RegisterProjectile(Projectile P) {
 function CompensateFor(int Ping, optional Pawn Instigator) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
+	local ST_MoverDummy MD;
     local Pawn DActual;
-	
+
 	bCompensationIsActive = true;
 
     for (D = CompDummies; D != none; D = D.Next) {
         DActual = D.Actual;
-        
-        if (DActual == none || 
+
+        if (DActual == none ||
             DActual == Instigator ||
             DActual.bDeleteMe ||
             DActual.bHidden ||
@@ -546,12 +547,22 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
         {
             continue;
         }
-            
+
         if (DActual.PlayerReplicationInfo == none ||
             DActual.PlayerReplicationInfo.bIsSpectator)
         {
             continue;
         }
+
+		// Rewind the lift the target stands on first, so the live lift cannot
+		// occlude the rider's historical hitbox, and so the bot fallback in
+		// CompSwap (live mover Z) lands on the same frame as the player path.
+		// EndCompensation restores it.
+		if (Mover(DActual.Base) != none) {
+			MD = FindMoverDummy(Mover(DActual.Base));
+			if (MD != none)
+				MD.CompStart(Ping);
+		}
 
         D.CompStart(Ping);
     }

@@ -26,6 +26,7 @@ Supported weapons are:
 - `ST_UT_FlakCannon`
 - `ST_ut_biorifle`
 - `ST_UT_Eightball`
+- `ST_SniperRifle`
 
 ## Trust boundaries
 
@@ -40,6 +41,11 @@ server context, `IGPlus_DetServerBindingValid` further restricts it to:
 
 The readiness bit is a prediction hint, not authority. A pending weapon cannot
 be client-vouched before `ChangedWeapon` equips it.
+
+Both transports retain weapon identity and charge data when readiness is
+false. Index None means no deterministic weapon, including Impact Hammer;
+it never resolves to the server's equipped weapon. With ping compensation
+enabled, rejected deterministic bindings cannot fall through to legacy fire.
 
 ### Fire windows
 
@@ -74,8 +80,16 @@ no-input settlement step required to release or cancel committed state.
 - A fire tap sets `bForceFire`, and `CanMergeMove` refuses to merge a move that
   carries one, so a tap always ends its move. Double-taps faster than one net
   update still produce two moves.
-- Merging also splits on a deterministic-ready transition, so a switch during
-  fire spam cannot produce a client-only predicted shot.
+- Merging splits on weapon identity and deterministic readiness, so an
+  outgoing weapon's held input cannot be relabeled as the incoming weapon.
+- Manual switch commands record pending transitions immediately, including
+  cancellation between received moves. Both transports resume deferred
+  holsters once the shot-animation hold expires.
+- The stock-move transport also splits on the actual weapon object, including
+  Hammer and Translocator, which both have deterministic index None.
+- Translocator moves split on either fire button's press or release. Separate
+  throw and teleport inputs cannot merge into a false two-button hold that
+  returns to the previous weapon. Intentional two-button switching is retained.
 - Primary shot confirmation is reliable so client rocket/load visuals
   reconcile after a volley.
 - A rejected switch-race prediction receives a reliable, refund-only ammo
@@ -106,8 +120,11 @@ it ever matters, the fix is to set `bForcePacketSplit` on a release edge in
 ### Eightball
 
 - Primary rocket count and instant/tight state are latched for a cycle.
-- Grenade and rocket loads settle through switch-away and keep committed ammo
-  spent.
+- Grenade and rocket loads settle through switch-away by firing the committed
+  count at the settlement point while the launcher is still equipped or
+  holstering. Stock keeps loading and fires on release; this is the cheap
+  equivalent, so a switch never eats a load silently. Drops and throws still
+  cancel with the ammo spent.
 - Charge rotation/load sounds are replayed by the server for non-owning clients.
 - The complete volley is consumed at fire time from a frozen cycle budget.
   Mid-load ammo pickups intentionally do not extend that volley.
@@ -116,8 +133,8 @@ it ever matters, the fix is to set `bForcePacketSplit` on a release edge in
 
 - Alt charge has levels 0..9 and reaches the stock 4.1 glob at roughly 4.5
   seconds / 10 ammo.
-- Switching away cancels the paid charge, keeps committed ammo spent, and
-  clears the cycle without spawning a glob from the outgoing weapon.
+- Switching away fires the paid charge at its current size from the outgoing
+  weapon, then clears the cycle. Stock fires on release before holstering.
 
 ### Stock parity notes
 
@@ -166,7 +183,11 @@ protocol negotiation differently.
 - Release a rocket volley, immediately switch, and fire the new weapon under
   loss; verify no misrouted edge or under-fired volley.
 - Charge/release Bio at every level, including full charge and out-of-ammo;
-  switch away mid-charge and verify the paid glob resolves once.
+  switch away mid-charge and verify one glob of the current charge spawns and
+  the switch completes.
+- Load rockets, switch away while still holding fire; verify the loaded count
+  fires once and the switch completes. Repeat with a throw: no volley, ammo
+  spent.
 - Run every weapon dry while manually selecting another weapon; verify the
   manual choice is not replaced by impact hammer.
 - Double-tap faster than one net update; both shots must register.

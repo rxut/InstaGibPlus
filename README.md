@@ -1649,7 +1649,7 @@ If False, any shot made while alive on your client counts.
 **Default: 0.1**  
 **Unit: s**  
 
-Maximum time after death (on server) that players can still fire their weapons. Only applies if [bRestrictTrading](#brestricttrading) is True.
+Maximum time after death (on server) that players can still fire their weapons. Only applies if [bRestrictTrading](#brestricttrading) is True. A negative value rejects every shot fired after death, which disables trading. This window applies to NewNet weapons only; ST_ weapons never fire after death.
 
 ## TradePingMargin
 
@@ -1892,6 +1892,39 @@ If True, carcasses left by dead players have collision. If false, carcasses will
 **Unit: seconds**
 
 Shots more than this long in the past are rejected.
+
+# Weapon Settings
+
+Per-preset settings in the `[WeaponSettings*]` sections. Only the netcode-relevant ones are listed here.
+
+## bEnablePingCompensation
+
+**Type: bool**  
+**Default: False**  
+
+If enabled, hitscan shots are tested against where targets were on the shooter's screen: the server rewinds every player (and the lift they stand on) by the shooter's ping before tracing. Also switches supported ST_ weapons to the deterministic fire path (see Docs/V5-NOTES.md).
+
+## PingCompensationMax
+
+**Type: int**  
+**Default: 200**  
+**Unit: ms**  
+
+Upper bound on the rewind. Players above this ping are compensated as if they had this ping.
+
+## bEnableSubTickCompensation
+
+**Type: bool**  
+**Default: False**  
+
+If enabled, the rewound position is interpolated between the two snapshots around the target time instead of snapping to the older one.
+
+## RocketCompensatePing
+
+**Type: bool**  
+**Default: False**  
+
+If enabled, projectiles are fast-forwarded by the shooter's ping at spawn, with targets rewound for each simulated step.
 
 # Building
 

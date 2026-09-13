@@ -59,12 +59,17 @@ State ClientDown
 			}
 			else
 			{
+				Enable('Tick');
 				T.NeedActivate();
 			}
 		}
 	}
 
-	simulated function BeginState();
+	simulated function BeginState()
+	{
+		AmbientSound = None; // kill the charge hum; the stock Disable('Tick') would otherwise leave it
+		Super.BeginState();
+	}
 }
 
 simulated function ClientWeaponEvent(name EventType) {

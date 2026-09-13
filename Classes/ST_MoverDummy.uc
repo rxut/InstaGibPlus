@@ -8,6 +8,7 @@ var int DataIndex;
 
 var bool bCompActive;
 var vector SavedMoverLoc;
+var bool SavedCollideActors, SavedBlockActors, SavedBlockPlayers;
 
 event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
@@ -30,7 +31,9 @@ function vector LerpVector(float Alpha, vector A, vector B) {
 	return A + (B - A) * Alpha;
 }
 
-function CompStart(int Ping, Pawn Instigator) {
+// Rewind the mover to where it was Ping ms ago so compensated traces see the
+// lift the target was actually standing on, not the live one.
+function CompStart(int Ping) {
 	local float TargetTimeStamp;
 	local int Idx, Scans;
 	local int BufSize;
@@ -40,9 +43,6 @@ function CompStart(int Ping, Pawn Instigator) {
 	local vector TargetLoc;
 	
 	if (Actual == None || Actual.bDeleteMe || bCompActive)
-		return;
-
-	if (Instigator == None || Instigator.Base != Actual)
 		return;
 
 	TargetTimeStamp = Level.TimeSeconds - 0.001 * Ping * Level.TimeDilation;
@@ -61,11 +61,11 @@ function CompStart(int Ping, Pawn Instigator) {
 					if (TimeDelta > 0.001) {
 						Alpha = (TargetTimeStamp - OlderSnap.ServerTimeStamp) / TimeDelta;
 						TargetLoc = LerpVector(FClamp(Alpha, 0.0, 1.0), OlderSnap.Loc, NewerSnap.Loc);
-						ApplyRewind(TargetLoc, Instigator);
+						ApplyRewind(TargetLoc);
 						return;
 					}
 				}
-				ApplyRewind(OlderSnap.Loc, Instigator);
+				ApplyRewind(OlderSnap.Loc);
 				return;
 			}
 			NewerSnap = OlderSnap;
@@ -75,12 +75,22 @@ function CompStart(int Ping, Pawn Instigator) {
 	}
 
 	if (NewerSnap != None)
-		ApplyRewind(NewerSnap.Loc, Instigator);
+		ApplyRewind(NewerSnap.Loc);
 }
 
-function ApplyRewind(vector HistoricalLoc, Pawn Instigator) {
+// Collision is dropped around SetLocation: a colliding mover moved onto a
+// rider runs encroachment (crush / return-when-encroach) and may refuse the
+// move. The rewound mover collides again at the historical position.
+function ApplyRewind(vector HistoricalLoc) {
+	if (VSize(HistoricalLoc - Actual.Location) < 1.0)
+		return;
 	SavedMoverLoc = Actual.Location;
+	SavedCollideActors = Actual.bCollideActors;
+	SavedBlockActors = Actual.bBlockActors;
+	SavedBlockPlayers = Actual.bBlockPlayers;
+	Actual.SetCollision(false, false, false);
 	Actual.SetLocation(HistoricalLoc);
+	Actual.SetCollision(SavedCollideActors, SavedBlockActors, SavedBlockPlayers);
 	bCompActive = true;
 }
 
@@ -128,8 +138,11 @@ function CompEnd() {
 	if (bCompActive) {
 		bCompActive = false;
 
-		if (Actual != None && !Actual.bDeleteMe)
+		if (Actual != None && !Actual.bDeleteMe) {
+			Actual.SetCollision(false, false, false);
 			Actual.SetLocation(SavedMoverLoc);
+			Actual.SetCollision(SavedCollideActors, SavedBlockActors, SavedBlockPlayers);
+		}
 	}
 }
 

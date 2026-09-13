@@ -138,13 +138,15 @@ simulated function bool DetProcessStep(
 	local bool bWantsAlt, bWantsPrimary;
 	local int TargetAmmoSpent;
 
-	// Switching cancels the paid charge. Spawning a forwarded glob while the
-	// weapon is going down can collide at the owner's new weapon position.
+	// Switching fires the paid charge as it stands (stock fires on release
+	// before holstering; this is the cheap equivalent), then clears the cycle.
 	if (bDetWasAltHeld
 		&& bbPlayer(Owner) != none
 		&& bbPlayer(Owner).IGPlus_DetSwitchAwayFrom(self)) {
 		if (!bServerSide)
 			StopChargeSound();
+		else if (DetAltAmmoSpent > 0)
+			HandleDetServerAltFire(StepView, StepLoc, FMin(Clamp(DetAltAmmoSpent - 1, 0, 9) * 0.5, 4.1));
 		bDetWasAltHeld = false;
 		DetAltAmmoSpent = 0;
 		DetCachedChargeData = 0;

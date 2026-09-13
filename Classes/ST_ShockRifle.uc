@@ -702,6 +702,15 @@ state Idle
 	}
 }
 
+state ClientActive {
+	simulated function AnimEnd() {
+		// PlaySelect clears this locally. The server's replicated true may
+		// already have arrived, so selection must restore readiness locally.
+		bCanClientFire = true;
+		Super.AnimEnd();
+	}
+}
+
 state ClientFiring {
 
 	simulated function bool ClientFire(float Value) {

@@ -148,8 +148,9 @@ The deterministic model currently covers:
 - Shock Rifle;
 - Ripper;
 - Flak Cannon;
-- Bio Rifle; and
-- Eightball.
+- Bio Rifle;
+- Eightball; and
+- Sniper Rifle.
 
 It operates through the stock movement update or the input-replication path.
 When ping compensation is disabled, or a weapon is unsupported, legacy weapon

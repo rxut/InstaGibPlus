@@ -16,9 +16,12 @@ var bool SavedDodging;
 var bool bDetReady;
 var int DetWeaponIndex;
 var int DetChargeData;
+// Local merge boundary, including weapons with no deterministic index.
+var Weapon IGPlus_SavedWeapon;
 
 function Clear2() {
     Clear();
+    IGPlus_SavedWeapon = none;
     IGPlus_MergeCount = 0;
     JumpIndex = -1;
     DodgeIndex = -1;

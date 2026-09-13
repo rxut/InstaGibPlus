@@ -116,8 +116,26 @@ function bool TestDetEffectiveAnimTime() {
 	return true;
 }
 
+function TestTranslocatorFireMerging() {
+	LogTestResult(!class'ST_Translocator'.static.CanMergeFireInput(true, false, false, true),
+		"Translocator_throw_then_teleport_stays_separate");
+	LogTestResult(!class'ST_Translocator'.static.CanMergeFireInput(false, true, true, false),
+		"Translocator_teleport_then_throw_stays_separate");
+	LogTestResult(!class'ST_Translocator'.static.CanMergeFireInput(true, false, false, false),
+		"Translocator_primary_release_stays_separate");
+	LogTestResult(!class'ST_Translocator'.static.CanMergeFireInput(false, true, false, false),
+		"Translocator_alt_release_stays_separate");
+	LogTestResult(!class'ST_Translocator'.static.CanMergeFireInput(true, true, true, false),
+		"Translocator_dual_hold_release_stays_separate");
+	LogTestResult(class'ST_Translocator'.static.CanMergeFireInput(true, true, true, true),
+		"Translocator_real_dual_hold_is_preserved");
+	LogTestResult(class'ST_Translocator'.static.CanMergeFireInput(true, false, true, false),
+		"Translocator_unchanged_primary_hold_can_merge");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
+	TestTranslocatorFireMerging();
 	return 0;
 }

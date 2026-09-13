@@ -833,46 +833,7 @@ function bool PointInsideCylinder(vector P, vector CylinderCenter, float Radius,
 	return (DistXYSq <= Square(Radius) && Abs(P.Z - CylinderCenter.Z) <= HalfHeight);
 }
 
-// Prevent compensated hits through a target's lift when firing from below.
 // Uses mover history at the same rewind time as pawn compensation.
-function bool IsCompensatedHitBlockedByTargetMover(
-	UTPlusDummy TargetDummy,
-	Pawn Shooter,
-	vector StartTrace,
-	vector HitLocation,
-	int RewindPing
-) {
-	local Mover BaseMover;
-	local vector HistoricalMoverLoc;
-
-	if (TargetDummy == None || TargetDummy.Actual == None || Shooter == None)
-		return false;
-
-	BaseMover = Mover(TargetDummy.Actual.Base);
-	if (BaseMover == None)
-		return false;
-
-	// Same-base shots should not be blocked by this protection.
-	if (Shooter.Base == BaseMover)
-		return false;
-
-	HistoricalMoverLoc = BaseMover.Location;
-	// Fallback stays at current mover location if history is unavailable.
-	GetHistoricalMoverLocationForRewind(Shooter, BaseMover, RewindPing, HistoricalMoverLoc);
-
-	// This guard is only for the "from below through mover" case.
-	if (StartTrace.Z >= HistoricalMoverLoc.Z || HitLocation.Z <= HistoricalMoverLoc.Z)
-		return false;
-
-	return LineIntersectsCylinder(
-		StartTrace,
-		HitLocation,
-		HistoricalMoverLoc,
-		BaseMover.CollisionRadius,
-		BaseMover.CollisionHeight
-	);
-}
-
 function bool ShouldIgnoreCompensatedSelfBaseHit(
 	Pawn Shooter,
 	vector StartTrace,
@@ -1346,8 +1307,6 @@ simulated function Actor TraceShotInternal(
 				if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
 					if (CheckBodyShotCompensated(D, HitLocation, Dir) == false &&
 						CheckHeadShotCompensated(D, HitLocation, Dir) == false)
-						continue;
-					if (IsCompensatedHitBlockedByTargetMover(D, PawnOwner, StartTrace, HitLocation, RewindPing))
 						continue;
 					Other = D.Actual;
 					break;
