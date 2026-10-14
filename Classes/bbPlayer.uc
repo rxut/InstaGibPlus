@@ -90,6 +90,10 @@ var Weapon IGPlus_DetAutoSwitchPending;
 // How far this client's move clock leads the server's (seconds, floored at 0).
 var float IGPlus_DetFireClockLead;
 var bool bDetFireClockBlocked;
+// Server: how long after a switch the client may still predict the old weapon
+// (it learns of the switch one round trip later). Set when the switch is seen.
+var float IGPlus_DetInFlightSlack;
+var float IGPlus_DetLastRejectLogTS;
 // Client: frame timestamp of the latest locally predicted Det shot.
 var float IGPlus_DetClientShotTS;
 var float IGPlus_DetLastShotTS;
@@ -2933,6 +2937,16 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// Whole-move dispatch: one weapon step per v3 ServerMove.
 	bDetWholeMove = (DetWeapon != none);
+	// A ready hint with fire input but no valid binding: the client showed a
+	// shot from a weapon the server is not holding.
+	if (!bDetWholeMove && SM.bDetReady && SM.DetWeaponIndex != IGPLUS_DetWEAPON_None
+		&& (bFired || bAltFired || bForceFire || bForceAltFire)
+		&& Level.TimeSeconds - IGPlus_DetLastRejectLogTS > 1.0) {
+		IGPlus_DetLastRejectLogTS = Level.TimeSeconds;
+		Log("[DET-UNBOUND]"@PlayerReplicationInfo.PlayerName@"index="$SM.DetWeaponIndex
+			@"step="$SM.TimeStamp@"weapon="$Weapon@"pending="$PendingWeapon
+			@"prev="$IGPlus_DetPrevWeapon@"prevStep="$IGPlus_DetPrevWeaponStepTS, 'IGPlus');
+	}
 
 	if (bDetWholeMove) {
 		IGPlus_DetProcessStep(
@@ -4672,8 +4686,10 @@ function IGPlus_DetTrackPendingWeapon(float NowTS) {
 		xxClientSwitchPending(none, 0.0);
 	}
 	IGPlus_DetPendingSeen = PendingWeapon;
-	if (PendingWeapon != none && PendingWeapon != Weapon)
+	if (PendingWeapon != none && PendingWeapon != Weapon) {
 		IGPlus_DetPendingSeenTS = NowTS;
+		IGPlus_DetInFlightSlack = IGPlus_DetComputeInFlightSlack();
+	}
 }
 
 // Det refire and windows run on move timestamps, i.e. the client's clock.
@@ -4704,6 +4720,14 @@ function bool IGPlus_DetFireClockOK() {
 	return bOK;
 }
 
+// The switch execs run on the server; the client keeps predicting the old
+// weapon until xxClientSwitchPending/ClientPutDown arrives, one round trip
+// after its key press. Honour those predicted steps instead of a flat 0.12 s,
+// or every shot in that gap is client-only above ~120 ms ping.
+function float IGPlus_DetComputeInFlightSlack() {
+	return FClamp(0.001 * IGPlus_GetLatencyMs() + 0.03, 0.12, 0.35);
+}
+
 // WHEN the bound weapon may step; binding validity covers WHICH.
 simulated function bool IGPlus_DetFireWindowOpen(Weapon W, float StepTS) {
 	if (W == none)
@@ -4711,9 +4735,10 @@ simulated function bool IGPlus_DetFireWindowOpen(Weapon W, float StepTS) {
 	if (W == Weapon) {
 		if (StepTS < IGPlus_DetWeaponGateTS)
 			return false;
-		// A pending switch closes the equipped window (0.12s in-flight slack).
+		// A pending switch closes the equipped window once the client can
+		// have learned of it (one round trip, see IGPlus_DetComputeInFlightSlack).
 		if (PendingWeapon != none && PendingWeapon != W
-			&& StepTS > IGPlus_DetPendingSeenTS + 0.12)
+			&& StepTS > IGPlus_DetPendingSeenTS + FMax(0.12, IGPlus_DetInFlightSlack))
 			return false;
 		return true;
 	}
@@ -4890,6 +4915,17 @@ simulated function bool IGPlus_DetProcessStep(
 	// Closed window: no fire intent; switched-away charge weapons get one
 	// no-input step to settle an in-flight load.
 	if (bServerSide && !IGPlus_DetFireWindowOpen(W, StepTS)) {
+		// A hinted step that wants to fire means the client predicted a shot
+		// here; rejecting it leaves a client-only shot.
+		if (bClientPredictedStep && (bFireHeld || bAltHeld || bForceFire || bForceAlt)
+			&& Level.TimeSeconds - IGPlus_DetLastRejectLogTS > 1.0) {
+			IGPlus_DetLastRejectLogTS = Level.TimeSeconds;
+			Log("[DET-REJECT]"@PlayerReplicationInfo.PlayerName@W.Name
+				@"step="$StepTS@"gate="$IGPlus_DetWeaponGateTS
+				@"pendingSeen="$IGPlus_DetPendingSeenTS@"slack="$IGPlus_DetInFlightSlack
+				@"prevStep="$IGPlus_DetPrevWeaponStepTS@"weapon="$Weapon
+				@"pending="$PendingWeapon, 'IGPlus');
+		}
 		if (bForceFire)
 			IGPlus_DetLatchFireTap(StepTS, W);
 		EB = ST_UT_Eightball(W);
@@ -11890,8 +11926,9 @@ simulated function ChangedWeapon() {
 	if (Role == ROLE_Authority && Weapon != None && Weapon != PendingWeapon) {
 		IGPlus_DetFinalizeExpiredPrevWeapon(true);
 		IGPlus_DetPrevWeapon = Weapon;
-		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + 0.25;
-		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + 0.12; // reorder jitter slack
+		IGPlus_DetInFlightSlack = IGPlus_DetComputeInFlightSlack();
+		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + IGPlus_DetInFlightSlack;
+		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + FMax(0.25, IGPlus_DetInFlightSlack + 0.13);
 		IGPlus_DetClearPendingFireTap(); // client clears in ClientPutDown
 	}
 
