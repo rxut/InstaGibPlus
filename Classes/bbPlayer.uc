@@ -249,12 +249,11 @@ var bool IGPlus_AdjustLocationOverride;
 var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
 var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
-var vector IGPlus_CameraAimOffset;         // offset of the last rendered view (Push-Safe Aim)
 
 // Push-Safe Aim (bEnablePushSafeAim), server side: pushes the client has not
-// seen yet, and where the client last said it was.
-var float IGPlus_PSAPushTime[8];
-var float IGPlus_PSAPushSpeed[8];
+// seen yet (move timeline), and where the client last said it was.
+var float IGPlus_PSAPushTS[8];
+var vector IGPlus_PSAPushDV[8];
 var int IGPlus_PSAPushNext;
 var vector IGPlus_PSALastClientLoc;
 var float IGPlus_PSALastClientTS;
@@ -2428,10 +2427,7 @@ simulated function IGPlus_CameraCorrectionDecay(float DeltaTime) {
 // Moves the first-person camera by the remaining correction offset, stopping
 // short of walls so the view never ends up inside geometry.
 simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
-	local vector Desired, HitLocation, HitNormal;
-
 	IGPlus_CameraCorrectionApplied = vect(0,0,0);
-	IGPlus_CameraAimOffset = vect(0,0,0);
 	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
 		return;
 	if (Settings.bCameraCorrectionSmoothing == false) {
@@ -2439,80 +2435,110 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 		return;
 	}
 
-	Desired = CameraLocation + IGPlus_CameraCorrectionOffset;
-	if (Trace(HitLocation, HitNormal, Desired, CameraLocation, false) != none)
-		Desired = HitLocation - 2.0 * Normal(IGPlus_CameraCorrectionOffset);
+	IGPlus_CameraCorrectionApplied = IGPlus_ClippedCameraOffset(CameraLocation);
+	CameraLocation += IGPlus_CameraCorrectionApplied;
+}
 
-	IGPlus_CameraCorrectionApplied = Desired - CameraLocation;
-	IGPlus_CameraAimOffset = IGPlus_CameraCorrectionApplied;
-	CameraLocation = Desired;
+// Camera offset as rendered from Eye: the remaining correction, stopped
+// short of walls.
+simulated function vector IGPlus_ClippedCameraOffset(vector Eye) {
+	local vector Desired, HitLocation, HitNormal;
+
+	Desired = Eye + IGPlus_CameraCorrectionOffset;
+	if (Trace(HitLocation, HitNormal, Desired, Eye, false) != none)
+		Desired = HitLocation - 2.0 * Normal(IGPlus_CameraCorrectionOffset);
+	return Desired - Eye;
 }
 
 // Push-Safe Aim, client: the view that sends a shot from the real position
 // through the point under the crosshair of the (offset) rendered camera. The
 // unshifted shot would hit D*Dir + Offset from the real origin.
 simulated function bool IGPlus_PSAAimView(out rotator AimView) {
-	local vector Dir, CamEye, HitLocation, HitNormal;
+	local vector Dir, Eye, Offset, HitLocation, HitNormal;
 	local float D;
 
+	Eye = Location + EyeHeight * vect(0,0,1) + WalkBob;
+	Offset = IGPlus_ClippedCameraOffset(Eye);
+	if (Offset == vect(0,0,0))
+		return false;
+
 	Dir = vector(ViewRotation);
-	CamEye = Location + EyeHeight * vect(0,0,1) + WalkBob + IGPlus_CameraAimOffset;
-	if (Trace(HitLocation, HitNormal, CamEye + 30000.0 * Dir, CamEye, true) == none)
+	if (Trace(HitLocation, HitNormal, Eye + Offset + 30000.0 * Dir, Eye + Offset, true) == none)
 		return false; // nothing under the crosshair: parallel is right
 
-	D = (HitLocation - CamEye) dot Dir;
+	D = (HitLocation - (Eye + Offset)) dot Dir;
 	if (D < 50.0)
 		return false;
 
-	AimView = rotator(D * Dir + IGPlus_CameraAimOffset);
+	AimView = rotator(D * Dir + Offset);
 	AimView.Roll = ViewRotation.Roll;
 	return true;
 }
 
-// Push-Safe Aim, server: a push we applied that the client hasn't seen yet.
-function IGPlus_PSANotePush(float Speed) {
-	IGPlus_PSAPushTime[IGPlus_PSAPushNext] = Level.TimeSeconds;
-	IGPlus_PSAPushSpeed[IGPlus_PSAPushNext] = Speed;
-	IGPlus_PSAPushNext = (IGPlus_PSAPushNext + 1) % arraycount(IGPlus_PSAPushTime);
+// Push-Safe Aim, server: a push we applied that the client hasn't seen yet,
+// stamped on the move timeline.
+function IGPlus_PSANotePush(vector DV) {
+	IGPlus_PSAPushTS[IGPlus_PSAPushNext] = CurrentTimeStamp;
+	IGPlus_PSAPushDV[IGPlus_PSAPushNext] = DV;
+	IGPlus_PSAPushNext = (IGPlus_PSAPushNext + 1) % arraycount(IGPlus_PSAPushTS);
 }
 
-// How far those pushes can have moved us from where the client still thinks
-// we are: speed change times time since, until a round trip later its moves
-// include them.
-function float IGPlus_PSABudget() {
-	local int i;
-	local float Age, Window, Budget;
-
-	// ponytail: 1.5x ping + 0.1s window, 1.25x + 4uu slack per push
-	Window = FMax(0.1, PlayerReplicationInfo.Ping * 0.0015) * Level.TimeDilation + 0.1;
-	for (i = 0; i < arraycount(IGPlus_PSAPushTime); i++) {
-		if (IGPlus_PSAPushTime[i] <= 0.0)
-			continue;
-		Age = Level.TimeSeconds - IGPlus_PSAPushTime[i];
-		if (Age < 0.0 || Age > Window)
-			continue;
-		Budget += IGPlus_PSAPushSpeed[i] * Age * 1.25 + 4.0;
-	}
-	return Budget;
+simulated function bool IGPlus_PSAClear(vector A, vector B) {
+	local vector HitLocation, HitNormal;
+	return Trace(HitLocation, HitNormal, A, B, false) == none;
 }
 
 // Push-Safe Aim, server: where a Det shot leaves from. The client fired from
-// where its previous move ended (shots start their move); use that when
-// pushes it hasn't seen explain the gap and nothing solid is in between.
-function vector IGPlus_PSAShotOrigin(float PrevTS, int MergeCount) {
-	local float Gap;
+// the start of this (single-frame) move. Use that when the gap to our
+// position is the drift of pushes it hadn't seen (each push's speed change
+// times its age), and the line between both bodies and eyes is clear.
+function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int MergeCount) {
+	local vector ClientStart, Gap, Expected;
+	local float ShotTS, Age, MaxAge, Drift, Window, Slack;
+	local int i;
 
-	if (IGPlus_PushSafeAim == false || MergeCount != 0
-		|| PrevTS == 0.0 || IGPlus_PSALastClientTS != PrevTS)
+	if (IGPlus_PushSafeAim == false || MergeCount != 0 || Mover(SM.ClientBase) != none)
 		return Location;
 
-	Gap = VSize(IGPlus_PSALastClientLoc - Location);
-	if (Gap < 0.5 || Gap > IGPlus_PSABudget())
-		return Location;
-	if (FastTrace(IGPlus_PSALastClientLoc, Location) == false)
+	ClientStart = SM.ClientLocation - SM.ClientVelocity * SM.MoveDeltaTime;
+	if (SM.ClientBase != none)
+		ClientStart += SM.ClientBase.Location;
+	// Exact when the previous move (and nothing between) reported it.
+	if (IGPlus_PSALastClientTS == PrevTS
+		&& Abs(SM.TimeStamp - PrevTS - SM.MoveDeltaTime) < 0.5 * SM.MoveDeltaTime
+		&& VSize(IGPlus_PSALastClientLoc - ClientStart) < 4.0)
+		ClientStart = IGPlus_PSALastClientLoc;
+
+	Gap = Location - ClientStart;
+	if (VSize(Gap) < 0.5)
 		return Location;
 
-	return IGPlus_PSALastClientLoc;
+	ShotTS = SM.TimeStamp - SM.MoveDeltaTime;
+	Window = (FMax(0.1, PlayerReplicationInfo.Ping * 0.0015) + 0.1) * Level.TimeDilation;
+	for (i = 0; i < arraycount(IGPlus_PSAPushTS); i++) {
+		if (IGPlus_PSAPushTS[i] <= 0.0)
+			continue;
+		Age = ShotTS - IGPlus_PSAPushTS[i];
+		if (Age <= 0.0 || Age > Window)
+			continue;
+		Expected += IGPlus_PSAPushDV[i] * Age;
+		Drift += VSize(IGPlus_PSAPushDV[i]) * Age;
+		MaxAge = FMax(MaxAge, Age);
+	}
+	if (Drift <= 0.0)
+		return Location;
+
+	// ponytail: 25% of the drift, plus what ground vs air acceleration and
+	// gravity can add since the push, plus 8uu
+	Slack = 0.25 * Drift + 0.5 * (AccelRate + VSize(Region.Zone.ZoneGravity)) * MaxAge * MaxAge + 8.0;
+	if (VSize(Gap - Expected) > Slack)
+		return Location;
+
+	if (IGPlus_PSAClear(ClientStart, Location) == false
+		|| IGPlus_PSAClear(ClientStart + BaseEyeHeight * vect(0,0,1), Location + BaseEyeHeight * vect(0,0,1)) == false)
+		return Location;
+
+	return ClientStart;
 }
 
 // PlayerViewOffset change that moves the first-person weapon by WorldOffset.
@@ -3600,7 +3626,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			DetWeapon,
 			SM.TimeStamp,
 			ViewRotation,
-			IGPlus_PSAShotOrigin(PSAPrevTS, MergeCount),
+			IGPlus_PSAShotOrigin(SM, PSAPrevTS, MergeCount),
 			bFired,
 			bAltFired,
 			bForceFire,
@@ -6166,8 +6192,9 @@ function xxReplicateMove(
 
 	// Push-Safe Aim: while the camera still eases after a correction, shots
 	// leave from the real position; aim them through the crosshair point.
-	if (IGPlus_PushSafeAim && IGPlus_CameraAimOffset != vect(0,0,0)
-		&& IGPlus_CameraCorrectionOffset != vect(0,0,0)
+	if (IGPlus_PushSafeAim && IGPlus_CameraCorrectionOffset != vect(0,0,0)
+		&& Settings.bCameraCorrectionSmoothing
+		&& (DodgeMove <= DODGE_None || DodgeMove >= DODGE_Active)
 		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
 	) {
 		PSARealView = ViewRotation;
@@ -6337,7 +6364,9 @@ function xxReplicateMove(
 
 	NewMove.SetRotation( Rotation );
 	NewMove.IGPlus_SavedViewRotation = ViewRotation;
-	if (bPSAAimFix)
+	// Only the shot frame's move (a single frame) carries the aimed view, so
+	// nothing else (dodges, other weapons) sees it.
+	if (bPSAAimFix && bDetLocalShot)
 		NewMove.IGPlus_SavedViewRotation = PSAAimView;
 	NewMove.IGPlus_SavedLocation = Location;
 	NewMove.IGPlus_SavedVelocity = Velocity;
@@ -7571,7 +7600,7 @@ function ServerAddMomentum(vector Momentum) {
 	Super.AddVelocity(Momentum);
 
 	if (IGPlus_PushSafeAim && Velocity != OldVelocity)
-		IGPlus_PSANotePush(VSize(Velocity - OldVelocity));
+		IGPlus_PSANotePush(Velocity - OldVelocity);
 }
 
 simulated function NN_Momentum( Vector momentum, name DamageType )
