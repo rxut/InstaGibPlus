@@ -103,6 +103,11 @@ var float IGPlus_DetLastClockLogTS;
 // (it learns of the switch one round trip later). Set when the switch is seen.
 var float IGPlus_DetInFlightSlack;
 var float IGPlus_DetLastRejectLogTS;
+// Predicted switching, phase 1 (server, log only): client predictions vs outcome.
+var int IGPlus_PredSwitchTotal;
+var int IGPlus_PredSwitchClientMatch;
+var int IGPlus_PredSwitchLogicMatch;
+var float IGPlus_PredSwitchLastLogTS;
 // Client: frame timestamp of the latest locally predicted Det shot.
 var float IGPlus_DetClientShotTS;
 var float IGPlus_DetLastShotTS;
@@ -656,6 +661,7 @@ replication
 		xxServerMoveDead;
 
 	reliable if ( Role < ROLE_Authority )
+		xxServerWeaponCommand,
 		DropFlag,
 		Go,
 		Hold,
@@ -11720,6 +11726,283 @@ function ClientReStart()
 	IgnoreZChangeTicks = 1;
 	if (PlayerReplicationInfo != none)
 		MultiDodgesRemaining = bbPlayerReplicationInfo(PlayerReplicationInfo).MaxMultiDodges;
+}
+
+// ---------------------------------------------------------------------------
+// Predicted weapon switching, phase 1: logging only.
+// The IG+ HUDs catch the switch binds on the client (UPlayer::Exec offers a
+// command to myHUD before the PlayerPawn) and route them here. The client
+// predicts the outcome with the same rules as the server execs below, then the
+// server runs the unchanged exec and logs whether the prediction held.
+// Docs/predicted-weapon-switching.md
+// ---------------------------------------------------------------------------
+
+// Kind: 1 = SwitchWeapon(F), 2 = GetWeapon(C), 3 = NextWeapon, 4 = PrevWeapon.
+// Entry point for the IG+ HUDs' exec stubs; falls back to the stock command for
+// any non-bbPlayer owner (spectators).
+static function IGPlus_HUDWeaponCommand(Actor HUDOwner, byte Kind, byte F, class<Weapon> C) {
+	local PlayerPawn P;
+
+	P = PlayerPawn(HUDOwner);
+	if (bbPlayer(P) != none) {
+		bbPlayer(P).IGPlus_ClientWeaponCommand(Kind, F, C);
+		return;
+	}
+	if (P == none)
+		return;
+	switch (Kind) {
+		case 1: P.SwitchWeapon(F); break;
+		case 2: P.GetWeapon(C); break;
+		case 3: P.NextWeapon(); break;
+		case 4: P.PrevWeapon(); break;
+	}
+}
+
+simulated function IGPlus_ClientWeaponCommand(byte Kind, byte F, class<Weapon> C) {
+	local Weapon Predicted, ClientPend;
+	local bool bKnown;
+
+	if (Level.NetMode != NM_Client) {
+		IGPlus_RunWeaponCommand(Kind, F, C);
+		return;
+	}
+	ClientPend = ClientPending;
+	if (ClientPend == none)
+		ClientPend = IGPlus_DetClientSwitchPending;
+	bKnown = IGPlus_ResolveWeaponCommand(Kind, F, C, Weapon, ClientPend, Predicted);
+	xxServerWeaponCommand(Kind, F, C, bKnown, Predicted, Weapon, ClientPend);
+}
+
+function IGPlus_RunWeaponCommand(byte Kind, byte F, class<Weapon> C) {
+	switch (Kind) {
+		case 1: SwitchWeapon(F); break;
+		case 2: GetWeapon(C); break;
+		case 3: NextWeapon(); break;
+		case 4: PrevWeapon(); break;
+	}
+}
+
+function xxServerWeaponCommand(byte Kind, byte F, class<Weapon> C, bool bClientKnown,
+	Weapon ClientTarget, Weapon ClientWeapon, Weapon ClientPend
+) {
+	local Weapon W0, P0, LogicTarget, ServerTarget;
+	local bool bLogicKnown, bUnchanged, bClientMatch, bLogicMatch;
+
+	W0 = Weapon;
+	P0 = PendingWeapon;
+	bLogicKnown = IGPlus_ResolveWeaponCommand(Kind, F, C, W0, P0, LogicTarget);
+	IGPlus_RunWeaponCommand(Kind, F, C);
+
+	// The execs bail out here without switching; nothing to compare.
+	if (IsInState('Dying') || Level.Game.bGameEnded || Level.Pauser != "")
+		return;
+
+	if (Weapon != W0)
+		ServerTarget = Weapon;
+	else if (PendingWeapon != P0)
+		ServerTarget = PendingWeapon;
+	bUnchanged = Weapon == W0 && PendingWeapon == P0;
+
+	bClientMatch = bClientKnown && IGPlus_PredSwitchMatches(ClientTarget, ServerTarget, bUnchanged, P0);
+	bLogicMatch = bLogicKnown && IGPlus_PredSwitchMatches(LogicTarget, ServerTarget, bUnchanged, P0);
+
+	IGPlus_PredSwitchTotal++;
+	if (bClientMatch)
+		IGPlus_PredSwitchClientMatch++;
+	if (bLogicMatch)
+		IGPlus_PredSwitchLogicMatch++;
+
+	if ((!bClientMatch || !bLogicMatch) && Level.TimeSeconds - IGPlus_PredSwitchLastLogTS > 0.25) {
+		IGPlus_PredSwitchLastLogTS = Level.TimeSeconds;
+		Log("[PRED-SWITCH] mismatch"@PlayerReplicationInfo.PlayerName
+			@"cmd="$IGPlus_WeaponCommandName(Kind, F, C)
+			@"client="$ClientTarget$"(known="$bClientKnown$")"
+			@"logic="$LogicTarget$"(known="$bLogicKnown$")"
+			@"server="$ServerTarget$"(unchanged="$bUnchanged$")"
+			@"clientW="$ClientWeapon@"clientPend="$ClientPend
+			@"serverW="$W0@"serverPend="$P0, 'IGPlus');
+	}
+	if (IGPlus_PredSwitchTotal % 25 == 0)
+		Log("[PRED-SWITCH] summary"@PlayerReplicationInfo.PlayerName
+			@"commands="$IGPlus_PredSwitchTotal
+			@"clientMatch="$IGPlus_PredSwitchClientMatch
+			@"logicMatch="$IGPlus_PredSwitchLogicMatch, 'IGPlus');
+}
+
+// An unchanged outcome also matches predicting the weapon already pending
+// (re-selecting it rewrites PendingWeapon with the same value).
+static final function bool IGPlus_PredSwitchMatches(Weapon Predicted, Weapon ServerTarget, bool bUnchanged, Weapon PendBefore) {
+	if (Predicted == ServerTarget)
+		return true;
+	return bUnchanged && Predicted != none && Predicted == PendBefore;
+}
+
+static final function string IGPlus_WeaponCommandName(byte Kind, byte F, class<Weapon> C) {
+	switch (Kind) {
+		case 1: return "SwitchWeapon"@F;
+		case 2: return "GetWeapon"@C;
+		case 3: return "NextWeapon";
+		case 4: return "PrevWeapon";
+	}
+	return "?";
+}
+
+static final function bool IGPlus_WeaponHasAmmo(Weapon W) {
+	return W.AmmoType == none || W.AmmoType.AmmoAmount > 0;
+}
+
+// First weapon of group F with ammo at or after Start. Stock
+// Weapon.WeaponChange does this recursively but is not simulated, so it does
+// nothing on the client.
+static final function Weapon IGPlus_FindGroupWeapon(Inventory Start, byte F) {
+	local Inventory Inv;
+	local Weapon W;
+	local int Guard;
+
+	for (Inv = Start; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		W = Weapon(Inv);
+		if (W != none && W.InventoryGroup == F && IGPlus_WeaponHasAmmo(W))
+			return W;
+	}
+	return none;
+}
+
+// Mirrors the switch execs below: Target = the weapon the command switches to,
+// none if it changes nothing. Returns false when the outcome is not knowable
+// from here (Next/Prev with no weapon up fall back to SwitchToBestWeapon).
+simulated function bool IGPlus_ResolveWeaponCommand(byte Kind, byte F, class<Weapon> C,
+	Weapon Cur, Weapon Pend, out Weapon Target
+) {
+	local Inventory Inv;
+	local Weapon Base, W, Prev;
+	local int Group, Guard;
+	local bool bFound;
+
+	Target = none;
+	switch (Kind) {
+	case 1: // SwitchWeapon(F)
+		if (Inventory == none)
+			return true;
+		if (Cur != none && Cur.Inventory != none)
+			W = IGPlus_FindGroupWeapon(Cur.Inventory, F);
+		if (W == none)
+			W = IGPlus_FindGroupWeapon(Inventory, F);
+		if (W != Cur)
+			Target = W;
+		return true;
+
+	case 2: // GetWeapon(C)
+		if (Inventory == none || C == none || (Cur != none && Cur.IsA(C.Name)))
+			return true;
+		for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+			Guard++;
+			if (Inv.IsA(C.Name)) {
+				W = Weapon(Inv);
+				if (W != none && IGPlus_WeaponHasAmmo(W))
+					Target = W;
+				return true;
+			}
+		}
+		return true;
+
+	case 3: // NextWeapon
+		if (Cur == none)
+			return false;
+		Base = Cur;
+		if (Pend != none)
+			Base = Pend;
+		Group = 100;
+		for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+			Guard++;
+			W = Weapon(Inv);
+			if (W == none)
+				continue;
+			if (W.InventoryGroup == Base.InventoryGroup) {
+				if (W == Base)
+					bFound = true;
+				else if (bFound && IGPlus_WeaponHasAmmo(W)) {
+					Target = W;
+					break;
+				}
+			} else if (W.InventoryGroup > Base.InventoryGroup && IGPlus_WeaponHasAmmo(W)
+				&& W.InventoryGroup < Group) {
+				Group = W.InventoryGroup;
+				Target = W;
+			}
+		}
+		bFound = false;
+		Group = Base.InventoryGroup;
+		Guard = 0;
+		if (Target == none)
+			for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+				Guard++;
+				W = Weapon(Inv);
+				if (W == none)
+					continue;
+				if (W.InventoryGroup == Base.InventoryGroup) {
+					if (W == Base) {
+						bFound = true;
+						if (Prev != none)
+							Target = Prev;
+					} else if (!bFound && Target == none && IGPlus_WeaponHasAmmo(W))
+						Prev = W;
+				} else if (W.InventoryGroup < Group && IGPlus_WeaponHasAmmo(W)) {
+					Group = W.InventoryGroup;
+					Target = W;
+				}
+			}
+		return true;
+
+	case 4: // PrevWeapon
+		if (Cur == none)
+			return false;
+		Base = Cur;
+		if (Pend != none)
+			Base = Pend;
+		Group = 0;
+		for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+			Guard++;
+			W = Weapon(Inv);
+			if (W == none)
+				continue;
+			if (W.InventoryGroup == Base.InventoryGroup) {
+				if (W == Base) {
+					bFound = true;
+					if (Prev != none) {
+						Target = Prev;
+						break;
+					}
+				} else if (!bFound && IGPlus_WeaponHasAmmo(W))
+					Prev = W;
+			} else if (W.InventoryGroup < Base.InventoryGroup && IGPlus_WeaponHasAmmo(W)
+				&& W.InventoryGroup >= Group) {
+				Group = W.InventoryGroup;
+				Target = W;
+			}
+		}
+		bFound = false;
+		Group = Base.InventoryGroup;
+		Guard = 0;
+		if (Target == none)
+			for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+				Guard++;
+				W = Weapon(Inv);
+				if (W == none)
+					continue;
+				if (W.InventoryGroup == Base.InventoryGroup) {
+					if (W == Base)
+						bFound = true;
+					else if (bFound && Target == none && IGPlus_WeaponHasAmmo(W))
+						Target = W;
+				} else if (W.InventoryGroup > Group && IGPlus_WeaponHasAmmo(W)) {
+					Group = W.InventoryGroup;
+					Target = W;
+				}
+			}
+		return true;
+	}
+	return false;
 }
 
 exec function GetWeapon(class<Weapon> NewWeaponClass )

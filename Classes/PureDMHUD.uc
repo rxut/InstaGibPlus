@@ -207,3 +207,11 @@ simulated function DrawStatus(Canvas Canvas)
 		}
 	}
 }
+
+// Predicted switching: on the client, UPlayer::Exec offers a bound command to
+// myHUD before the PlayerPawn, so IG+ sees the switch binds here first.
+// See bbPlayer.IGPlus_ClientWeaponCommand.
+exec function SwitchWeapon(byte F) { class'bbPlayer'.static.IGPlus_HUDWeaponCommand(Owner, 1, F, none); }
+exec function GetWeapon(class<Weapon> NewWeaponClass) { class'bbPlayer'.static.IGPlus_HUDWeaponCommand(Owner, 2, 0, NewWeaponClass); }
+exec function NextWeapon() { class'bbPlayer'.static.IGPlus_HUDWeaponCommand(Owner, 3, 0, none); }
+exec function PrevWeapon() { class'bbPlayer'.static.IGPlus_HUDWeaponCommand(Owner, 4, 0, none); }
