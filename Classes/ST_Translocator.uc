@@ -17,6 +17,9 @@ var float ServerTimeSinceTargetSpawn;
 
 var float LastClientDiscSpawnTime;
 var float LastClientFireSoundTime;
+// Client: the local disc was thrown with margin on the server's 0.5s gate,
+// so predicted translocation may land on it.
+var bool IGPlus_bClientDiscConfident;
 
 // Server, predicted translocation: timestamp of the move that threw the disc.
 var float IGPlus_ThrowTS;
@@ -79,6 +82,7 @@ simulated function bool ClientFire(float Value)
 {
 	local bbPlayer bbP;
 	local float CompensatedTime, PingCompensation;
+	local bool bOut;
 
 	bbP = bbPlayer(Owner);
 
@@ -89,17 +93,24 @@ simulated function bool ClientFire(float Value)
 
 	PingCompensation = bbP.PingAverage * 0.001;
 	CompensatedTime = ServerTimeSinceLastFire + PingCompensation;
-	// Predicted translocation lands on the local disc: only throw it when the
-	// server (ServerTimeSinceLastFire > 0.5) surely throws too.
-	if (bbP.IGPlus_PredictedTranslocation)
-		CompensatedTime -= 0.1;
+
+	// A predicted translocation already used the disc up; the server's
+	// bTTargetOut=false is still a ping away. Without this, a throw right
+	// after a translocate gets no client-side throw.
+	bOut = bTTargetOut;
+	if (bOut && bbP.IGPlus_TlocPredictTS > LastClientFireSoundTime
+		&& Level.TimeSeconds - bbP.IGPlus_TlocPredictTS < bbP.PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25)
+		bOut = false;
     
-    if ( !bTTargetOut && bCanClientFire && (CompensatedTime > 0.45) )
+    if ( !bOut && bCanClientFire && (CompensatedTime > 0.45) )
     {
 		// Prevent duplicate firing sounds on client
 		if ((Level.TimeSeconds - LastClientFireSoundTime) < 0.45)
 			return false;
 
+		// Predicted translocation only lands on a local disc the server surely
+		// threw too (its gate is ServerTimeSinceLastFire > 0.5).
+		IGPlus_bClientDiscConfident = CompensatedTime > 0.55;
 		if (Role < ROLE_Authority && GetWeaponSettings().TranslocatorCompensatePing && bbP != none && bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations == true)
 			ClientThrowTarget();
 
@@ -107,7 +118,7 @@ simulated function bool ClientFire(float Value)
         PlayFiring();
         return true;
     }
-	else if ( bTTargetOut && bCanClientFire && (ServerTimeSinceTargetSpawn > 0.8) )
+	else if ( bOut && bCanClientFire && (ServerTimeSinceTargetSpawn > 0.8) )
 	{
 		return false;
 	}
@@ -518,8 +529,11 @@ simulated function vector CalcDrawOffsetClient() {
 simulated function ST_TranslocatorTarget IGPlus_PredictionDisc() {
 	local ST_TranslocatorTarget T, Found;
 
-	if (TTarget_Client != None && !TTarget_Client.bDeleteMe && TTarget_Client.bCollideWorld)
-		return TTarget_Client;
+	if (TTarget_Client != None && !TTarget_Client.bDeleteMe && TTarget_Client.bCollideWorld) {
+		if (IGPlus_bClientDiscConfident)
+			return TTarget_Client;
+		return None;
+	}
 
 	if (IGPlus_DiscRepl != None && !IGPlus_DiscRepl.bDeleteMe && !IGPlus_DiscRepl.bHidden)
 		return IGPlus_DiscRepl;

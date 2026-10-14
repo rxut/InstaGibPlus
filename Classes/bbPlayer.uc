@@ -273,6 +273,7 @@ var ST_TranslocatorTarget IGPlus_TlocHiddenDisc; // disc hidden by a predicted t
 var float IGPlus_TlocHiddenUntil;
 var float IGPlus_TlocHideArrivingUntil; // our local disc was used: hide the server's when it arrives
 var float IGPlus_TlocLastPressTS;       // last translocator fire/alt press (move timeline)
+var float IGPlus_TlocPredictTS;         // when a predicted translocation used the disc up
 var bool IGPlus_DidTranslocate;
 var bool IGPlus_NotifiedTranslocate;
 var bool IGPlus_WantCAP;
@@ -3359,6 +3360,7 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 		}
 	}
 
+	IGPlus_TlocPredictTS = Level.TimeSeconds;
 	if (Disc == TL.TTarget_Client) {
 		TL.TTarget_Client = none;
 		Disc.Destroy();
