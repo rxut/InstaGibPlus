@@ -11962,8 +11962,11 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
 		&& ((Kind == 2 && C != none && Cur.IsA(C.Name)) || (Kind == 1 && Cur.InventoryGroup == F)))
 		Target = Cur;
-	if (Target == none)
+	if (Target == none) {
+		if (Kind == 2)
+			IGPlus_PSNoAmmoMessage(Cur, C);
 		return;
+	}
 
 	if (!bEquipped) {
 		if (Target == IGPlus_PSTarget)
@@ -12019,6 +12022,26 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 			IGPlus_DetClearPendingFireTap();
 	}
 	xxServerPredictedSwitch(IGPlus_PSSerial, Target, IGPlus_PSFrom, TS, IGPlus_PSHolsterTS);
+}
+
+// Client: stock GetWeapon's "<weapon> has no ammo" message; the server never
+// sees a predicted press that resolved to nothing.
+simulated function IGPlus_PSNoAmmoMessage(Weapon Cur, class<Weapon> C) {
+	local Inventory Inv;
+	local Weapon W;
+	local int Guard;
+
+	if (C == none || (Cur != none && Cur.IsA(C.Name)))
+		return;
+	for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		if (Inv.IsA(C.Name)) {
+			W = Weapon(Inv);
+			if (W != none && !IGPlus_WeaponHasAmmo(W))
+				ClientMessage(W.ItemName$W.MessageNoAmmo);
+			return;
+		}
+	}
 }
 
 // Client: point the running switch at Target (retarget, or the server's
