@@ -11957,6 +11957,10 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 			xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
 		return;
 	}
+	// Stock SwitchWeapon's two WeaponChange passes print the no-ammo messages.
+	if (Kind == 1 && Inventory != none
+		&& !(Cur != none && Cur.Inventory != none && IGPlus_PSGroupWalk(Cur.Inventory, F)))
+		IGPlus_PSGroupWalk(Inventory, F);
 	// Stock ignores pressing back to the weapon still up during a switch; a
 	// predicted switch treats it as "go back".
 	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
@@ -12042,6 +12046,33 @@ simulated function IGPlus_PSNoAmmoMessage(Weapon Cur, class<Weapon> C) {
 			return;
 		}
 	}
+}
+
+// Client: one stock Weapon.WeaponChange(F) pass from Start. True if it finds a
+// loaded weapon of group F; otherwise every empty one it passed prints its
+// no-ammo message, deepest first, as the stock recursion does.
+simulated function bool IGPlus_PSGroupWalk(Inventory Start, byte F) {
+	local Inventory Inv;
+	local Weapon W, Empty[8];
+	local int Guard, N;
+
+	for (Inv = Start; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		W = Weapon(Inv);
+		if (W == none || W.InventoryGroup != F)
+			continue;
+		if (IGPlus_WeaponHasAmmo(W))
+			return true;
+		if (N < ArrayCount(Empty)) {
+			Empty[N] = W;
+			N++;
+		}
+	}
+	while (N > 0) {
+		N--;
+		ClientMessage(Empty[N].ItemName$Empty[N].MessageNoAmmo);
+	}
+	return false;
 }
 
 // Client: point the running switch at Target (retarget, or the server's
