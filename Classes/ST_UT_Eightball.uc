@@ -53,6 +53,9 @@ var bool bDetPrimaryLastPredictedAuto;
 var bool bDetPrimaryTightLatched;
 var int DetServerShotSerial;
 var int DetServerLastShotKind;
+// Step timestamp at which the last volley's fire anim ends, set identically on
+// both sides; predicted switches holster no earlier (stock waits in FireRockets).
+var float DetVolleyHoldUntil;
 // Server: pending weapon this holster was already announced for (ClientPutDown).
 var Weapon DetHolsterAnnouncedFor;
 var bool bDetSwitchSettlementPending;
@@ -539,6 +542,15 @@ simulated function float DetPostFireInterval(int NumRockets) {
 	return 0.05 + (FireFrames - 1) / (30.0 * FirePlayRate) + 0.05 + 6.0 / 15.0;
 }
 
+// The fire-anim part of DetPostFireInterval (without the reload leg).
+simulated function float DetVolleyAnimTime(int NumRockets) {
+	return DetPostFireInterval(NumRockets) - 0.05 - 6.0 / 15.0;
+}
+
+simulated function DetNoteVolley(float TS, int NumRockets) {
+	DetVolleyHoldUntil = TS + DetVolleyAnimTime(NumRockets);
+}
+
 simulated function DetAdvanceStepClock(float StepTS) {
 	local float StepDelta;
 
@@ -905,6 +917,7 @@ simulated function HandleDetClientFire() {
 	DetConsumeClientAmmo(1);
 	if (bbPlayer(Owner) != none)
 		bbPlayer(Owner).IGPlus_DetClientShotTS = Level.TimeSeconds;
+	DetNoteVolley(Level.TimeSeconds, 1);
 
 	DetCachedChargeData = 1;
 	ClientRocketsLoaded = 1;
@@ -932,6 +945,7 @@ simulated function HandleDetClientLoadedFire(bool bAlt, int NumRockets, optional
 	}
 	if (bbPlayer(Owner) != none)
 		bbPlayer(Owner).IGPlus_DetClientShotTS = Level.TimeSeconds;
+	DetNoteVolley(Level.TimeSeconds, NumRockets);
 
 	// Primary-only: if authoritative auto-fire interrupts during rotate,
 	// the final load sound may never be reached via AnimEnd.
@@ -965,6 +979,8 @@ function HandleDetServerFire(rotator StepView, vector StepLoc, int NumRockets, b
 		DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED;
 	bDetSwitchSettlementPending = false;
 	DetArmServerFireState(NumRockets, true, bTight);
+	if (bbPlayer(Owner) != none)
+		DetNoteVolley(bbPlayer(Owner).CurrentTimeStamp, NumRockets);
 	if (P.PendingWeapon != none && P.PendingWeapon != self) {
 		P.PlayRecoil(FiringSpeed);
 		bChangeWeapon = true;
@@ -983,6 +999,8 @@ function HandleDetServerAltFire(rotator StepView, vector StepLoc, int NumRockets
 	DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_ALT;
 	bDetSwitchSettlementPending = false;
 	DetArmServerFireState(NumRockets, false);
+	if (bbPlayer(Owner) != none)
+		DetNoteVolley(bbPlayer(Owner).CurrentTimeStamp, NumRockets);
 	// Ammo is already consumed: spawn the volley, then switch (stock order).
 	if (P.PendingWeapon != none && P.PendingWeapon != self)
 		bChangeWeapon = true;
@@ -1013,6 +1031,7 @@ simulated function DetResetDeterministicState() {
 	DetLastStepDelta = 0.0;
 	DetCachedChargeData = 0;
 	DetHolsterAnnouncedFor = none;
+	DetVolleyHoldUntil = 0.0;
 	DetInternalBudget = 0;
 	DetClientAmmoSpentSinceDown = 0;
 	DetClientLastDownTS = 0.0;
