@@ -78,7 +78,7 @@ no-input settlement step required to release or cancel committed state.
 Refire intervals and windows compare move timestamps, which are the client's
 clock. The server tracks how far that clock leads its own
 (`IGPlus_DetFireClockLead`: client move delta minus 1.01x server delta, floored
-at 0). While the lead exceeds `DetFireClockMargin` (default 0.25 s), steps are
+at 0). While the lead exceeds `DetFireClockMargin` (default 0.5 s), steps are
 treated as unhinted: no fresh shots, committed cycles still resolve, and taps
 stay queued. Delays net out against the bunched catch-up, but a fast clock
 builds up lead.

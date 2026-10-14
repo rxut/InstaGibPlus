@@ -1897,7 +1897,7 @@ Shots more than this long in the past are rejected.
 ## DetFireClockMargin
 
 **Type: float**  
-**Default: 0.25**  
+**Default: 0.5**  
 **Unit: seconds**  
 
 Deterministic weapons time their refire on the client's move timestamps. The server tracks how far that clock runs ahead of its own (1% drift allowance, network delays net out) and stops starting new deterministic shots while it leads by more than this. It stops a speed-hacked client from firing faster. Lag spikes shorter than this are absorbed without losing shots. 0 or less disables the check.

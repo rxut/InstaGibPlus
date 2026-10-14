@@ -212,7 +212,7 @@ defaultproperties
 	MaxJitterTime=0.1
 	WarpFixDelay=0.25
 	FireTimeout=0.1
-	DetFireClockMargin=0.25
+	DetFireClockMargin=0.5
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False

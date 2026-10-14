@@ -5483,21 +5483,12 @@ function xxReplicateMove(
 				IGPlus_IsEightballInstantMode(Weapon)
 			);
 			bDetLocalShot = IGPlus_DetClientShotTS == Level.TimeSeconds;
-		} else if (bJustFired
-			&& (DetLocalWeapon != none
-				|| IGPlus_DetSupportsWeapon(PendingWeapon)
-				|| IGPlus_DetSupportsWeapon(ClientPending)
-				|| IGPlus_DetSupportsWeapon(IGPlus_DetClientSwitchPending))) {
+		} else if (bJustFired && DetLocalWeapon != none) {
 			// Tap during select/bring-up: queue for the first ready frame,
-			// bound to the weapon it was pressed on.
-			if (DetLocalWeapon != none)
-				IGPlus_DetLatchFireTap(Level.TimeSeconds, DetLocalWeapon);
-			else if (IGPlus_DetSupportsWeapon(ClientPending))
-				IGPlus_DetLatchFireTap(Level.TimeSeconds, ClientPending);
-			else if (IGPlus_DetSupportsWeapon(IGPlus_DetClientSwitchPending))
-				IGPlus_DetLatchFireTap(Level.TimeSeconds, IGPlus_DetClientSwitchPending);
-			else
-				IGPlus_DetLatchFireTap(Level.TimeSeconds, PendingWeapon);
+			// bound to the weapon it was pressed on. Only the equipped weapon:
+			// the move is bound to it, so it is the only tap the server can
+			// queue too; anything else would fire on the client alone.
+			IGPlus_DetLatchFireTap(Level.TimeSeconds, DetLocalWeapon);
 		}
 	}
 
@@ -11929,7 +11920,11 @@ simulated function ChangedWeapon() {
 		IGPlus_DetInFlightSlack = IGPlus_DetComputeInFlightSlack();
 		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + IGPlus_DetInFlightSlack;
 		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + FMax(0.25, IGPlus_DetInFlightSlack + 0.13);
-		IGPlus_DetClearPendingFireTap(); // client clears in ClientPutDown
+		// Drop only a click queued for the outgoing weapon. A click on the
+		// incoming one (client already in its select) must survive, or the
+		// client fires it alone. Client mirrors this in ClientPutDown.
+		if (IGPlus_DetPendingFireTapWeapon != PendingWeapon)
+			IGPlus_DetClearPendingFireTap();
 	}
 
 	Super.ChangedWeapon();
@@ -11954,7 +11949,8 @@ function ClientPutDown(Weapon Current, Weapon Next)
 {
 	IGPlus_MarkDeterministicSwitchGuard();
 	IGPlus_DetClientSwitchPending = none; // the real holster has started
-	IGPlus_DetClearPendingFireTap(); // server clears in ChangedWeapon
+	if (IGPlus_DetPendingFireTapWeapon != Next)
+		IGPlus_DetClearPendingFireTap(); // server mirrors this in ChangedWeapon
 	Super.ClientPutDown(Current, Next);
 }
 

@@ -159,8 +159,8 @@ function float SimFireClockLead(float ClientRate, float Seconds, optional float 
 function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.0, 10.0) < 0.02, "FireClockLead_synced_clock_stays_near_zero");
 	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.02, "FireClockLead_small_drift_is_absorbed");
-	LogTestResult(SimFireClockLead(1.0, 5.0, 2.0, 0.2) <= 0.25, "FireClockLead_200ms_spike_stays_under_default_margin");
-	LogTestResult(SimFireClockLead(1.5, 1.0) > 0.25, "FireClockLead_speedhack_exceeds_default_margin_within_1s");
+	LogTestResult(SimFireClockLead(1.0, 5.0, 2.0, 0.4) <= 0.5, "FireClockLead_400ms_spike_stays_under_default_margin");
+	LogTestResult(SimFireClockLead(1.5, 2.0) > 0.5, "FireClockLead_speedhack_exceeds_default_margin_within_2s");
 }
 
 event int main(string Params) {
