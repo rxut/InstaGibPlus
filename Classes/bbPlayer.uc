@@ -119,10 +119,10 @@ var float IGPlus_PSPrevGate;          // client: From's gate, restored on cancel
 var bool bPSHolsterStarted;
 var bool bPSForcing;                  // server: the timeline's own ChangedWeapon
 var Weapon IGPlus_PSKeep;             // client: weapon the timeline put up (vs stale echoes)
-var Weapon IGPlus_PSFiltFrom[2];      // client: server ClientPutDowns to drop (see IGPlus_PSFilterDrops)
-var Weapon IGPlus_PSFiltT1[2];
-var Weapon IGPlus_PSFiltT2[2];
-var float IGPlus_PSFiltUntil[2];
+var Weapon IGPlus_PSFiltFrom[8];      // client: server ClientPutDowns to drop (see IGPlus_PSFilterDrops)
+var Weapon IGPlus_PSFiltT1[8];
+var Weapon IGPlus_PSFiltT2[8];
+var float IGPlus_PSFiltUntil[8];
 // Predicted switching, phase 1 (server, log only): client predictions vs outcome.
 var int IGPlus_PredSwitchTotal;
 var int IGPlus_PredSwitchClientMatch;
@@ -636,6 +636,7 @@ replication
 		xxClientPSReject,
 		xxClientPSResume,
 		xxClientPSTimes,
+		xxClientPSFilterDone,
 		xxClientDetEntryGate,
 		xxSetTeleRadius,
 		xxSetTimes,
@@ -11853,9 +11854,10 @@ simulated function float IGPlus_PSHolsterStart(Weapon From, float TS) {
 	return TS;
 }
 
-// Client: one of our switches has not reached its equip point yet.
+// Client: one of our switches has not reached its equip point yet (inclusive:
+// with fast weapon switch a second press in the press frame retargets).
 simulated function bool IGPlus_PSRunning() {
-	return IGPlus_PSActive && Level.TimeSeconds < IGPlus_PSEquipTS;
+	return IGPlus_PSActive && Level.TimeSeconds <= IGPlus_PSEquipTS;
 }
 
 simulated function bool IGPlus_PSClientCanPredict() {
@@ -11883,13 +11885,17 @@ simulated function bool IGPlus_PSClientCanPredict() {
 }
 
 // Client: remember which ClientPutDown the server will send for a switch we
-// already ran locally (From plus the targets it went through). Two records,
-// for a second switch pressed before the first one's echo arrives.
+// already ran locally (From plus the targets it went through). One record per
+// switch still awaiting its echo (fast weapon switch: one per key press).
 simulated function IGPlus_PSFilterNew(Weapon From, Weapon T, float Until) {
-	IGPlus_PSFiltFrom[1] = IGPlus_PSFiltFrom[0];
-	IGPlus_PSFiltT1[1] = IGPlus_PSFiltT1[0];
-	IGPlus_PSFiltT2[1] = IGPlus_PSFiltT2[0];
-	IGPlus_PSFiltUntil[1] = IGPlus_PSFiltUntil[0];
+	local int i;
+
+	for (i = ArrayCount(IGPlus_PSFiltFrom) - 1; i > 0; i--) {
+		IGPlus_PSFiltFrom[i] = IGPlus_PSFiltFrom[i - 1];
+		IGPlus_PSFiltT1[i] = IGPlus_PSFiltT1[i - 1];
+		IGPlus_PSFiltT2[i] = IGPlus_PSFiltT2[i - 1];
+		IGPlus_PSFiltUntil[i] = IGPlus_PSFiltUntil[i - 1];
+	}
 	IGPlus_PSFiltFrom[0] = From;
 	IGPlus_PSFiltT1[0] = T;
 	IGPlus_PSFiltT2[0] = T;
@@ -11903,8 +11909,10 @@ simulated function IGPlus_PSFilterRetarget(Weapon T, float Until) {
 }
 
 simulated function IGPlus_PSFilterClear() {
-	IGPlus_PSFiltFrom[0] = none;
-	IGPlus_PSFiltFrom[1] = none;
+	local int i;
+
+	for (i = 0; i < ArrayCount(IGPlus_PSFiltFrom); i++)
+		IGPlus_PSFiltFrom[i] = none;
 }
 
 // Drops only the server's announcement of our own switch: same outgoing
@@ -11916,7 +11924,7 @@ simulated function bool IGPlus_PSFilterDrops(Weapon Current, Weapon Next) {
 
 	if (Next == none)
 		return false;
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < ArrayCount(IGPlus_PSFiltFrom); i++) {
 		F = IGPlus_PSFiltFrom[i];
 		if (F == none || Level.TimeSeconds > IGPlus_PSFiltUntil[i])
 			continue;
@@ -11961,8 +11969,12 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 		if (Target == IGPlus_PSTarget)
 			return;
 		if (Target == IGPlus_PSFrom) {
-			// Back to the old weapon. The filter stays: the server may already
-			// have sent this switch's ClientPutDown.
+			// Back to the old weapon. Started or not is decided by TS > HolsterTS
+			// on both sides (a press runs between ticks, before this tick's
+			// holster). The filter stays until the server's xxClientPSFilterDone:
+			// it may already have sent this switch's ClientPutDown.
+			if (!bPSHolsterStarted && TS > IGPlus_PSHolsterTS)
+				IGPlus_PSClientTick();
 			IGPlus_PSSerial++;
 			IGPlus_PSActive = false;
 			IGPlus_PSKeep = none;
@@ -12095,7 +12107,9 @@ simulated function xxClientPSReject(int Serial, Weapon ServerWeapon, float Serve
 		return; // superseded by a later press
 	IGPlus_PSActive = false;
 	IGPlus_PSKeep = none;
-	IGPlus_PSFilterClear();
+	// Going on to our own target: its holster echo is still to be dropped.
+	if (ServerWeapon == none || (ServerWeapon != IGPlus_PSFiltT1[0] && ServerWeapon != IGPlus_PSFiltT2[0]))
+		IGPlus_PSFilterClear();
 	IGPlus_DetClientSwitchPending = none;
 	IGPlus_DetClientGateWeapon = ServerWeapon;
 	IGPlus_DetClientEntryGateTS = ServerGate;
@@ -12123,6 +12137,9 @@ function IGPlus_PSLog(string What) {
 
 function IGPlus_PSReject(int Serial, string Reason, Weapon ServerWeapon) {
 	IGPlus_PSLog("reject"@Reason);
+	// A server-driven switch under way: send the client where it's going.
+	if (ServerWeapon == Weapon && PendingWeapon != none)
+		ServerWeapon = PendingWeapon;
 	xxClientPSReject(Serial, ServerWeapon, IGPlus_DetWeaponGateTS);
 }
 
@@ -12169,12 +12186,13 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 	bTargetOK = IGPlus_PSValidTarget(Target);
 
 	// Retarget / cancel of the switch in progress.
-	if (IGPlus_PSActive && TS < IGPlus_PSEquipTS && From == IGPlus_PSFrom) {
+	if (IGPlus_PSActive && TS <= IGPlus_PSEquipTS && From == IGPlus_PSFrom) {
 		IGPlus_PSSerial = Serial;
 		if (!bTargetOK) {
 			// A refused "back" already ended the client's switch: send it on to ours.
 			if (Target == IGPlus_PSFrom) {
-				IGPlus_PSReject(Serial, "back="$Target, IGPlus_PSTarget);
+				IGPlus_PSLog("reject back="$Target);
+				xxClientPSReject(Serial, IGPlus_PSTarget, IGPlus_PSGate);
 				return;
 			}
 			xxClientPSResume(Serial, IGPlus_PSTarget, IGPlus_PSGate);
@@ -12182,7 +12200,7 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 			return;
 		}
 		if (Target == IGPlus_PSFrom) {
-			IGPlus_PSBringBack(TS);
+			IGPlus_PSBringBack(Serial, TS, ClientHolsterTS);
 			return;
 		}
 		IGPlus_PSTarget = Target;
@@ -12244,32 +12262,56 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 		xxClientPSTimes(Serial, IGPlus_PSHolsterTS);
 }
 
-// Server: the client went back to From before the equip point. Before the
-// holster nothing moved on either side. After it, From comes back up at TS with
-// a fresh select (stock BringUp out of DownWeapon), as the client did.
-function IGPlus_PSBringBack(float TS) {
-	if (!bPSHolsterStarted && TS < IGPlus_PSHolsterTS) {
-		IGPlus_PSActive = false;
+// Server: the client went back to From before the equip point, deciding
+// "holster started" by TS > its HolsterTS. Not started: cancel (if our holster
+// raced ahead, undo it keeping the gate the client kept). Started: From comes
+// back up at TS with a fresh select (stock BringUp out of DownWeapon).
+function IGPlus_PSBringBack(int Serial, float TS, float ClientHolsterTS) {
+	// A server-driven switch took over during the holster: it wins.
+	if (bPSHolsterStarted && (PendingWeapon != IGPlus_PSTarget || Weapon != IGPlus_PSFrom)) {
+		IGPlus_PSAbort("back-overtaken");
 		return;
 	}
-	// The client's holster started: run ours too if no move has crossed it yet
-	// (it also settles the weapon's fire state, e.g. an Eightball load).
-	if (!bPSHolsterStarted) {
-		IGPlus_PSServerAdvance(TS);
-		if (!IGPlus_PSActive)
-			return; // aborted, client already told
-	}
 	IGPlus_PSActive = false;
-	// No backdating past processed moves; ChangedWeapon sends the gate, and
-	// the client takes the later one.
-	if (TS >= IGPlus_PSHolsterTS)
-		IGPlus_PSGate = FMax(TS, CurrentTimeStamp) + IGPlus_DetSelectTimeFor(IGPlus_PSFrom);
-	else
-		IGPlus_PSGate = IGPlus_DetWeaponGateTS; // our holster beat a cancel made before it; the client kept its gate
+	if (TS <= ClientHolsterTS) {
+		if (bPSHolsterStarted)
+			IGPlus_PSBringUpFrom(IGPlus_DetWeaponGateTS);
+	} else {
+		if (!bPSHolsterStarted) {
+			// Run the holster the client ran (settles the weapon's fire state).
+			IGPlus_PSActive = true;
+			IGPlus_PSServerAdvance(IGPlus_PSHolsterTS);
+			if (!IGPlus_PSActive)
+				return; // aborted, client already told
+			IGPlus_PSActive = false;
+		}
+		// No backdating past processed moves; ChangedWeapon sends the gate and
+		// the client takes the later one.
+		IGPlus_PSBringUpFrom(FMax(TS, CurrentTimeStamp) + IGPlus_DetSelectTimeFor(IGPlus_PSFrom));
+	}
+	// Ordered after any ClientPutDown our holster sent: the client may drop
+	// its filter for this switch now.
+	xxClientPSFilterDone(Serial);
+}
+
+function IGPlus_PSBringUpFrom(float Gate) {
+	local Weapon TransPrev;
+
+	IGPlus_PSGate = Gate;
 	PendingWeapon = IGPlus_PSFrom;
+	// Translocator.BringUp forgets the weapon it returns to; this isn't a new equip.
+	if (Translocator(IGPlus_PSFrom) != none)
+		TransPrev = Translocator(IGPlus_PSFrom).PreviousWeapon;
 	bPSForcing = true;
 	ChangedWeapon(); // Weapon == PendingWeapon in DownWeapon: BringUp
 	bPSForcing = false;
+	if (Translocator(IGPlus_PSFrom) != none)
+		Translocator(IGPlus_PSFrom).PreviousWeapon = TransPrev;
+}
+
+simulated function xxClientPSFilterDone(int Serial) {
+	if (Serial == IGPlus_PSSerial)
+		IGPlus_PSFilterClear();
 }
 
 // Server: drop the prediction (a server-driven switch took over, or From is
@@ -12313,8 +12355,12 @@ function IGPlus_PSServerAdvance(float StepTS) {
 		IGPlus_DetPendingSeenTS = IGPlus_PSTS;
 		Old = Weapon;
 		Old.bChangeWeapon = true;
-		if (!Old.IsInState('DownWeapon'))
+		if (!Old.IsInState('DownWeapon')) {
 			Old.GotoState('DownWeapon');
+			// Its Begin code (TweenDown) runs next tick; a bring-back or a fast
+			// switch leaves DownWeapon before that. The client ran it at holster.
+			Old.TweenDown();
+		}
 	}
 	if (StepTS < IGPlus_PSEquipTS)
 		return;
@@ -12859,7 +12905,8 @@ simulated function ChangedWeapon() {
 		&& PendingWeapon == IGPlus_PSTarget)
 		return;
 
-	if (Weapon != None && IGPlus_UseFastWeaponSwitch) {
+	// (Not for a predicted bring-back: stock BringUp needs DownWeapon.)
+	if (Weapon != None && IGPlus_UseFastWeaponSwitch && !(bPSForcing && Weapon == PendingWeapon)) {
 		Weapon.GotoState('');
 		IGPlus_MarkDeterministicSwitchGuard();
 		if (!bPSForcing) // a predicted switch: the client already swapped
@@ -12875,8 +12922,9 @@ simulated function ChangedWeapon() {
 		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + IGPlus_DetInFlightSlack;
 		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + FMax(0.25, IGPlus_DetInFlightSlack + 0.13);
 		if (bPSForcing) {
-			// The client stopped predicting the old weapon exactly at TS.
-			IGPlus_DetPrevWeaponStepTS = IGPlus_PSTS;
+			// The client stopped predicting the old weapon after TS (a step
+			// stamped TS was built before the press).
+			IGPlus_DetPrevWeaponStepTS = IGPlus_PSTS + 0.0001;
 			IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + 0.25;
 		}
 		// Drop only a click queued for the outgoing weapon. A click on the

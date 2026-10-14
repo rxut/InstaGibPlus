@@ -435,6 +435,7 @@ State ClientDown
 
 	simulated function BeginState()
 	{
+		Disable('Tick'); // stock: ClientDown.Tick would leave the state before AnimEnd swaps
 		TweenDown();
 	}
 }
