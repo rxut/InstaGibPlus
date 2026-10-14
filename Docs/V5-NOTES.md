@@ -91,10 +91,15 @@ shots, committed cycles still resolve, and taps stay queued.
 - A fire tap sets `bForceFire`, and `CanMergeMove` refuses to merge a move that
   carries one, so a tap always ends its move. Double-taps faster than one net
   update still produce two moves.
-- A tap on a not-ready step is queued for 0.8 s and bound to the weapon it was
-  pressed on. Both sides clear it on a switch (server `ChangedWeapon`, client
-  `ClientPutDown`), so a click on the outgoing weapon never fires the incoming
-  one.
+- A tap on a not-ready step is queued on the client for 0.8 s, bound to the
+  equipped weapon it was pressed on (never one going down). On the first ready
+  frame the client replays it as that move's force bit, so the server fires it
+  on the same step; the server keeps no parallel queue on the ServerMove path
+  (input replication still uses a server queue). A click on the outgoing weapon
+  never fires the incoming one.
+- Eightball loads and bio charges are cancelled on switch-away, never fired:
+  the client stops predicting once it knows of the switch, so a switch-time
+  shot would exist only on the server.
 - Merging splits on weapon identity and deterministic readiness, so an
   outgoing weapon's held input cannot be relabeled as the incoming weapon.
 - Manual switch commands record pending transitions immediately, including
