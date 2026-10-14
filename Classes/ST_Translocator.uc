@@ -328,9 +328,10 @@ function ThrowTarget()
 				IGPlus_ThrowTS = bbP.CurrentTimeStamp;
 				IGPlus_DiscRepl = ST_TranslocatorTarget(TTarget);
 				IGPlus_DiscRepl.bIGPlusFullHistory = true;
-				// Ping over PingCompensationMax: the thrower sees a younger disc.
-				// (Without ping comp nothing was fast-forwarded: no bias.)
-				if (GetWeaponSettings().TranslocatorCompensatePing)
+				// Ping over PingCompensationMax: the thrower sees a younger
+				// server disc. Not without ping comp (nothing fast-forwarded),
+				// nor deterministic (the thrower watches its own disc).
+				if (GetWeaponSettings().TranslocatorCompensatePing && bbP.IGPlus_DetTranslocator == false)
 					IGPlus_DiscRepl.IGPlus_AgeBias = FMax(0.0,
 						float(bbP.PingAverage) * 0.001 * Level.TimeDilation - IGPlus_DiscRepl.TotalSimulationTime);
 				// Landed during the fast-forward: Tick is off until a knock.
