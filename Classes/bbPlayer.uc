@@ -12004,9 +12004,10 @@ simulated function IGPlus_PSApplyTarget(Weapon Target, float Gate) {
 			TournamentWeapon(Weapon).ClientPutDown(Target);
 		else if (Weapon != Target)
 			ClientPending = Target;
-	} else {
-		IGPlus_DetClientSwitchPending = Target;
 	}
+	// Always: a stale previous target here blocks the new weapon's readiness
+	// for good (stock only clears it on a non-animating swap frame).
+	IGPlus_DetClientSwitchPending = Target;
 	IGPlus_DetClientGateWeapon = Target;
 	IGPlus_DetClientEntryGateTS = Gate;
 }
