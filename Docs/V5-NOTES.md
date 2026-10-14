@@ -97,6 +97,13 @@ shots, committed cycles still resolve, and taps stay queued.
   on the same step; the server keeps no parallel queue on the ServerMove path
   (input replication still uses a server queue). A click on the outgoing weapon
   never fires the incoming one.
+- The client is told of every pending switch on a Det weapon right away
+  (`xxClientSwitchPending` from `IGPlus_DetTrackPendingWeapon`), not only when
+  the holster starts, so a weapon that latches the request (Eightball in
+  FireRockets) stops being predicted. The client also never predicts a weapon
+  before the server's tagged entry gate for it arrives (`xxClientDetEntryGate`
+  carries the weapon), so it can't fire the incoming weapon while the server
+  is still holstering the old one.
 - Eightball loads and bio charges are cancelled on switch-away, never fired:
   the client stops predicting once it knows of the switch, so a switch-time
   shot would exist only on the server.

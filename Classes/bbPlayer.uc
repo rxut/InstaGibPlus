@@ -82,6 +82,9 @@ var Weapon IGPlus_DetClientSwitchPending;
 // Bring-up entry gate replicated from the server (move-timestamp domain,
 // which is the client's own clock). Client prediction may not fire before it.
 var float IGPlus_DetClientEntryGateTS;
+// Client: the weapon the server last sent a bring-up gate for, i.e. the weapon
+// the server has actually equipped. Never predict a weapon before that.
+var Weapon IGPlus_DetClientGateWeapon;
 var float IGPlus_DetPendingFireTapTS;
 // Weapon the queued tap belongs to; it never fires a different weapon.
 var Weapon IGPlus_DetPendingFireTapWeapon;
@@ -4611,8 +4614,10 @@ simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 
 // Server -> client: the authoritative bring-up entry gate for the weapon just
 // equipped. Reliable and ordered after the switch RPCs that precede it.
-function xxClientDetEntryGate(float GateTS) {
+function xxClientDetEntryGate(float GateTS, optional Weapon W) {
 	IGPlus_DetClientEntryGateTS = FMax(IGPlus_DetClientEntryGateTS, GateTS);
+	if (W != none)
+		IGPlus_DetClientGateWeapon = W;
 }
 
 function IGPlus_DetFinalizeExpiredPrevWeapon(optional bool bForce) {
@@ -4679,7 +4684,7 @@ function IGPlus_DetTrackPendingWeapon(float NowTS) {
 	// Canceling a switch re-arms the bring-up; toggling is never free.
 	if (IGPlus_DetPendingSeen != none && PendingWeapon == none) {
 		IGPlus_DetWeaponGateTS = FMax(IGPlus_DetWeaponGateTS, NowTS + IGPlus_DetEntryGateSeconds());
-		xxClientDetEntryGate(IGPlus_DetWeaponGateTS);
+		xxClientDetEntryGate(IGPlus_DetWeaponGateTS, Weapon);
 		// Retract a deferred switch the client was already told about
 		// (GetWeapon on an empty weapon, Next/PrevWeapon with no candidate),
 		// or the client stays holstered while the server keeps this weapon
@@ -4690,6 +4695,13 @@ function IGPlus_DetTrackPendingWeapon(float NowTS) {
 	if (PendingWeapon != none && PendingWeapon != Weapon) {
 		IGPlus_DetPendingSeenTS = NowTS;
 		IGPlus_DetInFlightSlack = IGPlus_DetComputeInFlightSlack();
+		// The client only hears of a switch from ClientPutDown, which waits for
+		// the holster. A weapon that latches the request instead (Eightball in
+		// FireRockets, a deferred hold) would keep predicting shots the server
+		// no longer accepts, so tell it now.
+		if (IGPlus_IsDetActiveWeapon(Weapon) && !Weapon.IsInState('DownWeapon')
+			&& RemoteRole == ROLE_AutonomousProxy)
+			xxClientSwitchPending(PendingWeapon, 0.0);
 	}
 }
 
@@ -4851,6 +4863,12 @@ simulated function bool IGPlus_DetIsWeaponReady(Weapon W) {
 	// Server-replicated bring-up gate (set only on owning clients; stays 0
 	// server-side, where FireWindowOpen enforces the same timestamp).
 	if (BP != none && BP.Level.TimeSeconds < BP.IGPlus_DetClientEntryGateTS)
+		return false;
+	// Not equipped on the server yet (client finished its select first, e.g.
+	// while the server still plays a holstering weapon's fire anim). Only once
+	// a tagged gate arrived: a spawn equip inside Login sends none.
+	if (BP != none && BP.Level.NetMode == NM_Client
+		&& BP.IGPlus_DetClientGateWeapon != none && BP.IGPlus_DetClientGateWeapon != W)
 		return false;
 
 	TP = TournamentPlayer(PawnOwner);
@@ -11682,6 +11700,7 @@ function ClientReStart()
 {
 	zzSpawnedTime = Level.TimeSeconds;
 	IGPlus_DetClientSwitchPending = none;
+	IGPlus_DetClientGateWeapon = none; // the respawn equip sends a fresh tagged gate
 
 	Super.ClientReStart();
 	PlaySpawn();
@@ -11975,7 +11994,7 @@ simulated function ChangedWeapon() {
 			// Gate from the real select duration, not a floor; replicate the
 			// post-FMax value so the client holds the server's exact gate.
 			IGPlus_DetWeaponGateTS = FMax(IGPlus_DetWeaponGateTS, CurrentTimeStamp + IGPlus_DetSelectTimeFor(Weapon));
-			xxClientDetEntryGate(IGPlus_DetWeaponGateTS);
+			xxClientDetEntryGate(IGPlus_DetWeaponGateTS, Weapon);
 		} else {
 			// v4 steps clear bFire/bAltFire; restore held state for legacy weapons.
 			bFire = byte(IGPlus_LastFireEndHeld);
