@@ -148,6 +148,10 @@ var localized string MoreInformationText;
 	var localized string ForceModelsText;
 	var localized string ForceModelsHelp;
 
+	var UWindowCheckbox Chk_DemoShowRealModels;
+	var localized string DemoShowRealModelsText;
+	var localized string DemoShowRealModelsHelp;
+
 	var IGPlus_ComboBox Cmb_DesiredSkin;
 	var localized string DesiredSkinText;
 	var localized string DesiredSkinHelp;
@@ -915,6 +919,7 @@ function Created() {
 
 	Lbl_ForceModels = CreateSeparator(ForceModelsLblText);
 	Chk_ForceModels = CreateCheckbox(ForceModelsText, ForceModelsHelp);
+	Chk_DemoShowRealModels = CreateCheckbox(DemoShowRealModelsText, DemoShowRealModelsHelp);
 	Cmb_DesiredSkin = CreateComboBox(DesiredSkinText, DesiredSkinHelp, false, 150);
 	Cmb_DesiredSkinFemale = CreateComboBox(DesiredSkinFemaleText, DesiredSkinFemaleHelp, false, 150);
 	Cmb_DesiredTeamSkin = CreateComboBox(DesiredTeamSkinText, DesiredTeamSkinHelp, false, 150);
@@ -1086,6 +1091,7 @@ function Load() {
 	Edit_DemoChar.SetValue(Settings.DemoChar);
 
 	Chk_ForceModels.bChecked = Settings.bForceModels;
+	Chk_DemoShowRealModels.bChecked = Settings.bDemoShowRealModels;
 	Cmb_DesiredSkin.SetSelectedIndex(Clamp(Settings.DesiredSkin + 1, 0, 18));
 	Cmb_DesiredSkinFemale.SetSelectedIndex(Clamp(Settings.DesiredSkinFemale + 1, 0, 18));
 	Cmb_DesiredTeamSkin.SetSelectedIndex(Clamp(Settings.DesiredTeamSkin + 1, 0, 18));
@@ -1209,6 +1215,7 @@ function Save() {
 	Settings.DemoChar = Edit_DemoChar.GetValue();
 
 	Settings.bForceModels = Chk_ForceModels.bChecked;
+	Settings.bDemoShowRealModels = Chk_DemoShowRealModels.bChecked;
 	Settings.DesiredSkin = Cmb_DesiredSkin.GetSelectedIndex() - 1;
 	Settings.DesiredSkinFemale = Cmb_DesiredSkinFemale.GetSelectedIndex() - 1;
 	Settings.DesiredTeamSkin = Cmb_DesiredTeamSkin.GetSelectedIndex() - 1;
@@ -1421,6 +1428,9 @@ defaultproperties
 
 		ForceModelsText="Enable Forcing Skins"
 		ForceModelsHelp="If checked, enables forcing of skins of other players"
+
+		DemoShowRealModelsText="Show Real Skins In Demos"
+		DemoShowRealModelsHelp="If checked, demos show the skins players actually used, even if the recording player forced skins"
 
 		DesiredSkinText="Skin - Male Enemies"
 		DesiredSkinHelp="Which skin to use for enemies that use a male skin"

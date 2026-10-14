@@ -15,6 +15,7 @@ enum EHitSoundSource {
 
 var config bool   bInitialized;
 var config bool   bForceModels; // if Client wishes models forced to his own. (default false)
+var config bool   bDemoShowRealModels; // restore real player models during demo playback
 var config bool   bTeamInfo;    // if Client wants extra team info.
 var config bool   bShootDead;
 var config bool   bDoEndShot;   // if Client wants Screenshot at end of match.
@@ -331,6 +332,7 @@ simulated function CycleFraggerScope() {
 simulated function string DumpSettings() {
 	return "IG+ Client Settings:"$Chr(10)$
 		GetSetting("bForceModels")$
+		GetSetting("bDemoShowRealModels")$
 		GetSetting("bTeamInfo")$
 		GetSetting("bShootDead")$
 		GetSetting("bDoEndShot")$
@@ -433,6 +435,7 @@ simulated function string DumpSettings() {
 defaultproperties
 {
 	bForceModels=False
+	bDemoShowRealModels=True
 	HitSound=2
 	TeamHitSound=3
 	bDisableForceHitSounds=False
