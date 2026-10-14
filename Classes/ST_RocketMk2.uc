@@ -7,6 +7,10 @@ var bool bClientVisualOnly;
 var PlayerPawn InstigatingPlayer;
 var vector ExtrapolationDelta;
 var int RocketIndex;
+// Server, predicted self-knockback: the shooter's fire step and launch.
+var float IGPlus_FireTS;
+var vector IGPlus_SpawnLoc;
+var float IGPlus_Speed;
 
 replication
 {
@@ -161,6 +165,14 @@ auto state Flying
 
 	function BlowUp(vector HitLocation)
 	{
+		local bbPlayer bbP;
+
+		bbP = bbPlayer(Instigator);
+		if (IGPlus_FireTS > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+			bbP.IGPlus_SKBeginCapture();
+		else
+			bbP = none;
+
 		WImp.SplashDamageWithSelfDamage(
 			self,
 			WImp.WeaponSettings.RocketDamage,
@@ -172,6 +184,19 @@ auto state Flying
 			HitLocation,
 			WImp.WeaponSettings.bEnableEnhancedSplashRockets
 		);
+
+		// Rocket age is its travel over launch speed, same as the client's guess.
+		if (bbP != none)
+			bbP.IGPlus_SKEndCapture(
+				IGPlus_FireTS + VSize(Location - IGPlus_SpawnLoc) / FMax(IGPlus_Speed, 1.0),
+				RocketIndex,
+				HitLocation,
+				Location,
+				CollisionRadius,
+				WImp.WeaponSettings.RocketHurtRadius,
+				WImp.WeaponSettings.RocketMomentum * MomentumTransfer,
+				WImp.WeaponSettings.bEnableEnhancedSplashRockets
+			);
 
 		MakeNoise(1.0);
 	}

@@ -134,6 +134,12 @@ var localized string bUseFastWeaponSwitchHelp;
 var UWindowCheckbox Chk_bEnablePredictedSwitching;
 var localized string bEnablePredictedSwitchingText;
 var localized string bEnablePredictedSwitchingHelp;
+var UWindowCheckbox Chk_bEnablePredictedTranslocation;
+var localized string bEnablePredictedTranslocationText;
+var localized string bEnablePredictedTranslocationHelp;
+var UWindowCheckbox Chk_bEnablePredictedSelfKnockback;
+var localized string bEnablePredictedSelfKnockbackText;
+var localized string bEnablePredictedSelfKnockbackHelp;
 var UWindowCheckbox Chk_bTellSpectators;
 var localized string bTellSpectatorsText;
 var localized string bTellSpectatorsHelp;
@@ -644,6 +650,8 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bDelayedPickupSpawn", BoolToString(Chk_bDelayedPickupSpawn.bChecked));
 	SaveServerSettingIfChanged(S, "bUseFastWeaponSwitch", BoolToString(Chk_bUseFastWeaponSwitch.bChecked));
 	SaveServerSettingIfChanged(S, "bEnablePredictedSwitching", BoolToString(Chk_bEnablePredictedSwitching.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedTranslocation", BoolToString(Chk_bEnablePredictedTranslocation.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedSelfKnockback", BoolToString(Chk_bEnablePredictedSelfKnockback.bChecked));
 	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
@@ -1062,6 +1070,8 @@ function LoadServerSettings() {
 	Chk_bDelayedPickupSpawn.bChecked = S.bDelayedPickupSpawn;
 	Chk_bUseFastWeaponSwitch.bChecked = S.bUseFastWeaponSwitch;
 	Chk_bEnablePredictedSwitching.bChecked = S.bEnablePredictedSwitching;
+	Chk_bEnablePredictedTranslocation.bChecked = S.bEnablePredictedTranslocation;
+	Chk_bEnablePredictedSelfKnockback.bChecked = S.bEnablePredictedSelfKnockback;
 	Chk_bTellSpectators.bChecked = S.bTellSpectators;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
@@ -1165,6 +1175,8 @@ function Created() {
 	Chk_bDelayedPickupSpawn = CreateCheckbox(bDelayedPickupSpawnText, bDelayedPickupSpawnHelp);
 	Chk_bUseFastWeaponSwitch = CreateCheckbox(bUseFastWeaponSwitchText, bUseFastWeaponSwitchHelp);
 	Chk_bEnablePredictedSwitching = CreateCheckbox(bEnablePredictedSwitchingText, bEnablePredictedSwitchingHelp);
+	Chk_bEnablePredictedTranslocation = CreateCheckbox(bEnablePredictedTranslocationText, bEnablePredictedTranslocationHelp);
+	Chk_bEnablePredictedSelfKnockback = CreateCheckbox(bEnablePredictedSelfKnockbackText, bEnablePredictedSelfKnockbackHelp);
 	Chk_bTellSpectators = CreateCheckbox(bTellSpectatorsText, bTellSpectatorsHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
@@ -1294,6 +1306,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bDelayedPickupSpawn, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bUseFastWeaponSwitch, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePredictedSwitching, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedTranslocation, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedSelfKnockback, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bTellSpectators, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
@@ -1491,6 +1505,10 @@ defaultproperties
 	bUseFastWeaponSwitchHelp="If checked, enables fast weapon switching"
 	bEnablePredictedSwitchingText="Predicted Weapon Switch"
 	bEnablePredictedSwitchingHelp="Experimental. If checked, weapon switches start on the key press; off while Input Replication is on"
+	bEnablePredictedTranslocationText="Predicted Translocation"
+	bEnablePredictedTranslocationHelp="Experimental. If checked, translocating moves you on the key press; needs Translocator ping compensation, off while Input Replication is on"
+	bEnablePredictedSelfKnockbackText="Predicted Rocket Self-Knockback"
+	bEnablePredictedSelfKnockbackHelp="Experimental. If checked, the push from your own rockets is applied on your client right away; needs Rocket ping compensation, off while Input Replication is on"
 	bTellSpectatorsText="Tell Spectators on Kick"
 	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"
 

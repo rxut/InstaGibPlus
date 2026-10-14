@@ -927,9 +927,12 @@ simulated function HandleDetClientFire() {
 	bRotated = false;
 
 	bbP = bbPlayer(Owner);
-	if (bbP != None && IsPingCompEnabled()
-		&& !bLockedOn && bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
-		SpawnClientSideRockets(1);
+	if (bbP != None && IsPingCompEnabled() && !bLockedOn) {
+		if (bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
+			SpawnClientSideRockets(1);
+		else if (bbP.IGPlus_PredictedSelfKnockback)
+			SpawnClientSideRockets(1, true);
+	}
 
 	if (!IsInState('ClientDetInstantFire'))
 		GotoState('ClientDetInstantFire');
@@ -1172,6 +1175,10 @@ simulated function FiringRockets()
 		{
 			SpawnClientSideRockets(ClientRocketsLoaded);
 		}
+		else if (!bAlt && !bLockedOn && bbP.IGPlus_PredictedSelfKnockback)
+		{
+			SpawnClientSideRockets(ClientRocketsLoaded, true);
+		}
 	}
 }
 
@@ -1198,7 +1205,8 @@ simulated function vector CalcDrawOffsetClient() {
 	return DrawOffset;
 }
 
-simulated function SpawnClientSideRockets(int NumRockets)
+// bNoVisuals: only predict self-knockback, spawn nothing.
+simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisuals)
 {
 	local vector FireLocation, StartLoc, X,Y,Z;
 	local rotator FireRot, AimRot;
@@ -1256,7 +1264,13 @@ simulated function SpawnClientSideRockets(int NumRockets)
 		FireRot.Pitch = AimRot.Pitch;
 		FireRot.Roll = AimRot.Roll;
 
-		r = Spawn(class'ST_RocketMk2', PawnOwner, '', FireLocation, FireRot);
+		if (bbPlayer(Owner) != None)
+			bbPlayer(Owner).IGPlus_SKPredictRocket(FireLocation, FireRot, i);
+
+		if (bNoVisuals)
+			r = None;
+		else
+			r = Spawn(class'ST_RocketMk2', PawnOwner, '', FireLocation, FireRot);
 		if (r != None)
 		{
 			r.Instigator = PawnOwner;
@@ -1294,6 +1308,7 @@ state FireRockets
 		local Projectile SpawnedRockets[6];
 		local int NumSpawnedRockets;
 		local rotator AimRot;
+		local bool bDetFire;
 
 		if (bCanClientFire == false)
 		{
@@ -1341,6 +1356,7 @@ state FireRockets
 			if ( PlayerOwner != None )
 				AdjustedAim = PawnOwner.ViewRotation;
 		}
+		bDetFire = bUseDetServerFireData;
 		bUseDetServerFireData = false;
 		
 		PlayRFiring(RocketsLoaded-1);		
@@ -1408,6 +1424,12 @@ state FireRockets
 					r.WImp = WImp;
 					r.NumExtraRockets = DupRockets;
 					r.RocketIndex = i;
+					// Predicted self-knockback anchors the push to this step.
+					if (bDetFire && bbP != none && bbP.IGPlus_PredictedSelfKnockback) {
+						r.IGPlus_FireTS = bbP.CurrentTimeStamp;
+						r.IGPlus_SpawnLoc = r.Location;
+						r.IGPlus_Speed = VSize(r.Velocity);
+					}
 					SpawnedRockets[NumSpawnedRockets] = r;
 					NumSpawnedRockets++;
 				}

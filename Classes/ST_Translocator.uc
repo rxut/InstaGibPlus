@@ -18,6 +18,9 @@ var float ServerTimeSinceTargetSpawn;
 var float LastClientDiscSpawnTime;
 var float LastClientFireSoundTime;
 
+// Server, predicted translocation: timestamp of the move that threw the disc.
+var float IGPlus_ThrowTS;
+
 replication
 {
     // Replicate server timing for synchronization
@@ -148,12 +151,16 @@ simulated function ClientThrowTarget()
 	{
 		TTarget_Client.Master = self;
 		TTarget_Client.RemoteRole = ROLE_None;
-		TTarget_Client.bCollideWorld = false;
+		// Predicted translocation lands on this disc until the server's arrives,
+		// so it must bounce off the world like the server's does.
+		TTarget_Client.bCollideWorld = bbP.IGPlus_PredictedTranslocation;
 		TTarget_Client.SetCollision(false, false, false);
 		TTarget_Client.Throw(bbP, MaxTossForce, Start);
 
 		// Backup removal of client disc
 		TTarget_Client.LifeSpan = Pawn(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+		if (bbP.IGPlus_PredictedTranslocation)
+			TTarget_Client.LifeSpan = FMax(TTarget_Client.LifeSpan, Pawn(Owner).PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.1);
 	}
 }
 
@@ -197,6 +204,10 @@ function Translocate()
 	if (STTarget != None && !STTarget.bDeleteMe && STTarget.bUsingHistoricalPosition)
 	{
 		STTarget.SetLocation(OriginalLocation);
+		if (STTarget.bIGPlusFullHistory && STTarget.Physics != STTarget.IGPlus_PreTranslocatePhysics) {
+			STTarget.SetPhysics(STTarget.IGPlus_PreTranslocatePhysics);
+			STTarget.Velocity = STTarget.IGPlus_PreTranslocateVelocity;
+		}
 		STTarget.bUsingHistoricalPosition = false;
 	}
 	
@@ -238,6 +249,11 @@ function ThrowTarget()
 		if (bbP != none && GetWeaponSettings().TranslocatorCompensatePing) {
 			// Cast to ST_TranslocatorTarget to access history functions
 			ST_TranslocatorTarget(TTarget).SimulateWithHistory(WImp, bbP.PingAverage);
+
+			if (bbP.IGPlus_PredictedTranslocation && TTarget != None) {
+				IGPlus_ThrowTS = bbP.CurrentTimeStamp;
+				ST_TranslocatorTarget(TTarget).bIGPlusFullHistory = true;
+			}
 		}
 	}
 	else GotoState('Idle');
@@ -249,6 +265,7 @@ function AltFire( float Value )
     local float TimeSinceThrow;
     local vector HistoricalLocation;
     local ST_TranslocatorTarget STTarget;
+    local byte HistoricalLanded;
     
     if ( bBotMoveFire )
         return;
@@ -260,8 +277,32 @@ function AltFire( float Value )
         bbP = bbPlayer(Owner);
         STTarget = ST_TranslocatorTarget(TTarget);
         
+        // Predicted translocation: the disc where it was at this move's age
+        // since the throw, in the client's own timeline (what its screen showed).
+        if (STTarget != None && STTarget.bIGPlusFullHistory && bbP != none)
+        {
+            // ponytail: +-0.2s bounds how far a client clock can move the lookup
+            TimeSinceThrow = FClamp(
+                bbP.CurrentTimeStamp - IGPlus_ThrowTS,
+                ServerTimeSinceTargetSpawn - 0.2,
+                ServerTimeSinceTargetSpawn + 0.2);
+            HistoricalLocation = STTarget.IGPlus_GetHistoryAt(FMax(TimeSinceThrow, 0.0), HistoricalLanded);
+
+            STTarget.PreTranslocateLocation = STTarget.Location;
+            STTarget.IGPlus_PreTranslocatePhysics = STTarget.Physics;
+            STTarget.IGPlus_PreTranslocateVelocity = STTarget.Velocity;
+            STTarget.SetLocation(HistoricalLocation);
+            // Translocate() adds 40 up for a landed disc: use the landed state at that age.
+            if ((HistoricalLanded != 0) != (STTarget.Physics == PHYS_None)) {
+                if (HistoricalLanded != 0)
+                    STTarget.SetPhysics(PHYS_None);
+                else
+                    STTarget.SetPhysics(PHYS_Falling);
+            }
+            STTarget.bUsingHistoricalPosition = true;
+        }
          // CHECK 1: Are we inside the recorded history? (Standard High-Ping Behavior)
-        if (STTarget != None && STTarget.HistoryCount > 0 && ServerTimeSinceTargetSpawn < STTarget.TotalSimulationTime)
+        else if (STTarget != None && STTarget.HistoryCount > 0 && ServerTimeSinceTargetSpawn < STTarget.TotalSimulationTime)
         {
             TimeSinceThrow = ServerTimeSinceTargetSpawn;
             HistoricalLocation = STTarget.GetHistoricalPosition(TimeSinceThrow);
@@ -439,6 +480,23 @@ simulated function vector CalcDrawOffsetClient() {
 	}
 	
 	return DrawOffset;
+}
+
+// Client, predicted translocation: the disc this client sees as its own,
+// the local client disc until the server's arrives, then the server's.
+// Without client-side animations there is no local disc, so translocating
+// within a ping of the throw is left to the server.
+simulated function ST_TranslocatorTarget IGPlus_PredictionDisc() {
+	local ST_TranslocatorTarget T, Found;
+
+	if (TTarget_Client != None && !TTarget_Client.bDeleteMe && TTarget_Client.bCollideWorld)
+		return TTarget_Client;
+
+	foreach AllActors(class'ST_TranslocatorTarget', T)
+		if (T.Instigator == Owner && T.Role < ROLE_Authority && !T.bDeleteMe && !T.bHidden)
+			Found = T;
+
+	return Found;
 }
 
 defaultproperties {

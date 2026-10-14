@@ -72,6 +72,14 @@ var localized string MoreInformationText;
 	var localized string FakeCAPIntervalText;
 	var localized string FakeCAPIntervalHelp;
 
+	var UWindowCheckbox Chk_CameraCorrectionSmoothing;
+	var localized string CameraCorrectionSmoothingText;
+	var localized string CameraCorrectionSmoothingHelp;
+
+	var IGPlus_EditControl Edit_CameraCorrectionSmoothingTime;
+	var localized string CameraCorrectionSmoothingTimeText;
+	var localized string CameraCorrectionSmoothingTimeHelp;
+
 // Advanced
 	var UWindowLabelControl Lbl_Advanced;
 	var localized string AdvancedText;
@@ -885,6 +893,8 @@ function Created() {
 	Edit_DesiredNetUpdateRate = CreateEdit(ECT_Integer, DesiredNetUpdateRateText, DesiredNetUpdateRateHelp, 4, 32);
 	Edit_DesiredNetspeed = CreateEdit(ECT_Integer, DesiredNetspeedText, DesiredNetspeedHelp, , 64);
 	Edit_FakeCAPInterval = CreateEdit(ECT_Real, FakeCAPIntervalText, FakeCAPIntervalHelp, , 64);
+	Chk_CameraCorrectionSmoothing = CreateCheckbox(CameraCorrectionSmoothingText, CameraCorrectionSmoothingHelp);
+	Edit_CameraCorrectionSmoothingTime = CreateEdit(ECT_Real, CameraCorrectionSmoothingTimeText, CameraCorrectionSmoothingTimeHelp, , 64);
 
 	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
@@ -1072,6 +1082,8 @@ function Load() {
 	Edit_DesiredNetUpdateRate.SetValue(string(int(Settings.DesiredNetUpdateRate)));
 	Edit_DesiredNetspeed.SetValue(string(Settings.DesiredNetspeed));
 	Edit_FakeCAPInterval.SetValue(string(Settings.FakeCAPInterval));
+	Chk_CameraCorrectionSmoothing.bChecked = Settings.bCameraCorrectionSmoothing;
+	Edit_CameraCorrectionSmoothingTime.SetValue(string(Settings.CameraCorrectionSmoothingTime));
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
@@ -1196,6 +1208,8 @@ function Save() {
 	Settings.DesiredNetUpdateRate = int(Edit_DesiredNetUpdateRate.GetValue());
 	Settings.DesiredNetspeed = int(Edit_DesiredNetspeed.GetValue());
 	Settings.FakeCAPInterval = float(Edit_FakeCAPInterval.GetValue());
+	Settings.bCameraCorrectionSmoothing = Chk_CameraCorrectionSmoothing.bChecked;
+	Settings.CameraCorrectionSmoothingTime = FMax(0.0, float(Edit_CameraCorrectionSmoothingTime.GetValue()));
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
@@ -1375,6 +1389,12 @@ defaultproperties
 
 		FakeCAPIntervalText="Fake CAP Interval"
 		FakeCAPIntervalHelp="Server will acknowledge your movement every this many seconds"
+
+		CameraCorrectionSmoothingText="Camera-Only Correction Smoothing"
+		CameraCorrectionSmoothingHelp="Experimental. If checked, server corrections move you at once and only the camera eases to the new spot"
+
+		CameraCorrectionSmoothingTimeText="Camera Smoothing Time"
+		CameraCorrectionSmoothingTimeHelp="Seconds until a correction is (nearly) gone from the camera"
 
 	AdvancedText="Advanced"
 

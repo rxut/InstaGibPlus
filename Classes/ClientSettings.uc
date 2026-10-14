@@ -63,6 +63,8 @@ var config bool   bDemoShowClientMessages;
 var config bool   bDebugMovement;
 var config bool   bEnableKillCam;
 var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
+var config bool   bCameraCorrectionSmoothing; // Apply corrections to the simulation at once, ease only the camera
+var config float  CameraCorrectionSmoothingTime; // Seconds until ~95% of a correction is gone from the camera
 var config float  MinDodgeClickTime; // Minimum time between two presses of the same direction for them to count as a dodge
 var config bool   bUseOldMouseInput;
 var config PIDControllerSettings SmoothVRController;
@@ -378,6 +380,8 @@ simulated function string DumpSettings() {
 		GetSetting("bDebugMovement")$
 		GetSetting("bEnableKillCam")$
 		GetSetting("FakeCAPInterval")$
+		GetSetting("bCameraCorrectionSmoothing")$
+		GetSetting("CameraCorrectionSmoothingTime")$
 		GetSetting("MinDodgeClickTime")$
 		GetSetting("bUseOldMouseInput")$
 		GetSetting("SmoothVRController")$
@@ -482,6 +486,8 @@ defaultproperties
 	bDebugMovement=False
 	bEnableKillCam=False
 	FakeCAPInterval=0.1
+	bCameraCorrectionSmoothing=False
+	CameraCorrectionSmoothingTime=0.1
 	MinDodgeClickTime=0
 	bUseOldMouseInput=False
 	SmoothVRController=(p=0.09,i=0.05,d=0.00)

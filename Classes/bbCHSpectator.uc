@@ -1084,6 +1084,8 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bDelayedPickupSpawn");
 	IGPlus_ServerSendSetting("bUseFastWeaponSwitch");
 	IGPlus_ServerSendSetting("bEnablePredictedSwitching");
+	IGPlus_ServerSendSetting("bEnablePredictedTranslocation");
+	IGPlus_ServerSendSetting("bEnablePredictedSelfKnockback");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");

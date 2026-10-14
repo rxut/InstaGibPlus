@@ -5,16 +5,23 @@ var WeaponSettingsRepl WSettings;
 
 var PlayerPawn InstigatingPlayer;
 
-var int MaxHistorySteps;
-var vector SimulationHistory[50];
-var float SimulationTimes[50];
+var int MaxHistorySteps;             // cap for the throw-time fast-forward
+var vector SimulationHistory[256];
+var float SimulationTimes[256];
+var byte SimulationLanded[256];     // 1 if Physics == PHYS_None at that entry
 var int HistoryCount;
+// Predicted translocation: keep recording the disc's path after the
+// fast-forward, for its whole life, so any age can be looked up.
+var bool bIGPlusFullHistory;
+var float IGPlus_HistoryAnchor; // Level.TimeSeconds of age TotalSimulationTime, set on the first tick
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
 // For temporary position changes during translocation
 var vector PreTranslocateLocation;
 var bool bUsingHistoricalPosition;
+var EPhysics IGPlus_PreTranslocatePhysics;
+var vector IGPlus_PreTranslocateVelocity;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -66,7 +73,8 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().TranslocatorCompensatePing && bbP != none && bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations == true) {
+	if (GetWeaponSettings().TranslocatorCompensatePing && bbP != none
+		&& (bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations || bbP.IGPlus_PredictedTranslocation)) {
 
 		In = PlayerPawn(Instigator);
 
@@ -90,6 +98,7 @@ simulated function PostNetBeginPlay()
 function InitSimulationHistory(vector StartPos, float StartTime, float TotalTime) {
     SimulationHistory[0] = StartPos;
     SimulationTimes[0] = StartTime;
+    SimulationLanded[0] = byte(Physics == PHYS_None);
     HistoryCount = 1;
     SimulationStartTime = Level.TimeSeconds;
     TotalSimulationTime = TotalTime;
@@ -99,6 +108,7 @@ function AddSimulationHistoryStep(vector NewPos, float TimeStamp) {
     if (HistoryCount < MaxHistorySteps) {
         SimulationHistory[HistoryCount] = NewPos;
         SimulationTimes[HistoryCount] = TimeStamp;
+        SimulationLanded[HistoryCount] = byte(Physics == PHYS_None);
         HistoryCount++;
     }
 }
@@ -107,6 +117,60 @@ function SimulateWithHistory(IGPlus_WeaponImplementation WImpl, int Ping)
 {
     if (WImpl != None)
         WImpl.SimulateProjectileWithHistory(self, Ping);
+}
+
+// Server: append the current position at Age (seconds since the throw).
+function IGPlus_RecordHistory(float Age) {
+    local int i;
+    local byte bLanded;
+
+    if (HistoryCount <= 0)
+        return;
+
+    i = HistoryCount - 1;
+    if (Age <= SimulationTimes[i])
+        return;
+
+    bLanded = byte(Physics == PHYS_None);
+    // ponytail: 50ms heartbeat while resting so a later knock lerps from
+    // the right time; 256 entries hold ~2s of flight at 120Hz
+    if (Location == SimulationHistory[i] && bLanded == SimulationLanded[i] && Age - SimulationTimes[i] < 0.05)
+        return;
+
+    if (HistoryCount < arraycount(SimulationHistory))
+        i = HistoryCount++;
+    // else: full, keep refreshing the newest entry
+
+    SimulationHistory[i] = Location;
+    SimulationTimes[i] = Age;
+    SimulationLanded[i] = bLanded;
+}
+
+// Position and landed state at Age seconds after the throw.
+function vector IGPlus_GetHistoryAt(float Age, out byte bLanded) {
+    local int i;
+    local float Alpha;
+
+    if (HistoryCount <= 0) {
+        bLanded = byte(Physics == PHYS_None);
+        return Location;
+    }
+
+    if (Age <= SimulationTimes[0]) {
+        bLanded = SimulationLanded[0];
+        return SimulationHistory[0];
+    }
+
+    for (i = 1; i < HistoryCount; i++) {
+        if (Age < SimulationTimes[i]) {
+            Alpha = (Age - SimulationTimes[i-1]) / FMax(SimulationTimes[i] - SimulationTimes[i-1], 0.0001);
+            bLanded = SimulationLanded[i-1];
+            return SimulationHistory[i-1] + Alpha * (SimulationHistory[i] - SimulationHistory[i-1]);
+        }
+    }
+
+    bLanded = SimulationLanded[HistoryCount-1];
+    return SimulationHistory[HistoryCount-1];
 }
 
 function vector GetHistoricalPosition(float RequestTime) {
@@ -144,12 +208,41 @@ function vector GetHistoricalPosition(float RequestTime) {
 }
 
 auto state Pickup {
+	simulated function Tick(float DeltaTime) {
+		// Full history needs every tick; the stock Tick switches itself off
+		// for player discs, and has nothing else to do for them.
+		if (bIGPlusFullHistory && Role == ROLE_Authority) {
+			// Tick runs before this frame's physics: the disc has flown until
+			// Level.TimeSeconds - DeltaTime.
+			if (IGPlus_HistoryAnchor == 0.0)
+				IGPlus_HistoryAnchor = Level.TimeSeconds - DeltaTime;
+			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - DeltaTime - IGPlus_HistoryAnchor));
+			if (DesiredTarget == None || Master == None)
+				return;
+		}
+		super.Tick(DeltaTime);
+	}
+
+	simulated event Landed(vector HitNormal) {
+		super.Landed(HitNormal);
+
+		// Record where it came to rest, and keep ticking for the heartbeat.
+		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0) {
+			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor));
+			Enable('Tick');
+		}
+	}
+
 	event TakeDamage( int Damage, Pawn EventInstigator, vector HitLocation, vector Momentum, name DamageType) {
 		local float OldDisruption;
 
 		OldDisruption = Disruption;
 
 		super.TakeDamage(Damage, EventInstigator, HitLocation, Momentum, DamageType);
+
+		// Landed() switched Tick off; a knocked disc flies again.
+		if (bIGPlusFullHistory)
+			Enable('Tick');
 
 		if (Disruption == OldDisruption)
 			return;

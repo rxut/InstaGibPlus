@@ -1018,6 +1018,8 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bDelayedPickupSpawn") return "bDelayedPickupSpawn";
 	if (Key ~= "bUseFastWeaponSwitch") return "bUseFastWeaponSwitch";
 	if (Key ~= "bEnablePredictedSwitching") return "bEnablePredictedSwitching";
+	if (Key ~= "bEnablePredictedTranslocation") return "bEnablePredictedTranslocation";
+	if (Key ~= "bEnablePredictedSelfKnockback") return "bEnablePredictedSelfKnockback";
 	if (Key ~= "bTellSpectators") return "bTellSpectators";
 	if (Key ~= "bJumpingPreservesMomentum") return "bJumpingPreservesMomentum";
 	if (Key ~= "bOldLandingMomentum") return "bOldLandingMomentum";
@@ -1083,6 +1085,8 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.IGPlus_EnableInputReplication = Settings.bEnableInputReplication;
 			// A switch already in flight finishes; only new presses see the change.
 			BP.IGPlus_PredictedSwitching = Settings.PredictedSwitchingActive();
+			BP.IGPlus_PredictedTranslocation = Settings.PredictedTranslocationActive();
+			BP.IGPlus_PredictedSelfKnockback = Settings.PredictedSelfKnockbackActive();
 			BP.zzMinimumNetspeed = Settings.MinClientRate;
 			BP.zzMaximumNetspeed = Settings.MaxClientRate;
 			BP.zzForceSettingsLevel = Settings.ForceSettingsLevel;

@@ -68,6 +68,8 @@ var config float WarpFixDelay;
 var config float FireTimeout;
 var config float DetFireClockMargin;
 var config bool  bEnablePredictedSwitching;
+var config bool  bEnablePredictedTranslocation;
+var config bool  bEnablePredictedSelfKnockback;
 var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
@@ -122,6 +124,15 @@ function bool PredictedSwitchingActive() {
 	return bEnablePredictedSwitching && !bEnableInputReplication;
 }
 
+// Both also need ping compensation for their weapon (checked at use).
+function bool PredictedTranslocationActive() {
+	return bEnablePredictedTranslocation && !bEnableInputReplication;
+}
+
+function bool PredictedSelfKnockbackActive() {
+	return bEnablePredictedSelfKnockback && !bEnableInputReplication;
+}
+
 function DumpSetting(PlayerPawn P, string S) {
 	P.ClientMessage(S$"="$GetPropertyText(S));
 }
@@ -165,6 +176,8 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "FireTimeout");
 	DumpSetting(P, "DetFireClockMargin");
 	DumpSetting(P, "bEnablePredictedSwitching");
+	DumpSetting(P, "bEnablePredictedTranslocation");
+	DumpSetting(P, "bEnablePredictedSelfKnockback");
 	DumpSetting(P, "MinNetUpdateRate");
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
@@ -221,6 +234,8 @@ defaultproperties
 	FireTimeout=0.1
 	DetFireClockMargin=0.5
 	bEnablePredictedSwitching=False
+	bEnablePredictedTranslocation=False
+	bEnablePredictedSelfKnockback=False
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False
