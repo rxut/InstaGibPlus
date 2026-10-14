@@ -4613,18 +4613,6 @@ function IGPlus_DetFinalizeExpiredPrevWeapon(optional bool bForce) {
 	IGPlus_DetPrevWeaponStepTS = 0.0;
 }
 
-function bool IGPlus_DetCanRecoverEightballShot(ST_UT_Eightball Eightball, float StepTS) {
-	if (Eightball == none || !IGPlus_DetServerBindingValid(Eightball)
-		|| !IGPlus_IsDetActiveWeapon(Eightball))
-		return false;
-
-	// A pack cannot promote a pending weapon into a firing weapon. It may
-	// recover only the equipped launcher or an in-flight pre-switch step.
-	if (Eightball != Weapon && Eightball != IGPlus_DetPrevWeapon)
-		return false;
-	return IGPlus_DetFireWindowOpen(Eightball, StepTS);
-}
-
 // Drop switch-related v4 trust state (called on death and respawn).
 function IGPlus_DetClearSwitchTrustState() {
 	local Inventory Item;
