@@ -171,11 +171,13 @@ simulated function ClientThrowTarget()
 	{
 		TTarget_Client.Master = self;
 		TTarget_Client.RemoteRole = ROLE_None;
-		// Predicted translocation lands on this disc until the server's arrives,
-		// so it must bounce off the world like the server's does.
-		TTarget_Client.bCollideWorld = bbP.IGPlus_PredictedTranslocation;
+		TTarget_Client.bCollideWorld = false;
 		TTarget_Client.SetCollision(false, false, false);
 		TTarget_Client.Throw(bbP, MaxTossForce, Start);
+		// Predicted translocation lands on this disc until the server's arrives,
+		// so it must bounce off the world like the server's does. Only after
+		// Throw: its SetLocation must not fail on world collision (eaf4d45).
+		TTarget_Client.bCollideWorld = bbP.IGPlus_PredictedTranslocation;
 
 		// Backup removal of client disc
 		TTarget_Client.LifeSpan = Pawn(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
