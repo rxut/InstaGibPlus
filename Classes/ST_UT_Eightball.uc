@@ -59,6 +59,7 @@ var float DetVolleyHoldUntil;
 // Server: pending weapon this holster was already announced for (ClientPutDown).
 var Weapon DetHolsterAnnouncedFor;
 var bool bDetSwitchSettlementPending;
+var bool bIGPlusDetLoadedAlt; // HandleDetClientLoadedFire's own alt decision, for FiringRockets
 
 const IGPLUS_EB_SHOT_KIND_ALT = 0;
 const IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED = 1;
@@ -964,7 +965,9 @@ simulated function HandleDetClientLoadedFire(bool bAlt, int NumRockets, optional
 
 	// Use the same tightwad edge decision as the server step.
 	bTightWad = !bAlt && bTight;
+	bIGPlusDetLoadedAlt = bAlt;
 	FiringRockets();
+	bIGPlusDetLoadedAlt = false;
 	bTightWad = false;
 }
 
@@ -1175,7 +1178,7 @@ simulated function FiringRockets()
 		{
 			SpawnClientSideRockets(ClientRocketsLoaded);
 		}
-		else if (!bAlt && !bLockedOn && bbP.IGPlus_PredictedSelfKnockback)
+		else if (!bAlt && !bIGPlusDetLoadedAlt && !bLockedOn && bbP.IGPlus_PredictedSelfKnockback)
 		{
 			SpawnClientSideRockets(ClientRocketsLoaded, true);
 		}

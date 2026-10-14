@@ -247,6 +247,7 @@ var bool IGPlus_AdjustLocationOverride;
 // corrections land in the simulation at once, the camera eases after them.
 var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
+var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
 
 struct ServerMoveParams {
 	var vector Location;
@@ -261,6 +262,8 @@ var vector TlocPrevLocation;
 var int IGPlus_PreAdjustTlocCounter;          // TlocCounter before the first CAP of an update
 var ST_TranslocatorTarget IGPlus_TlocHiddenDisc; // disc hidden by a predicted translocation
 var float IGPlus_TlocHiddenUntil;
+var float IGPlus_TlocHideArrivingUntil; // our local disc was used: hide the server's when it arrives
+var float IGPlus_TlocLastPressTS;       // last translocator fire/alt press (move timeline)
 var bool IGPlus_DidTranslocate;
 var bool IGPlus_NotifiedTranslocate;
 var bool IGPlus_WantCAP;
@@ -2261,8 +2264,10 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 	if ( Mover(NewBase) != None )
 		NewLoc += NewBase.Location;
 
-	if (GetStateName() != NewState)
+	if (GetStateName() != NewState) {
+		IGPlus_CameraCorrectionSnap = true;
 		GotoState(newState);
+	}
 
 	Carried = CarriedDecoration;
 	OldLoc = Location;
@@ -2301,11 +2306,18 @@ function xxFakeCAP(float TimeStamp)
 	IGPlus_AdjustLocationAlpha = 0;
 	IGPlus_AdjustLocationOffset = vect(0,0,0);
 
+	// A real CAP later this frame skips this; keep it current for it.
+	if (bUpdatePosition == false) {
+		IGPlus_PreAdjustLocation = Location;
+		IGPlus_PreAdjustTlocCounter = TlocCounter;
+	}
 	bUpdatePosition = true;
 }
 
 function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 	local int MergeCount, MoveIndex;
+	local IGPlus_SelfKnockback K;
+	local vector Push;
 	local float dt;
 	local bool bDoJump;
 	local EDodgeDir DoDodge;
@@ -2338,8 +2350,11 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 		IGPlus_MoveAutonomous(dt, bDoRun, bDoDuck, bDoJump, DoDodge, M.Acceleration, rot(0,0,0));
 	}
 
-	for (MoveIndex = 0; MoveIndex < M.IGPlus_SKPushCount; MoveIndex++)
-		IGPlus_SKAddVelocity(M.IGPlus_SKPush[MoveIndex]);
+	for (MoveIndex = 0; MoveIndex < M.IGPlus_SKPushCount; MoveIndex++) {
+		IGPlus_SKPredictedEntry(M.IGPlus_SKHit[MoveIndex], K);
+		if (IGPlus_SKCompute(K, Push))
+			IGPlus_SKAddVelocity(Push);
+	}
 
 	M.IGPlus_SavedLocation = Location;
 	M.IGPlus_SavedVelocity = Velocity;
@@ -2370,7 +2385,7 @@ function IGPlus_FreeAcknowledgedMoves(float TimeStamp) {
 function IGPlus_CameraCorrectionAdd(vector Delta) {
 	IGPlus_CameraCorrectionOffset += Delta;
 	// ponytail: 250uu cap is a guess at "bigger than any knockback correction"
-	if (IGPlus_AdjustLocationOverride
+	if (IGPlus_AdjustLocationOverride || IGPlus_CameraCorrectionSnap
 		|| VSize(IGPlus_CameraCorrectionOffset) > 250
 		|| Settings.CameraCorrectionSmoothingTime <= 0.0
 	) {
@@ -2378,6 +2393,7 @@ function IGPlus_CameraCorrectionAdd(vector Delta) {
 		if (VSize(Delta) > 1)
 			NetStatsElem.bInstantRelocation = true;
 	}
+	IGPlus_CameraCorrectionSnap = false;
 }
 
 simulated function IGPlus_CameraCorrectionDecay(float DeltaTime) {
@@ -2403,6 +2419,10 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 	IGPlus_CameraCorrectionApplied = vect(0,0,0);
 	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
 		return;
+	if (Settings.bCameraCorrectionSmoothing == false) {
+		IGPlus_CameraCorrectionOffset = vect(0,0,0);
+		return;
+	}
 
 	Desired = CameraLocation + IGPlus_CameraCorrectionOffset;
 	if (Trace(HitLocation, HitNormal, Desired, CameraLocation, false) != none)
@@ -3028,8 +3048,9 @@ simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
 			if (Push != vect(0,0,0)) {
 				IGPlus_SKAddVelocity(Push);
 				bApplied = true;
-				if (Move != none && Move.IGPlus_SKPushCount < arraycount(Move.IGPlus_SKPush)) {
-					Move.IGPlus_SKPush[Move.IGPlus_SKPushCount] = Push;
+				// Replays recompute it from the replayed position.
+				if (Move != none && Move.IGPlus_SKPushCount < arraycount(Move.IGPlus_SKHit)) {
+					Move.IGPlus_SKHit[Move.IGPlus_SKPushCount] = IGPlus_SKQueue[0].HitLocation;
 					Move.IGPlus_SKPushCount++;
 				}
 			}
@@ -3060,7 +3081,26 @@ function IGPlus_SKEndCapture(
 	float Momentum,
 	bool bEnhanced
 ) {
+	local IGPlus_SelfKnockback K;
+	local vector Push;
+
 	IGPlus_SKCapturing = false;
+
+	// A DamageMutator changed our push: the client can't predict that, so
+	// keep the stock timing.
+	if (IGPlus_SKCapturedHit) {
+		K.HitLocation = HitLocation;
+		K.SourceLocation = SourceLocation;
+		K.SourceRadius = SourceRadius;
+		K.Radius = Radius;
+		K.Momentum = Momentum;
+		K.bEnhanced = bEnhanced;
+		if (IGPlus_SKCompute(K, Push) && VSize(Push - IGPlus_SKCaptured) > 1.0) {
+			ServerAddMomentum(IGPlus_SKCaptured);
+			return;
+		}
+	}
+
 	// Explosions past their time (move gaps) land on the next move.
 	IGPlus_SKQueueAdd(
 		FMax(TargetTS, CurrentTimeStamp),
@@ -3076,7 +3116,11 @@ simulated function IGPlus_SKPredictRocket(vector Start, rotator FireRot, int Roc
 	local vector End, HitLocation, HitNormal;
 	local Actor HitActor;
 
-	if (IGPlus_PredictedSelfKnockback == false || Level.NetMode != NM_Client)
+	// Non-469 servers merge short moves regardless of bForcePacketSplit, so
+	// the push would not end its move. Lift rockets use a different mover
+	// position on each machine.
+	if (IGPlus_PredictedSelfKnockback == false || Level.NetMode != NM_Client
+		|| bIs469Server == false || Mover(Base) != none)
 		return;
 
 	WS = GetWeaponSettings();
@@ -3089,17 +3133,35 @@ simulated function IGPlus_SKPredictRocket(vector Start, rotator FireRot, int Roc
 	if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
 		return;
 
-	IGPlus_SKQueueAdd(
-		Level.TimeSeconds + VSize(HitLocation - Start) / WS.RocketSpeed,
-		RocketIndex,
-		HitLocation,
-		HitLocation,
-		class'ST_RocketMk2'.default.CollisionRadius,
-		WS.RocketHurtRadius,
-		WS.RocketMomentum * class'ST_RocketMk2'.default.MomentumTransfer,
-		WS.bEnableEnhancedSplashRockets,
-		false,
-		vect(0,0,0));
+	// The server's rocket stops 2uu short of the surface (MoveActor's
+	// TestAdjust) and explodes there.
+	HitLocation -= 2.0 * vector(FireRot);
+	if (((HitLocation - Start) dot vector(FireRot)) < 0.0)
+		HitLocation = Start;
+
+	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / WS.RocketSpeed, RocketIndex, HitLocation);
+}
+
+// A predicted own-rocket explosion at HitLocation, with today's settings.
+simulated function IGPlus_SKPredictedEntry(vector HitLocation, out IGPlus_SelfKnockback K) {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	K.HitLocation = HitLocation;
+	K.SourceLocation = HitLocation;
+	K.SourceRadius = class'ST_RocketMk2'.default.CollisionRadius;
+	K.Radius = WS.RocketHurtRadius;
+	K.Momentum = WS.RocketMomentum * class'ST_RocketMk2'.default.MomentumTransfer;
+	K.bEnhanced = WS.bEnableEnhancedSplashRockets;
+	K.bHasFallback = false;
+}
+
+simulated function IGPlus_SKQueuePredicted(float TargetTS, int RocketIndex, vector HitLocation) {
+	local IGPlus_SelfKnockback K;
+
+	IGPlus_SKPredictedEntry(HitLocation, K);
+	IGPlus_SKQueueAdd(TargetTS, RocketIndex, K.HitLocation, K.SourceLocation, K.SourceRadius,
+		K.Radius, K.Momentum, K.bEnhanced, false, vect(0,0,0));
 }
 
 // --- Predicted translocation -------------------------------------------------
@@ -3144,7 +3206,11 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 	TL = ST_Translocator(Weapon);
 	if (TL == none || TL.Class != class'ST_Translocator' || bFire != 0)
 		return;
-	if (ClientPending != none || TL.IsInState('ClientDown'))
+	// Bring-up holds the press; NormalFire ignores alt-fire for 0.1s after any
+	// fire or alt-fire (server time, so keep a margin).
+	if (ClientPending != none || TL.IsInState('ClientDown') || TL.IsInState('ClientActive'))
+		return;
+	if (Level.TimeSeconds - IGPlus_TlocLastPressTS < 0.15)
 		return;
 
 	WS = GetWeaponSettings();
@@ -3160,25 +3226,42 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 	if (Disc.Physics == PHYS_None)
 		Dest += vect(0,0,40);
 
-	// Same order as Translocator.Translocate.
+	// Same order as Translocator.Translocate. Every outcome below uses the
+	// disc up on the server too.
 	Start = Location;
-	if (SetLocation(Dest) == false)
-		return;
-	if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
-		SetPhysics(PHYS_Falling);
-	if (FastTrace(Location, Disc.Location) == false) {
-		// The server puts us back too, keeping the falling physics.
-		SetLocation(Start);
-		return;
+	if (SetLocation(Dest)) {
+		if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
+			SetPhysics(PHYS_Falling);
+		if (FastTrace(Location, Disc.Location)) {
+			Velocity.X = 0;
+			Velocity.Y = 0;
+			TlocCounter = (TlocCounter + 1) & 3;
+
+			Move.bIGPlusTloc = true;
+			Move.IGPlusTlocDest = Location;
+
+			// A teleport, not a correction: nothing left to ease.
+			IGPlus_CameraCorrectionOffset = vect(0,0,0);
+			IGPlus_AdjustLocationOffset = vect(0,0,0);
+			IGPlus_AdjustLocationAlpha = 0;
+		} else {
+			// The server puts us back too, keeping the falling physics.
+			SetLocation(Start);
+		}
 	}
-	Velocity.X = 0;
-	Velocity.Y = 0;
-	TlocCounter = (TlocCounter + 1) & 3;
 
-	Move.bIGPlusTloc = true;
-	Move.IGPlusTlocDest = Location;
+	if (Disc == TL.TTarget_Client) {
+		TL.TTarget_Client = none;
+		Disc.Destroy();
+		// The server's disc is still on its way to us: hide it on arrival.
+		IGPlus_TlocHideArrivingUntil = Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25;
+	} else {
+		IGPlus_TlocHideDisc(Disc);
+	}
+}
 
-	// The server destroys it on arrival of this move; hide it until then.
+// Hide a disc the server is about to destroy; shown again if it stays.
+simulated function IGPlus_TlocHideDisc(ST_TranslocatorTarget Disc) {
 	Disc.bHidden = true;
 	if (Disc.Glow != none)
 		Disc.Glow.bHidden = true;
@@ -3186,13 +3269,8 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 		Disc.Shadow.Destroy();
 		Disc.Shadow = none;
 	}
-	if (Disc == TL.TTarget_Client) {
-		TL.TTarget_Client = none;
-		Disc.Destroy();
-	} else {
-		IGPlus_TlocHiddenDisc = Disc;
-		IGPlus_TlocHiddenUntil = Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25;
-	}
+	IGPlus_TlocHiddenDisc = Disc;
+	IGPlus_TlocHiddenUntil = Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25;
 }
 
 function IGPlus_BeforeTranslocate() {
@@ -6122,6 +6200,8 @@ function xxReplicateMove(
 
 			if (bForceAltTap && IGPlus_PredictedTranslocation)
 				IGPlus_PredictTranslocate(NewMove);
+			if ((bForceFireTap || bForceAltTap) && ST_Translocator(Weapon) != none)
+				IGPlus_TlocLastPressTS = Level.TimeSeconds;
 
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
@@ -7570,7 +7650,7 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 	if (InstigatedBy != none)
 		IGPlus_DamageEvent_Add(InstigatedBy.PlayerReplicationInfo, ModifiedDamage1, DamageType);
 
-	if (IGPlus_SKCapturing && InstigatedBy == self) {
+	if (IGPlus_SKCapturing && InstigatedBy == self && Health - actualDamage > 0) {
 		// Own predicted rocket: the push goes onto the move timeline instead.
 		IGPlus_SKCaptured += momentum;
 		IGPlus_SKCapturedHit = true;
@@ -9462,6 +9542,20 @@ function xxPlayerTickEvents(float DeltaTime)
 	CurrentTime = Level.TimeSeconds;
 	NetStatsElem.FrameTime = DeltaTime / Level.TimeDilation;
 
+	if (Role == ROLE_AutonomousProxy) {
+		IGPlus_CameraCorrectionDecay(DeltaTime);
+
+		// A disc the server kept after all (refused translocation) shows again.
+		if (IGPlus_TlocHiddenDisc != none && CurrentTime > IGPlus_TlocHiddenUntil) {
+			if (IGPlus_TlocHiddenDisc.bDeleteMe == false) {
+				IGPlus_TlocHiddenDisc.bHidden = false;
+				if (IGPlus_TlocHiddenDisc.Glow != none)
+					IGPlus_TlocHiddenDisc.Glow.bHidden = false;
+			}
+			IGPlus_TlocHiddenDisc = none;
+		}
+	}
+
 	if (Level.NetMode == NM_Client)
 	{
 		if (ConsoleCommand("get ini:engine.engine.gamerenderdevice SmoothMaskedTextures") ~= "true") {
@@ -10194,6 +10288,7 @@ simulated event RenderOverlays(Canvas C) {
 
 	if (bShiftWeapon && W != none)
 		W.PlayerViewOffset = SavedPVO;
+	IGPlus_CameraCorrectionApplied = vect(0,0,0);
 
 	InitFlagSprites();
 
@@ -10384,20 +10479,6 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 // PlayerTick is used if Role=ROLE_AutonomousProxy or ROLE_Authority
 simulated event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
-
-	if (Role == ROLE_AutonomousProxy) {
-		IGPlus_CameraCorrectionDecay(DeltaTime);
-
-		// A disc the server kept after all (refused translocation) shows again.
-		if (IGPlus_TlocHiddenDisc != none && Level.TimeSeconds > IGPlus_TlocHiddenUntil) {
-			if (IGPlus_TlocHiddenDisc.bDeleteMe == false) {
-				IGPlus_TlocHiddenDisc.bHidden = false;
-				if (IGPlus_TlocHiddenDisc.Glow != none)
-					IGPlus_TlocHiddenDisc.Glow.bHidden = false;
-			}
-			IGPlus_TlocHiddenDisc = none;
-		}
-	}
 
 	if (IGPlus_IsDemoPlayback && Settings.bDemoShowRealModels)
 		IGPlus_DemoRestoreRealModel();
@@ -12250,6 +12331,7 @@ function xxClientResetPlayer() {
 function ClientReStart()
 {
 	zzSpawnedTime = Level.TimeSeconds;
+	IGPlus_CameraCorrectionOffset = vect(0,0,0);
 	IGPlus_DetClientSwitchPending = none;
 	IGPlus_DetClientGateWeapon = none; // the respawn equip sends a fresh tagged gate
 	IGPlus_PSActive = false;

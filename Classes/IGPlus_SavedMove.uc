@@ -18,8 +18,8 @@ var int DetWeaponIndex;
 var int DetChargeData;
 // Local merge boundary, including weapons with no deterministic index.
 var Weapon IGPlus_SavedWeapon;
-// Predicted self-knockback pushes applied at the end of this move, in order.
-var vector IGPlus_SKPush[6];
+// Predicted self-knockback explosions applied at the end of this move, in order.
+var vector IGPlus_SKHit[6];
 var int IGPlus_SKPushCount;
 // Predicted translocation at the start of this move.
 var bool bIGPlusTloc;

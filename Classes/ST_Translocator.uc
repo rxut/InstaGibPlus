@@ -20,12 +20,17 @@ var float LastClientFireSoundTime;
 
 // Server, predicted translocation: timestamp of the move that threw the disc.
 var float IGPlus_ThrowTS;
+// The owner's disc, so the client finds it even when Instigator isn't
+// replicated (a disc that lands during the fast-forward is a DumbProxy).
+var ST_TranslocatorTarget IGPlus_DiscRepl;
 
 replication
 {
     // Replicate server timing for synchronization
     unreliable if( Role==ROLE_Authority )
         ServerTimeSinceLastFire, ServerTimeSinceTargetSpawn;
+    reliable if (bNetOwner && Role == ROLE_Authority)
+        IGPlus_DiscRepl;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -84,6 +89,10 @@ simulated function bool ClientFire(float Value)
 
 	PingCompensation = bbP.PingAverage * 0.001;
 	CompensatedTime = ServerTimeSinceLastFire + PingCompensation;
+	// Predicted translocation lands on the local disc: only throw it when the
+	// server (ServerTimeSinceLastFire > 0.5) surely throws too.
+	if (bbP.IGPlus_PredictedTranslocation)
+		CompensatedTime -= 0.1;
     
     if ( !bTTargetOut && bCanClientFire && (CompensatedTime > 0.45) )
     {
@@ -204,9 +213,12 @@ function Translocate()
 	if (STTarget != None && !STTarget.bDeleteMe && STTarget.bUsingHistoricalPosition)
 	{
 		STTarget.SetLocation(OriginalLocation);
-		if (STTarget.bIGPlusFullHistory && STTarget.Physics != STTarget.IGPlus_PreTranslocatePhysics) {
-			STTarget.SetPhysics(STTarget.IGPlus_PreTranslocatePhysics);
-			STTarget.Velocity = STTarget.IGPlus_PreTranslocateVelocity;
+		if (STTarget.bIGPlusFullHistory) {
+			STTarget.SetCollision(STTarget.IGPlus_PreCollideActors, STTarget.IGPlus_PreBlockActors, STTarget.IGPlus_PreBlockPlayers);
+			if (STTarget.Physics != STTarget.IGPlus_PreTranslocatePhysics) {
+				STTarget.SetPhysics(STTarget.IGPlus_PreTranslocatePhysics);
+				STTarget.Velocity = STTarget.IGPlus_PreTranslocateVelocity;
+			}
 		}
 		STTarget.bUsingHistoricalPosition = false;
 	}
@@ -250,9 +262,17 @@ function ThrowTarget()
 			// Cast to ST_TranslocatorTarget to access history functions
 			ST_TranslocatorTarget(TTarget).SimulateWithHistory(WImp, bbP.PingAverage);
 
-			if (bbP.IGPlus_PredictedTranslocation && TTarget != None) {
+			// Fragger's Translocate() has no restore path: stock lookup only.
+			if (bbP.IGPlus_PredictedTranslocation && TTarget != None && Class == class'ST_Translocator') {
 				IGPlus_ThrowTS = bbP.CurrentTimeStamp;
-				ST_TranslocatorTarget(TTarget).bIGPlusFullHistory = true;
+				IGPlus_DiscRepl = ST_TranslocatorTarget(TTarget);
+				IGPlus_DiscRepl.bIGPlusFullHistory = true;
+				// Ping over PingCompensationMax: the thrower sees a younger disc.
+				IGPlus_DiscRepl.IGPlus_AgeBias = FMax(0.0,
+					float(bbP.PingAverage) * 0.001 * Level.TimeDilation - IGPlus_DiscRepl.TotalSimulationTime);
+				// Landed during the fast-forward: Tick is off until a knock.
+				if (IGPlus_DiscRepl.Physics == PHYS_None)
+					IGPlus_DiscRepl.IGPlus_HistoryAnchor = Level.TimeSeconds;
 			}
 		}
 	}
@@ -286,11 +306,17 @@ function AltFire( float Value )
                 bbP.CurrentTimeStamp - IGPlus_ThrowTS,
                 ServerTimeSinceTargetSpawn - 0.2,
                 ServerTimeSinceTargetSpawn + 0.2);
-            HistoricalLocation = STTarget.IGPlus_GetHistoryAt(FMax(TimeSinceThrow, 0.0), HistoricalLanded);
+            HistoricalLocation = STTarget.IGPlus_GetHistoryAt(FMax(TimeSinceThrow - STTarget.IGPlus_AgeBias, 0.0), HistoricalLanded);
 
             STTarget.PreTranslocateLocation = STTarget.Location;
             STTarget.IGPlus_PreTranslocatePhysics = STTarget.Physics;
             STTarget.IGPlus_PreTranslocateVelocity = STTarget.Velocity;
+            STTarget.IGPlus_PreCollideActors = STTarget.bCollideActors;
+            STTarget.IGPlus_PreBlockActors = STTarget.bBlockActors;
+            STTarget.IGPlus_PreBlockPlayers = STTarget.bBlockPlayers;
+            // No touches while moved back: picking the disc up or sticking it
+            // to someone here would be a translocation the client never saw.
+            STTarget.SetCollision(false, false, false);
             STTarget.SetLocation(HistoricalLocation);
             // Translocate() adds 40 up for a landed disc: use the landed state at that age.
             if ((HistoricalLanded != 0) != (STTarget.Physics == PHYS_None)) {
@@ -321,6 +347,9 @@ function AltFire( float Value )
             STTarget.SetLocation(HistoricalLocation);
             STTarget.bUsingHistoricalPosition = true;
         }
+
+        if (TTarget == None)
+            return;
 
 		if ( TTarget.Disrupted() )
         {
@@ -491,6 +520,9 @@ simulated function ST_TranslocatorTarget IGPlus_PredictionDisc() {
 
 	if (TTarget_Client != None && !TTarget_Client.bDeleteMe && TTarget_Client.bCollideWorld)
 		return TTarget_Client;
+
+	if (IGPlus_DiscRepl != None && !IGPlus_DiscRepl.bDeleteMe && !IGPlus_DiscRepl.bHidden)
+		return IGPlus_DiscRepl;
 
 	foreach AllActors(class'ST_TranslocatorTarget', T)
 		if (T.Instigator == Owner && T.Role < ROLE_Authority && !T.bDeleteMe && !T.bHidden)

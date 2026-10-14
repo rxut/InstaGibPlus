@@ -14,6 +14,7 @@ var int HistoryCount;
 // fast-forward, for its whole life, so any age can be looked up.
 var bool bIGPlusFullHistory;
 var float IGPlus_HistoryAnchor; // Level.TimeSeconds of age TotalSimulationTime, set on the first tick
+var float IGPlus_AgeBias;       // fast-forward shortfall when ping exceeded PingCompensationMax
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -22,6 +23,7 @@ var vector PreTranslocateLocation;
 var bool bUsingHistoricalPosition;
 var EPhysics IGPlus_PreTranslocatePhysics;
 var vector IGPlus_PreTranslocateVelocity;
+var bool IGPlus_PreCollideActors, IGPlus_PreBlockActors, IGPlus_PreBlockPlayers;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -82,6 +84,13 @@ simulated function PostNetBeginPlay()
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
+			// Predicted translocation already used our local disc: this one is gone too.
+			if (bbP.IGPlus_TlocHideArrivingUntil > Level.TimeSeconds) {
+				bbP.IGPlus_TlocHideArrivingUntil = 0.0;
+				bbP.IGPlus_TlocHideDisc(self);
+				return;
+			}
+
 			TL = ST_Translocator(InstigatingPlayer.Weapon);
 			if (TL != none && TL.TTarget_Client != none && TL.TTarget_Client.bDeleteMe == false)
 			{
@@ -132,18 +141,36 @@ function IGPlus_RecordHistory(float Age) {
         return;
 
     bLanded = byte(Physics == PHYS_None);
-    // ponytail: 50ms heartbeat while resting so a later knock lerps from
-    // the right time; 256 entries hold ~2s of flight at 120Hz
-    if (Location == SimulationHistory[i] && bLanded == SimulationLanded[i] && Age - SimulationTimes[i] < 0.05)
+    // A resting disc adds nothing: the first tick after a knock records the
+    // rest spot (not landed) at the right age. 10ms spacing while flying.
+    if (bLanded == SimulationLanded[i]
+        && (Location == SimulationHistory[i] || Age - SimulationTimes[i] < 0.01))
         return;
 
-    if (HistoryCount < arraycount(SimulationHistory))
-        i = HistoryCount++;
-    // else: full, keep refreshing the newest entry
+    if (HistoryCount >= arraycount(SimulationHistory))
+        IGPlus_HalveHistory();
+    i = HistoryCount++;
 
     SimulationHistory[i] = Location;
     SimulationTimes[i] = Age;
     SimulationLanded[i] = bLanded;
+}
+
+// Full: keep the first and last entries, drop every other one between.
+function IGPlus_HalveHistory() {
+    local int i, j;
+
+    j = 1;
+    for (i = 2; i < HistoryCount - 1; i += 2) {
+        SimulationHistory[j] = SimulationHistory[i];
+        SimulationTimes[j] = SimulationTimes[i];
+        SimulationLanded[j] = SimulationLanded[i];
+        j++;
+    }
+    SimulationHistory[j] = SimulationHistory[HistoryCount - 1];
+    SimulationTimes[j] = SimulationTimes[HistoryCount - 1];
+    SimulationLanded[j] = SimulationLanded[HistoryCount - 1];
+    HistoryCount = j + 1;
 }
 
 // Position and landed state at Age seconds after the throw.
@@ -226,11 +253,9 @@ auto state Pickup {
 	simulated event Landed(vector HitNormal) {
 		super.Landed(HitNormal);
 
-		// Record where it came to rest, and keep ticking for the heartbeat.
-		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0) {
+		// Record where it came to rest (Landed switched Tick off).
+		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0)
 			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor));
-			Enable('Tick');
-		}
 	}
 
 	event TakeDamage( int Damage, Pawn EventInstigator, vector HitLocation, vector Momentum, name DamageType) {
