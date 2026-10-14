@@ -2946,8 +2946,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// Whole-move dispatch: one weapon step per v3 ServerMove.
 	bDetWholeMove = (DetWeapon != none);
 	// A ready hint with fire input but no valid binding: the client showed a
-	// shot from a weapon the server is not holding.
-	if (!bDetWholeMove && SM.bDetReady && SM.DetWeaponIndex != IGPLUS_DetWEAPON_None
+	// shot from a weapon the server is not holding. Logged while TraceInput is on.
+	if (bTraceInput && !bDetWholeMove && SM.bDetReady && SM.DetWeaponIndex != IGPLUS_DetWEAPON_None
 		&& (bFired || bAltFired || bForceFire || bForceAltFire)
 		&& Level.TimeSeconds - IGPlus_DetLastRejectLogTS > 1.0) {
 		IGPlus_DetLastRejectLogTS = Level.TimeSeconds;
@@ -4957,8 +4957,8 @@ simulated function bool IGPlus_DetProcessStep(
 	// no-input step to settle an in-flight load.
 	if (bServerSide && !IGPlus_DetFireWindowOpen(W, StepTS)) {
 		// A hinted step that wants to fire means the client predicted a shot
-		// here; rejecting it leaves a client-only shot.
-		if (bClientPredictedStep && (bFireHeld || bAltHeld || bForceFire || bForceAlt)
+		// here; rejecting it leaves a client-only shot. Logged while TraceInput is on.
+		if (bTraceInput && bClientPredictedStep && (bFireHeld || bAltHeld || bForceFire || bForceAlt)
 			&& Level.TimeSeconds - IGPlus_DetLastRejectLogTS > 1.0) {
 			IGPlus_DetLastRejectLogTS = Level.TimeSeconds;
 			Log("[DET-REJECT]"@PlayerReplicationInfo.PlayerName@W.Name
