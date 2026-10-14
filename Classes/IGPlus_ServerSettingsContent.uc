@@ -131,6 +131,9 @@ var localized string bDelayedPickupSpawnHelp;
 var UWindowCheckbox Chk_bUseFastWeaponSwitch;
 var localized string bUseFastWeaponSwitchText;
 var localized string bUseFastWeaponSwitchHelp;
+var UWindowCheckbox Chk_bEnablePredictedSwitching;
+var localized string bEnablePredictedSwitchingText;
+var localized string bEnablePredictedSwitchingHelp;
 var UWindowCheckbox Chk_bTellSpectators;
 var localized string bTellSpectatorsText;
 var localized string bTellSpectatorsHelp;
@@ -640,6 +643,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bAllowMultiWeapon", BoolToString(Chk_bAllowMultiWeapon.bChecked));
 	SaveServerSettingIfChanged(S, "bDelayedPickupSpawn", BoolToString(Chk_bDelayedPickupSpawn.bChecked));
 	SaveServerSettingIfChanged(S, "bUseFastWeaponSwitch", BoolToString(Chk_bUseFastWeaponSwitch.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedSwitching", BoolToString(Chk_bEnablePredictedSwitching.bChecked));
 	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
@@ -1057,6 +1061,7 @@ function LoadServerSettings() {
 	Chk_bAllowMultiWeapon.bChecked = S.bAllowMultiWeapon;
 	Chk_bDelayedPickupSpawn.bChecked = S.bDelayedPickupSpawn;
 	Chk_bUseFastWeaponSwitch.bChecked = S.bUseFastWeaponSwitch;
+	Chk_bEnablePredictedSwitching.bChecked = S.bEnablePredictedSwitching;
 	Chk_bTellSpectators.bChecked = S.bTellSpectators;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
@@ -1159,6 +1164,7 @@ function Created() {
 	Chk_bAllowMultiWeapon = CreateCheckbox(bAllowMultiWeaponText, bAllowMultiWeaponHelp);
 	Chk_bDelayedPickupSpawn = CreateCheckbox(bDelayedPickupSpawnText, bDelayedPickupSpawnHelp);
 	Chk_bUseFastWeaponSwitch = CreateCheckbox(bUseFastWeaponSwitchText, bUseFastWeaponSwitchHelp);
+	Chk_bEnablePredictedSwitching = CreateCheckbox(bEnablePredictedSwitchingText, bEnablePredictedSwitchingHelp);
 	Chk_bTellSpectators = CreateCheckbox(bTellSpectatorsText, bTellSpectatorsHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
@@ -1287,6 +1293,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bAllowMultiWeapon, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bDelayedPickupSpawn, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bUseFastWeaponSwitch, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedSwitching, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bTellSpectators, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
@@ -1482,6 +1489,8 @@ defaultproperties
 	bDelayedPickupSpawnHelp="If checked, delays the first pickup spawn"
 	bUseFastWeaponSwitchText="Fast Weapon Switch"
 	bUseFastWeaponSwitchHelp="If checked, enables fast weapon switching"
+	bEnablePredictedSwitchingText="Predicted Weapon Switch"
+	bEnablePredictedSwitchingHelp="Experimental. If checked, weapon switches start on the key press; off while Fast Weapon Switch or Input Replication is on"
 	bTellSpectatorsText="Tell Spectators on Kick"
 	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"
 

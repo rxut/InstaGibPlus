@@ -1402,10 +1402,7 @@ event Possess()
 		IGPlus_AlwaysRenderFlagCarrier = zzUTPure.Settings.bAlwaysRenderFlagCarrier;
 		IGPlus_AlwaysRenderDroppedFlags = zzUTPure.Settings.bAlwaysRenderDroppedFlags;
 		IGPlus_UseFastWeaponSwitch = zzUTPure.Settings.bUseFastWeaponSwitch;
-		// The timeline is built on the ServerMove path and the stock holster.
-		IGPlus_PredictedSwitching = zzUTPure.Settings.bEnablePredictedSwitching
-			&& !zzUTPure.Settings.bEnableInputReplication
-			&& !zzUTPure.Settings.bUseFastWeaponSwitch;
+		IGPlus_PredictedSwitching = zzUTPure.Settings.PredictedSwitchingActive();
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -14021,6 +14018,7 @@ function IGPlus_ApplyNetcodeSettingsToPlayers() {
 			continue;
 
 		BP.IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
+		BP.IGPlus_PredictedSwitching = zzUTPure.Settings.PredictedSwitchingActive();
 		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
 		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -14140,6 +14138,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bAllowMultiWeapon");
 	IGPlus_ServerSendSetting("bDelayedPickupSpawn");
 	IGPlus_ServerSendSetting("bUseFastWeaponSwitch");
+	IGPlus_ServerSendSetting("bEnablePredictedSwitching");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");
