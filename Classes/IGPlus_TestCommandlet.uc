@@ -133,34 +133,47 @@ function TestTranslocatorFireMerging() {
 		"Translocator_unchanged_primary_hold_can_merge");
 }
 
-// Simulates 200 Hz moves against a server ticking every 10 ms.
-function float SimFireClockLead(float ClientRate, float Seconds, optional float SpikeAt, optional float SpikeLen) {
-	local float Lead, T, ServerT, LastServerT, Held;
+// Simulates 200 Hz moves against a server ticking every 10 ms. The client
+// clock runs at ClientRate from HackAt on; a spike holds packets in flight
+// and delivers them together. Returns the highest lead after the 2 s learn.
+function float SimFireClockLead(float ClientRate, float Seconds, optional float SpikeAt, optional float SpikeLen, optional float HackAt) {
+	local float Baseline, Lead, MaxLead, T, ClientT, ServerT, LastServerT;
 	local int i, N;
+	local bool bInit;
 
 	N = int(Seconds / 0.005);
 	for (i = 0; i < N; i++) {
 		T = i * 0.005;
-		// Arrival on the server: a spike holds packets, then they land together.
+		if (T < HackAt)
+			ClientT = T;
+		else
+			ClientT = HackAt + (T - HackAt) * ClientRate;
 		if (SpikeLen > 0 && T >= SpikeAt && T < SpikeAt + SpikeLen)
 			ServerT = SpikeAt + SpikeLen;
 		else
 			ServerT = T;
 		ServerT = int(ServerT / 0.01) * 0.01;
-		Lead = class'bbPlayer'.static.IGPlus_DetNextFireClockLead(Lead, 0.005 * ClientRate, ServerT - LastServerT);
+		if (!bInit) {
+			Baseline = ClientT - ServerT;
+			bInit = true;
+		} else {
+			Baseline = class'bbPlayer'.static.IGPlus_DetNextClockBaseline(
+				Baseline, ClientT - ServerT, ServerT - LastServerT, ServerT < 2.0);
+		}
 		LastServerT = ServerT;
-		Held = FMax(Held, Lead);
+		Lead = (ClientT - ServerT) - Baseline;
+		if (ServerT >= 2.0)
+			MaxLead = FMax(MaxLead, Lead);
 	}
-	if (SpikeLen > 0)
-		return Held;
-	return Lead;
+	return MaxLead;
 }
 
 function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.0, 10.0) < 0.02, "FireClockLead_synced_clock_stays_near_zero");
-	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.02, "FireClockLead_small_drift_is_absorbed");
-	LogTestResult(SimFireClockLead(1.0, 5.0, 2.0, 0.4) <= 0.5, "FireClockLead_400ms_spike_stays_under_default_margin");
-	LogTestResult(SimFireClockLead(1.5, 2.0) > 0.5, "FireClockLead_speedhack_exceeds_default_margin_within_2s");
+	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.05, "FireClockLead_small_drift_is_absorbed");
+	LogTestResult(SimFireClockLead(1.0, 30.0, 5.0, 1.0) < 0.05, "FireClockLead_1s_lag_spike_never_builds_lead");
+	LogTestResult(SimFireClockLead(1.0, 10.0, 0.0, 1.5) < 0.05, "FireClockLead_hitch_while_connecting_is_learned");
+	LogTestResult(SimFireClockLead(1.5, 5.0, 0, 0, 3.0) > 0.5, "FireClockLead_speedhack_exceeds_default_margin_within_2s");
 }
 
 event int main(string Params) {

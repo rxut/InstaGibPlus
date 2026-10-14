@@ -87,9 +87,12 @@ var float IGPlus_DetPendingFireTapTS;
 var Weapon IGPlus_DetPendingFireTapWeapon;
 // PendingWeapon picked by the out-of-ammo handler during the holster hold.
 var Weapon IGPlus_DetAutoSwitchPending;
-// How far this client's move clock leads the server's (seconds, floored at 0).
+// Server: move timestamp minus server time, against the client's best
+// (least delayed) offset. Lead = how far the client clock runs ahead.
 var float IGPlus_DetFireClockLead;
-var bool bDetFireClockBlocked;
+var float IGPlus_DetClockBaseline;
+var float IGPlus_DetClockLearnUntil;
+var float IGPlus_DetLastClockLogTS;
 // Server: how long after a switch the client may still predict the old weapon
 // (it learns of the switch one round trip later). Set when the switch is seen.
 var float IGPlus_DetInFlightSlack;
@@ -2829,10 +2832,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		if (Level.Pauser == "" && bWasPaused)
 			ServerDeltaTime = FMin(ServerDeltaTime, SM.MoveDeltaTime);
 	}
-	// Measured before IGPlus_OldServerMove advances CurrentTimeStamp, so time
-	// claimed through redundant old moves is counted too.
-	if (ServerTimeStamp > 0.0 && Level.Pauser == "" && !bWasPaused)
-		IGPlus_DetUpdateFireClockLead(SM.TimeStamp - CurrentTimeStamp, ServerDeltaTime);
+	if (Level.Pauser == "" && !bWasPaused)
+		IGPlus_DetUpdateFireClockLead(SM.TimeStamp, ServerDeltaTime);
 
 	if (zzUTPure.Settings.bEnableWarpFix && ServerDeltaTime > zzUTPure.Settings.WarpFixDelay) {
 		IGPlus_SkipMovesUntilNextTick = true;
@@ -3459,7 +3460,7 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 		ServerDeltaTime = Level.TimeSeconds - ServerTimeStamp;
 		ServerTimeStamp = Level.TimeSeconds;
 		if (Level.Pauser == "")
-			IGPlus_DetUpdateFireClockLead(DeltaTime, ServerDeltaTime);
+			IGPlus_DetUpdateFireClockLead(CurrentTimeStamp, ServerDeltaTime);
 
 		ExtrapolationDelta += (ServerDeltaTime - DeltaTime);
 	} else {
@@ -4693,17 +4694,33 @@ function IGPlus_DetTrackPendingWeapon(float NowTS) {
 }
 
 // Det refire and windows run on move timestamps, i.e. the client's clock.
-// Bound how far that clock may lead the server's. A delayed packet floors the
-// lead at 0 and the bunched catch-up refills at most the delay, so jitter nets
-// out; a fast clock (speed hack) accumulates. 1% slack absorbs clock drift,
-// like stock TimeMargin. While over the cap a step counts as unhinted: no
-// fresh shots, committed cycles still resolve, taps stay queued.
-static final function float IGPlus_DetNextFireClockLead(float Lead, float ClientDelta, float ServerDelta) {
-	return FMax(0.0, Lead + ClientDelta - 1.01 * ServerDelta);
+// Bound how far that clock may run ahead of the server's. Offset = move
+// timestamp - server time. Network delay only ever lowers it, so the baseline
+// is the best (highest) offset seen, allowed to rise by 1% of elapsed server
+// time (clock drift). A fast clock (speed hack) pulls ahead of it steadily;
+// lag spikes and bunched catch-up never do. The first 2 s only learn the
+// baseline, so a hitch while connecting can't pin it low. While over the cap a
+// step counts as unhinted: no fresh shots, committed cycles still resolve.
+static final function float IGPlus_DetNextClockBaseline(float Baseline, float Offset, float ServerDelta, bool bLearning) {
+	if (bLearning)
+		return FMax(Baseline, Offset);
+	if (Offset > Baseline)
+		return FMin(Offset, Baseline + 0.01 * ServerDelta);
+	return Baseline;
 }
 
-function IGPlus_DetUpdateFireClockLead(float ClientDelta, float ServerDelta) {
-	IGPlus_DetFireClockLead = IGPlus_DetNextFireClockLead(IGPlus_DetFireClockLead, ClientDelta, ServerDelta);
+function IGPlus_DetUpdateFireClockLead(float MoveTimeStamp, float ServerDelta) {
+	local float Offset;
+
+	Offset = MoveTimeStamp - Level.TimeSeconds;
+	if (IGPlus_DetClockLearnUntil <= 0.0) {
+		IGPlus_DetClockBaseline = Offset;
+		IGPlus_DetClockLearnUntil = Level.TimeSeconds + 2.0;
+	} else {
+		IGPlus_DetClockBaseline = IGPlus_DetNextClockBaseline(IGPlus_DetClockBaseline, Offset,
+			FMax(0.0, ServerDelta), Level.TimeSeconds < IGPlus_DetClockLearnUntil);
+	}
+	IGPlus_DetFireClockLead = Offset - IGPlus_DetClockBaseline;
 }
 
 function bool IGPlus_DetFireClockOK() {
@@ -4712,11 +4729,12 @@ function bool IGPlus_DetFireClockOK() {
 	if (zzUTPure == none || zzUTPure.Settings.DetFireClockMargin <= 0.0)
 		return true;
 	bOK = IGPlus_DetFireClockLead <= zzUTPure.Settings.DetFireClockMargin;
-	// Log each entry into the blocked state; a blocked step skips a server shot.
-	if (!bOK && !bDetFireClockBlocked)
+	// A blocked step skips a server shot; log it, at most once a second.
+	if (!bOK && Level.TimeSeconds - IGPlus_DetLastClockLogTS > 1.0) {
+		IGPlus_DetLastClockLogTS = Level.TimeSeconds;
 		Log("[DET-CLOCK]"@PlayerReplicationInfo.PlayerName@"lead="$IGPlus_DetFireClockLead
 			@"margin="$zzUTPure.Settings.DetFireClockMargin@"- fresh Det shots held", 'IGPlus');
-	bDetFireClockBlocked = !bOK;
+	}
 	return bOK;
 }
 
@@ -4725,7 +4743,8 @@ function bool IGPlus_DetFireClockOK() {
 // after its key press. Honour those predicted steps instead of a flat 0.12 s,
 // or every shot in that gap is client-only above ~120 ms ping.
 function float IGPlus_DetComputeInFlightSlack() {
-	return FClamp(0.001 * IGPlus_GetLatencyMs() + 0.03, 0.12, 0.35);
+	// PingAverage is real time; windows run in game time.
+	return FClamp(0.001 * IGPlus_GetLatencyMs() * Level.TimeDilation + 0.03, 0.12, 0.35);
 }
 
 // WHEN the bound weapon may step; binding validity covers WHICH.
@@ -5045,11 +5064,13 @@ function IGPlus_DetCheckSwitchWedge() {
 		if (PendingWeapon != IGPlus_DetAutoSwitchPending) {
 			IGPlus_DetAutoSwitchPending = none; // player chose another weapon
 		} else if (!IGPlus_DetSwitchDeferActive() && Weapon != none
+			&& !Weapon.bChangeWeapon && !Weapon.IsInState('DownWeapon')
 			&& Weapon.AmmoType != none && Weapon.AmmoType.AmmoAmount > 0) {
 			PendingWeapon = none;
 			IGPlus_DetPendingSeen = none;
 			IGPlus_DetAutoSwitchPending = none;
 			IGPlus_DetPendingStuckSince = 0.0;
+			IGPlus_DetClearPendingFireTap(); // a click on the empty gun was never shown
 			return;
 		}
 	}
@@ -11665,6 +11686,7 @@ exec function GetWeapon(class<Weapon> NewWeaponClass )
 {	// Slightly improved GetWeapon
 	local Inventory Inv;
 
+	IGPlus_DetAutoSwitchPending = none; // a player's pick is never the auto pick
 	if ( (Inventory == None) || (NewWeaponClass == None)
 		|| ((Weapon != None) && Weapon.IsA(NewWeaponClass.Name))
 		|| IsInState('Dying') || Level.Game.bGameEnded )
@@ -11699,6 +11721,7 @@ exec function SwitchWeapon(byte F)
 {
 	local weapon newWeapon;
 
+	IGPlus_DetAutoSwitchPending = none; // a player's pick is never the auto pick
 	if ( bShowMenu || Level.Pauser!="" || IsInState('Dying') || Level.Game.bGameEnded )
 		return;
 	
@@ -11742,6 +11765,7 @@ exec function PrevWeapon()
 	local Weapon realWeapon, w, Prev;
 	local bool bFoundWeapon;
 
+	IGPlus_DetAutoSwitchPending = none; // a player's pick is never the auto pick
 	if( bShowMenu || Level.Pauser!="" || IsInState('Dying') )
 		return;
 	if ( Weapon == None )
@@ -11827,6 +11851,7 @@ exec function NextWeapon()
 	local Weapon realWeapon, w, Prev;
 	local bool bFoundWeapon;
 
+	IGPlus_DetAutoSwitchPending = none; // a player's pick is never the auto pick
 	if( bShowMenu || Level.Pauser!="" || IsInState('Dying') )
 		return;
 	if ( Weapon == None )
@@ -11917,6 +11942,7 @@ simulated function ChangedWeapon() {
 	if (Role == ROLE_Authority && Weapon != None && Weapon != PendingWeapon) {
 		IGPlus_DetFinalizeExpiredPrevWeapon(true);
 		IGPlus_DetPrevWeapon = Weapon;
+		IGPlus_DetAutoSwitchPending = none;
 		IGPlus_DetInFlightSlack = IGPlus_DetComputeInFlightSlack();
 		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + IGPlus_DetInFlightSlack;
 		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + FMax(0.25, IGPlus_DetInFlightSlack + 0.13);
