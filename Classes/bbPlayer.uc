@@ -83,6 +83,12 @@ var Weapon IGPlus_DetClientSwitchPending;
 // which is the client's own clock). Client prediction may not fire before it.
 var float IGPlus_DetClientEntryGateTS;
 var float IGPlus_DetPendingFireTapTS;
+// Weapon the queued tap belongs to; it never fires a different weapon.
+var Weapon IGPlus_DetPendingFireTapWeapon;
+// PendingWeapon picked by the out-of-ammo handler during the holster hold.
+var Weapon IGPlus_DetAutoSwitchPending;
+// How far this client's move clock leads the server's (seconds, floored at 0).
+var float IGPlus_DetFireClockLead;
 var float IGPlus_DetLastShotTS;
 var float IGPlus_DetHolsterHoldUntilTS;
 var float IGPlus_DetPendingStuckSince;
@@ -2816,6 +2822,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		if (Level.Pauser == "" && bWasPaused)
 			ServerDeltaTime = FMin(ServerDeltaTime, SM.MoveDeltaTime);
 	}
+	// Measured before IGPlus_OldServerMove advances CurrentTimeStamp, so time
+	// claimed through redundant old moves is counted too.
+	if (ServerTimeStamp > 0.0 && Level.Pauser == "" && !bWasPaused)
+		IGPlus_DetUpdateFireClockLead(SM.TimeStamp - CurrentTimeStamp, ServerDeltaTime);
 
 	if (zzUTPure.Settings.bEnableWarpFix && ServerDeltaTime > zzUTPure.Settings.WarpFixDelay) {
 		IGPlus_SkipMovesUntilNextTick = true;
@@ -2932,7 +2942,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			bForceFire,
 			bForceAltFire,
 			true,
-			SM.bDetReady,
+			SM.bDetReady && IGPlus_DetFireClockOK(),
 			SM.DetChargeData,
 			false,
 			false
@@ -3431,6 +3441,8 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 	if (ServerTimeStamp != 0.0) {
 		ServerDeltaTime = Level.TimeSeconds - ServerTimeStamp;
 		ServerTimeStamp = Level.TimeSeconds;
+		if (Level.Pauser == "")
+			IGPlus_DetUpdateFireClockLead(DeltaTime, ServerDeltaTime);
 
 		ExtrapolationDelta += (ServerDeltaTime - DeltaTime);
 	} else {
@@ -4306,7 +4318,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 				bInputForceFire,
 				bInputForceAltFire,
 				true,
-				I.bDetReady,
+				I.bDetReady && IGPlus_DetFireClockOK(),
 				I.DetChargeData,
 				IGPlus_IsDetWeaponIndexEightball(I.DetWeaponIndex),
 				I.bDetEightballInstant
@@ -4626,6 +4638,8 @@ function IGPlus_DetClearSwitchTrustState() {
 	IGPlus_LastFireEndHeld = false;
 	IGPlus_LastAltEndHeld = false;
 	IGPlus_DetPendingFireTapTS = 0.0;
+	IGPlus_DetPendingFireTapWeapon = none;
+	IGPlus_DetAutoSwitchPending = none;
 	IGPlus_DetLastShotTS = 0.0;
 	IGPlus_DetHolsterHoldUntilTS = 0.0;
 
@@ -4669,6 +4683,26 @@ function IGPlus_DetTrackPendingWeapon(float NowTS) {
 	IGPlus_DetPendingSeen = PendingWeapon;
 	if (PendingWeapon != none && PendingWeapon != Weapon)
 		IGPlus_DetPendingSeenTS = NowTS;
+}
+
+// Det refire and windows run on move timestamps, i.e. the client's clock.
+// Bound how far that clock may lead the server's. A delayed packet floors the
+// lead at 0 and the bunched catch-up refills at most the delay, so jitter nets
+// out; a fast clock (speed hack) accumulates. 1% slack absorbs clock drift,
+// like stock TimeMargin. While over the cap a step counts as unhinted: no
+// fresh shots, committed cycles still resolve, taps stay queued.
+static final function float IGPlus_DetNextFireClockLead(float Lead, float ClientDelta, float ServerDelta) {
+	return FMax(0.0, Lead + ClientDelta - 1.01 * ServerDelta);
+}
+
+function IGPlus_DetUpdateFireClockLead(float ClientDelta, float ServerDelta) {
+	IGPlus_DetFireClockLead = IGPlus_DetNextFireClockLead(IGPlus_DetFireClockLead, ClientDelta, ServerDelta);
+}
+
+function bool IGPlus_DetFireClockOK() {
+	if (zzUTPure == none || zzUTPure.Settings.DetFireClockMargin <= 0.0)
+		return true;
+	return IGPlus_DetFireClockLead <= zzUTPure.Settings.DetFireClockMargin;
 }
 
 // WHEN the bound weapon may step; binding validity covers WHICH.
@@ -4718,6 +4752,7 @@ function IGPlus_DetHandleOutOfAmmo(Weapon W) {
 		PendingWeapon = Inventory.RecommendWeapon(Rating, UseAlt);
 		if (PendingWeapon == Weapon)
 			PendingWeapon = none;
+		IGPlus_DetAutoSwitchPending = PendingWeapon;
 		return;
 	}
 
@@ -4857,7 +4892,7 @@ simulated function bool IGPlus_DetProcessStep(
 	// no-input step to settle an in-flight load.
 	if (bServerSide && !IGPlus_DetFireWindowOpen(W, StepTS)) {
 		if (bForceFire)
-			IGPlus_DetLatchFireTap(StepTS);
+			IGPlus_DetLatchFireTap(StepTS, W);
 		EB = ST_UT_Eightball(W);
 		if (EB != none && EB.DetHasSwitchAwayRequest())
 			return EB.DetProcessStep(
@@ -4890,8 +4925,8 @@ simulated function bool IGPlus_DetProcessStep(
 	if (bServerSide) {
 		if (!bClientPredictedStep) {
 			if (bForceFire)
-				IGPlus_DetLatchFireTap(StepTS);
-		} else if (W == Weapon && IGPlus_DetConsumePendingFireTap(StepTS)) {
+				IGPlus_DetLatchFireTap(StepTS, W);
+		} else if (W == Weapon && IGPlus_DetConsumePendingFireTap(StepTS, W)) {
 			bForceFire = true;
 		}
 	}
@@ -4968,6 +5003,21 @@ function IGPlus_DetCheckSwitchWedge() {
 		IGPlus_DetPendingStuckSince = 0.0;
 		return;
 	}
+	// Out-of-ammo pick made during the hold: drop it if ammo was picked up
+	// meanwhile (stock re-checks ammo in Idle after the fire anim). The client
+	// was never told about this switch, so clear it without a cancel re-arm.
+	if (IGPlus_DetAutoSwitchPending != none) {
+		if (PendingWeapon != IGPlus_DetAutoSwitchPending) {
+			IGPlus_DetAutoSwitchPending = none; // player chose another weapon
+		} else if (!IGPlus_DetSwitchDeferActive() && Weapon != none
+			&& Weapon.AmmoType != none && Weapon.AmmoType.AmmoAmount > 0) {
+			PendingWeapon = none;
+			IGPlus_DetPendingSeen = none;
+			IGPlus_DetAutoSwitchPending = none;
+			IGPlus_DetPendingStuckSince = 0.0;
+			return;
+		}
+	}
 	// Complete a holster that was deferred for the fire-anim window.
 	if (Weapon != none && !Weapon.bChangeWeapon
 		&& !Weapon.IsInState('DownWeapon') && !IGPlus_DetSwitchDeferActive())
@@ -5028,18 +5078,28 @@ simulated function bool IGPlus_DetSwitchDeferActive() {
 // while the weapon is not ready (select anim, bring-up gate) is queued and
 // replayed as a force tap on the first accepted step, instead of being
 // silently dropped. One slot, short expiry — matches bJustFired semantics.
-simulated function IGPlus_DetLatchFireTap(float NowTS) {
+// The tap is bound to the weapon it was pressed on: a click on the outgoing
+// weapon must never come out of the incoming one (stock drops it).
+simulated function IGPlus_DetLatchFireTap(float NowTS, Weapon W) {
 	IGPlus_DetPendingFireTapTS = NowTS;
+	IGPlus_DetPendingFireTapWeapon = W;
 }
 
-simulated function bool IGPlus_DetConsumePendingFireTap(float NowTS) {
+simulated function bool IGPlus_DetConsumePendingFireTap(float NowTS, Weapon W) {
 	local float TapTS;
 
 	TapTS = IGPlus_DetPendingFireTapTS;
 	if (TapTS <= 0.0)
 		return false;
-	IGPlus_DetPendingFireTapTS = 0.0;
+	if (W != IGPlus_DetPendingFireTapWeapon)
+		return false;
+	IGPlus_DetClearPendingFireTap();
 	return NowTS - TapTS <= 0.8;
+}
+
+simulated function IGPlus_DetClearPendingFireTap() {
+	IGPlus_DetPendingFireTapTS = 0.0;
+	IGPlus_DetPendingFireTapWeapon = none;
 }
 
 simulated function IGPlus_MarkDeterministicSwitchGuard(optional float GuardSeconds) {
@@ -5100,6 +5160,13 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 	// Readiness can stay the same across a switch. Keep the weapon identity
 	// too, or MergeMove would relabel the outgoing weapon's held input.
 	if (Pending.DetWeaponIndex != IGPlus_GetDetWeaponIndex(Weapon))
+		return false;
+	// Held bits are OR-merged, so a release folded into a held move resolves
+	// as still held (primary->alt would fire primary on the server while the
+	// client predicted alt). Det weapons end the move on a release edge.
+	if (IGPlus_FindDetSupportedWeapon(Weapon) != none
+		&& ((Pending.bFire && bFire == 0 && !bJustFired)
+			|| (Pending.bAltFire && bAltFire == 0 && !bJustAltFired)))
 		return false;
 
 	// Keep deterministic-ready epochs isolated per move. Merging across a
@@ -5255,7 +5322,7 @@ function IGPlus_ReplicateInput(float Delta) {
 						DetWeapon = IGPlus_DetWeaponByIndex(SerializedInput.DetWeaponIndex);
 						if (DetWeapon != none) {
 							bPredForceFire = SerializedInput.bForceFireTap
-								|| IGPlus_DetConsumePendingFireTap(SerializedInput.TimeStamp);
+								|| IGPlus_DetConsumePendingFireTap(SerializedInput.TimeStamp, DetWeapon);
 							IGPlus_DetProcessStep(
 								DetWeapon,
 								SerializedInput.TimeStamp,
@@ -5274,7 +5341,8 @@ function IGPlus_ReplicateInput(float Delta) {
 						}
 					} else if (SerializedInput.bForceFireTap) {
 						// Tap on a not-ready input frame: queue for first ready frame.
-						IGPlus_DetLatchFireTap(SerializedInput.TimeStamp);
+						IGPlus_DetLatchFireTap(SerializedInput.TimeStamp,
+							IGPlus_DetWeaponByIndex(SerializedInput.DetWeaponIndex));
 					}
 				}
 				SerializedInput.bDetPredictedLocal = true;
@@ -5359,7 +5427,7 @@ function xxReplicateMove(
 			bMoveFireHeld = (bFire != 0);
 			bMoveAltHeld = (bAltFire != 0);
 			bForceFireTap = bJustFired
-				|| IGPlus_DetConsumePendingFireTap(Level.TimeSeconds);
+				|| IGPlus_DetConsumePendingFireTap(Level.TimeSeconds, DetLocalWeapon);
 			bForceAltTap = bJustAltFired;
 			IGPlus_DetProcessStep(
 				DetLocalWeapon,
@@ -5381,8 +5449,16 @@ function xxReplicateMove(
 				|| IGPlus_DetSupportsWeapon(PendingWeapon)
 				|| IGPlus_DetSupportsWeapon(ClientPending)
 				|| IGPlus_DetSupportsWeapon(IGPlus_DetClientSwitchPending))) {
-			// Tap during select/bring-up: queue for the first ready frame.
-			IGPlus_DetLatchFireTap(Level.TimeSeconds);
+			// Tap during select/bring-up: queue for the first ready frame,
+			// bound to the weapon it was pressed on.
+			if (DetLocalWeapon != none)
+				IGPlus_DetLatchFireTap(Level.TimeSeconds, DetLocalWeapon);
+			else if (IGPlus_DetSupportsWeapon(ClientPending))
+				IGPlus_DetLatchFireTap(Level.TimeSeconds, ClientPending);
+			else if (IGPlus_DetSupportsWeapon(IGPlus_DetClientSwitchPending))
+				IGPlus_DetLatchFireTap(Level.TimeSeconds, IGPlus_DetClientSwitchPending);
+			else
+				IGPlus_DetLatchFireTap(Level.TimeSeconds, PendingWeapon);
 		}
 	}
 
@@ -11806,6 +11882,7 @@ simulated function ChangedWeapon() {
 		IGPlus_DetPrevWeapon = Weapon;
 		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + 0.25;
 		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + 0.12; // reorder jitter slack
+		IGPlus_DetClearPendingFireTap(); // client clears in ClientPutDown
 	}
 
 	Super.ChangedWeapon();
@@ -11830,6 +11907,7 @@ function ClientPutDown(Weapon Current, Weapon Next)
 {
 	IGPlus_MarkDeterministicSwitchGuard();
 	IGPlus_DetClientSwitchPending = none; // the real holster has started
+	IGPlus_DetClearPendingFireTap(); // server clears in ChangedWeapon
 	Super.ClientPutDown(Current, Next);
 }
 

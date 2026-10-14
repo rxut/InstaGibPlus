@@ -707,6 +707,15 @@ state ClientActive {
 		// PlaySelect clears this locally. The server's replicated true may
 		// already have arrived, so selection must restore readiness locally.
 		bCanClientFire = true;
+		// Det shots come from the per-move step, not this state. Leave once
+		// up, or a select-time click (bForceFire) parks the weapon here and
+		// every Fire1 loop re-enters the always-true Det ClientFire.
+		if (bWeaponUp && IsDetActive() && Owner != none
+			&& (TournamentPlayer(Owner) == none || TournamentPlayer(Owner).ClientPending == none)) {
+			PlayIdleAnim();
+			GotoState('');
+			return;
+		}
 		Super.AnimEnd();
 	}
 }

@@ -73,6 +73,16 @@ no-input settlement step required to release or cancel committed state.
 - Bio charge is derived from server-observed hold time at stock 0.5-second
   cadence. Client charge data may only lower it.
 
+### Clock lead
+
+Refire intervals and windows compare move timestamps, which are the client's
+clock. The server tracks how far that clock leads its own
+(`IGPlus_DetFireClockLead`: client move delta minus 1.01x server delta, floored
+at 0). While the lead exceeds `DetFireClockMargin` (default 0.25 s), steps are
+treated as unhinted: no fresh shots, committed cycles still resolve, and taps
+stay queued. Delays net out against the bunched catch-up, but a fast clock
+builds up lead.
+
 ## Recovery behavior
 
 - Redundancy is the stock `OldMoveData` movement heuristic. A lost fire-bearing
@@ -80,6 +90,10 @@ no-input settlement step required to release or cancel committed state.
 - A fire tap sets `bForceFire`, and `CanMergeMove` refuses to merge a move that
   carries one, so a tap always ends its move. Double-taps faster than one net
   update still produce two moves.
+- A tap on a not-ready step is queued for 0.8 s and bound to the weapon it was
+  pressed on. Both sides clear it on a switch (server `ChangedWeapon`, client
+  `ClientPutDown`), so a click on the outgoing weapon never fires the incoming
+  one.
 - Merging splits on weapon identity and deterministic readiness, so an
   outgoing weapon's held input cannot be relabeled as the incoming weapon.
 - Manual switch commands record pending transitions immediately, including
@@ -94,14 +108,10 @@ no-input settlement step required to release or cancel committed state.
   reconcile after a volley.
 - A rejected switch-race prediction receives a reliable, refund-only ammo
   correction on the player channel.
-
-### Known gap
-
-Releases do not force a packet split — `bJustFired` latches presses only. A
-bio/eightball release inside a merged move resolves at the move's end
-timestamp, bounded by move length. This is stock-parity, not a regression. If
-it ever matters, the fix is to set `bForcePacketSplit` on a release edge in
-`IGPlus_MergeMove`.
+- Det weapon moves split on a fire or alt-fire release edge (`CanMergeMove`).
+  Held bits are OR-merged, so a release folded into a held move would resolve
+  as still held: primary->alt would fire primary on the server while the client
+  predicted alt, and a bio/eightball release would land at the move's end.
 
 ## Weapon behavior
 

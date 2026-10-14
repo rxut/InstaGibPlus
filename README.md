@@ -1260,6 +1260,7 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bEnableWarpFix](#benablewarpfix)
 1. [WarpFixDelay](#warpfixdelay)
 1. [FireTimeout](#firetimeout)
+1. [DetFireClockMargin](#detfireclockmargin)
 1. [bEnableCarcassCollision](#benablecarcasscollision)
 1. [ShowTouchedPackage](#showtouchedpackage)
 1. [bEnableDamageDebugMode](#benabledamagedebugmode)
@@ -1892,6 +1893,14 @@ If True, carcasses left by dead players have collision. If false, carcasses will
 **Unit: seconds**
 
 Shots more than this long in the past are rejected.
+
+## DetFireClockMargin
+
+**Type: float**  
+**Default: 0.25**  
+**Unit: seconds**  
+
+Deterministic weapons time their refire on the client's move timestamps. The server tracks how far that clock runs ahead of its own (1% drift allowance, network delays net out) and stops starting new deterministic shots while it leads by more than this. It stops a speed-hacked client from firing faster. Lag spikes shorter than this are absorbed without losing shots. 0 or less disables the check.
 
 # Weapon Settings
 

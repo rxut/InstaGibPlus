@@ -133,9 +133,40 @@ function TestTranslocatorFireMerging() {
 		"Translocator_unchanged_primary_hold_can_merge");
 }
 
+// Simulates 200 Hz moves against a server ticking every 10 ms.
+function float SimFireClockLead(float ClientRate, float Seconds, optional float SpikeAt, optional float SpikeLen) {
+	local float Lead, T, ServerT, LastServerT, Held;
+	local int i, N;
+
+	N = int(Seconds / 0.005);
+	for (i = 0; i < N; i++) {
+		T = i * 0.005;
+		// Arrival on the server: a spike holds packets, then they land together.
+		if (SpikeLen > 0 && T >= SpikeAt && T < SpikeAt + SpikeLen)
+			ServerT = SpikeAt + SpikeLen;
+		else
+			ServerT = T;
+		ServerT = int(ServerT / 0.01) * 0.01;
+		Lead = class'bbPlayer'.static.IGPlus_DetNextFireClockLead(Lead, 0.005 * ClientRate, ServerT - LastServerT);
+		LastServerT = ServerT;
+		Held = FMax(Held, Lead);
+	}
+	if (SpikeLen > 0)
+		return Held;
+	return Lead;
+}
+
+function TestDetFireClockLead() {
+	LogTestResult(SimFireClockLead(1.0, 10.0) < 0.02, "FireClockLead_synced_clock_stays_near_zero");
+	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.02, "FireClockLead_small_drift_is_absorbed");
+	LogTestResult(SimFireClockLead(1.0, 5.0, 2.0, 0.2) <= 0.25, "FireClockLead_200ms_spike_stays_under_default_margin");
+	LogTestResult(SimFireClockLead(1.5, 1.0) > 0.25, "FireClockLead_speedhack_exceeds_default_margin_within_1s");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
 	TestTranslocatorFireMerging();
+	TestDetFireClockLead();
 	return 0;
 }

@@ -484,6 +484,16 @@ simulated function DetCancelDeterministicLoad(bool bServerSide, optional int Mov
 		GotoState('');
 }
 
+// Late steps in the previous-weapon grace window reach a launcher that is no
+// longer equipped; it must never switch the owner's current weapon.
+function DetSwitchToBestIfEquipped() {
+	local Pawn P;
+
+	P = Pawn(Owner);
+	if (P != none && P.Weapon == self && (P.PendingWeapon == none || P.PendingWeapon == self))
+		P.SwitchToBestWeapon();
+}
+
 function DetFinalizeSwitchSettlement() {
 	if (Role != ROLE_Authority || !bDetSwitchSettlementPending)
 		return;
@@ -719,8 +729,7 @@ simulated function bool DetProcessStep(
 			if (!bDetWasFireHeld && !bDetWasAltHeld) {
 				if (bServerSide && (bFireHeld || bAltHeld) && Pawn(Owner) != none) {
 					Pawn(Owner).StopFiring();
-					if (Pawn(Owner).PendingWeapon == none || Pawn(Owner).PendingWeapon == self)
-						Pawn(Owner).SwitchToBestWeapon();
+					DetSwitchToBestIfEquipped();
 				}
 				DetResetPrimaryCycle(true);
 				DetResetAltCycle(true);
@@ -1038,8 +1047,7 @@ function Finish()
 		{
 			Pawn(Owner).StopFiring();
 			// Never clobber a weapon choice the player already made
-			if (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self)
-				Pawn(Owner).SwitchToBestWeapon();
+			DetSwitchToBestIfEquipped();
 			if (bChangeWeapon)
 				GotoState('DownWeapon');
 			else
@@ -1403,6 +1411,16 @@ state FireRockets
 
 	function AnimEnd()
 	{
+		// Volley from a late pre-switch step: the launcher is already holstered.
+		// DownWeapon would resend ClientPutDown and Idle would act for the
+		// owner's current weapon, so just go inactive.
+		if (Pawn(Owner) != None && Pawn(Owner).Weapon != self)
+		{
+			LockedTarget = None;
+			bChangeWeapon = false;
+			GotoState('');
+			return;
+		}
 		if ( bChangeWeapon || (Pawn(Owner) != None && Pawn(Owner).PendingWeapon != None && Pawn(Owner).PendingWeapon != self) )
 		{
 			LockedTarget = None;
@@ -1561,9 +1579,8 @@ state Idle
 		{
 			bPointing = false;
 
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0)
-				&& (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self) )
-				Pawn(Owner).SwitchToBestWeapon();
+			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
+				DetSwitchToBestIfEquipped();
 
 			Disable('AnimEnd');
 			PlayIdleAnim();
@@ -1571,9 +1588,8 @@ state Idle
 		else
 		{
 			bPointing = False;
-			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0)
-				&& (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self) )
-				Pawn(Owner).SwitchToBestWeapon();
+			if ( (AmmoType != None) && (AmmoType.AmmoAmount <= 0) )
+				DetSwitchToBestIfEquipped();
 			if ( Pawn(Owner).bFire != 0 ) Fire(0.0);
 			if ( Pawn(Owner).bAltFire != 0 ) AltFire(0.0);
 			Disable('AnimEnd');
@@ -1598,9 +1614,8 @@ Begin:
 		if (Pawn(Owner).bAltFire!=0) AltFire(0.0);
 	}
 	bPointing=False;
-	if (AmmoType.AmmoAmount<=0
-		&& (Pawn(Owner).PendingWeapon == None || Pawn(Owner).PendingWeapon == self))
-		Pawn(Owner).SwitchToBestWeapon();
+	if (AmmoType.AmmoAmount<=0)
+		DetSwitchToBestIfEquipped();
 	PlayIdleAnim();
 	OldTarget = CheckTarget();
 	SetTimer(1.25,True);
@@ -1943,9 +1958,11 @@ state ClientReload
 				GotoState('');
 				return;
 			}
+			// No client SwitchToBestWeapon here: it is replicated to the server,
+			// bypasses the pending-weapon guards, and acts on predicted ammo.
+			// The server switches an empty launcher on its own.
 			if ((AmmoType == None) || (AmmoType.AmmoAmount <= 0)) {
 				GotoState('');
-				Pawn(Owner).SwitchToBestWeapon();
 				return;
 			}
 			GotoState('');
