@@ -527,7 +527,9 @@ function RegisterProjectile(Projectile P) {
     }
 }
 
-function CompensateFor(int Ping, optional Pawn Instigator) {
+// bHitscan: the deterministic translocator's own disc is tested where its
+// thrower saw it (ST_Translocator.IGPlus_DetOwnShotLocation), not ping-rewound.
+function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
@@ -571,9 +573,28 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
 
 	for (PD = ProjDummies; PD != none; PD = PD.Next) {
 		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
+			if (bHitscan && IGPlus_CompOwnDisc(PD, Instigator))
+				continue;
 			PD.CompStart(Ping);
 		}
 	}
+}
+
+function bool IGPlus_CompOwnDisc(ST_ProjectileDummy PD, Pawn Instigator) {
+	local ST_TranslocatorTarget T;
+	local ST_Translocator TL;
+	local bbPlayer P;
+
+	T = ST_TranslocatorTarget(PD.Actual);
+	P = bbPlayer(Instigator);
+	if (T == none || P == none || T.Instigator != P || P.IGPlus_DetTranslocator == false || T.bIGPlusFullHistory == false)
+		return false;
+	TL = ST_Translocator(T.Master);
+	if (TL == none || TL.TTarget != T)
+		return false;
+
+	PD.CompSwapAt(TL.IGPlus_DetOwnShotLocation(T, P));
+	return true;
 }
 
 function EndCompensation() {
@@ -1022,6 +1043,7 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bEnablePredictedSelfKnockback") return "bEnablePredictedSelfKnockback";
 	if (Key ~= "bEnablePushSafeAim") return "bEnablePushSafeAim";
 	if (Key ~= "bEnableDeterministicTranslocator") return "bEnableDeterministicTranslocator";
+	if (Key ~= "bEnablePredictedDiscBoost") return "bEnablePredictedDiscBoost";
 	if (Key ~= "bTellSpectators") return "bTellSpectators";
 	if (Key ~= "bJumpingPreservesMomentum") return "bJumpingPreservesMomentum";
 	if (Key ~= "bOldLandingMomentum") return "bOldLandingMomentum";
@@ -1091,6 +1113,7 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.IGPlus_PredictedSelfKnockback = Settings.PredictedSelfKnockbackActive();
 			BP.IGPlus_PushSafeAim = Settings.PushSafeAimActive();
 			BP.IGPlus_DetTranslocator = Settings.DeterministicTranslocatorActive();
+			BP.IGPlus_PredictedDiscBoost = Settings.bEnablePredictedDiscBoost;
 			BP.zzMinimumNetspeed = Settings.MinClientRate;
 			BP.zzMaximumNetspeed = Settings.MaxClientRate;
 			BP.zzForceSettingsLevel = Settings.ForceSettingsLevel;

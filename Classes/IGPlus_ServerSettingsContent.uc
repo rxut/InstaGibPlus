@@ -146,6 +146,9 @@ var localized string bEnablePushSafeAimHelp;
 var UWindowCheckbox Chk_bEnableDeterministicTranslocator;
 var localized string bEnableDeterministicTranslocatorText;
 var localized string bEnableDeterministicTranslocatorHelp;
+var UWindowCheckbox Chk_bEnablePredictedDiscBoost;
+var localized string bEnablePredictedDiscBoostText;
+var localized string bEnablePredictedDiscBoostHelp;
 var UWindowCheckbox Chk_bTellSpectators;
 var localized string bTellSpectatorsText;
 var localized string bTellSpectatorsHelp;
@@ -660,6 +663,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bEnablePredictedSelfKnockback", BoolToString(Chk_bEnablePredictedSelfKnockback.bChecked));
 	SaveServerSettingIfChanged(S, "bEnablePushSafeAim", BoolToString(Chk_bEnablePushSafeAim.bChecked));
 	SaveServerSettingIfChanged(S, "bEnableDeterministicTranslocator", BoolToString(Chk_bEnableDeterministicTranslocator.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedDiscBoost", BoolToString(Chk_bEnablePredictedDiscBoost.bChecked));
 	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
@@ -1082,6 +1086,7 @@ function LoadServerSettings() {
 	Chk_bEnablePredictedSelfKnockback.bChecked = S.bEnablePredictedSelfKnockback;
 	Chk_bEnablePushSafeAim.bChecked = S.bEnablePushSafeAim;
 	Chk_bEnableDeterministicTranslocator.bChecked = S.bEnableDeterministicTranslocator;
+	Chk_bEnablePredictedDiscBoost.bChecked = S.bEnablePredictedDiscBoost;
 	Chk_bTellSpectators.bChecked = S.bTellSpectators;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
@@ -1189,6 +1194,7 @@ function Created() {
 	Chk_bEnablePredictedSelfKnockback = CreateCheckbox(bEnablePredictedSelfKnockbackText, bEnablePredictedSelfKnockbackHelp);
 	Chk_bEnablePushSafeAim = CreateCheckbox(bEnablePushSafeAimText, bEnablePushSafeAimHelp);
 	Chk_bEnableDeterministicTranslocator = CreateCheckbox(bEnableDeterministicTranslocatorText, bEnableDeterministicTranslocatorHelp);
+	Chk_bEnablePredictedDiscBoost = CreateCheckbox(bEnablePredictedDiscBoostText, bEnablePredictedDiscBoostHelp);
 	Chk_bTellSpectators = CreateCheckbox(bTellSpectatorsText, bTellSpectatorsHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
@@ -1322,6 +1328,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bEnablePredictedSelfKnockback, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePushSafeAim, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableDeterministicTranslocator, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedDiscBoost, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bTellSpectators, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
@@ -1524,6 +1531,8 @@ defaultproperties
 	bEnablePredictedSelfKnockbackText="Predicted Rocket Self-Knockback"
 	bEnablePushSafeAimText="Push-Safe Aim"
 	bEnableDeterministicTranslocatorText="Deterministic Translocator"
+	bEnablePredictedDiscBoostText="Predicted Disc Boost"
+	bEnablePredictedDiscBoostHelp="Experimental. With the Deterministic Translocator, your own shock beam pushes your own disc on your screen right away"
 	bEnableDeterministicTranslocatorHelp="Experimental. If checked, throw, recall and translocate are decided by the same rules on client and server and you see your own disc; works with or without Translocator ping compensation, off while Input Replication is on"
 	bEnablePushSafeAimHelp="Experimental. If checked, shots fired right after being pushed leave from where the shooter saw themselves, and camera smoothing aims shots through the crosshair; off while Input Replication is on"
 	bEnablePredictedSelfKnockbackHelp="Experimental. If checked, the push from your own rockets is applied on your client right away; needs Rocket ping compensation, off while Input Replication is on"

@@ -111,6 +111,7 @@ var bool IGPlus_PredictedTranslocation; // server setting, replicated to the own
 var bool IGPlus_PredictedSelfKnockback; // server setting, replicated to the owner
 var bool IGPlus_PushSafeAim;            // server setting, replicated to the owner
 var bool IGPlus_DetTranslocator;        // server setting, replicated to the owner
+var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
@@ -607,6 +608,7 @@ replication
 		IGPlus_PredictedSelfKnockback,
 		IGPlus_PushSafeAim,
 		IGPlus_DetTranslocator,
+		IGPlus_PredictedDiscBoost,
 		KillCamDelay,
 		KillCamDuration,
 		LastKiller,
@@ -1458,6 +1460,7 @@ event Possess()
 		IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
 		IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
 		IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
+		IGPlus_PredictedDiscBoost = zzUTPure.Settings.bEnablePredictedDiscBoost;
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -4491,7 +4494,7 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 		WImpBase = IGPlus_GetWeaponImplementationBase();
 		if (WImpBase != None)
 			RewindMs = int(WImpBase.IGPlus_GetHitscanRewindMs(self));
-		zzUTPure.CompensateFor(RewindMs, self);
+		zzUTPure.CompensateFor(RewindMs, self, true);
 		
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {	
 			if (A == self) {
@@ -6385,7 +6388,9 @@ function xxReplicateMove(
 		NewMove.DetChargeData = TlocAction;
 		if (TlocAction == 3) { // translocate
 			TlocDisc = ST_Translocator(Weapon).IGPlus_DetClientDisc();
-			if (IGPlus_PredictedTranslocation && TlocDisc != none)
+			// The server gibs us where we stand on a disrupted disc.
+			if (IGPlus_PredictedTranslocation && TlocDisc != none
+				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold)
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
 			ST_Translocator(Weapon).IGPlus_DetClientDiscGone();
 		}
@@ -14961,6 +14966,7 @@ function IGPlus_ApplyNetcodeSettingsToPlayers() {
 		BP.IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
 		BP.IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
 		BP.IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
+		BP.IGPlus_PredictedDiscBoost = zzUTPure.Settings.bEnablePredictedDiscBoost;
 		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
 		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -15085,6 +15091,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bEnablePredictedSelfKnockback");
 	IGPlus_ServerSendSetting("bEnablePushSafeAim");
 	IGPlus_ServerSendSetting("bEnableDeterministicTranslocator");
+	IGPlus_ServerSendSetting("bEnablePredictedDiscBoost");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");

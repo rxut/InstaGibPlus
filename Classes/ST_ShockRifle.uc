@@ -145,7 +145,31 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		PlayFiring();
 		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire(true, StepView, StepLoc);
+		if (BP.IGPlus_PredictedDiscBoost && BP.IGPlus_DetTranslocator && BP.IGPlus_DetTloc != None)
+			IGPlus_PredictOwnDiscBoost(BP, StepView, StepLoc);
 	}
+}
+
+// Predicted Disc Boost: the beam, as ClientTraceFire draws it, against our own
+// disc; the server tests the same disc at the same age for this move.
+simulated function IGPlus_PredictOwnDiscBoost(bbPlayer BP, rotator AimRot, vector AimLoc) {
+	local vector X, Y, Z, StartTrace, EndTrace, HitLocation, HitNormal;
+	local float MaxDist;
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == None)
+		return;
+
+	yModInit();
+	GetAxes(AimRot, X, Y, Z);
+	StartTrace = AimLoc + CDO + yMod * Y + FireOffset.Z * Z;
+	EndTrace = StartTrace + 10000.0 * X;
+	MaxDist = 10000.0;
+	if (Trace(HitLocation, HitNormal, EndTrace, StartTrace, true) != None)
+		MaxDist = VSize(HitLocation - StartTrace);
+
+	BP.IGPlus_DetTloc.IGPlus_DetPredictBoost(StartTrace, X, MaxDist, WS.ShockBeamMomentum * 60000.0 * X);
 }
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {

@@ -1388,7 +1388,7 @@ simulated function Actor TraceShot(out vector HitLocation, out vector HitNormal,
 	bSProjBlocks = WSettingsRepl.ShockProjectileBlockBullets;
 
 	if (WSettingsRepl.bEnablePingCompensation && bbP != none) {
-		PureRef.CompensateFor(Ping, PawnOwner);
+		PureRef.CompensateFor(Ping, PawnOwner, true);
 		Other = TraceShotInternal(
 			HitLocation,
 			HitNormal,

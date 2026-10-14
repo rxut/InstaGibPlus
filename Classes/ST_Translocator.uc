@@ -822,12 +822,16 @@ function IGPlus_DetServerDiscChanged(ST_TranslocatorTarget STTarget) {
 	Age = STTarget.TotalSimulationTime;
 	if (STTarget.IGPlus_HistoryAnchor != 0.0)
 		Age += Level.TimeSeconds - STTarget.IGPlus_HistoryAnchor;
-	IGPlus_ClientDetKnock(STTarget.Location, STTarget.Velocity, STTarget.Physics == PHYS_None, Age, IGPlus_ThrowTS);
+	IGPlus_ClientDetKnock(STTarget.Location, STTarget.Velocity, STTarget.Physics == PHYS_None, Age, IGPlus_ThrowTS, STTarget.Disrupted());
 }
 
-simulated function IGPlus_ClientDetKnock(vector Loc, vector Vel, bool bLanded, float Age, float DiscTS) {
+simulated function IGPlus_ClientDetKnock(vector Loc, vector Vel, bool bLanded, float Age, float DiscTS, bool bDisrupted) {
 	if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != DiscTS)
 		return;
+	// Disruption is a state, not a path: show it now, so the player sees the
+	// warning (and isn't moved onto a disc that gibs them).
+	if (bDisrupted)
+		IGPlus_DetMarkDisrupted();
 	IGPlus_bDetKnockPending = true;
 	IGPlus_DetKnockLoc = Loc;
 	IGPlus_DetKnockVel = Vel;
@@ -864,6 +868,134 @@ simulated function IGPlus_DetApplyKnock() {
 		D.AutonomousPhysics(Step);
 		Remaining -= Step;
 	}
+}
+
+// Client: our disc sparks like the server's (its stock Timer does the effect).
+simulated function IGPlus_DetMarkDisrupted() {
+	local ST_TranslocatorTarget D;
+
+	D = IGPlus_DetLocalDisc;
+	if (D == None || D.bDeleteMe || D.Disruption > D.DisruptionThreshold)
+		return;
+	D.Disruption = D.DisruptionThreshold + 1;
+	if (D.Glow != None)
+		D.Glow.Destroy();
+	D.SetTimer(0.05, false);
+}
+
+// Server: where the thrower's screen had its disc for the move being
+// processed (its own age since the throw), for its own hitscan; marks the
+// disc so a hit there pushes it at that age.
+function vector IGPlus_DetOwnShotLocation(ST_TranslocatorTarget T, bbPlayer P) {
+	local byte bLanded;
+
+	T.IGPlus_OwnShotAge = FMax(0.0, FClamp(
+		P.CurrentTimeStamp - IGPlus_ThrowTS,
+		ServerTimeSinceTargetSpawn - 0.2,
+		ServerTimeSinceTargetSpawn + 0.2));
+	T.IGPlus_OwnShotFrame = Level.TimeSeconds;
+	return T.IGPlus_GetHistoryAt(T.IGPlus_OwnShotAge, bLanded);
+}
+
+// Server: the thrower's own hitscan pushed its disc at Age (its screen).
+// Fly the disc again from there with the new velocity up to now, so the
+// push lands at the same point of its path on both machines. Comp off this
+// is a few ms; comp on it is the fast-forward.
+function IGPlus_DetRebaseDisc(ST_TranslocatorTarget T, float Age) {
+	local vector V, Pos;
+	local float Now, Remaining, Step;
+	local byte bLanded;
+	local bool bColActors, bBlkActors, bBlkPlayers;
+
+	Now = T.IGPlus_CurrentAge();
+	if (Now <= Age)
+		return;
+
+	V = T.Velocity;
+	Pos = T.IGPlus_GetHistoryAt(Age, bLanded);
+	T.IGPlus_TruncateHistory(Age);
+
+	// No touches while flying it again: only the world shapes this path.
+	bColActors = T.bCollideActors;
+	bBlkActors = T.bBlockActors;
+	bBlkPlayers = T.bBlockPlayers;
+	T.SetCollision(false, false, false);
+	T.SetLocation(Pos);
+	T.SetPhysics(PHYS_Falling);
+	T.Velocity = V;
+	T.IGPlus_RecordHistory(Age);
+
+	Remaining = Now - Age;
+	while (Remaining > 0.0 && T.bDeleteMe == false && T.Physics != PHYS_None) {
+		Step = FMin(Remaining, 0.02);
+		T.AutonomousPhysics(Step);
+		Remaining -= Step;
+		T.IGPlus_RecordHistory(Now - Remaining);
+	}
+
+	if (T.bDeleteMe == false)
+		T.SetCollision(bColActors, bBlkActors, bBlkPlayers);
+}
+
+// Client, Predicted Disc Boost: our own hitscan through our own disc pushes
+// it now, as TranslocatorTarget.TakeDamage will on the server for this move.
+simulated function IGPlus_DetPredictBoost(vector Start, vector Dir, float MaxDist, vector Momentum) {
+	local ST_TranslocatorTarget D;
+	local vector V;
+
+	D = IGPlus_DetLocalDisc;
+	if (D == None || D.bDeleteMe || D.Mass <= 0.0)
+		return;
+	if (IGPlus_RayHitsCylinder(Start, Dir, MaxDist, D.Location, D.CollisionRadius, D.CollisionHeight) == false)
+		return;
+
+	V = Momentum / D.Mass;
+	V.Z = FMax(V.Z, 0.7 * VSize(V));
+	D.SetPhysics(PHYS_Falling);
+	D.Velocity = V;
+	D.SetTimer(0.3, false);
+}
+
+// Does the ray Start + t*Dir (t in [0, MaxDist], Dir normalized) pass through
+// the upright cylinder at C?
+static function bool IGPlus_RayHitsCylinder(vector Start, vector Dir, float MaxDist, vector C, float R, float H) {
+	local vector P;
+	local float A, B, Disc, T0, T1, Z0, Z1, Tmp;
+
+	P = Start - C;
+
+	A = Dir.X * Dir.X + Dir.Y * Dir.Y;
+	if (A < 0.000001) {
+		if (P.X * P.X + P.Y * P.Y > R * R)
+			return false;
+		T0 = 0.0;
+		T1 = MaxDist;
+	} else {
+		B = 2.0 * (P.X * Dir.X + P.Y * Dir.Y);
+		Disc = B * B - 4.0 * A * (P.X * P.X + P.Y * P.Y - R * R);
+		if (Disc < 0.0)
+			return false;
+		Disc = Sqrt(Disc);
+		T0 = (-B - Disc) / (2.0 * A);
+		T1 = (-B + Disc) / (2.0 * A);
+	}
+
+	if (Abs(Dir.Z) < 0.000001) {
+		if (Abs(P.Z) > H)
+			return false;
+		Z0 = 0.0;
+		Z1 = MaxDist;
+	} else {
+		Z0 = (-H - P.Z) / Dir.Z;
+		Z1 = (H - P.Z) / Dir.Z;
+		if (Z0 > Z1) {
+			Tmp = Z0;
+			Z0 = Z1;
+			Z1 = Tmp;
+		}
+	}
+
+	return FMax(FMax(T0, Z0), 0.0) <= FMin(FMin(T1, Z1), MaxDist);
 }
 
 simulated function Destroyed() {

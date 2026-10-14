@@ -72,6 +72,7 @@ var config bool  bEnablePredictedTranslocation;
 var config bool  bEnablePredictedSelfKnockback;
 var config bool  bEnablePushSafeAim;
 var config bool  bEnableDeterministicTranslocator;
+var config bool  bEnablePredictedDiscBoost;
 var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
@@ -190,6 +191,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bEnablePredictedSelfKnockback");
 	DumpSetting(P, "bEnablePushSafeAim");
 	DumpSetting(P, "bEnableDeterministicTranslocator");
+	DumpSetting(P, "bEnablePredictedDiscBoost");
 	DumpSetting(P, "MinNetUpdateRate");
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
@@ -250,6 +252,7 @@ defaultproperties
 	bEnablePredictedSelfKnockback=False
 	bEnablePushSafeAim=False
 	bEnableDeterministicTranslocator=False
+	bEnablePredictedDiscBoost=False
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False

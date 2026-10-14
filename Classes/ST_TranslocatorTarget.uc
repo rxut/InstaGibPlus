@@ -15,6 +15,10 @@ var int HistoryCount;
 var bool bIGPlusFullHistory;
 var float IGPlus_HistoryAnchor; // Level.TimeSeconds of age TotalSimulationTime, set on the first tick
 var float IGPlus_AgeBias;       // fast-forward shortfall when ping exceeded PingCompensationMax
+// Server, deterministic translocator: the thrower's hitscan was just tested
+// against this disc where its screen had it (this server frame, at this age).
+var float IGPlus_OwnShotFrame;
+var float IGPlus_OwnShotAge;
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -163,6 +167,19 @@ function IGPlus_RecordHistory(float Age) {
     SimulationLanded[i] = bLanded;
 }
 
+// Age since the throw now (server). Within a server frame of the truth.
+function float IGPlus_CurrentAge() {
+    if (IGPlus_HistoryAnchor == 0.0)
+        return TotalSimulationTime;
+    return TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor);
+}
+
+// Forget the path after Age (it is about to be flown again).
+function IGPlus_TruncateHistory(float Age) {
+    while (HistoryCount > 1 && SimulationTimes[HistoryCount - 1] > Age)
+        HistoryCount--;
+}
+
 // Full: keep the first and last entries, drop every other one between.
 function IGPlus_HalveHistory() {
     local int i, j;
@@ -280,8 +297,15 @@ auto state Pickup {
 		// Landed() switched Tick off; a knocked disc flies again.
 		if (bIGPlusFullHistory)
 			Enable('Tick');
-		if (ST_Translocator(Master) != None)
+		if (ST_Translocator(Master) != None) {
+			// The thrower's own hitscan: push the disc at the point of its
+			// path the thrower saw, not where it is now.
+			if (EventInstigator == Instigator && IGPlus_OwnShotFrame == Level.TimeSeconds) {
+				IGPlus_OwnShotFrame = 0.0;
+				ST_Translocator(Master).IGPlus_DetRebaseDisc(self, IGPlus_OwnShotAge);
+			}
 			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
+		}
 
 		if (Disruption == OldDisruption)
 			return;
