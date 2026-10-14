@@ -11945,7 +11945,7 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 	}
 	// Stock ignores pressing back to the weapon still up during a switch; a
 	// predicted switch treats it as "go back".
-	if (Target == none && Pend != none && Cur != none
+	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
 		&& ((Kind == 2 && C != none && Cur.IsA(C.Name)) || (Kind == 1 && Cur.InventoryGroup == F)))
 		Target = Cur;
 	if (Target == none)
@@ -11955,17 +11955,24 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 		if (Target == IGPlus_PSTarget)
 			return;
 		if (Target == IGPlus_PSFrom) {
-			// Back to the old weapon. Only before its holster started; once the
-			// down anim runs, finish the switch and let the next press switch back.
-			if (bPSHolsterStarted)
-				return;
+			// Back to the old weapon. The filter stays: the server may already
+			// have sent this switch's ClientPutDown.
 			IGPlus_PSSerial++;
 			IGPlus_PSActive = false;
 			IGPlus_PSKeep = none;
-			IGPlus_PSFilterClear();
 			IGPlus_DetClientSwitchPending = none;
 			IGPlus_DetClientGateWeapon = IGPlus_PSFrom;
-			IGPlus_DetClientEntryGateTS = IGPlus_PSPrevGate;
+			if (!bPSHolsterStarted) {
+				IGPlus_DetClientEntryGateTS = IGPlus_PSPrevGate; // nothing moved yet
+			} else {
+				// Mid-holster: bring it straight back up from TS (stock BringUp).
+				IGPlus_DetClientEntryGateTS = TS + IGPlus_DetSelectTimeFor(IGPlus_PSFrom);
+				ClientPending = none;
+				if (Weapon == IGPlus_PSFrom)
+					Weapon.GotoState('ClientActive');
+				else if (TournamentWeapon(Weapon) != none)
+					TournamentWeapon(Weapon).ClientPutDown(IGPlus_PSFrom); // already swapped locally
+			}
 		} else {
 			// Retarget: the holster timing stays, only the incoming weapon changes.
 			IGPlus_PSSerial++;
@@ -12144,16 +12151,17 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 	if (IGPlus_PSActive && TS < IGPlus_PSEquipTS && From == IGPlus_PSFrom) {
 		IGPlus_PSSerial = Serial;
 		if (!bTargetOK) {
+			// A refused "back" already ended the client's switch: send it on to ours.
+			if (Target == IGPlus_PSFrom) {
+				IGPlus_PSReject(Serial, "back="$Target, IGPlus_PSTarget);
+				return;
+			}
 			xxClientPSResume(Serial, IGPlus_PSTarget, IGPlus_PSGate);
 			IGPlus_PSLog("resume target="$Target);
 			return;
 		}
 		if (Target == IGPlus_PSFrom) {
-			if (bPSHolsterStarted) {
-				xxClientPSResume(Serial, IGPlus_PSTarget, IGPlus_PSGate);
-				return;
-			}
-			IGPlus_PSActive = false; // cancelled before anything moved
+			IGPlus_PSBringBack(TS);
 			return;
 		}
 		IGPlus_PSTarget = Target;
@@ -12213,6 +12221,34 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 	IGPlus_DetAutoSwitchPending = none;
 	if (IGPlus_PSHolsterTS > ClientHolsterTS + 0.001)
 		xxClientPSTimes(Serial, IGPlus_PSHolsterTS);
+}
+
+// Server: the client went back to From before the equip point. Before the
+// holster nothing moved on either side. After it, From comes back up at TS with
+// a fresh select (stock BringUp out of DownWeapon), as the client did.
+function IGPlus_PSBringBack(float TS) {
+	if (!bPSHolsterStarted && TS < IGPlus_PSHolsterTS) {
+		IGPlus_PSActive = false;
+		return;
+	}
+	// The client's holster started: run ours too if no move has crossed it yet
+	// (it also settles the weapon's fire state, e.g. an Eightball load).
+	if (!bPSHolsterStarted) {
+		IGPlus_PSServerAdvance(TS);
+		if (!IGPlus_PSActive)
+			return; // aborted, client already told
+	}
+	IGPlus_PSActive = false;
+	// No backdating past processed moves; ChangedWeapon sends the gate, and
+	// the client takes the later one.
+	if (TS >= IGPlus_PSHolsterTS)
+		IGPlus_PSGate = FMax(TS, CurrentTimeStamp) + IGPlus_DetSelectTimeFor(IGPlus_PSFrom);
+	else
+		IGPlus_PSGate = IGPlus_DetWeaponGateTS; // our holster beat a cancel made before it; the client kept its gate
+	PendingWeapon = IGPlus_PSFrom;
+	bPSForcing = true;
+	ChangedWeapon(); // Weapon == PendingWeapon in DownWeapon: BringUp
+	bPSForcing = false;
 }
 
 // Server: drop the prediction (a server-driven switch took over, or From is
