@@ -4945,7 +4945,7 @@ simulated function bool IGPlus_DetProcessStep(
 				@"prevStep="$IGPlus_DetPrevWeaponStepTS@"weapon="$Weapon
 				@"pending="$PendingWeapon, 'IGPlus');
 		}
-		if (bForceFire)
+		if (bForceFire && IGPlus_EnableInputReplication)
 			IGPlus_DetLatchFireTap(StepTS, W);
 		EB = ST_UT_Eightball(W);
 		if (EB != none && EB.DetHasSwitchAwayRequest())
@@ -4974,9 +4974,11 @@ simulated function bool IGPlus_DetProcessStep(
 		bClientPredictedStep = false;
 	}
 
-	// Queue a tap that arrives on an untrusted step (select anim in progress);
-	// replay a queued tap once the equipped weapon sees a trusted step.
-	if (bServerSide) {
+	// Input replication only: queue a tap that arrives on an untrusted step
+	// (select anim in progress) and replay it on the first trusted step. On the
+	// ServerMove path the client owns the queue and sends the replayed tap in
+	// the move's force bit, so both sides fire it on the same step.
+	if (bServerSide && IGPlus_EnableInputReplication) {
 		if (!bClientPredictedStep) {
 			if (bForceFire)
 				IGPlus_DetLatchFireTap(StepTS, W);
@@ -5459,6 +5461,7 @@ function xxReplicateMove(
 	local bool bForceFireTap;
 	local bool bForceAltTap;
 	local bool bDetLocalShot;
+	local bool bDetReplayedTap;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -5485,8 +5488,13 @@ function xxReplicateMove(
 			bLocalEightball = ST_UT_Eightball(DetLocalWeapon) != none;
 			bMoveFireHeld = (bFire != 0);
 			bMoveAltHeld = (bAltFire != 0);
-			bForceFireTap = bJustFired
-				|| IGPlus_DetConsumePendingFireTap(Level.TimeSeconds, DetLocalWeapon);
+			bForceFireTap = bJustFired;
+			if (bJustFired)
+				IGPlus_DetClearPendingFireTap(); // a fresh click supersedes a queued one
+			bDetReplayedTap = !bJustFired
+				&& IGPlus_DetConsumePendingFireTap(Level.TimeSeconds, DetLocalWeapon);
+			if (bDetReplayedTap)
+				bForceFireTap = true;
 			bForceAltTap = bJustAltFired;
 			IGPlus_DetProcessStep(
 				DetLocalWeapon,
@@ -5504,11 +5512,17 @@ function xxReplicateMove(
 				IGPlus_IsEightballInstantMode(Weapon)
 			);
 			bDetLocalShot = IGPlus_DetClientShotTS == Level.TimeSeconds;
-		} else if (bJustFired && DetLocalWeapon != none) {
+			// Send the replayed tap as this frame's press: the move then carries
+			// the force bit and ends here, and the server fires it on this step.
+			if (bDetReplayedTap)
+				bJustFired = true;
+		} else if (bJustFired && DetLocalWeapon != none
+			&& (ClientPending == none || ClientPending == DetLocalWeapon)
+			&& (IGPlus_DetClientSwitchPending == none || IGPlus_DetClientSwitchPending == DetLocalWeapon)
+			&& !DetLocalWeapon.IsInState('ClientDown')) {
 			// Tap during select/bring-up: queue for the first ready frame,
-			// bound to the weapon it was pressed on. Only the equipped weapon:
-			// the move is bound to it, so it is the only tap the server can
-			// queue too; anything else would fire on the client alone.
+			// bound to the weapon it was pressed on (the move's binding).
+			// Never for a weapon going down: stock drops those clicks.
 			IGPlus_DetLatchFireTap(Level.TimeSeconds, DetLocalWeapon);
 		}
 	}

@@ -138,15 +138,13 @@ simulated function bool DetProcessStep(
 	local bool bWantsAlt, bWantsPrimary;
 	local int TargetAmmoSpent;
 
-	// Switching fires the paid charge as it stands (stock fires on release
-	// before holstering; this is the cheap equivalent), then clears the cycle.
+	// Switching cancels the paid charge. The client stops predicting once it
+	// knows of the switch, so firing it here would be a server-only glob.
 	if (bDetWasAltHeld
 		&& bbPlayer(Owner) != none
 		&& bbPlayer(Owner).IGPlus_DetSwitchAwayFrom(self)) {
 		if (!bServerSide)
 			StopChargeSound();
-		else if (DetAltAmmoSpent > 0)
-			HandleDetServerAltFire(StepView, StepLoc, FMin(Clamp(DetAltAmmoSpent - 1, 0, 9) * 0.5, 4.1));
 		bDetWasAltHeld = false;
 		DetAltAmmoSpent = 0;
 		DetCachedChargeData = 0;
@@ -186,6 +184,10 @@ simulated function bool DetProcessStep(
 				else
 					bbPlayer(Owner).IGPlus_DetHandleOutOfAmmo(self);
 				DetAltAmmoSpent = 0;
+			} else {
+				// Mirror the server: same holster hold, and end the move on
+				// this frame so the server releases at the same timestamp.
+				bbPlayer(Owner).IGPlus_DetNoteShot(StepTS, 0.30);
 			}
 			NextDetFireTS = StepTS + AltShotInterval();
 			return true;
