@@ -140,6 +140,9 @@ var localized string bEnablePredictedTranslocationHelp;
 var UWindowCheckbox Chk_bEnablePredictedSelfKnockback;
 var localized string bEnablePredictedSelfKnockbackText;
 var localized string bEnablePredictedSelfKnockbackHelp;
+var UWindowCheckbox Chk_bEnablePushSafeAim;
+var localized string bEnablePushSafeAimText;
+var localized string bEnablePushSafeAimHelp;
 var UWindowCheckbox Chk_bTellSpectators;
 var localized string bTellSpectatorsText;
 var localized string bTellSpectatorsHelp;
@@ -652,6 +655,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bEnablePredictedSwitching", BoolToString(Chk_bEnablePredictedSwitching.bChecked));
 	SaveServerSettingIfChanged(S, "bEnablePredictedTranslocation", BoolToString(Chk_bEnablePredictedTranslocation.bChecked));
 	SaveServerSettingIfChanged(S, "bEnablePredictedSelfKnockback", BoolToString(Chk_bEnablePredictedSelfKnockback.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePushSafeAim", BoolToString(Chk_bEnablePushSafeAim.bChecked));
 	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
@@ -1072,6 +1076,7 @@ function LoadServerSettings() {
 	Chk_bEnablePredictedSwitching.bChecked = S.bEnablePredictedSwitching;
 	Chk_bEnablePredictedTranslocation.bChecked = S.bEnablePredictedTranslocation;
 	Chk_bEnablePredictedSelfKnockback.bChecked = S.bEnablePredictedSelfKnockback;
+	Chk_bEnablePushSafeAim.bChecked = S.bEnablePushSafeAim;
 	Chk_bTellSpectators.bChecked = S.bTellSpectators;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
@@ -1177,6 +1182,7 @@ function Created() {
 	Chk_bEnablePredictedSwitching = CreateCheckbox(bEnablePredictedSwitchingText, bEnablePredictedSwitchingHelp);
 	Chk_bEnablePredictedTranslocation = CreateCheckbox(bEnablePredictedTranslocationText, bEnablePredictedTranslocationHelp);
 	Chk_bEnablePredictedSelfKnockback = CreateCheckbox(bEnablePredictedSelfKnockbackText, bEnablePredictedSelfKnockbackHelp);
+	Chk_bEnablePushSafeAim = CreateCheckbox(bEnablePushSafeAimText, bEnablePushSafeAimHelp);
 	Chk_bTellSpectators = CreateCheckbox(bTellSpectatorsText, bTellSpectatorsHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
@@ -1308,6 +1314,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bEnablePredictedSwitching, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePredictedTranslocation, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePredictedSelfKnockback, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePushSafeAim, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bTellSpectators, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
@@ -1508,6 +1515,8 @@ defaultproperties
 	bEnablePredictedTranslocationText="Predicted Translocation"
 	bEnablePredictedTranslocationHelp="Experimental. If checked, translocating moves you on the key press; needs Translocator ping compensation, off while Input Replication is on"
 	bEnablePredictedSelfKnockbackText="Predicted Rocket Self-Knockback"
+	bEnablePushSafeAimText="Push-Safe Aim"
+	bEnablePushSafeAimHelp="Experimental. If checked, shots fired right after being pushed leave from where the shooter saw themselves, and camera smoothing aims shots through the crosshair; off while Input Replication is on"
 	bEnablePredictedSelfKnockbackHelp="Experimental. If checked, the push from your own rockets is applied on your client right away; needs Rocket ping compensation, off while Input Replication is on"
 	bTellSpectatorsText="Tell Spectators on Kick"
 	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"

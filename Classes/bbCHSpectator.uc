@@ -1086,6 +1086,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bEnablePredictedSwitching");
 	IGPlus_ServerSendSetting("bEnablePredictedTranslocation");
 	IGPlus_ServerSendSetting("bEnablePredictedSelfKnockback");
+	IGPlus_ServerSendSetting("bEnablePushSafeAim");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");

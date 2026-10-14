@@ -109,6 +109,7 @@ var float IGPlus_DetLastRejectLogTS;
 var bool IGPlus_PredictedSwitching;   // server setting, replicated to the owner
 var bool IGPlus_PredictedTranslocation; // server setting, replicated to the owner
 var bool IGPlus_PredictedSelfKnockback; // server setting, replicated to the owner
+var bool IGPlus_PushSafeAim;            // server setting, replicated to the owner
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
 var Weapon IGPlus_PSFrom;
@@ -248,6 +249,15 @@ var bool IGPlus_AdjustLocationOverride;
 var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
 var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
+var vector IGPlus_CameraAimOffset;         // offset of the last rendered view (Push-Safe Aim)
+
+// Push-Safe Aim (bEnablePushSafeAim), server side: pushes the client has not
+// seen yet, and where the client last said it was.
+var float IGPlus_PSAPushTime[8];
+var float IGPlus_PSAPushSpeed[8];
+var int IGPlus_PSAPushNext;
+var vector IGPlus_PSALastClientLoc;
+var float IGPlus_PSALastClientTS;
 
 struct ServerMoveParams {
 	var vector Location;
@@ -593,6 +603,7 @@ replication
 		IGPlus_PredictedSwitching,
 		IGPlus_PredictedTranslocation,
 		IGPlus_PredictedSelfKnockback,
+		IGPlus_PushSafeAim,
 		KillCamDelay,
 		KillCamDuration,
 		LastKiller,
@@ -1442,6 +1453,7 @@ event Possess()
 		IGPlus_PredictedSwitching = zzUTPure.Settings.PredictedSwitchingActive();
 		IGPlus_PredictedTranslocation = zzUTPure.Settings.PredictedTranslocationActive();
 		IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
+		IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -2419,6 +2431,7 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 	local vector Desired, HitLocation, HitNormal;
 
 	IGPlus_CameraCorrectionApplied = vect(0,0,0);
+	IGPlus_CameraAimOffset = vect(0,0,0);
 	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
 		return;
 	if (Settings.bCameraCorrectionSmoothing == false) {
@@ -2431,7 +2444,75 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 		Desired = HitLocation - 2.0 * Normal(IGPlus_CameraCorrectionOffset);
 
 	IGPlus_CameraCorrectionApplied = Desired - CameraLocation;
+	IGPlus_CameraAimOffset = IGPlus_CameraCorrectionApplied;
 	CameraLocation = Desired;
+}
+
+// Push-Safe Aim, client: the view that sends a shot from the real position
+// through the point under the crosshair of the (offset) rendered camera. The
+// unshifted shot would hit D*Dir + Offset from the real origin.
+simulated function bool IGPlus_PSAAimView(out rotator AimView) {
+	local vector Dir, CamEye, HitLocation, HitNormal;
+	local float D;
+
+	Dir = vector(ViewRotation);
+	CamEye = Location + EyeHeight * vect(0,0,1) + WalkBob + IGPlus_CameraAimOffset;
+	if (Trace(HitLocation, HitNormal, CamEye + 30000.0 * Dir, CamEye, true) == none)
+		return false; // nothing under the crosshair: parallel is right
+
+	D = (HitLocation - CamEye) dot Dir;
+	if (D < 50.0)
+		return false;
+
+	AimView = rotator(D * Dir + IGPlus_CameraAimOffset);
+	AimView.Roll = ViewRotation.Roll;
+	return true;
+}
+
+// Push-Safe Aim, server: a push we applied that the client hasn't seen yet.
+function IGPlus_PSANotePush(float Speed) {
+	IGPlus_PSAPushTime[IGPlus_PSAPushNext] = Level.TimeSeconds;
+	IGPlus_PSAPushSpeed[IGPlus_PSAPushNext] = Speed;
+	IGPlus_PSAPushNext = (IGPlus_PSAPushNext + 1) % arraycount(IGPlus_PSAPushTime);
+}
+
+// How far those pushes can have moved us from where the client still thinks
+// we are: speed change times time since, until a round trip later its moves
+// include them.
+function float IGPlus_PSABudget() {
+	local int i;
+	local float Age, Window, Budget;
+
+	// ponytail: 1.5x ping + 0.1s window, 1.25x + 4uu slack per push
+	Window = FMax(0.1, PlayerReplicationInfo.Ping * 0.0015) * Level.TimeDilation + 0.1;
+	for (i = 0; i < arraycount(IGPlus_PSAPushTime); i++) {
+		if (IGPlus_PSAPushTime[i] <= 0.0)
+			continue;
+		Age = Level.TimeSeconds - IGPlus_PSAPushTime[i];
+		if (Age < 0.0 || Age > Window)
+			continue;
+		Budget += IGPlus_PSAPushSpeed[i] * Age * 1.25 + 4.0;
+	}
+	return Budget;
+}
+
+// Push-Safe Aim, server: where a Det shot leaves from. The client fired from
+// where its previous move ended (shots start their move); use that when
+// pushes it hasn't seen explain the gap and nothing solid is in between.
+function vector IGPlus_PSAShotOrigin(float PrevTS, int MergeCount) {
+	local float Gap;
+
+	if (IGPlus_PushSafeAim == false || MergeCount != 0
+		|| PrevTS == 0.0 || IGPlus_PSALastClientTS != PrevTS)
+		return Location;
+
+	Gap = VSize(IGPlus_PSALastClientLoc - Location);
+	if (Gap < 0.5 || Gap > IGPlus_PSABudget())
+		return Location;
+	if (FastTrace(IGPlus_PSALastClientLoc, Location) == false)
+		return Location;
+
+	return IGPlus_PSALastClientLoc;
 }
 
 // PlayerViewOffset change that moves the first-person weapon by WorldOffset.
@@ -3340,6 +3421,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bDetBlockLegacyFire;
 	local Weapon DetWeapon;
 	local bool bDetMoveAcceptedForFire;
+	local float PSAPrevTS;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -3460,6 +3542,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		}
 	}
 
+	PSAPrevTS = CurrentTimeStamp;
 	CurrentTimeStamp = SM.TimeStamp;
 	ServerTimeStamp = Level.TimeSeconds;
 	Rot.Roll = ClientRoll << 8;
@@ -3517,7 +3600,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			DetWeapon,
 			SM.TimeStamp,
 			ViewRotation,
-			Location,
+			IGPlus_PSAShotOrigin(PSAPrevTS, MergeCount),
 			bFired,
 			bAltFired,
 			bForceFire,
@@ -3633,6 +3716,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	if (IGPlus_SKQueueCount > 0)
 		IGPlus_SKApplyDue(CurrentTimeStamp, none);
+
+	IGPlus_PSALastClientLoc = SM.ClientLocation;
+	if (SM.ClientBase != none)
+		IGPlus_PSALastClientLoc += SM.ClientBase.Location;
+	IGPlus_PSALastClientTS = SM.TimeStamp;
 
 	if (bDetMoveAcceptedForFire)
 		IGPlus_DetFinalizeExpiredPrevWeapon();
@@ -6056,6 +6144,8 @@ function xxReplicateMove(
 	local bool bForceAltTap;
 	local bool bDetLocalShot;
 	local bool bDetReplayedTap;
+	local rotator PSARealView, PSAAimView;
+	local bool bPSAAimFix;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -6072,6 +6162,18 @@ function xxReplicateMove(
 	if (bDrawDebugData) {
 		debugNewAccel = Normal(NewAccel);
 		debugPlayerLocation = Location;
+	}
+
+	// Push-Safe Aim: while the camera still eases after a correction, shots
+	// leave from the real position; aim them through the crosshair point.
+	if (IGPlus_PushSafeAim && IGPlus_CameraAimOffset != vect(0,0,0)
+		&& IGPlus_CameraCorrectionOffset != vect(0,0,0)
+		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
+	) {
+		PSARealView = ViewRotation;
+		bPSAAimFix = IGPlus_PSAAimView(PSAAimView);
+		if (bPSAAimFix)
+			ViewRotation = PSAAimView;
 	}
 
 	// Predict per slice, gated on readiness only (input-rep predicts per node).
@@ -6109,7 +6211,8 @@ function xxReplicateMove(
 			bDetLocalShot = IGPlus_DetClientShotTS == Level.TimeSeconds;
 			// Predicted self-knockback: a rocket shot also starts its move, so
 			// the server's step location is this frame's start, like the client's.
-			if (bDetLocalShot && bLocalEightball && IGPlus_PredictedSelfKnockback)
+			// Push-Safe Aim: the server reads the shot origin off the previous move.
+			if (bDetLocalShot && ((bLocalEightball && IGPlus_PredictedSelfKnockback) || IGPlus_PushSafeAim))
 				bForcePacketSplit = true;
 			// Send the replayed tap as this frame's press: the move then carries
 			// the force bit and ends here, and the server fires it on this step.
@@ -6125,6 +6228,9 @@ function xxReplicateMove(
 			IGPlus_DetLatchFireTap(Level.TimeSeconds, DetLocalWeapon);
 		}
 	}
+
+	if (bPSAAimFix)
+		ViewRotation = PSARealView;
 
 	// Get a SavedMove actor to store the movement in.
 	if ( PendingMove != None )
@@ -6231,6 +6337,8 @@ function xxReplicateMove(
 
 	NewMove.SetRotation( Rotation );
 	NewMove.IGPlus_SavedViewRotation = ViewRotation;
+	if (bPSAAimFix)
+		NewMove.IGPlus_SavedViewRotation = PSAAimView;
 	NewMove.IGPlus_SavedLocation = Location;
 	NewMove.IGPlus_SavedVelocity = Velocity;
 
@@ -7455,9 +7563,15 @@ simulated function AddVelocity( vector NewVelocity )
 }
 
 function ServerAddMomentum(vector Momentum) {
+	local vector OldVelocity;
+
+	OldVelocity = Velocity;
 	if (Physics == PHYS_Walking)
 		Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
 	Super.AddVelocity(Momentum);
+
+	if (IGPlus_PushSafeAim && Velocity != OldVelocity)
+		IGPlus_PSANotePush(VSize(Velocity - OldVelocity));
 }
 
 simulated function NN_Momentum( Vector momentum, name DamageType )
@@ -14764,6 +14878,7 @@ function IGPlus_ApplyNetcodeSettingsToPlayers() {
 		BP.IGPlus_PredictedSwitching = zzUTPure.Settings.PredictedSwitchingActive();
 		BP.IGPlus_PredictedTranslocation = zzUTPure.Settings.PredictedTranslocationActive();
 		BP.IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
+		BP.IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
 		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
 		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -14886,6 +15001,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bEnablePredictedSwitching");
 	IGPlus_ServerSendSetting("bEnablePredictedTranslocation");
 	IGPlus_ServerSendSetting("bEnablePredictedSelfKnockback");
+	IGPlus_ServerSendSetting("bEnablePushSafeAim");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");
