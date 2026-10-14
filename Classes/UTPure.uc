@@ -557,8 +557,10 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
 		// Rewind the lift the target stands on first, so the live lift cannot
 		// occlude the rider's historical hitbox, and so the bot fallback in
 		// CompSwap (live mover Z) lands on the same frame as the player path.
-		// EndCompensation restores it.
-		if (Mover(DActual.Base) != none) {
+		// EndCompensation restores it. Never the shooter's own lift: shots and
+		// projectiles start from the shooter's live position, so the floor
+		// must stay live too (else a falling lift eats downward shots).
+		if (Mover(DActual.Base) != none && (Instigator == none || DActual.Base != Instigator.Base)) {
 			MD = FindMoverDummy(Mover(DActual.Base));
 			if (MD != none)
 				MD.CompStart(Ping);
