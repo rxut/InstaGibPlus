@@ -50,6 +50,7 @@ var CHSpectator zzDemoPlaybackSpec;
 var bbClientDemoSN zzDemoPlaybackSN;
 var bool bDemoStarted;
 var bool IGPlus_IsDemoPlayback;
+var float IGPlus_DemoCheckTime;
 var string IGPlus_DemoRealSkinKey;
 var Texture IGPlus_DemoRealMultiSkins[8];
 var float IGPlus_GameEndedTime;
@@ -1226,7 +1227,6 @@ simulated event PostNetBeginPlay()
 	IGPlus_InputReplicationBuffer = new(XLevel) class'IGPlus_DataBuffer';
 
 	InitSettings();
-	IGPlus_IsDemoPlayback = IGPlus_DetectDemoPlayback();
 
 	ClientWeaponSettingsData.bBioUseClientSideAnimations = Settings.bBioUseClientSideAnimations;
 	ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = Settings.bShockBeamUseClientSideAnimations;
@@ -9216,10 +9216,13 @@ function ApplyForcedSkins(PlayerReplicationInfo PRI) {
 	 * @Desc: Applies the forced skin client side if force models is enabled.
 	 */
 
-	if (zzbForceModels) {
+	// udemo calls the recorder's PreRender during playback, so this runs there too
+	if (zzbForceModels && IGPlus_ShowRealModelsInDemo() == false) {
 		Skin = GetForcedSkinForPlayer(PRI);
 		SetForcedMesh(PRI, Skin);
 		SetForcedSkin(PRI.Owner, Skin, GameReplicationInfo.bTeamGame, PRI.Team);
+	} else if (bbPlayer(PRI.Owner) != none && IGPlus_ShowRealModelsInDemo()) {
+		bbPlayer(PRI.Owner).IGPlus_DemoRestoreRealModel();
 	}
 }
 
@@ -9855,7 +9858,7 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 simulated event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
 
-	if (IGPlus_IsDemoPlayback && Settings.bDemoShowRealModels)
+	if (IGPlus_ShowRealModelsInDemo())
 		IGPlus_DemoRestoreRealModel();
 
 	// Reset on both enable and disable transitions for simulated proxies.
@@ -12206,6 +12209,16 @@ simulated function bool IGPlus_DetectDemoPlayback() {
 			return true;
 
 	return false;
+}
+
+simulated function bool IGPlus_ShowRealModelsInDemo() {
+	// Recheck once a second so we never depend on the demo spectator spawning first
+	if (IGPlus_IsDemoPlayback == false && Level.NetMode == NM_Client && Level.TimeSeconds >= IGPlus_DemoCheckTime) {
+		IGPlus_IsDemoPlayback = IGPlus_DetectDemoPlayback();
+		IGPlus_DemoCheckTime = Level.TimeSeconds + 1.0;
+	}
+
+	return IGPlus_IsDemoPlayback && Settings != none && Settings.bDemoShowRealModels;
 }
 
 // Client demos record the recording player's forced skins.
