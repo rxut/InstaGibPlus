@@ -478,6 +478,16 @@ function DetSwitchToBestIfEquipped() {
 		P.SwitchToBestWeapon();
 }
 
+// A cycle start (incl. a banked tap replayed at cooldown end, or a held button
+// when the cooldown runs out) must end the client's move on this frame, like a
+// shot: the server steps once per move, and starting the load at the move's
+// later end timestamp would put every following rocket and cooldown out of
+// phase with the client.
+simulated function DetMarkClientEdge(bool bServerSide, float StepTS) {
+	if (!bServerSide && bbPlayer(Owner) != none)
+		bbPlayer(Owner).IGPlus_DetClientShotTS = StepTS;
+}
+
 function DetFinalizeSwitchSettlement() {
 	if (Role != ROLE_Authority || !bDetSwitchSettlementPending)
 		return;
@@ -735,6 +745,7 @@ simulated function bool DetProcessStep(
 		DetRefreshInternalBudget();
 		DetPrimaryStartCycle(bMoveInstant, bServerSide);
 		bDetWasFireHeld = true;
+		DetMarkClientEdge(bServerSide, StepTS);
 		if (bDetPrimaryLatchedInstant) {
 			if (bServerSide) {
 				HandleDetServerFire(StepView, StepLoc, 1, bAltHeld);
@@ -835,6 +846,7 @@ simulated function bool DetProcessStep(
 			DetEnsureClientLoadState(true);
 		}
 		bDetWasAltHeld = true;
+		DetMarkClientEdge(bServerSide, StepTS);
 		return true;
 	}
 
