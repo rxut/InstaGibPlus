@@ -2384,9 +2384,11 @@ function IGPlus_FreeAcknowledgedMoves(float TimeStamp) {
 // anything too large to be a smoothing case snap instead.
 function IGPlus_CameraCorrectionAdd(vector Delta) {
 	IGPlus_CameraCorrectionOffset += Delta;
-	// ponytail: 250uu cap is a guess at "bigger than any knockback correction"
+	// Shots leave from the real position, so while the camera lags they land
+	// off the crosshair by the offset. 50uu matches the old smoothing limit:
+	// anything bigger snaps so aim is right at once.
 	if (IGPlus_AdjustLocationOverride || IGPlus_CameraCorrectionSnap
-		|| VSize(IGPlus_CameraCorrectionOffset) > 250
+		|| VSize(IGPlus_CameraCorrectionOffset) > 50
 		|| Settings.CameraCorrectionSmoothingTime <= 0.0
 	) {
 		IGPlus_CameraCorrectionOffset = vect(0,0,0);
