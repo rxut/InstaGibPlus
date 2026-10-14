@@ -67,6 +67,7 @@ var config float MaxJitterTime;
 var config float WarpFixDelay;
 var config float FireTimeout;
 var config float DetFireClockMargin;
+var config bool  bEnablePredictedSwitching;
 var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
@@ -158,6 +159,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "WarpFixDelay");
 	DumpSetting(P, "FireTimeout");
 	DumpSetting(P, "DetFireClockMargin");
+	DumpSetting(P, "bEnablePredictedSwitching");
 	DumpSetting(P, "MinNetUpdateRate");
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
@@ -213,6 +215,7 @@ defaultproperties
 	WarpFixDelay=0.25
 	FireTimeout=0.1
 	DetFireClockMargin=0.5
+	bEnablePredictedSwitching=False
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False

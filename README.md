@@ -1261,6 +1261,7 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [WarpFixDelay](#warpfixdelay)
 1. [FireTimeout](#firetimeout)
 1. [DetFireClockMargin](#detfireclockmargin)
+1. [bEnablePredictedSwitching](#benablepredictedswitching)
 1. [bEnableCarcassCollision](#benablecarcasscollision)
 1. [ShowTouchedPackage](#showtouchedpackage)
 1. [bEnableDamageDebugMode](#benabledamagedebugmode)
@@ -1901,6 +1902,13 @@ Shots more than this long in the past are rejected.
 **Unit: seconds**  
 
 Deterministic weapons time their refire on the client's move timestamps. The server compares each move's timestamp with its own clock, against the client's least-delayed offset (1% drift allowance; lag spikes only make the client look behind), and stops starting new deterministic shots while it leads by more than this. It stops a speed-hacked client from firing faster. Lag spikes never trip it. 0 or less disables the check.
+
+## bEnablePredictedSwitching
+
+**Type: bool**  
+**Default: False**  
+
+Experimental. If True, weapon switches start on the client the moment the key is pressed instead of one round trip later, and the server applies them at the same timestamp: the holster, the swap and the moment the new weapon may fire land on the same instants on both sides. The server validates every switch and rolls the client back if it can't honour one. Requires bEnableInputReplication and bUseFastWeaponSwitch to be False, and IG+'s own HUD on the client. Switches the server makes itself (out of ammo, pickups, respawn) are unchanged.
 
 # Weapon Settings
 
