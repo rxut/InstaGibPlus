@@ -110,6 +110,8 @@ var bool IGPlus_PredictedSwitching;   // server setting, replicated to the owner
 var bool IGPlus_PredictedTranslocation; // server setting, replicated to the owner
 var bool IGPlus_PredictedSelfKnockback; // server setting, replicated to the owner
 var bool IGPlus_PushSafeAim;            // server setting, replicated to the owner
+var bool IGPlus_DetTranslocator;        // server setting, replicated to the owner
+var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
 var Weapon IGPlus_PSFrom;
@@ -604,6 +606,7 @@ replication
 		IGPlus_PredictedTranslocation,
 		IGPlus_PredictedSelfKnockback,
 		IGPlus_PushSafeAim,
+		IGPlus_DetTranslocator,
 		KillCamDelay,
 		KillCamDuration,
 		LastKiller,
@@ -1454,6 +1457,7 @@ event Possess()
 		IGPlus_PredictedTranslocation = zzUTPure.Settings.PredictedTranslocationActive();
 		IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
 		IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
+		IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -3308,7 +3312,6 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 	local ST_Translocator TL;
 	local ST_TranslocatorTarget Disc;
 	local WeaponSettingsRepl WS;
-	local vector Dest, Start;
 
 	if (Level.NetMode != NM_Client)
 		return;
@@ -3332,33 +3335,7 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 	if (Disc == none || (TL.bTTargetOut == false && Disc != TL.TTarget_Client))
 		return;
 
-	Dest = Disc.Location;
-	if (Disc.Physics == PHYS_None)
-		Dest += vect(0,0,40);
-
-	// Same order as Translocator.Translocate. Every outcome below uses the
-	// disc up on the server too.
-	Start = Location;
-	if (SetLocation(Dest)) {
-		if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
-			SetPhysics(PHYS_Falling);
-		if (FastTrace(Location, Disc.Location)) {
-			Velocity.X = 0;
-			Velocity.Y = 0;
-			TlocCounter = (TlocCounter + 1) & 3;
-
-			Move.bIGPlusTloc = true;
-			Move.IGPlusTlocDest = Location;
-
-			// A teleport, not a correction: nothing left to ease.
-			IGPlus_CameraCorrectionOffset = vect(0,0,0);
-			IGPlus_AdjustLocationOffset = vect(0,0,0);
-			IGPlus_AdjustLocationAlpha = 0;
-		} else {
-			// The server puts us back too, keeping the falling physics.
-			SetLocation(Start);
-		}
-	}
+	IGPlus_TlocPredictTo(Disc, Move);
 
 	IGPlus_TlocPredictTS = Level.TimeSeconds;
 	if (Disc == TL.TTarget_Client) {
@@ -3369,6 +3346,40 @@ function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
 	} else {
 		IGPlus_TlocHideDisc(Disc);
 	}
+}
+
+// Client: Translocator.Translocate's effect on us, toward Disc, before this
+// frame's movement (where the server translocates too). Every outcome uses
+// the disc up on the server; the caller deals with the disc.
+function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move) {
+	local vector Dest, Start;
+
+	Dest = Disc.Location;
+	if (Disc.Physics == PHYS_None)
+		Dest += vect(0,0,40);
+
+	Start = Location;
+	if (SetLocation(Dest) == false)
+		return;
+	if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
+		SetPhysics(PHYS_Falling);
+	if (FastTrace(Location, Disc.Location) == false) {
+		// The server puts us back too, keeping the falling physics.
+		SetLocation(Start);
+		return;
+	}
+
+	Velocity.X = 0;
+	Velocity.Y = 0;
+	TlocCounter = (TlocCounter + 1) & 3;
+
+	Move.bIGPlusTloc = true;
+	Move.IGPlusTlocDest = Location;
+
+	// A teleport, not a correction: nothing left to ease.
+	IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	IGPlus_AdjustLocationOffset = vect(0,0,0);
+	IGPlus_AdjustLocationAlpha = 0;
 }
 
 // Hide a disc the server is about to destroy; shown again if it stays.
@@ -3605,7 +3616,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// Hard-block legacy fire fallback for deterministic weapons.
 	// A resolved DetWeapon is active by construction.
 	bDetBlockLegacyFire = (DetWeapon != none) || IGPlus_IsDetActiveWeapon(Weapon)
-		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation);
+		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation)
+		|| (IGPlus_DetTranslocator && ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator');
 
 	IGPlus_LastFireEndHeld = bFired;
 	IGPlus_LastAltEndHeld = bAltFired;
@@ -3644,6 +3656,12 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		bFire = 0;
 		bAltFire = 0;
 	}
+
+	// Deterministic translocator: the client's action, before this move's
+	// movement like on the client.
+	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator
+		&& ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator')
+		ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
 
 	// Complete fast weapon switch after Det dispatch so Det targets the
 	// pre-switch weapon the client was actually firing.
@@ -6174,6 +6192,8 @@ function xxReplicateMove(
 	local bool bDetReplayedTap;
 	local rotator PSARealView, PSAAimView;
 	local bool bPSAAimFix;
+	local int TlocAction;
+	local ST_TranslocatorTarget TlocDisc;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -6261,6 +6281,17 @@ function xxReplicateMove(
 	if (bPSAAimFix)
 		ViewRotation = PSARealView;
 
+	// Deterministic translocator: decide now, before the merge, so an action
+	// starts its own move (and ends it, below).
+	if (IGPlus_DetTranslocator && IGPlus_EnableInputReplication == false
+		&& ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator'
+	) {
+		TlocAction = ST_Translocator(Weapon).IGPlus_DetClientStep(
+			self, Level.TimeSeconds, bJustFired, bFire != 0, bJustAltFired, bAltFire != 0);
+		if (TlocAction != 0)
+			bForcePacketSplit = true;
+	}
+
 	// Get a SavedMove actor to store the movement in.
 	if ( PendingMove != None )
 	{
@@ -6335,7 +6366,7 @@ function xxReplicateMove(
 
 			IGPlus_DetFillMoveBinding(NewMove);
 
-			if (bForceAltTap && IGPlus_PredictedTranslocation)
+			if (bForceAltTap && IGPlus_PredictedTranslocation && IGPlus_DetTranslocator == false)
 				IGPlus_PredictTranslocate(NewMove);
 			if ((bForceFireTap || bForceAltTap) && ST_Translocator(Weapon) != none)
 				IGPlus_TlocLastPressTS = Level.TimeSeconds;
@@ -6346,6 +6377,18 @@ function xxReplicateMove(
 		PendingMove = NewMove;
 	} else {
 		NewMove = IGPlus_SavedMove(PendingMove);
+	}
+
+	if (TlocAction != 0) {
+		// The server repeats exactly this on the move (translocator moves
+		// carry no Det charge).
+		NewMove.DetChargeData = TlocAction;
+		if (TlocAction == 3) { // translocate
+			TlocDisc = ST_Translocator(Weapon).IGPlus_DetClientDisc();
+			if (IGPlus_PredictedTranslocation && TlocDisc != none)
+				IGPlus_TlocPredictTo(TlocDisc, NewMove);
+			ST_Translocator(Weapon).IGPlus_DetClientDiscGone();
+		}
 	}
 
 	bJustFired = false;
@@ -9691,6 +9734,13 @@ function xxPlayerTickEvents(float DeltaTime)
 
 	if (Role == ROLE_AutonomousProxy) {
 		IGPlus_CameraCorrectionDecay(DeltaTime);
+
+		if (IGPlus_DetTloc != none) {
+			if (IGPlus_DetTloc.bDeleteMe)
+				IGPlus_DetTloc = none;
+			else
+				IGPlus_DetTloc.IGPlus_DetClientTick();
+		}
 
 		// A disc the server kept after all (refused translocation) shows again.
 		if (IGPlus_TlocHiddenDisc != none && CurrentTime > IGPlus_TlocHiddenUntil) {
@@ -14910,6 +14960,7 @@ function IGPlus_ApplyNetcodeSettingsToPlayers() {
 		BP.IGPlus_PredictedTranslocation = zzUTPure.Settings.PredictedTranslocationActive();
 		BP.IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
 		BP.IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
+		BP.IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
 		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
 		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -15033,6 +15084,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bEnablePredictedTranslocation");
 	IGPlus_ServerSendSetting("bEnablePredictedSelfKnockback");
 	IGPlus_ServerSendSetting("bEnablePushSafeAim");
+	IGPlus_ServerSendSetting("bEnableDeterministicTranslocator");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");

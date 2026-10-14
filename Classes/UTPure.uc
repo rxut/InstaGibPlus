@@ -1021,6 +1021,7 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bEnablePredictedTranslocation") return "bEnablePredictedTranslocation";
 	if (Key ~= "bEnablePredictedSelfKnockback") return "bEnablePredictedSelfKnockback";
 	if (Key ~= "bEnablePushSafeAim") return "bEnablePushSafeAim";
+	if (Key ~= "bEnableDeterministicTranslocator") return "bEnableDeterministicTranslocator";
 	if (Key ~= "bTellSpectators") return "bTellSpectators";
 	if (Key ~= "bJumpingPreservesMomentum") return "bJumpingPreservesMomentum";
 	if (Key ~= "bOldLandingMomentum") return "bOldLandingMomentum";
@@ -1089,6 +1090,7 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.IGPlus_PredictedTranslocation = Settings.PredictedTranslocationActive();
 			BP.IGPlus_PredictedSelfKnockback = Settings.PredictedSelfKnockbackActive();
 			BP.IGPlus_PushSafeAim = Settings.PushSafeAimActive();
+			BP.IGPlus_DetTranslocator = Settings.DeterministicTranslocatorActive();
 			BP.zzMinimumNetspeed = Settings.MinClientRate;
 			BP.zzMaximumNetspeed = Settings.MaxClientRate;
 			BP.zzForceSettingsLevel = Settings.ForceSettingsLevel;

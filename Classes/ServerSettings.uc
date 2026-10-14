@@ -71,6 +71,7 @@ var config bool  bEnablePredictedSwitching;
 var config bool  bEnablePredictedTranslocation;
 var config bool  bEnablePredictedSelfKnockback;
 var config bool  bEnablePushSafeAim;
+var config bool  bEnableDeterministicTranslocator;
 var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
@@ -138,6 +139,10 @@ function bool PushSafeAimActive() {
 	return bEnablePushSafeAim && !bEnableInputReplication;
 }
 
+function bool DeterministicTranslocatorActive() {
+	return bEnableDeterministicTranslocator && !bEnableInputReplication;
+}
+
 function DumpSetting(PlayerPawn P, string S) {
 	P.ClientMessage(S$"="$GetPropertyText(S));
 }
@@ -184,6 +189,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bEnablePredictedTranslocation");
 	DumpSetting(P, "bEnablePredictedSelfKnockback");
 	DumpSetting(P, "bEnablePushSafeAim");
+	DumpSetting(P, "bEnableDeterministicTranslocator");
 	DumpSetting(P, "MinNetUpdateRate");
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
@@ -243,6 +249,7 @@ defaultproperties
 	bEnablePredictedTranslocation=False
 	bEnablePredictedSelfKnockback=False
 	bEnablePushSafeAim=False
+	bEnableDeterministicTranslocator=False
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False

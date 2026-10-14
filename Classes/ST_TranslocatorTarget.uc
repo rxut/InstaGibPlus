@@ -75,13 +75,20 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	if (GetWeaponSettings().TranslocatorCompensatePing && bbP != none
-		&& (bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations || bbP.IGPlus_PredictedTranslocation)) {
+	if (bbP != none && (bbP.IGPlus_DetTranslocator || (GetWeaponSettings().TranslocatorCompensatePing
+		&& (bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations || bbP.IGPlus_PredictedTranslocation)))) {
 
 		In = PlayerPawn(Instigator);
 
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
+
+		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator) {
+			// Deterministic translocator: the thrower watches its own disc;
+			// ST_Translocator.IGPlus_DetClientTick keeps this copy hidden.
+			bHidden = true;
+			return;
+		}
 
 		if (InstigatingPlayer != none) {
 			// Predicted translocation already used our local disc: this one is gone too.
@@ -236,6 +243,11 @@ function vector GetHistoricalPosition(float RequestTime) {
 
 auto state Pickup {
 	simulated function Tick(float DeltaTime) {
+		// The thrower's hidden copy (deterministic translocator): no shadow.
+		if (bHidden && Role < ROLE_Authority) {
+			Disable('Tick');
+			return;
+		}
 		// Full history needs every tick; the stock Tick switches itself off
 		// for player discs, and has nothing else to do for them.
 		if (bIGPlusFullHistory && Role == ROLE_Authority) {
@@ -268,6 +280,8 @@ auto state Pickup {
 		// Landed() switched Tick off; a knocked disc flies again.
 		if (bIGPlusFullHistory)
 			Enable('Tick');
+		if (ST_Translocator(Master) != None)
+			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
 
 		if (Disruption == OldDisruption)
 			return;
@@ -314,6 +328,8 @@ auto state Pickup {
 				NewPos.Z = Location.Z;
 				SetLocation(NewPos);
 				Velocity = vect(0,0,0);
+				if (ST_Translocator(Master) != None)
+					ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
 				
 				// Check team game rules
 				if (Level.Game.bTeamGame && 
@@ -332,6 +348,10 @@ auto state Pickup {
 		
 		// Original touch handling for non-dummy actors
 		super.Touch(Other);
+		// The stock code sticks the disc to non-thrower pawns it hits.
+		if (Other.bIsPawn && bDeleteMe == false && Velocity == vect(0,0,0) && Physics != PHYS_None
+			&& ST_Translocator(Master) != None)
+			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
 	}
 }
 
