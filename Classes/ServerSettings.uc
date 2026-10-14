@@ -117,9 +117,9 @@ struct ForceSettingsEntry{
 };
 var config array<ForceSettingsEntry> ForcedSettings;
 
-// Predicted switching is built on the ServerMove path and the stock holster.
+// Predicted switching is built on the ServerMove path.
 function bool PredictedSwitchingActive() {
-	return bEnablePredictedSwitching && !bEnableInputReplication && !bUseFastWeaponSwitch;
+	return bEnablePredictedSwitching && !bEnableInputReplication;
 }
 
 function DumpSetting(PlayerPawn P, string S) {

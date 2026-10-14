@@ -11797,10 +11797,13 @@ function ClientReStart()
 // ---------------------------------------------------------------------------
 
 // Holster duration: PlayAnim('Down', DownAnimSpeed, 0.05) = 0.05 tween + DownTime.
+// Fast weapon switch swaps on the spot.
 simulated function float IGPlus_PSDownTimeFor(Weapon W) {
 	local WeaponSettingsRepl WS;
 	local float T;
 
+	if (IGPlus_UseFastWeaponSwitch)
+		return 0.0;
 	WS = GetWeaponSettings();
 	if (WS == none)
 		return 0.1;
@@ -11839,6 +11842,9 @@ simulated function float IGPlus_PSDownTimeFor(Weapon W) {
 simulated function float IGPlus_PSHolsterStart(Weapon From, float TS) {
 	local ST_UT_Eightball EB;
 
+	// Fast weapon switch never waits for fire anims (IGPlus_DetSwitchDeferActive).
+	if (IGPlus_UseFastWeaponSwitch)
+		return TS;
 	EB = ST_UT_Eightball(From);
 	if (EB != none && TS < EB.DetVolleyHoldUntil)
 		return EB.DetVolleyHoldUntil;
@@ -11971,7 +11977,7 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 				if (Weapon == IGPlus_PSFrom)
 					Weapon.GotoState('ClientActive');
 				else if (TournamentWeapon(Weapon) != none)
-					TournamentWeapon(Weapon).ClientPutDown(IGPlus_PSFrom); // already swapped locally
+					IGPlus_PSClientHolster(IGPlus_PSFrom); // already swapped locally
 			}
 		} else {
 			// Retarget: the holster timing stays, only the incoming weapon changes.
@@ -12012,7 +12018,7 @@ simulated function IGPlus_PSApplyTarget(Weapon Target, float Gate) {
 	if (bPSHolsterStarted) {
 		// Already swapped to the previous target locally: holster that one.
 		if (Weapon != IGPlus_PSFrom && Weapon != Target && TournamentWeapon(Weapon) != none)
-			TournamentWeapon(Weapon).ClientPutDown(Target);
+			IGPlus_PSClientHolster(Target);
 		else if (Weapon != Target)
 			ClientPending = Target;
 	}
@@ -12021,6 +12027,21 @@ simulated function IGPlus_PSApplyTarget(Weapon Target, float Gate) {
 	IGPlus_DetClientSwitchPending = Target;
 	IGPlus_DetClientGateWeapon = Target;
 	IGPlus_DetClientEntryGateTS = Gate;
+}
+
+// Client: the holster just started; with fast weapon switch finish it on the
+// spot, as the server does (ClientDown.AnimEnd's swap without the anim).
+simulated function IGPlus_PSClientHolster(Weapon Next) {
+	local Weapon Old;
+
+	Old = Weapon;
+	TournamentWeapon(Old).ClientPutDown(Next);
+	if (!IGPlus_UseFastWeaponSwitch || Next == none)
+		return;
+	ClientPending = none;
+	Weapon = Next;
+	Old.GotoState('');
+	Next.GotoState('ClientActive');
 }
 
 // Client, every frame: start the local holster when the timeline says so (the
@@ -12038,7 +12059,7 @@ simulated function IGPlus_PSClientTick() {
 	if (!bPSHolsterStarted && Level.TimeSeconds >= IGPlus_PSHolsterTS) {
 		bPSHolsterStarted = true;
 		if (Weapon == IGPlus_PSFrom && TournamentWeapon(Weapon) != none)
-			TournamentWeapon(Weapon).ClientPutDown(IGPlus_PSTarget);
+			IGPlus_PSClientHolster(IGPlus_PSTarget);
 	}
 	if (bPSHolsterStarted && Weapon == IGPlus_PSTarget)
 		IGPlus_PSKeep = IGPlus_PSTarget;
@@ -12841,7 +12862,8 @@ simulated function ChangedWeapon() {
 	if (Weapon != None && IGPlus_UseFastWeaponSwitch) {
 		Weapon.GotoState('');
 		IGPlus_MarkDeterministicSwitchGuard();
-		ClientPutDown(none, PendingWeapon);
+		if (!bPSForcing) // a predicted switch: the client already swapped
+			ClientPutDown(none, PendingWeapon);
 	}
 
 	// Grace for in-flight steps still targeting the outgoing weapon.
