@@ -49,6 +49,9 @@ var bool	zzbGotDemoPlaybackSpec;
 var CHSpectator zzDemoPlaybackSpec;
 var bbClientDemoSN zzDemoPlaybackSN;
 var bool bDemoStarted;
+var bool IGPlus_IsDemoPlayback;
+var string IGPlus_DemoRealSkinKey;
+var Texture IGPlus_DemoRealMultiSkins[8];
 var float IGPlus_GameEndedTime;
 
 // Stuff
@@ -1223,6 +1226,7 @@ simulated event PostNetBeginPlay()
 	IGPlus_InputReplicationBuffer = new(XLevel) class'IGPlus_DataBuffer';
 
 	InitSettings();
+	IGPlus_IsDemoPlayback = IGPlus_DetectDemoPlayback();
 
 	ClientWeaponSettingsData.bBioUseClientSideAnimations = Settings.bBioUseClientSideAnimations;
 	ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = Settings.bShockBeamUseClientSideAnimations;
@@ -9851,6 +9855,9 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 simulated event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
 
+	if (IGPlus_IsDemoPlayback && Settings.bDemoShowRealModels)
+		IGPlus_DemoRestoreRealModel();
+
 	// Reset on both enable and disable transitions for simulated proxies.
 	if (Role == ROLE_SimulatedProxy && IGPlus_SnapInterp_EnabledLast != IGPlus_EnableSnapshotInterpolation) {
 		IGPlus_SnapInterp_Reset();
@@ -12186,6 +12193,50 @@ function Typing( bool bTyping )
 ////////////////////////////
 // Tracebot stopper: By DB
 ////////////////////////////
+
+simulated function bool IGPlus_DetectDemoPlayback() {
+	local Pawn P;
+
+	if (Level.NetMode != NM_Client)
+		return false;
+
+	// udemo spawns its spectator before any demo actors arrive
+	for (P = Level.PawnList; P != none; P = P.NextPawn)
+		if (P.IsA('DemoPlaybackSpec'))
+			return true;
+
+	return false;
+}
+
+// Client demos record the recording player's forced skins.
+// The real skin is still replicated through bbPlayerReplicationInfo, so put it back.
+// Runs every tick because the demo re-sends forced skins whenever they change.
+simulated function IGPlus_DemoRestoreRealModel() {
+	local bbPlayerReplicationInfo PRI;
+	local string Key;
+	local int i;
+
+	PRI = bbPlayerReplicationInfo(PlayerReplicationInfo);
+	if (PRI == none || PRI.SkinName == "")
+		return;
+
+	if (Mesh != default.Mesh)
+		Mesh = default.Mesh;
+
+	Key = PRI.SkinName$"/"$PRI.FaceName$"/"$PRI.Team;
+	if (Key == IGPlus_DemoRealSkinKey) {
+		for (i = 0; i < arraycount(MultiSkins); i++)
+			if (MultiSkins[i] != IGPlus_DemoRealMultiSkins[i])
+				break;
+		if (i == arraycount(MultiSkins))
+			return;
+	}
+
+	SetMultiSkin(self, PRI.SkinName, PRI.FaceName, PRI.Team);
+	IGPlus_DemoRealSkinKey = Key;
+	for (i = 0; i < arraycount(MultiSkins); i++)
+		IGPlus_DemoRealMultiSkins[i] = MultiSkins[i];
+}
 
 simulated function xxGetDemoPlaybackSpec()
 {
