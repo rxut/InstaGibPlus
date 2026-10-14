@@ -53,6 +53,8 @@ var bool bDetPrimaryLastPredictedAuto;
 var bool bDetPrimaryTightLatched;
 var int DetServerShotSerial;
 var int DetServerLastShotKind;
+// Server: pending weapon this holster was already announced for (ClientPutDown).
+var Weapon DetHolsterAnnouncedFor;
 var bool bDetSwitchSettlementPending;
 
 const IGPLUS_EB_SHOT_KIND_ALT = 0;
@@ -478,6 +480,16 @@ function DetSwitchToBestIfEquipped() {
 		P.SwitchToBestWeapon();
 }
 
+// A cycle start (incl. a banked tap replayed at cooldown end, or a held button
+// when the cooldown runs out) must end the client's move on this frame, like a
+// shot: the server steps once per move, and starting the load at the move's
+// later end timestamp would put every following rocket and cooldown out of
+// phase with the client.
+simulated function DetMarkClientEdge(bool bServerSide, float StepTS) {
+	if (!bServerSide && bbPlayer(Owner) != none)
+		bbPlayer(Owner).IGPlus_DetClientShotTS = StepTS;
+}
+
 function DetFinalizeSwitchSettlement() {
 	if (Role != ROLE_Authority || !bDetSwitchSettlementPending)
 		return;
@@ -735,6 +747,7 @@ simulated function bool DetProcessStep(
 		DetRefreshInternalBudget();
 		DetPrimaryStartCycle(bMoveInstant, bServerSide);
 		bDetWasFireHeld = true;
+		DetMarkClientEdge(bServerSide, StepTS);
 		if (bDetPrimaryLatchedInstant) {
 			if (bServerSide) {
 				HandleDetServerFire(StepView, StepLoc, 1, bAltHeld);
@@ -835,6 +848,7 @@ simulated function bool DetProcessStep(
 			DetEnsureClientLoadState(true);
 		}
 		bDetWasAltHeld = true;
+		DetMarkClientEdge(bServerSide, StepTS);
 		return true;
 	}
 
@@ -955,7 +969,7 @@ function HandleDetServerFire(rotator StepView, vector StepLoc, int NumRockets, b
 		P.PlayRecoil(FiringSpeed);
 		bChangeWeapon = true;
 	}
-	GoToState('FireRockets');
+	DetEnterFireRockets();
 }
 
 // Spawn grenades on the server using deterministic step loc/view.
@@ -972,7 +986,21 @@ function HandleDetServerAltFire(rotator StepView, vector StepLoc, int NumRockets
 	// Ammo is already consumed: spawn the volley, then switch (stock order).
 	if (P.PendingWeapon != none && P.PendingWeapon != self)
 		bChangeWeapon = true;
+	DetEnterFireRockets();
+}
+
+// FireRockets.BeginState spawns the volley. A predicted shot that lands while
+// the launcher is already holstering must still spawn (the client showed it),
+// but must not restart the holster: going FireRockets -> DownWeapon after the
+// anim would re-send ClientPutDown and the client would select the incoming
+// weapon twice. Spawn, then resume the holster at once.
+function DetEnterFireRockets() {
+	local bool bWasHolstering;
+
+	bWasHolstering = IsInState('DownWeapon');
 	GoToState('FireRockets');
+	if (bWasHolstering && IsInState('FireRockets'))
+		GotoState('DownWeapon');
 }
 
 // One owner's deterministic state must never transfer to the next.
@@ -984,6 +1012,7 @@ simulated function DetResetDeterministicState() {
 	DetLastStepTS = 0.0;
 	DetLastStepDelta = 0.0;
 	DetCachedChargeData = 0;
+	DetHolsterAnnouncedFor = none;
 	DetInternalBudget = 0;
 	DetClientAmmoSpentSinceDown = 0;
 	DetClientLastDownTS = 0.0;
@@ -1618,6 +1647,7 @@ PendingLock:
 simulated function PlaySelect() {
 	if (Role == ROLE_Authority && bDetSwitchSettlementPending)
 		DetFinalizeSwitchSettlement();
+	DetHolsterAnnouncedFor = none;
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
@@ -1972,6 +2002,17 @@ state DownWeapon
 			bDetSwitchSettlementPending = true;
 		else
 			DetResetPrimaryCycle(true);
+		// Re-entry after a mid-holster volley: the client already has this
+		// ClientPutDown, so only redo the state part of the stock BeginState.
+		if (Role == ROLE_Authority && Pawn(Owner) != none
+			&& DetHolsterAnnouncedFor != none && DetHolsterAnnouncedFor == Pawn(Owner).PendingWeapon) {
+			bChangeWeapon = false;
+			bMuzzleFlash = 0;
+			bCanClientFire = false;
+			return;
+		}
+		if (Pawn(Owner) != none)
+			DetHolsterAnnouncedFor = Pawn(Owner).PendingWeapon;
 		Super.BeginState();
 	}
 }

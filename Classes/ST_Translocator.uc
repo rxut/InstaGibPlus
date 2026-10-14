@@ -303,9 +303,11 @@ function AltFire( float Value )
             return;
         }
         
+        // Translocate() clears TTarget itself when the disc is used up. When
+        // translocation is refused (AllowTranslocation, e.g. CTF flag carrier)
+        // the disc stays out, so keep the reference or the next Fire throws a
+        // second disc while the first is still in the world.
         Translocate();
-		TTarget = None;
-        bTTargetOut = false;
     }
 }
 

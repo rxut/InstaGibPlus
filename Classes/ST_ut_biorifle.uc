@@ -213,6 +213,8 @@ simulated function bool DetProcessStep(
 			}
 		} else {
 			HandleDetClientAltStart();
+			// End the move here so the server starts the charge at this TS.
+			bbPlayer(Owner).IGPlus_DetClientShotTS = StepTS;
 		}
 		bDetWasAltHeld = true;
 		return true;
