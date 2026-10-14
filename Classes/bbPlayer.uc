@@ -5129,8 +5129,10 @@ function IGPlus_DetCheckSwitchWedge() {
 		return;
 	}
 	// Out-of-ammo pick made during the hold: drop it if ammo was picked up
-	// meanwhile (stock re-checks ammo in Idle after the fire anim). The client
-	// was never told about this switch, so clear it without a cancel re-arm.
+	// meanwhile (stock re-checks ammo in Idle after the fire anim). Clear it
+	// without a cancel re-arm, but retract the xxClientSwitchPending that
+	// IGPlus_DetTrackPendingWeapon already sent, or the client's readiness
+	// stays blocked on the auto pick and this weapon never fires again.
 	if (IGPlus_DetAutoSwitchPending != none) {
 		if (PendingWeapon != IGPlus_DetAutoSwitchPending) {
 			IGPlus_DetAutoSwitchPending = none; // player chose another weapon
@@ -5141,6 +5143,8 @@ function IGPlus_DetCheckSwitchWedge() {
 			IGPlus_DetPendingSeen = none;
 			IGPlus_DetAutoSwitchPending = none;
 			IGPlus_DetPendingStuckSince = 0.0;
+			if (RemoteRole == ROLE_AutonomousProxy)
+				xxClientSwitchPending(none, 0.0);
 			IGPlus_DetClearPendingFireTap(); // a click on the empty gun was never shown
 			return;
 		}
@@ -12184,6 +12188,9 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 		PendingWeapon = none;
 		IGPlus_DetAutoSwitchPending = none;
 		IGPlus_DetPendingSeen = none;
+		// Retract the auto pick if the client already heard of it and it lands
+		// after our predicted switch's timeline ends.
+		xxClientSwitchPending(none, 0.0);
 	}
 	if (Weapon == none || From != Weapon || Target == Weapon || PendingWeapon != none) {
 		IGPlus_PSReject(Serial, "from="$From, Weapon);
