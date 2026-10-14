@@ -906,6 +906,8 @@ simulated function HandleDetClientFire() {
 	local bbPlayer bbP;
 
 	DetConsumeClientAmmo(1);
+	if (bbPlayer(Owner) != none)
+		bbPlayer(Owner).IGPlus_DetClientShotTS = Level.TimeSeconds;
 
 	DetCachedChargeData = 1;
 	ClientRocketsLoaded = 1;
@@ -931,6 +933,8 @@ simulated function HandleDetClientLoadedFire(bool bAlt, int NumRockets, optional
 		DetCancelDeterministicLoad(false);
 		return;
 	}
+	if (bbPlayer(Owner) != none)
+		bbPlayer(Owner).IGPlus_DetClientShotTS = Level.TimeSeconds;
 
 	// Primary-only: if authoritative auto-fire interrupts during rotate,
 	// the final load sound may never be reached via AnimEnd.

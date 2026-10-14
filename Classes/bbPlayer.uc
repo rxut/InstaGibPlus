@@ -89,6 +89,8 @@ var Weapon IGPlus_DetPendingFireTapWeapon;
 var Weapon IGPlus_DetAutoSwitchPending;
 // How far this client's move clock leads the server's (seconds, floored at 0).
 var float IGPlus_DetFireClockLead;
+// Client: frame timestamp of the latest locally predicted Det shot.
+var float IGPlus_DetClientShotTS;
 var float IGPlus_DetLastShotTS;
 var float IGPlus_DetHolsterHoldUntilTS;
 var float IGPlus_DetPendingStuckSince;
@@ -5041,6 +5043,8 @@ function IGPlus_DetCheckSwitchWedge() {
 simulated function IGPlus_DetNoteShot(float TS, float FireAnimTime) {
 	IGPlus_DetLastShotTS = TS;
 	IGPlus_DetHolsterHoldUntilTS = TS + FireAnimTime;
+	if (Role < ROLE_Authority)
+		IGPlus_DetClientShotTS = TS;
 }
 
 simulated function bool IGPlus_DetSwitchDeferActive() {
@@ -5388,6 +5392,7 @@ function xxReplicateMove(
 	local bool bMoveAltHeld;
 	local bool bForceFireTap;
 	local bool bForceAltTap;
+	local bool bDetLocalShot;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -5432,6 +5437,7 @@ function xxReplicateMove(
 				bLocalEightball,
 				IGPlus_IsEightballInstantMode(Weapon)
 			);
+			bDetLocalShot = IGPlus_DetClientShotTS == Level.TimeSeconds;
 		} else if (bJustFired
 			&& (DetLocalWeapon != none
 				|| IGPlus_DetSupportsWeapon(PendingWeapon)
@@ -5556,6 +5562,13 @@ function xxReplicateMove(
 
 	NetStatsElem.LocationError = VSize(IGPlus_AdjustLocationOffset * AdjustAlpha);
 	NetStatsElem.UnconfirmedTime = (Level.TimeSeconds - CurrentTimeStamp) / Level.TimeDilation;
+
+	// The server steps once per move, at the move's last timestamp and view.
+	// A shot predicted on this frame must end the move here, or the server
+	// fires a few ms later with a later view and its refire cadence drifts
+	// behind the client's for as long as fire is held (merges at >200 fps).
+	if (bDetLocalShot)
+		bForcePacketSplit = true;
 
 	if (RealDelta < TimeBetweenNetUpdates - ClientUpdateTime
 		&& CanMergeMove(NewMove, OldAccel))
