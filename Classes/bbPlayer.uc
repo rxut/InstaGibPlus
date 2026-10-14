@@ -89,6 +89,7 @@ var Weapon IGPlus_DetPendingFireTapWeapon;
 var Weapon IGPlus_DetAutoSwitchPending;
 // How far this client's move clock leads the server's (seconds, floored at 0).
 var float IGPlus_DetFireClockLead;
+var bool bDetFireClockBlocked;
 // Client: frame timestamp of the latest locally predicted Det shot.
 var float IGPlus_DetClientShotTS;
 var float IGPlus_DetLastShotTS;
@@ -4690,9 +4691,17 @@ function IGPlus_DetUpdateFireClockLead(float ClientDelta, float ServerDelta) {
 }
 
 function bool IGPlus_DetFireClockOK() {
+	local bool bOK;
+
 	if (zzUTPure == none || zzUTPure.Settings.DetFireClockMargin <= 0.0)
 		return true;
-	return IGPlus_DetFireClockLead <= zzUTPure.Settings.DetFireClockMargin;
+	bOK = IGPlus_DetFireClockLead <= zzUTPure.Settings.DetFireClockMargin;
+	// Log each entry into the blocked state; a blocked step skips a server shot.
+	if (!bOK && !bDetFireClockBlocked)
+		Log("[DET-CLOCK]"@PlayerReplicationInfo.PlayerName@"lead="$IGPlus_DetFireClockLead
+			@"margin="$zzUTPure.Settings.DetFireClockMargin@"- fresh Det shots held", 'IGPlus');
+	bDetFireClockBlocked = !bOK;
+	return bOK;
 }
 
 // WHEN the bound weapon may step; binding validity covers WHICH.
