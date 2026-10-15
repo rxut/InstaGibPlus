@@ -3030,6 +3030,28 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 	return Base.Velocity.Z * Latency;
 }
 
+// Server: how far our lift is ahead along its path of where our client's
+// screen has it for the move being processed. The client sees the lift a
+// one-way late and its moves arrive a one-way late: a round trip of travel
+// (measured 40-90uu on a fast lift). Zero off a lift or on a resting one.
+function vector IGPlus_OwnLiftLead() {
+	local ST_MoverDummy MD;
+
+	if (Mover(Base) == None || zzUTPure == None || PingAverage <= 0)
+		return vect(0,0,0);
+	MD = zzUTPure.FindMoverDummy(Mover(Base));
+	if (MD == None)
+		return vect(0,0,0);
+	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(PingAverage) * 0.001 * Level.TimeDilation);
+}
+
+// Client: on a lift that is moving here. The server's test of our own beam
+// against our own ball allows for the lift (ST_ShockProj.IGPlus_OwnerSeesBall),
+// but only roughly while it moves, so no combo is drawn early then.
+simulated function bool IGPlus_OnMovingLift() {
+	return Mover(Base) != None && Base.Velocity != vect(0,0,0);
+}
+
 // Client-side shock balls on our own timeline, with predicted combos
 // (ST_ShockProj); off is the old client-side animation.
 simulated function bool IGPlus_PredictiveShockCombos() {

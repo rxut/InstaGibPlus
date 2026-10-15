@@ -343,7 +343,7 @@ simulated function ClientTraceFire(
 	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
 		Reach = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
 		IGPlus_DebugBeam("client", StartTrace, X, Reach);
-		if (bbP.IGPlus_PredictiveShockCombos() && Mover(PawnOwner.Base) == None)
+		if (bbP.IGPlus_PredictiveShockCombos() && bbP.IGPlus_OnMovingLift() == false)
 			Ball = IGPlus_OwnBallOnBeam(StartTrace, X, Reach);
 		if (Ball != None) {
 			HitLocation = Ball.Location;
@@ -411,7 +411,7 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optio
 		Extra = ", ball "$int((BestLoc - Start) dot Dir)$"uu out, beam reaches "$int(Reach)$"uu, ";
 		if (Best.Physics == PHYS_None)
 			Extra = Extra$"ball stopped";
-		else if (Best.IGPlus_bFromMover || Mover(Pawn(Owner).Base) != None)
+		else if (Best.IGPlus_bFromMover || BP.IGPlus_OnMovingLift())
 			Extra = Extra$"lift, server decides";
 		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc,
 				Best.CollisionRadius - IGPLUS_COMBO_MARGIN, Best.CollisionHeight - IGPLUS_COMBO_MARGIN))
@@ -549,10 +549,11 @@ simulated function ClientSpawnAltProjectileEffects(
 	else
 		Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 
-	// On a moving lift the server has us further along the lift's path than our
-	// screen does (40-90uu measured), and fires from there: lead our ball by
-	// the lift's travel over half a ping toward the server's ball.
-	if (bbP != None)
+	// Predictive Shock Combos: our ball leaves our own weapon. On a moving lift
+	// the server's leaves from further along the lift's path, and the server
+	// allows for that when it tests our beam (ST_ShockProj.IGPlus_OwnerSeesBall).
+	// The old client-side animation shifts its ball toward the server's.
+	if (bbP != None && bbP.IGPlus_PredictiveShockCombos() == false)
 		Start.Z += bbP.GetMoverFireZOffset();
 
 	LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start, AimRot));
@@ -567,7 +568,7 @@ simulated function ClientSpawnAltProjectileEffects(
 			LocalDummy.IGPlus_bLocalBall = true;
 			LocalDummy.IGPlus_bOwnTimeline = true;
 			LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
-			LocalDummy.IGPlus_bFromMover = Mover(PawnOwner.Base) != None;
+			LocalDummy.IGPlus_bFromMover = bbP.IGPlus_OnMovingLift();
 		} else {
 			LocalDummy.bCollideWorld = false;
 		}

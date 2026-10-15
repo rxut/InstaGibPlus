@@ -22,6 +22,7 @@ var Pawn IGPlus_ComboBy;      // server: whose beam set off SuperExplosion
 var float IGPlus_FireTS;      // server: the owner's move timestamp at the shot
 var float IGPlus_FireTime;    // server: Level.TimeSeconds at the shot
 var vector IGPlus_FireLoc;    // server: where the shot left from
+var vector IGPlus_FireLiftLead; // server: the owner's lift lead at the shot (bbPlayer.IGPlus_OwnLiftLead)
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -59,6 +60,8 @@ simulated function PostBeginPlay() {
 			IGPlus_FireTS = bbP.CurrentTimeStamp;
 			IGPlus_FireTime = Level.TimeSeconds;
 			IGPlus_FireLoc = Location;
+			if (Level.NetMode != NM_Client)
+				IGPlus_FireLiftLead = bbP.IGPlus_OwnLiftLead();
 			if (Level.NetMode != NM_Client)
 				bbP.ClientDebugMessage("Shock ball (server) from "$IGPlus_Vec(Location)$" aim "$(Rotation.Pitch & 65535)$","$(Rotation.Yaw & 65535));
 		}
@@ -223,17 +226,24 @@ simulated function IGPlus_ShowBall() {
 // hasn't reached here yet: it is gone at that age.
 function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	local float Live, Age;
+	local bool bSeen;
 
 	Loc = Location;
+	bSeen = true;
 	// Input replication stamps a packet's inputs with its newest time: test live.
-	if (P.IGPlus_EnableInputReplication)
-		return true;
-
-	Live = Level.TimeSeconds - IGPlus_FireTime;
-	// ponytail: +-0.2s bounds how far a client clock can move the ball
-	Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS, FMax(0.0, Live - 0.2), Live + 0.2);
-	Loc = IGPlus_FireLoc + Velocity * Age;
-	return Age <= Live || FastTrace(Loc, Location);
+	if (P.IGPlus_EnableInputReplication == false) {
+		Live = Level.TimeSeconds - IGPlus_FireTime;
+		// ponytail: +-0.2s bounds how far a client clock can move the ball
+		Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS, FMax(0.0, Live - 0.2), Live + 0.2);
+		Loc = IGPlus_FireLoc + Velocity * Age;
+		bSeen = Age <= Live || FastTrace(Loc, Location);
+	}
+	// On a moving lift the owner's screen has the owner a round trip of lift
+	// travel behind the server, at the shot and at the beam (by different
+	// amounts while the lift speeds up or slows down): put the ball where it
+	// was relative to the beam on the owner's screen.
+	Loc += P.IGPlus_OwnLiftLead() - IGPlus_FireLiftLead;
+	return bSeen;
 }
 
 // Server: the owner's own beam, with the conditions under which the owner's
@@ -250,7 +260,7 @@ function bool IGPlus_OwnerMayDrawCombo() {
 
 function SuperExplosion() {
 	local float ComboDamage, ComboRadius, ComboMomentum;
-	local Actor Ring;
+	local IGPlus_OwnerComboRing Ring;
 
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
@@ -285,8 +295,11 @@ function SuperExplosion() {
 	if (IGPlus_OwnerMayDrawCombo()) {
 		// The owner's client plays the sound itself if it didn't draw this one.
 		Ring = Spawn(class'IGPlus_OwnerComboRing', Instigator,'', Location, Instigator.ViewRotation);
-		if (Ring != None)
+		if (Ring != None) {
+			// The owner's screen has this ball the lift's lead lower (or higher).
+			Ring.IGPlus_OwnerShift = -IGPlus_FireLiftLead;
 			Ring.PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
+		}
 	} else {
 		Spawn(Class'ut_ComboRing',,'',Location, Instigator.ViewRotation);
 		PlaySound(ExploSound,,20.0,,2000,0.6);
