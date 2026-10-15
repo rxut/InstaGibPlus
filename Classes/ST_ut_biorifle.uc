@@ -118,6 +118,10 @@ function Projectile IGPlus_DetProjectileFire(class<projectile> ProjClass, vector
 	Owner.MakeNoise(Pawn(Owner).SoundDampening);
 	GetAxes(StepView, X, Y, Z);
 	Start = StepLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	if (ProjClass == class'ST_BioGlob')
+		bbPlayer(Owner).IGPlus_DebugProjStart("Bio glob", Start);
+	else
+		bbPlayer(Owner).IGPlus_DebugProjStart("Bio", Start);
 	P = Spawn(ProjClass,,, Start, StepView);
 	IGPlus_ApplyProjectilePingComp(P);
 	return P;
@@ -388,6 +392,8 @@ simulated function SpawnClientDummyBioGel()
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 	if (bbPlayer(Owner) != None)
 		Start.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).IGPlus_DebugProjStart("Bio", Start);
 
 	LocalBioGelDummy = Spawn(class'ST_UT_BioGel', Owner,, Start, PawnOwner.ViewRotation);
 	LocalBioGelDummy.RemoteRole = ROLE_None;
@@ -439,6 +445,8 @@ simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 	if (bbPlayer(Owner) != None)
 		Start.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).IGPlus_DebugProjStart("Bio glob", Start);
 
 	LocalBioGlobDummy = Spawn(class'ST_BioGlob', Owner,, Start, PawnOwner.ViewRotation);
 	if (LocalBioGlobDummy != None) {

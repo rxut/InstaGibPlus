@@ -238,11 +238,11 @@ function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 		Loc = IGPlus_FireLoc + Velocity * Age;
 		bSeen = Age <= Live || FastTrace(Loc, Location);
 	}
-	// On a moving lift the owner's screen has the owner a round trip of lift
-	// travel behind the server, at the shot and at the beam (by different
-	// amounts while the lift speeds up or slows down): put the ball where it
-	// was relative to the beam on the owner's screen.
-	Loc += P.IGPlus_OwnLiftLead() - IGPlus_FireLiftLead;
+	// The owner fired it from a round trip of lift travel behind the server's
+	// spot (a moving lift): the owner's beam leaves from the owner's own spot
+	// (ST_ShockRifle.TraceFireAt), so the ball is tested where the owner's
+	// screen has it too.
+	Loc -= IGPlus_FireLiftLead;
 	return bSeen;
 }
 

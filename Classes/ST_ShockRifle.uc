@@ -619,6 +619,13 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	GetAxes(AimRot,X,Y,Z);
 	StartTrace = AimLoc + DrawOffsetLoc + FireOffset.Y * Y + FireOffset.Z * Z; 
 	SmokeLocation = AimLoc + DrawOffsetLoc + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	// On a moving lift the shooter's screen has the shooter a round trip of
+	// lift travel behind here (bbPlayer.IGPlus_OwnLiftLead): the shot leaves
+	// from there, as the sniper's does. The drawn beam still leaves the
+	// shooter where others see it. TraceShot skips the shooter's own lift
+	// near the muzzle.
+	if (IsPingCompEnabled() && bbPlayer(PawnOwner) != None)
+		StartTrace -= bbPlayer(PawnOwner).IGPlus_OwnLiftLead();
 
 	EndTrace = StartTrace + (Accuracy * (FRand() - 0.5 )* Y * 1000) + (Accuracy * (FRand() - 0.5 ) * Z * 1000);
 

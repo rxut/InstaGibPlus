@@ -103,6 +103,8 @@ function bool DetPrepareServerFireContext(
 	out int NumRockets,
 	out PlayerPawn P
 ) {
+	local vector DbgX, DbgY, DbgZ;
+
 	P = PlayerPawn(Owner);
 	if (P == none)
 		return false;
@@ -110,6 +112,11 @@ function bool DetPrepareServerFireContext(
 	DetServerFireLoc = StepLoc;
 	if (bbPlayer(Owner) != none)
 		DetServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner) != none && bbPlayer(Owner).bDrawDebugData) {
+		GetAxes(StepView, DbgX, DbgY, DbgZ);
+		bbPlayer(Owner).IGPlus_DebugProjStart("Rocket",
+			DetServerFireLoc + CalcDrawOffset() + FireOffset.X * DbgX + FireOffset.Y * DbgY + FireOffset.Z * DbgZ);
+	}
 	DetServerFireRot = StepView;
 	bUseDetServerFireData = true;
 
@@ -1239,6 +1246,8 @@ simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisua
 	StartLoc = Owner.Location + ClientDrawOffset + FireOffset.X * X + LocalYMod * Y + FireOffset.Z * Z;
 	if (bbPlayer(Owner) != None)
 		StartLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).IGPlus_DebugProjStart("Rocket", StartLoc);
 	AimRot = PawnOwner.ViewRotation;
 
 	Angle = 0;

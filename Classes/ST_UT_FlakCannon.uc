@@ -164,10 +164,20 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
+	local vector DbgX, DbgY, DbgZ;
 
 	PawnOwner = Pawn(Owner);
 
 	StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner).bDrawDebugData) {
+		GetAxes(StepView, DbgX, DbgY, DbgZ);
+		if (bAlt)
+			bbPlayer(Owner).IGPlus_DebugProjStart("Flak slug",
+				StepLoc + CalcDrawOffset() + FireOffset.X * DbgX + FireOffset.Y * DbgY + FireOffset.Z * DbgZ);
+		else
+			bbPlayer(Owner).IGPlus_DebugProjStart("Flak",
+				StepLoc + CalcDrawOffset() + FireOffset.X * DbgX + FireOffset.Y * DbgY + FireOffset.Z * DbgZ);
+	}
 	AmmoType.UseAmmo(1);
 
 	bPointing = true;
@@ -545,6 +555,8 @@ simulated function SpawnClientSideChunks() {
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 	if (bbP != None)
 		Start.Z += bbP.GetMoverFireZOffset();
+	if (bbP != None)
+		bbP.IGPlus_DebugProjStart("Flak", Start);
 
 	if (GetWeaponSettings().FlakChunkRandomSpread) {
 		SpawnClientChunk(class'ST_UTChunk1', Start,            PawnOwner.ViewRotation, 0);
@@ -651,6 +663,8 @@ simulated function SpawnClientSideSlug()
             Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
         if (bbP != None)
             Start.Z += bbP.GetMoverFireZOffset();
+        if (bbP != None)
+            bbP.IGPlus_DebugProjStart("Flak slug", Start);
 
         LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
         LocalSlugDummy.RemoteRole = ROLE_None;

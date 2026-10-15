@@ -596,9 +596,13 @@ function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
 		|| P.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
 		return false;
 	// The old client-side animation (Predictive Shock Combos off) shows the
-	// ball about where it is now: test it live, as before.
-	if (P.ClientWeaponSettingsData.bPredictiveShockCombos == false)
+	// ball about where it is now: test it live, as before. On a moving lift
+	// the beam now leaves from the owner's own spot (ST_ShockRifle.TraceFireAt):
+	// keep the ball where it was relative to the beam.
+	if (P.ClientWeaponSettingsData.bPredictiveShockCombos == false) {
+		PD.CompSwapAt(B.Location - P.IGPlus_OwnLiftLead());
 		return true;
+	}
 
 	if (B.IGPlus_OwnerSeesBall(P, Loc)) {
 		PD.CompSwapAt(Loc);

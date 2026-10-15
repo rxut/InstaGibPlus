@@ -3045,6 +3045,25 @@ function vector IGPlus_OwnLiftLead() {
 	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(PingAverage) * 0.001 * Level.TimeDilation);
 }
 
+// Debug (enableDebugData): where a projectile shot starts, on each side.
+simulated function IGPlus_DebugProjStart(string What, vector Start) {
+	local string Side;
+
+	if (bDrawDebugData == false)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	ClientDebugMessage(What$" ("$Side$") from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)
+		$" lift lead "$int(IGPlus_DebugLiftLead().Z));
+}
+
+simulated function vector IGPlus_DebugLiftLead() {
+	if (Level.NetMode == NM_Client)
+		return vect(0,0,0);
+	return IGPlus_OwnLiftLead();
+}
+
 // Client: on a lift that is moving here. The server's test of our own beam
 // against our own ball allows for the lift (ST_ShockProj.IGPlus_OwnerSeesBall),
 // but only roughly while it moves, so no combo is drawn early then.
