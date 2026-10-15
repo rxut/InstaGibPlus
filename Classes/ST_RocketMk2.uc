@@ -50,12 +50,6 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
-	// The server moves a lift rocket itself for a while (IGPlus_OwnLiftHold).
-	if (Role < ROLE_Authority && Physics == PHYS_None)
-		SetPhysics(PHYS_Projectile);
-	if (Role < ROLE_Authority && bCollideActors == false)
-		SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
-
 	if (Instigator != None && bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRocketUseClientSideAnimations)
 	{
 		In = PlayerPawn(Instigator);
@@ -86,6 +80,12 @@ simulated event Tick(float Delta) {
 		IGPlus_OwnLiftStep(Delta);
 		return;
 	}
+	// The server held a lift rocket still when it was sent (IGPlus_OwnLiftHold).
+	// Here, after the net code has set what it received: fly it.
+	if (Role < ROLE_Authority && Physics == PHYS_None)
+		SetPhysics(PHYS_Projectile);
+	if (Role < ROLE_Authority && bCollideActors == false)
+		SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
 
     if (InstigatingPlayer == none)
         return;
@@ -262,6 +262,8 @@ function IGPlus_OwnLiftStep(float Delta) {
 		|| IGPlus_OwnLift.bDeleteMe || IGPlus_OwnLiftMD == None
 	) {
 		IGPlus_OwnLift = None;
+		if (bbPlayer(Instigator) != None && bbPlayer(Instigator).bDrawDebugData)
+			bbPlayer(Instigator).ClientDebugMessage("Rocket (server) flies on its own at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
 		return;
 	}
 	IGPlus_OwnLiftRewind(0.0);
