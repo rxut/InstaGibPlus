@@ -185,6 +185,7 @@ simulated function PostNetBeginPlay()
 				SetLocation(FakeLocation);
 				// Copy fake's velocity - critical if fake has bounced off a wall
 				Velocity = FakeVelocity;
+				IGPlus_HeldVelocity = vect(0,0,0); // ours, not the server's start
 				// Copy fake's physics mode - stops extrapolation if fake has bounced (PHYS_Falling)
 				SetPhysics(FakePhysics);
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
@@ -201,9 +202,10 @@ simulated event Tick(float Delta) {
     super.Tick(Delta);
 
 	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
-	// with it. Here, after the net code has set what it received: fly it.
+	// with it. A zero speed is not sent at all, so what is here is this
+	// class's own start-up guess (from its rotation): replace it.
 	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
-		if (Velocity == vect(0,0,0) && Physics != PHYS_None) {
+		if (Physics != PHYS_None) {
 			Velocity = IGPlus_HeldVelocity;
 			if (InstigatingPlayer != None)
 				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);

@@ -84,9 +84,10 @@ simulated event Tick(float Delta) {
 	super.Tick(Delta);
 
 	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
-	// with it. Here, after the net code has set what it received: fly it.
+	// with it. A zero speed is not sent at all, so what is here is this
+	// class's own start-up guess (from its rotation): replace it.
 	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
-		if (Velocity == vect(0,0,0) && Physics != PHYS_None) {
+		if (Physics != PHYS_None) {
 			Velocity = IGPlus_HeldVelocity;
 			if (InstigatingPlayer != None)
 				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);

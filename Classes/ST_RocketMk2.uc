@@ -76,14 +76,12 @@ simulated event Tick(float Delta) {
     super.Tick(Delta);
 
 	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
-	// with it. Here, after the net code has set what it received: fly it.
+	// with it (a zero speed is not sent at all).
 	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
-		if (Velocity == vect(0,0,0)) {
-			Velocity = IGPlus_HeldVelocity;
-			Acceleration = Normal(Velocity) * 50; // Flying.BeginState
-			if (IGPlus_bTookOver && InstigatingPlayer != None)
-				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
-		}
+		Velocity = IGPlus_HeldVelocity;
+		Acceleration = Normal(Velocity) * 50; // Flying.BeginState
+		if (IGPlus_bTookOver && InstigatingPlayer != None)
+			ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
 		IGPlus_HeldVelocity = vect(0,0,0);
 		if (bCollideActors == false)
 			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
