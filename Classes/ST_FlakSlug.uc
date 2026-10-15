@@ -239,7 +239,7 @@ function NewExplode(vector HitLocation, vector HitNormal)
 	local vector start;
 	local ST_UTChunkInfo CI;
 	local bbPlayer bbP;
-	local float LevelSpeed;
+	local float TargetTS;
 
 	if (bClientVisualOnly)
 		{
@@ -247,11 +247,10 @@ function NewExplode(vector HitLocation, vector HitNormal)
 			return;
 		}
 
-	// Predicted self-knockback: its age is its level travel over its level
-	// launch speed (gravity leaves those alone), as the shooter's guess.
+	// Predicted self-knockback: its age from its flight, as the shooter's
+	// guess (bbPlayer.IGPlus_SKArcTime).
 	bbP = bbPlayer(Instigator);
-	LevelSpeed = VSize(IGPlus_SpawnVel * vect(1,1,0));
-	if (IGPlus_FireTS > 0.0 && LevelSpeed >= 50.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+	if (IGPlus_FireTS > 0.0 && VSize(IGPlus_SpawnVel) >= 50.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
 		bbP.IGPlus_SKBeginCapture();
 	else
 		bbP = none;
@@ -272,20 +271,27 @@ function NewExplode(vector HitLocation, vector HitNormal)
 			WImp.WeaponSettings.FlakSlugMomentum * MomentumTransfer,
 			HitLocation);
 	}
-	if (bbP != none)
-		bbP.IGPlus_SKEndCaptureFor(self,
-			IGPlus_FireTS + VSize((Location - IGPlus_SpawnLoc) * vect(1,1,0)) / LevelSpeed, HitLocation);
+	if (bbP != none) {
+		TargetTS = IGPlus_FireTS + class'bbPlayer'.static.IGPlus_SKArcTime(
+			Location - IGPlus_SpawnLoc, IGPlus_SpawnVel, Velocity.Z, Region.Zone.ZoneGravity.Z);
+		bbP.IGPlus_SKEndCaptureFor(self, TargetTS, HitLocation);
+	}
 	start = Location + 10 * HitNormal;
  	Spawn( class'ut_FlameExplosion',,,Start);
 	CI = Spawn(Class'ST_UTChunkInfo', Instigator);
 	CI.WImp = WImp;
 	CI.RandomSpread = True;
 	
+	// Our chunks hitting us on their fast-forward push us after the slug.
+	if (bbP != none)
+		bbP.IGPlus_SKBeginCapture();
 	CI.AddChunk(Spawn( class 'ST_UTChunk2',CI, '', Start));
 	CI.AddChunk(Spawn( class 'ST_UTChunk3',CI, '', Start));
 	CI.AddChunk(Spawn( class 'ST_UTChunk4',CI, '', Start));
 	CI.AddChunk(Spawn( class 'ST_UTChunk1',CI, '', Start));
 	CI.AddChunk(Spawn( class 'ST_UTChunk2',CI, '', Start));
+	if (bbP != none)
+		bbP.IGPlus_SKEndCaptureAfter(TargetTS);
  	Destroy();
 }
 

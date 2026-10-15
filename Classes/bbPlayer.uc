@@ -3450,6 +3450,7 @@ simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
 			}
 
 			if (Push != vect(0,0,0)) {
+				IGPlus_SKDebug("lands on move "$TS, IGPlus_SKQueue[0], Push);
 				IGPlus_SKAddVelocity(Push);
 				bApplied = true;
 				// Replays recompute it from the replayed position.
@@ -3504,10 +3505,15 @@ function IGPlus_SKEndCapture(
 		K.bEnhanced = bEnhanced;
 		K.Kind = Kind;
 		if (IGPlus_SKCompute(K, Push) && VSize(Push - IGPlus_SKCaptured) > 1.0) {
+			IGPlus_SKDebug("changed by a mod, stock timing, worked out "$class'ST_ShockProj'.static.IGPlus_Vec(Push), K, IGPlus_SKCaptured);
 			ServerAddMomentum(IGPlus_SKCaptured);
 			return;
 		}
 	}
+	K.TargetTS = FMax(TargetTS, CurrentTimeStamp);
+	K.HitLocation = HitLocation;
+	K.Kind = Kind;
+	IGPlus_SKDebug("queued", K, IGPlus_SKCaptured);
 
 	// Explosions past their time (move gaps) land on the next move.
 	IGPlus_SKQueueAdd(
@@ -3546,7 +3552,7 @@ simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vect
 	// ponytail: hurt radius + 300uu covers jumps; farther walls correct
 	// With the projectile's size: the shock ball's centre stops 12uu off.
 	End = Start + Dir * (K.Radius + 300.0);
-	HitActor = Trace(HitLocation, HitNormal, End, Start, true, vect(1,1,0) * K.SourceRadius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind));
+	HitActor = IGPlus_SKTrace(Kind, Start, End, K.SourceRadius, HitLocation, HitNormal);
 	if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
 		return;
 
@@ -3559,6 +3565,40 @@ simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vect
 	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / Speed, Kind * 8 + Index, HitLocation, Kind);
 }
 
+// What our own projectile of this kind stops on from Start to End: what a
+// trace with actors finds, but never us, and our shock ball flies through
+// shock balls (our own copy, just fired here, among them).
+simulated function Actor IGPlus_SKTrace(byte Kind, vector Start, vector End, float Radius, out vector HitLocation, out vector HitNormal) {
+	local Actor A;
+
+	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, End, Start, vect(1,1,0) * Radius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind)) {
+		if (A == self || (Kind == IGPLUS_SK_SHOCKBALL && ShockProj(A) != none))
+			continue;
+		if (A == Level || Mover(A) != none || Pawn(A) != none || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
+			return A;
+	}
+	return none;
+}
+
+// A lobbed shot's flight time over Travel from launch velocity V0, falling at
+// GZ, with upward speed VzHit where it ended: its level travel over its level
+// speed, or for a steep shot its climb or drop under gravity, whichever tells
+// it better. Both machines time a flak slug's push with this.
+static function float IGPlus_SKArcTime(vector Travel, vector V0, float VzHit, float GZ) {
+	local float LevelSpeed, Root;
+
+	if (GZ == 0.0)
+		return VSize(Travel) / FMax(VSize(V0), 1.0);
+	LevelSpeed = VSize(V0 * vect(1,1,0));
+	if (LevelSpeed > 0.0 && LevelSpeed >= Abs(VzHit))
+		return VSize(Travel * vect(1,1,0)) / LevelSpeed;
+	// Travel.Z = V0.Z t + GZ t^2 / 2: rising the earlier root, falling the later.
+	Root = Sqrt(FMax(Square(V0.Z) + 2.0 * GZ * Travel.Z, 0.0));
+	if (VzHit > 0.0)
+		return (Root - V0.Z) / GZ;
+	return (-V0.Z - Root) / GZ;
+}
+
 simulated function float IGPlus_SKSourceHeight(byte Kind) {
 	switch (Kind) {
 		case IGPLUS_SK_FLAKSLUG:	return class'ST_FlakSlug'.default.CollisionHeight;
@@ -3568,18 +3608,16 @@ simulated function float IGPlus_SKSourceHeight(byte Kind) {
 	return class'ST_RocketMk2'.default.CollisionHeight;
 }
 
-// Client: the same for a lobbed shot, stepped along its arc. The server times
-// it by its level travel over its level launch speed (gravity leaves that
-// alone), as here.
+// Client: the same for a lobbed shot, stepped along its arc. Both machines
+// time it with IGPlus_SKArcTime.
 simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vector V0) {
 	local IGPlus_SelfKnockback K;
 	local vector P0, P1, V, G, HitLocation, HitNormal;
 	local Actor HitActor;
-	local float Dt, LevelSpeed;
+	local float Dt, VzHit;
 	local int i;
 
-	LevelSpeed = VSize(V0 * vect(1,1,0));
-	if (IGPlus_SKCanPredict() == false || LevelSpeed < 50.0)
+	if (IGPlus_SKCanPredict() == false || VSize(V0) < 50.0)
 		return;
 	IGPlus_SKPredictedEntry(Start, K, Kind);
 
@@ -3590,12 +3628,13 @@ simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vecto
 	// ponytail: 1s of flight within hurt radius + 300uu covers jumps
 	for (i = 0; i < 40; i++) {
 		P1 = P0 + V * Dt + 0.5 * G * Dt * Dt;
-		HitActor = Trace(HitLocation, HitNormal, P1, P0, true, vect(1,1,0) * K.SourceRadius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind));
+		HitActor = IGPlus_SKTrace(Kind, P0, P1, K.SourceRadius, HitLocation, HitNormal);
 		if (HitActor != none) {
 			if (HitActor != Level && Mover(HitActor) == none)
 				return;
+			VzHit = V.Z + G.Z * Dt * VSize(HitLocation - P0) / FMax(VSize(P1 - P0), 0.01);
 			HitLocation -= 2.0 * Normal(P1 - P0);
-			IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize((HitLocation - Start) * vect(1,1,0)) / LevelSpeed,
+			IGPlus_SKQueuePredicted(Level.TimeSeconds + IGPlus_SKArcTime(HitLocation - Start, V0, VzHit, G.Z),
 				Kind * 8 + Index, HitLocation, Kind);
 			return;
 		}
@@ -3661,8 +3700,33 @@ simulated function IGPlus_SKQueuePredicted(float TargetTS, int RocketIndex, vect
 	local IGPlus_SelfKnockback K;
 
 	IGPlus_SKPredictedEntry(HitLocation, K, Kind);
+	K.TargetTS = TargetTS;
+	IGPlus_SKDebug("predicted", K);
 	IGPlus_SKQueueAdd(TargetTS, RocketIndex, K.HitLocation, K.SourceLocation, K.SourceRadius,
 		K.Radius, K.Momentum, K.bEnhanced, false, vect(0,0,0), Kind);
+}
+
+// Debug (enableDebugData): our own pushes, on each side.
+simulated function IGPlus_SKDebug(string What, IGPlus_SelfKnockback K, optional vector Push) {
+	local string Side, Kind, Phys;
+
+	if (bDrawDebugData == false)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	switch (K.Kind) {
+		case IGPLUS_SK_FLAKSLUG:	Kind = "flak slug"; break;
+		case IGPLUS_SK_SHOCKBALL:	Kind = "shock ball"; break;
+		case IGPLUS_SK_RIPPERALT:	Kind = "ripper alt"; break;
+		case IGPLUS_SK_HAMMER:		Kind = "hammer/chunks"; break;
+		default:					Kind = "rocket";
+	}
+	Phys = "falling";
+	if (Physics == PHYS_Walking)
+		Phys = "walking";
+	ClientDebugMessage("Self-push ("$Side$") "$Kind$" "$What$" due "$K.TargetTS$" from "$class'ST_ShockProj'.static.IGPlus_Vec(K.HitLocation)
+		$" push "$class'ST_ShockProj'.static.IGPlus_Vec(Push)$" us "$Phys$" at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
 }
 
 // Client: our own flak slug, shock ball and ripper alt blade.
@@ -3702,8 +3766,20 @@ function IGPlus_SKEndCaptureFor(Projectile P, float TargetTS, vector HitLocation
 		K.SourceRadius, K.Radius, K.Momentum, K.bEnhanced, Kind);
 }
 
+// Server: our own flak chunks hitting us on their fast-forward
+// (ST_UTChunkInfo.AddChunk) push us right after our slug does, as in stock.
+// Before it, they would knock us off the floor, and the slug's push would
+// lose the upward kick a push from the floor gets. The client does not
+// predict them: a small correction.
+function IGPlus_SKEndCaptureAfter(float TargetTS) {
+	IGPlus_SKCapturing = false;
+	if (IGPlus_SKCapturedHit)
+		IGPlus_SKQueueHammer(FMax(TargetTS, CurrentTimeStamp), IGPlus_SKCaptured);
+}
+
 // Client: our own hammer's push off a wall, at the end of this move (where
-// the server applies its own, IGPlus_ServerHammerRelease).
+// the server applies its own, IGPlus_ServerHammerRelease). Also any push
+// already worked out (IGPlus_SKEndCaptureAfter).
 simulated function IGPlus_SKQueueHammer(float TS, vector Push) {
 	IGPlus_SKQueueAdd(TS, IGPLUS_SK_HAMMER * 8, Location, Location, 0, 0, 0, false, true, Push, IGPLUS_SK_HAMMER);
 }

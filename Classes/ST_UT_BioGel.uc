@@ -14,6 +14,10 @@ var float R1, R2, R3;
 // near the lift; clients, its speed, as it was sent held still.
 var IGPlus_LiftShot IGPlus_Lift;
 var vector IGPlus_HeldVelocity;
+// Clients: the lift our shooter rides, and where it and we were last tick
+// (IGPlus_SweepLift).
+var Mover IGPlus_SweepMover;
+var vector IGPlus_SweepMoverLoc, IGPlus_SweepLoc;
 
 replication
 {
@@ -158,6 +162,9 @@ simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
 
+	if (Level.NetMode == NM_Client && IsInState('Flying'))
+		IGPlus_SweepLift();
+
 	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
 	// with it. A zero speed is not sent at all, so what is here is this
 	// class's own start-up guess: replace it.
@@ -185,6 +192,33 @@ simulated event Tick(float Delta) {
         Move(NewXPolDelta - ExtrapolationDelta);
         ExtrapolationDelta = NewXPolDelta;
     }
+}
+
+// Clients: a lift moving into our flying gel does not carry it along here,
+// and a gel inside its brush falls through it (a slow gel, a fast lift going
+// up). Swept against the lift in the lift's own frame, it meets the lift where
+// the server's does (IGPlus_LiftShot) and sticks there.
+simulated function IGPlus_SweepLift() {
+	local vector D, HL, HN;
+
+	if (bbPlayer(Instigator) == None)
+		return;
+	if (IGPlus_SweepMover == None) {
+		IGPlus_SweepMover = Mover(Instigator.Base);
+		if (IGPlus_SweepMover == None)
+			return;
+	} else {
+		D = IGPlus_SweepMover.Location - IGPlus_SweepMoverLoc;
+		if (D != vect(0,0,0) && bbPlayer(Instigator).IGPlus_TraceMover(IGPlus_SweepMover, IGPlus_SweepLoc + D, Location, HL, HN,
+			vect(1,1,0) * CollisionRadius + vect(0,0,1) * CollisionHeight)) {
+			SetLocation(HL);
+			IGPlus_Debug("met the lift moving into it");
+			HitWall(HN, IGPlus_SweepMover);
+			return;
+		}
+	}
+	IGPlus_SweepMoverLoc = IGPlus_SweepMover.Location;
+	IGPlus_SweepLoc = Location;
 }
 
 function Timer()
