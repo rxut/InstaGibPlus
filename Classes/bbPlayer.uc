@@ -256,6 +256,7 @@ var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after 
 var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving lift (always eased)
 var float IGPlus_LiftExitTS;                // when we last left a moving lift
 var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
+var Actor IGPlus_DbgLastBase;               // debug: base before the last change
 var bool IGPlus_DbgLiftRising;
 var float IGPlus_DbgLiftExitZ;
 var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
@@ -2549,6 +2550,22 @@ simulated function IGPlus_LeftMovingLift(Mover Lift, IGPlus_SavedMove Move) {
 	IGPlus_LiftExitCamOffset -= Move.IGPlus_LiftExitShift;
 	IgnoreZChangeTicks = 2; // not a step up: no eye-height smoothing on top
 	ClientDebugMessage("Left a moving lift: moved "$int(Move.IGPlus_LiftExitShift.Z)$"uu to the server's spot, speed "$int(Move.IGPlus_LiftExitVelZ));
+}
+
+// Debug (enableDebugData): stepping on or off a lift, on each side. A lift
+// that waits for riders starts again when one lands on it.
+singular event BaseChange() {
+	local string Side;
+
+	if (bDrawDebugData && (Mover(Base) != None || Mover(IGPlus_DbgLastBase) != None)) {
+		Side = "server";
+		if (Level.NetMode == NM_Client)
+			Side = "client";
+		ClientDebugMessage("Base ("$Side$"): "$IGPlus_DbgLastBase$" -> "$Base$" at Z="$int(Location.Z)
+			$" velZ="$int(Velocity.Z)$" "$GetEnum(enum'EPhysics', Physics));
+	}
+	IGPlus_DbgLastBase = Base;
+	super.BaseChange();
 }
 
 // Debug (enableDebugData): where we left a moving lift and the top of the
