@@ -107,6 +107,9 @@ auto state Flying
 
 	function ProcessTouch(Actor Other, Vector HitLocation)
 	{
+		// A rewound ball's stand-in (ping compensation): the ball it stands for.
+		if (ST_ProjectileDummy(Other) != None && ST_ProjectileDummy(Other).Actual != None)
+			Other = ST_ProjectileDummy(Other).Actual;
 		if ( (Other != instigator) && !Other.IsA('Projectile') ) 
 		{
 			if (bClientVisualOnly)

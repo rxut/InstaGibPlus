@@ -575,7 +575,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
 			if (bHitscan && IGPlus_CompOwnDisc(PD, Instigator))
 				continue;
-			if (bHitscan && IGPlus_CompOwnBall(PD, Instigator))
+			if (IGPlus_CompOwnBall(PD, Instigator))
 				continue;
 			PD.CompStart(Ping);
 		}
@@ -588,6 +588,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
 	local ST_ShockProj B;
 	local bbPlayer P;
+	local vector Loc;
 
 	B = ST_ShockProj(PD.Actual);
 	P = bbPlayer(Instigator);
@@ -595,7 +596,14 @@ function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
 		|| P.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
 		return false;
 
-	PD.CompSwapAt(B.IGPlus_OwnerSeenLocation(P));
+	if (B.IGPlus_OwnerSeesBall(P, Loc)) {
+		PD.CompSwapAt(Loc);
+	} else {
+		// Gone at the owner's age: neither the ball nor its stand-in is there.
+		PD.CompSwapAt(B.Location);
+		PD.SetCollision(false, false, false);
+		PD.bProjTarget = false;
+	}
 	return true;
 }
 

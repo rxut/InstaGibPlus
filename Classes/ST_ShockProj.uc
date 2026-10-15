@@ -155,13 +155,17 @@ simulated function HitWall(vector HitNormal, actor Wall) {
 		Spawn(ExplosionDecal, self,, Location, rotator(HitNormal));
 }
 
-// Client: our own beam set this ball off. The server's ring and sound skip us
-// (SuperExplosion), so this is the combo we see.
+// Client: our own beam set this ball off. The server's ring for it is dropped
+// when it gets here (IGPlus_OwnerComboRing), so this is the combo we see.
 simulated function IGPlus_PredictCombo() {
 	Spawn(class'ut_ComboRing',,'', Location, Instigator.ViewRotation);
 	PlaySound(ExploSound,,20.0,,2000,0.6);
 	IGPlus_ComboTS = Level.TimeSeconds;
 	IGPlus_HideBall();
+	if (bbPlayer(Instigator) != None) {
+		bbPlayer(Instigator).IGPlus_PredComboTS = Level.TimeSeconds;
+		bbPlayer(Instigator).IGPlus_PredComboLoc = Location;
+	}
 }
 
 simulated function IGPlus_HideBall() {
@@ -178,24 +182,26 @@ simulated function IGPlus_ShowBall() {
 // Server: where the owner's screen has this ball for the owner's move being
 // processed: its age since the shot in the owner's own timestamps, along its
 // straight path. Not the live ball, which is off by up to a server frame of
-// packet timing.
-function vector IGPlus_OwnerSeenLocation(bbPlayer P) {
+// packet timing. False when the owner's screen has it stopped at a wall it
+// hasn't reached here yet: it is gone at that age.
+function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	local float Live, Age;
-	local vector Loc;
+
+	Loc = Location;
+	// Input replication stamps a packet's inputs with its newest time: test live.
+	if (P.IGPlus_EnableInputReplication)
+		return true;
 
 	Live = Level.TimeSeconds - IGPlus_FireTime;
 	// ponytail: +-0.2s bounds how far a client clock can move the ball
 	Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS, FMax(0.0, Live - 0.2), Live + 0.2);
 	Loc = IGPlus_FireLoc + Velocity * Age;
-	// Further than the live ball only through open space.
-	if (Age > Live && FastTrace(Loc, Location) == false)
-		return Location;
-	return Loc;
+	return Age <= Live || FastTrace(Loc, Location);
 }
 
-// Server: the owner's own beam, and the owner's client drew this combo itself
-// (ST_ShockRifle.ClientTraceFire, same conditions).
-function bool IGPlus_OwnerDrewCombo() {
+// Server: the owner's own beam, with the conditions under which the owner's
+// client draws its own combos (ST_ShockRifle.ClientTraceFire).
+function bool IGPlus_OwnerMayDrawCombo() {
 	local bbPlayer P;
 
 	P = bbPlayer(Instigator);
@@ -239,8 +245,9 @@ function SuperExplosion() {
 			Location);
 	}
 
-	if (IGPlus_OwnerDrewCombo()) {
-		Ring = Spawn(class'IGPlus_ComboRingOwnerHidden', Instigator,'', Location, Instigator.ViewRotation);
+	if (IGPlus_OwnerMayDrawCombo()) {
+		// The owner's client plays the sound itself if it didn't draw this one.
+		Ring = Spawn(class'IGPlus_OwnerComboRing', Instigator,'', Location, Instigator.ViewRotation);
 		if (Ring != None)
 			Ring.PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
 	} else {

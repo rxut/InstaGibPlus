@@ -217,7 +217,11 @@ function ProcessTouch (Actor Other, vector HitLocation)
 
 	if (Physics == PHYS_None || bHidden)
 		return;
-	
+
+	// A rewound ball's stand-in (ping compensation): the ball it stands for.
+	if (ST_ProjectileDummy(Other) != None && ST_ProjectileDummy(Other).Actual != None)
+		Other = ST_ProjectileDummy(Other).Actual;
+
 	// For ShockProjectileBlockFlakChunk
     if (ShockProj(Other) != None && !Chunkie.WImp.WeaponSettings.ShockProjectileBlockFlakChunk)
         return;

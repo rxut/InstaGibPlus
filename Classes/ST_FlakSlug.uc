@@ -91,6 +91,9 @@ simulated event Tick(float Delta) {
 
 function ProcessTouch (Actor Other, vector HitLocation)
 {
+	// A rewound ball's stand-in (ping compensation): the ball it stands for.
+	if (ST_ProjectileDummy(Other) != None && ST_ProjectileDummy(Other).Actual != None)
+		Other = ST_ProjectileDummy(Other).Actual;
 
     if (Other == Instigator)
         return;

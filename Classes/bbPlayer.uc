@@ -112,6 +112,8 @@ var bool IGPlus_PredictedSelfKnockback; // server setting, replicated to the own
 var bool IGPlus_PushSafeAim;            // server setting, replicated to the owner
 var bool IGPlus_DetTranslocator;        // server setting, replicated to the owner
 var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
+var float IGPlus_PredComboTS;           // client: our last drawn shock combo (IGPlus_OwnerComboRing)
+var vector IGPlus_PredComboLoc;
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
