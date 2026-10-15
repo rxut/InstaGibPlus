@@ -27,6 +27,10 @@ var float GrenadeDamage;
 var float GrenadeHurtRadius;
 var float GrenadeMomentum;
 var bool  RocketCompensatePing;
+var bool  bEnableEnhancedSplashRockets; // predicted self-knockback mirrors the server's splash
+var bool  bEnableEnhancedSplashFlakSlug;
+var bool  bEnableEnhancedSplashShockProjectile;
+var bool  bEnableEnhancedSplashRipperSecondary;
 
 var float FlakSelectTime;
 var float FlakPostSelectTime;
@@ -194,6 +198,10 @@ replication {
 		GrenadeHurtRadius,
 		GrenadeMomentum,
 		RocketCompensatePing,
+		bEnableEnhancedSplashRockets,
+		bEnableEnhancedSplashFlakSlug,
+		bEnableEnhancedSplashShockProjectile,
+		bEnableEnhancedSplashRipperSecondary,
 		FlakSelectTime,
 		FlakPostSelectTime,
 		FlakDownTime,
@@ -553,6 +561,10 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	GrenadeHurtRadius = S.GrenadeHurtRadius;
 	GrenadeMomentum = S.GrenadeMomentum;
 	RocketCompensatePing = S.RocketCompensatePing;
+	bEnableEnhancedSplashRockets = S.bEnableEnhancedSplashRockets;
+	bEnableEnhancedSplashFlakSlug = S.bEnableEnhancedSplashFlakSlug;
+	bEnableEnhancedSplashShockProjectile = S.bEnableEnhancedSplashShockProjectile;
+	bEnableEnhancedSplashRipperSecondary = S.bEnableEnhancedSplashRipperSecondary;
 
 	FlakSelectTime = S.FlakSelectTime;
 	FlakPostSelectTime = S.FlakPostSelectTime;

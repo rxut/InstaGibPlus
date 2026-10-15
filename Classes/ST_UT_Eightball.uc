@@ -15,6 +15,8 @@ var WeaponSettingsRepl WSettings;
 // Server-side deterministic fire data (from ServerMove_v4 step)
 var vector DetServerFireLoc;
 var rotator DetServerFireRot;
+var vector DetServerLiftLead;   // Push-Safe Aim: how far ahead our lift is of the shooter's screen
+var float DetServerMoverZ;      // the half-ping lift shift in DetServerFireLoc
 var bool bUseDetServerFireData;
 
 // Det deterministic fire — shared between client and server
@@ -53,9 +55,13 @@ var bool bDetPrimaryLastPredictedAuto;
 var bool bDetPrimaryTightLatched;
 var int DetServerShotSerial;
 var int DetServerLastShotKind;
+// Step timestamp at which the last volley's fire anim ends, set identically on
+// both sides; predicted switches holster no earlier (stock waits in FireRockets).
+var float DetVolleyHoldUntil;
 // Server: pending weapon this holster was already announced for (ClientPutDown).
 var Weapon DetHolsterAnnouncedFor;
 var bool bDetSwitchSettlementPending;
+var bool bIGPlusDetLoadedAlt; // HandleDetClientLoadedFire's own alt decision, for FiringRockets
 
 const IGPLUS_EB_SHOT_KIND_ALT = 0;
 const IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED = 1;
@@ -104,8 +110,13 @@ function bool DetPrepareServerFireContext(
 		return false;
 
 	DetServerFireLoc = StepLoc;
-	if (bbPlayer(Owner) != none)
-		DetServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	DetServerMoverZ = 0.0;
+	DetServerLiftLead = vect(0,0,0);
+	if (bbPlayer(Owner) != none) {
+		DetServerMoverZ = bbPlayer(Owner).GetMoverFireZOffset();
+		DetServerFireLoc.Z += DetServerMoverZ;
+		DetServerLiftLead = bbPlayer(Owner).IGPlus_LiftAimLead();
+	}
 	DetServerFireRot = StepView;
 	bUseDetServerFireData = true;
 
@@ -539,6 +550,15 @@ simulated function float DetPostFireInterval(int NumRockets) {
 	return 0.05 + (FireFrames - 1) / (30.0 * FirePlayRate) + 0.05 + 6.0 / 15.0;
 }
 
+// The fire-anim part of DetPostFireInterval (without the reload leg).
+simulated function float DetVolleyAnimTime(int NumRockets) {
+	return DetPostFireInterval(NumRockets) - 0.05 - 6.0 / 15.0;
+}
+
+simulated function DetNoteVolley(float TS, int NumRockets) {
+	DetVolleyHoldUntil = TS + DetVolleyAnimTime(NumRockets);
+}
+
 simulated function DetAdvanceStepClock(float StepTS) {
 	local float StepDelta;
 
@@ -905,6 +925,7 @@ simulated function HandleDetClientFire() {
 	DetConsumeClientAmmo(1);
 	if (bbPlayer(Owner) != none)
 		bbPlayer(Owner).IGPlus_DetClientShotTS = Level.TimeSeconds;
+	DetNoteVolley(Level.TimeSeconds, 1);
 
 	DetCachedChargeData = 1;
 	ClientRocketsLoaded = 1;
@@ -914,9 +935,12 @@ simulated function HandleDetClientFire() {
 	bRotated = false;
 
 	bbP = bbPlayer(Owner);
-	if (bbP != None && IsPingCompEnabled()
-		&& !bLockedOn && bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
-		SpawnClientSideRockets(1);
+	if (bbP != None && IsPingCompEnabled() && !bLockedOn) {
+		if (bbP.ClientWeaponSettingsData.bRocketUseClientSideAnimations)
+			SpawnClientSideRockets(1);
+		else if (bbP.IGPlus_PredictedSelfKnockback)
+			SpawnClientSideRockets(1, true);
+	}
 
 	if (!IsInState('ClientDetInstantFire'))
 		GotoState('ClientDetInstantFire');
@@ -932,6 +956,7 @@ simulated function HandleDetClientLoadedFire(bool bAlt, int NumRockets, optional
 	}
 	if (bbPlayer(Owner) != none)
 		bbPlayer(Owner).IGPlus_DetClientShotTS = Level.TimeSeconds;
+	DetNoteVolley(Level.TimeSeconds, NumRockets);
 
 	// Primary-only: if authoritative auto-fire interrupts during rotate,
 	// the final load sound may never be reached via AnimEnd.
@@ -947,7 +972,9 @@ simulated function HandleDetClientLoadedFire(bool bAlt, int NumRockets, optional
 
 	// Use the same tightwad edge decision as the server step.
 	bTightWad = !bAlt && bTight;
+	bIGPlusDetLoadedAlt = bAlt;
 	FiringRockets();
+	bIGPlusDetLoadedAlt = false;
 	bTightWad = false;
 }
 
@@ -965,6 +992,8 @@ function HandleDetServerFire(rotator StepView, vector StepLoc, int NumRockets, b
 		DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED;
 	bDetSwitchSettlementPending = false;
 	DetArmServerFireState(NumRockets, true, bTight);
+	if (bbPlayer(Owner) != none)
+		DetNoteVolley(bbPlayer(Owner).CurrentTimeStamp, NumRockets);
 	if (P.PendingWeapon != none && P.PendingWeapon != self) {
 		P.PlayRecoil(FiringSpeed);
 		bChangeWeapon = true;
@@ -983,6 +1012,8 @@ function HandleDetServerAltFire(rotator StepView, vector StepLoc, int NumRockets
 	DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_ALT;
 	bDetSwitchSettlementPending = false;
 	DetArmServerFireState(NumRockets, false);
+	if (bbPlayer(Owner) != none)
+		DetNoteVolley(bbPlayer(Owner).CurrentTimeStamp, NumRockets);
 	// Ammo is already consumed: spawn the volley, then switch (stock order).
 	if (P.PendingWeapon != none && P.PendingWeapon != self)
 		bChangeWeapon = true;
@@ -1013,6 +1044,7 @@ simulated function DetResetDeterministicState() {
 	DetLastStepDelta = 0.0;
 	DetCachedChargeData = 0;
 	DetHolsterAnnouncedFor = none;
+	DetVolleyHoldUntil = 0.0;
 	DetInternalBudget = 0;
 	DetClientAmmoSpentSinceDown = 0;
 	DetClientLastDownTS = 0.0;
@@ -1153,6 +1185,10 @@ simulated function FiringRockets()
 		{
 			SpawnClientSideRockets(ClientRocketsLoaded);
 		}
+		else if (!bAlt && !bIGPlusDetLoadedAlt && !bLockedOn && bbP.IGPlus_PredictedSelfKnockback)
+		{
+			SpawnClientSideRockets(ClientRocketsLoaded, true);
+		}
 	}
 }
 
@@ -1179,7 +1215,8 @@ simulated function vector CalcDrawOffsetClient() {
 	return DrawOffset;
 }
 
-simulated function SpawnClientSideRockets(int NumRockets)
+// bNoVisuals: only predict self-knockback, spawn nothing.
+simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisuals)
 {
 	local vector FireLocation, StartLoc, X,Y,Z;
 	local rotator FireRot, AimRot;
@@ -1207,8 +1244,12 @@ simulated function SpawnClientSideRockets(int NumRockets)
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
 	
 	StartLoc = Owner.Location + ClientDrawOffset + FireOffset.X * X + LocalYMod * Y + FireOffset.Z * Z;
-	if (bbPlayer(Owner) != None)
+	// Push-Safe Aim: rockets leave from where we see ourselves, also on a lift
+	// (the server's do too).
+	if (bbPlayer(Owner) != None && (bbPlayer(Owner).IGPlus_PushSafeAim == false || IsDetActive() == false))
 		StartLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).IGPlus_DebugProjStart("Rocket", StartLoc);
 	AimRot = PawnOwner.ViewRotation;
 
 	Angle = 0;
@@ -1237,7 +1278,13 @@ simulated function SpawnClientSideRockets(int NumRockets)
 		FireRot.Pitch = AimRot.Pitch;
 		FireRot.Roll = AimRot.Roll;
 
-		r = Spawn(class'ST_RocketMk2', PawnOwner, '', FireLocation, FireRot);
+		if (bbPlayer(Owner) != None)
+			bbPlayer(Owner).IGPlus_SKPredictRocket(FireLocation, FireRot, i);
+
+		if (bNoVisuals)
+			r = None;
+		else
+			r = Spawn(class'ST_RocketMk2', PawnOwner, '', FireLocation, FireRot);
 		if (r != None)
 		{
 			r.Instigator = PawnOwner;
@@ -1275,6 +1322,8 @@ state FireRockets
 		local Projectile SpawnedRockets[6];
 		local int NumSpawnedRockets;
 		local rotator AimRot;
+		local bool bDetFire;
+		local bool bLiftAim;
 
 		if (bCanClientFire == false)
 		{
@@ -1322,6 +1371,7 @@ state FireRockets
 			if ( PlayerOwner != None )
 				AdjustedAim = PawnOwner.ViewRotation;
 		}
+		bDetFire = bUseDetServerFireData;
 		bUseDetServerFireData = false;
 		
 		PlayRFiring(RocketsLoaded-1);		
@@ -1351,6 +1401,15 @@ state FireRockets
 			RocketRad = 7;
 		else
 			RocketRad = 4;
+
+		// Push-Safe Aim on a moving lift: rockets leave from where the
+		// shooter's screen had it, and near that lift they meet it where that
+		// screen has it (IGPlus_LiftShot).
+		bLiftAim = bDetFire && bFireLoad && LockedTarget == None && DetServerLiftLead != vect(0,0,0);
+		if (bLiftAim)
+			StartLoc -= DetServerLiftLead + DetServerMoverZ * vect(0,0,1);
+		if (bDetFire && bbP != None)
+			bbP.IGPlus_DebugProjStart("Rocket", StartLoc);
 
 		NumSpawnedRockets = 0;
 		
@@ -1389,6 +1448,14 @@ state FireRockets
 					r.WImp = WImp;
 					r.NumExtraRockets = DupRockets;
 					r.RocketIndex = i;
+					if (bLiftAim)
+						class'IGPlus_LiftShot'.static.Begin(r, bbP);
+					// Predicted self-knockback anchors the push to this step.
+					if (bDetFire && bbP != none && bbP.IGPlus_PredictedSelfKnockback) {
+						r.IGPlus_FireTS = bbP.CurrentTimeStamp;
+						r.IGPlus_SpawnLoc = r.Location;
+						r.IGPlus_Speed = VSize(r.Velocity);
+					}
 					SpawnedRockets[NumSpawnedRockets] = r;
 					NumSpawnedRockets++;
 				}
@@ -1420,6 +1487,10 @@ state FireRockets
 		{
 			WImp.BatchSimulateProjectiles(SpawnedRockets, NumSpawnedRockets, bbP.PingAverage);
 		}
+		if (bLiftAim)
+			for (i = 0; i < NumSpawnedRockets; i++)
+				if (class'IGPlus_LiftShot'.static.Of(SpawnedRockets[i]) != None)
+					class'IGPlus_LiftShot'.static.Of(SpawnedRockets[i]).Hold();
 		
 		bTightWad=False;
 		bRotated = false;

@@ -101,6 +101,14 @@ jobs:
           Replace-PackageName "/Classes/" "${{ github.event.repository.name }}.upkg"
           Replace-PackageName "/Classes/" "*.uc"
 
+          # README: the install lines name the release package (InstaGibPlus_11
+          # in the repo); name the package this build makes instead. The
+          # InstaGibPlus.ini mentions keep their name, it doesn't follow the package.
+          $Readme = "${{ env.PKG_NAME }}/README.md"
+          if (Test-Path -Path $Readme) {
+            (Get-Content -Path $Readme -Encoding UTF8) -replace "\b${{ github.event.repository.name }}_\w+","${{ env.PKG_NAME }}" | Set-Content -Path $Readme -Encoding UTF8
+          }
+
       - name: Extract Necessary Resources
         run: 7z x "${{ env.PKG_NAME }}/Build/BuildEnv.zip"
 

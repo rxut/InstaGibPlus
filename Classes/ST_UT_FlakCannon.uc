@@ -10,6 +10,7 @@ var WeaponSettingsRepl WSettings;
 var class<ST_UTChunk> ChunkClasses[4];
 
 var ST_FlakSlug LocalSlugDummy;
+var bool IGPlus_bLocalSlugGone;    // our copy hit something before the server's arrived
 
 // Det deterministic fire state
 var float NextDetFireTS;
@@ -155,6 +156,7 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		PlayAltFiring();
 		if (BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
 			SpawnClientSideSlug();
+		BP.IGPlus_SKPredictFlakSlug(IGPlus_ShotStart(StepView, StepLoc), StepView);
 	} else {
 		PlayFiring();
 		if (BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
@@ -164,10 +166,26 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
+	local vector DbgX, DbgY, DbgZ;
+	local vector LiftLead;
 
 	PawnOwner = Pawn(Owner);
 
-	StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	// Push-Safe Aim on a moving lift: from where the shooter's screen had it.
+	LiftLead = bbPlayer(Owner).IGPlus_LiftAimLead();
+	if (LiftLead != vect(0,0,0))
+		StepLoc -= LiftLead;
+	else
+		StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	if (bbPlayer(Owner).bDrawDebugData) {
+		GetAxes(StepView, DbgX, DbgY, DbgZ);
+		if (bAlt)
+			bbPlayer(Owner).IGPlus_DebugProjStart("Flak slug",
+				StepLoc + CalcDrawOffset() + FireOffset.X * DbgX + FireOffset.Y * DbgY + FireOffset.Z * DbgZ);
+		else
+			bbPlayer(Owner).IGPlus_DebugProjStart("Flak",
+				StepLoc + CalcDrawOffset() + FireOffset.X * DbgX + FireOffset.Y * DbgY + FireOffset.Z * DbgZ);
+	}
 	AmmoType.UseAmmo(1);
 
 	bPointing = true;
@@ -180,11 +198,11 @@ function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	if (bAlt) {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
 			PlayAltFiring();
-		SpawnServerSlugAt(StepLoc + CalcDrawOffset(), StepView, StepView);
+		SpawnServerSlugAt(StepLoc + CalcDrawOffset(), StepView, StepView, LiftLead != vect(0,0,0));
 	} else {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
 			PlayFiring();
-		SpawnServerChunksAt(StepLoc + CalcDrawOffset(), StepView);
+		SpawnServerChunksAt(StepLoc + CalcDrawOffset(), StepView, LiftLead != vect(0,0,0));
 	}
 }
 
@@ -200,7 +218,7 @@ function SpawnServerChunks()
 	SpawnServerChunksAt(Start, AimRot);
 }
 
-function SpawnServerChunksAt(vector Start, rotator AimRot)
+function SpawnServerChunksAt(vector Start, rotator AimRot, optional bool bLiftAim)
 {
 	local Vector X, Y, Z;
 	local vector R;
@@ -219,6 +237,7 @@ function SpawnServerChunksAt(vector Start, rotator AimRot)
 	
 	CI = Spawn(class'ST_UTChunkInfo', PawnOwner);
 	CI.WImp = WImp;
+	CI.IGPlus_bLiftAim = bLiftAim;
 
 	if (GetWeaponSettings().FlakChunkRandomSpread) {
 		C = Spawn(class'ST_UTChunk1', Owner, '', Start, AimRot);
@@ -308,12 +327,13 @@ function SpawnServerSlug()
 	SpawnServerSlugAt(Start, AimRot, PawnOwner.ViewRotation);
 }
 
-function SpawnServerSlugAt(vector Start, rotator AimRot, rotator OffsetRot)
+function SpawnServerSlugAt(vector Start, rotator AimRot, rotator OffsetRot, optional bool bLiftAim)
 {
 	local Vector X, Y, Z;
 	local ST_FlakSlug Slug;
 	local Pawn PawnOwner;
 	local bbPlayer bbP;
+	local IGPlus_LiftShot LS;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
@@ -324,11 +344,21 @@ function SpawnServerSlugAt(vector Start, rotator AimRot, rotator OffsetRot)
 	
 	Slug = Spawn(class'ST_FlakSlug', Owner,, Start, AimRot);
 	Slug.WImp = WImp;
+	// Predicted self-knockback anchors its push to this step.
+	if (Slug != None && bbP != None && bbP.IGPlus_PredictedSelfKnockback && IsDetActive()) {
+		Slug.IGPlus_FireTS = bbP.CurrentTimeStamp;
+		Slug.IGPlus_SpawnLoc = Slug.Location;
+		Slug.IGPlus_SpawnVel = Slug.Velocity;
+	}
+	if (bLiftAim && bbP != None)
+		LS = class'IGPlus_LiftShot'.static.Begin(Slug, bbP);
 
 	// Apply ping compensation for flak slug if enabled
 	if (bbP != None && IsPingCompEnabled()) {
 		WImp.SimulateProjectile(Slug, bbP.PingAverage);
 	}
+	if (LS != None)
+		LS.Hold();
 }
 
 function Finish()
@@ -509,6 +539,20 @@ state ClientAltFiring {
 	}
 }
 
+// Client: where our shot leaves the gun, as the server spawns it.
+simulated function vector IGPlus_ShotStart(rotator Aim, vector Loc) {
+	local vector X, Y, Z;
+	local float Hand;
+
+	Hand = 1.0;
+	if (PlayerPawn(Owner) != None)
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	GetAxes(Aim, X, Y, Z);
+	if (bHideWeapon)
+		return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+}
+
 simulated function SpawnClientChunk(class<ST_UTChunk> ChunkClass, vector Pos, rotator Rot, int Index) {
 	local ST_UTChunk C;
 	C = Spawn(ChunkClass, Owner, '', Pos, Rot);
@@ -543,8 +587,11 @@ simulated function SpawnClientSideChunks() {
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 	else
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-	if (bbP != None)
+	// Push-Safe Aim: from where we see ourselves, also on a lift.
+	if (bbP != None && (bbP.IGPlus_PushSafeAim == false || IsDetActive() == false))
 		Start.Z += bbP.GetMoverFireZOffset();
+	if (bbP != None)
+		bbP.IGPlus_DebugProjStart("Flak", Start);
 
 	if (GetWeaponSettings().FlakChunkRandomSpread) {
 		SpawnClientChunk(class'ST_UTChunk1', Start,            PawnOwner.ViewRotation, 0);
@@ -649,14 +696,19 @@ simulated function SpawnClientSideSlug()
             Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
         else
             Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-        if (bbP != None)
+        // Push-Safe Aim: from where we see ourselves, also on a lift.
+        if (bbP != None && (bbP.IGPlus_PushSafeAim == false || IsDetActive() == false))
             Start.Z += bbP.GetMoverFireZOffset();
+        if (bbP != None)
+            bbP.IGPlus_DebugProjStart("Flak slug", Start);
 
         LocalSlugDummy = Spawn(class'ST_FlakSlug', Owner,, Start, PawnOwner.ViewRotation);
         LocalSlugDummy.RemoteRole = ROLE_None;
         LocalSlugDummy.Instigator = PawnOwner;
         LocalSlugDummy.bClientVisualOnly = true;
-        LocalSlugDummy.bCollideWorld = false;
+        // Hits walls like the server's will (and stops there, ST_FlakSlug):
+        // the server's takes over where it is.
+        IGPlus_bLocalSlugGone = false;
         LocalSlugDummy.SetCollision(false, false, false);
         // Floor: 25% slack over the RTT is under one net update at low ping.
         LocalSlugDummy.LifeSpan = FMax(0.15, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;

@@ -131,6 +131,24 @@ var localized string bDelayedPickupSpawnHelp;
 var UWindowCheckbox Chk_bUseFastWeaponSwitch;
 var localized string bUseFastWeaponSwitchText;
 var localized string bUseFastWeaponSwitchHelp;
+var UWindowCheckbox Chk_bEnablePredictedSwitching;
+var localized string bEnablePredictedSwitchingText;
+var localized string bEnablePredictedSwitchingHelp;
+var UWindowCheckbox Chk_bEnablePredictedTranslocation;
+var localized string bEnablePredictedTranslocationText;
+var localized string bEnablePredictedTranslocationHelp;
+var UWindowCheckbox Chk_bEnablePredictedSelfKnockback;
+var localized string bEnablePredictedSelfKnockbackText;
+var localized string bEnablePredictedSelfKnockbackHelp;
+var UWindowCheckbox Chk_bEnablePushSafeAim;
+var localized string bEnablePushSafeAimText;
+var localized string bEnablePushSafeAimHelp;
+var UWindowCheckbox Chk_bEnableDeterministicTranslocator;
+var localized string bEnableDeterministicTranslocatorText;
+var localized string bEnableDeterministicTranslocatorHelp;
+var UWindowCheckbox Chk_bEnablePredictedDiscBoost;
+var localized string bEnablePredictedDiscBoostText;
+var localized string bEnablePredictedDiscBoostHelp;
 var UWindowCheckbox Chk_bTellSpectators;
 var localized string bTellSpectatorsText;
 var localized string bTellSpectatorsHelp;
@@ -640,6 +658,12 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bAllowMultiWeapon", BoolToString(Chk_bAllowMultiWeapon.bChecked));
 	SaveServerSettingIfChanged(S, "bDelayedPickupSpawn", BoolToString(Chk_bDelayedPickupSpawn.bChecked));
 	SaveServerSettingIfChanged(S, "bUseFastWeaponSwitch", BoolToString(Chk_bUseFastWeaponSwitch.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedSwitching", BoolToString(Chk_bEnablePredictedSwitching.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedTranslocation", BoolToString(Chk_bEnablePredictedTranslocation.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedSelfKnockback", BoolToString(Chk_bEnablePredictedSelfKnockback.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePushSafeAim", BoolToString(Chk_bEnablePushSafeAim.bChecked));
+	SaveServerSettingIfChanged(S, "bEnableDeterministicTranslocator", BoolToString(Chk_bEnableDeterministicTranslocator.bChecked));
+	SaveServerSettingIfChanged(S, "bEnablePredictedDiscBoost", BoolToString(Chk_bEnablePredictedDiscBoost.bChecked));
 	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
 	SaveServerSettingIfChanged(S, "bJumpingPreservesMomentum", BoolToString(Chk_bJumpingPreservesMomentum.bChecked));
@@ -1057,6 +1081,12 @@ function LoadServerSettings() {
 	Chk_bAllowMultiWeapon.bChecked = S.bAllowMultiWeapon;
 	Chk_bDelayedPickupSpawn.bChecked = S.bDelayedPickupSpawn;
 	Chk_bUseFastWeaponSwitch.bChecked = S.bUseFastWeaponSwitch;
+	Chk_bEnablePredictedSwitching.bChecked = S.bEnablePredictedSwitching;
+	Chk_bEnablePredictedTranslocation.bChecked = S.bEnablePredictedTranslocation;
+	Chk_bEnablePredictedSelfKnockback.bChecked = S.bEnablePredictedSelfKnockback;
+	Chk_bEnablePushSafeAim.bChecked = S.bEnablePushSafeAim;
+	Chk_bEnableDeterministicTranslocator.bChecked = S.bEnableDeterministicTranslocator;
+	Chk_bEnablePredictedDiscBoost.bChecked = S.bEnablePredictedDiscBoost;
 	Chk_bTellSpectators.bChecked = S.bTellSpectators;
 
 	Chk_bJumpingPreservesMomentum.bChecked = S.bJumpingPreservesMomentum;
@@ -1159,6 +1189,12 @@ function Created() {
 	Chk_bAllowMultiWeapon = CreateCheckbox(bAllowMultiWeaponText, bAllowMultiWeaponHelp);
 	Chk_bDelayedPickupSpawn = CreateCheckbox(bDelayedPickupSpawnText, bDelayedPickupSpawnHelp);
 	Chk_bUseFastWeaponSwitch = CreateCheckbox(bUseFastWeaponSwitchText, bUseFastWeaponSwitchHelp);
+	Chk_bEnablePredictedSwitching = CreateCheckbox(bEnablePredictedSwitchingText, bEnablePredictedSwitchingHelp);
+	Chk_bEnablePredictedTranslocation = CreateCheckbox(bEnablePredictedTranslocationText, bEnablePredictedTranslocationHelp);
+	Chk_bEnablePredictedSelfKnockback = CreateCheckbox(bEnablePredictedSelfKnockbackText, bEnablePredictedSelfKnockbackHelp);
+	Chk_bEnablePushSafeAim = CreateCheckbox(bEnablePushSafeAimText, bEnablePushSafeAimHelp);
+	Chk_bEnableDeterministicTranslocator = CreateCheckbox(bEnableDeterministicTranslocatorText, bEnableDeterministicTranslocatorHelp);
+	Chk_bEnablePredictedDiscBoost = CreateCheckbox(bEnablePredictedDiscBoostText, bEnablePredictedDiscBoostHelp);
 	Chk_bTellSpectators = CreateCheckbox(bTellSpectatorsText, bTellSpectatorsHelp);
 
 	Lbl_Movement = CreateSeparator(MovementText);
@@ -1287,6 +1323,12 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bAllowMultiWeapon, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bDelayedPickupSpawn, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bUseFastWeaponSwitch, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedSwitching, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedTranslocation, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedSelfKnockback, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePushSafeAim, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnableDeterministicTranslocator, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePredictedDiscBoost, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bTellSpectators, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Movement, bShowSettings, WndWidth, Top);
@@ -1482,6 +1524,18 @@ defaultproperties
 	bDelayedPickupSpawnHelp="If checked, delays the first pickup spawn"
 	bUseFastWeaponSwitchText="Fast Weapon Switch"
 	bUseFastWeaponSwitchHelp="If checked, enables fast weapon switching"
+	bEnablePredictedSwitchingText="Predicted Weapon Switch"
+	bEnablePredictedSwitchingHelp="If checked, weapon switches start on the key press; off while Input Replication is on"
+	bEnablePredictedTranslocationText="Predicted Translocation"
+	bEnablePredictedTranslocationHelp="If checked, translocating moves you on the key press; needs Translocator ping compensation, for the stock translocator only (the Deterministic Translocator does this itself), off while Input Replication is on"
+	bEnablePredictedSelfKnockbackText="Predicted Self-Knockback"
+	bEnablePushSafeAimText="Push-Safe Aim"
+	bEnableDeterministicTranslocatorText="Deterministic Translocator"
+	bEnablePredictedDiscBoostText="Predicted Disc Boost"
+	bEnablePredictedDiscBoostHelp="With the Deterministic Translocator, your own shock beam pushes your own disc on your screen right away"
+	bEnableDeterministicTranslocatorHelp="If checked, throw, recall and translocate are decided by the same rules on client and server and you see your own disc; Translocator ping compensation is not used then, off while Input Replication is on"
+	bEnablePushSafeAimHelp="If checked, shots fired right after being pushed, and projectiles fired from a moving lift, leave from where the shooter saw themselves, and camera smoothing aims shots through the crosshair; off while Input Replication is on"
+	bEnablePredictedSelfKnockbackHelp="If checked, the push from your own rockets, flak slug, shock ball, ripper alt and hammer is applied on your client right away, at the same moment as on the server; projectiles need their weapon's ping compensation, off while Input Replication is on"
 	bTellSpectatorsText="Tell Spectators on Kick"
 	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"
 

@@ -7,11 +7,20 @@ var bool bClientVisualOnly;
 var PlayerPawn InstigatingPlayer;
 var vector ExtrapolationDelta;
 var int RocketIndex;
+// Server, predicted self-knockback: the shooter's fire step and launch.
+var float IGPlus_FireTS;
+var vector IGPlus_SpawnLoc;
+var float IGPlus_Speed;
+// Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
+// near the lift; clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
+var bool IGPlus_bTookOver;      // client: carries on from our own copy
 
 replication
 {
 	reliable if (Role == ROLE_Authority && bNetInitial)
-		RocketIndex;
+		RocketIndex, IGPlus_HeldVelocity;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -53,6 +62,7 @@ simulated function PostNetBeginPlay()
 					FakeLocation = FakeRocket.Location;
 					FakeRocket.Destroy();
 					SetLocation(FakeLocation);
+					IGPlus_bTookOver = true;
 					ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 					break;
 				}
@@ -64,6 +74,18 @@ simulated function PostNetBeginPlay()
 simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
+
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
+	// with it (a zero speed is not sent at all).
+	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
+		Velocity = IGPlus_HeldVelocity;
+		Acceleration = Normal(Velocity) * 50; // Flying.BeginState
+		if (IGPlus_bTookOver && InstigatingPlayer != None)
+			ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		IGPlus_HeldVelocity = vect(0,0,0);
+		if (bCollideActors == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	}
 
     if (InstigatingPlayer == none)
         return;
@@ -103,6 +125,9 @@ auto state Flying
 
 	function ProcessTouch(Actor Other, Vector HitLocation)
 	{
+		// A rewound ball's stand-in (ping compensation): the ball it stands for.
+		if (ST_ProjectileDummy(Other) != None && ST_ProjectileDummy(Other).Actual != None)
+			Other = ST_ProjectileDummy(Other).Actual;
 		if ( (Other != instigator) && !Other.IsA('Projectile') ) 
 		{
 			if (bClientVisualOnly)
@@ -124,6 +149,9 @@ auto state Flying
 			Destroy();
 			return;
 		}
+
+		if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
+			return;
 
 		if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
 			Wall.TakeDamage( Damage, instigator, Location, MomentumTransfer * Normal(Velocity), '');
@@ -161,6 +189,14 @@ auto state Flying
 
 	function BlowUp(vector HitLocation)
 	{
+		local bbPlayer bbP;
+
+		bbP = bbPlayer(Instigator);
+		if (IGPlus_FireTS > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+			bbP.IGPlus_SKBeginCapture();
+		else
+			bbP = none;
+
 		WImp.SplashDamageWithSelfDamage(
 			self,
 			WImp.WeaponSettings.RocketDamage,
@@ -172,6 +208,19 @@ auto state Flying
 			HitLocation,
 			WImp.WeaponSettings.bEnableEnhancedSplashRockets
 		);
+
+		// Rocket age is its travel over launch speed, same as the client's guess.
+		if (bbP != none)
+			bbP.IGPlus_SKEndCapture(
+				IGPlus_FireTS + VSize(Location - IGPlus_SpawnLoc) / FMax(IGPlus_Speed, 1.0),
+				RocketIndex,
+				HitLocation,
+				Location,
+				CollisionRadius,
+				WImp.WeaponSettings.RocketHurtRadius,
+				WImp.WeaponSettings.RocketMomentum * MomentumTransfer,
+				WImp.WeaponSettings.bEnableEnhancedSplashRockets
+			);
 
 		MakeNoise(1.0);
 	}

@@ -141,11 +141,36 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		PlayAltFiring();
 		if (BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects(true, StepView, StepLoc);
+		BP.IGPlus_SKPredictShockBall(IGPlus_ShotStart(StepView, StepLoc), StepView);
 	} else {
 		PlayFiring();
 		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire(true, StepView, StepLoc);
+		if (BP.IGPlus_PredictedDiscBoost && BP.IGPlus_DetTranslocator && BP.IGPlus_DetTloc != None)
+			IGPlus_PredictOwnDiscBoost(BP, StepView, StepLoc);
 	}
+}
+
+// Predicted Disc Boost: the beam, as ClientTraceFire draws it, against our own
+// disc; the server tests the same disc at the same age for this move.
+simulated function IGPlus_PredictOwnDiscBoost(bbPlayer BP, rotator AimRot, vector AimLoc) {
+	local vector X, Y, Z, StartTrace, EndTrace, HitLocation, HitNormal;
+	local float MaxDist;
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == None)
+		return;
+
+	yModInit();
+	GetAxes(AimRot, X, Y, Z);
+	StartTrace = AimLoc + CDO + yMod * Y + FireOffset.Z * Z;
+	EndTrace = StartTrace + 10000.0 * X;
+	MaxDist = 10000.0;
+	if (Trace(HitLocation, HitNormal, EndTrace, StartTrace, true) != None)
+		MaxDist = VSize(HitLocation - StartTrace);
+
+	BP.IGPlus_DetTloc.IGPlus_DetPredictBoost(StartTrace, X, MaxDist, WS.ShockBeamMomentum * 60000.0 * X);
 }
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
@@ -258,6 +283,8 @@ simulated function ClientTraceFire(
 	local bbPlayer bbP;
 	local rotator AimRot;
 	local vector AimLoc;
+	local ST_ShockProj Ball;
+	local float Reach;
 
     PawnOwner = Pawn(Owner);
 	
@@ -309,7 +336,123 @@ simulated function ClientTraceFire(
 		HitLocation = EndTrace;
 	}
 
+	// Our own ball on the beam (client-side shock balls): the combo is here and
+	// now, and the server's ring for it is dropped (IGPlus_OwnerComboRing).
+	// Only where the server is sure to agree: a combo shown that didn't happen
+	// is worse than one shown a ping late. Never from a lift, where our
+	// position and the server's disagree.
+	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations
+		&& (bbP.IGPlus_PredictiveShockCombos() || bbP.bDrawDebugData)
+	) {
+		Reach = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
+		IGPlus_DebugBeam("client", StartTrace, X, Reach);
+		if (bbP.IGPlus_PredictiveShockCombos() && bbP.IGPlus_OnMovingLift() == false)
+			Ball = IGPlus_OwnBallOnBeam(StartTrace, X, Reach);
+		if (Ball != None) {
+			HitLocation = Ball.Location;
+			Ball.IGPlus_PredictCombo();
+		}
+	}
+
 	ClientSpawnBeam(HitLocation, SmokeLocation);
+}
+
+// Client: how far our beam goes before something other than our own balls
+// stops it, by the server's blocking rules (bbPlayer.TraceShot). A trace that
+// stops on our own ball can end short of it, so it must not set the reach.
+simulated function float IGPlus_BeamReach(vector Start, vector End) {
+	local Actor A;
+	local vector HitLoc, HitNorm;
+
+	foreach TraceActors(class'Actor', A, HitLoc, HitNorm, End, Start) {
+		if (A == Owner || (ST_ShockProj(A) != None && ST_ShockProj(A).IGPlus_bOwnTimeline))
+			continue;
+		if (A == Level || Mover(A) != None || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
+			return VSize(HitLoc - Start);
+	}
+	return VSize(End - Start);
+}
+
+// Debug (enableDebugData): how close this beam passes the shooter's own ball,
+// as each side has it (the server where the shooter's screen has it).
+simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optional float Reach) {
+	local ST_ShockProj P, Best;
+	local bbPlayer BP;
+	local vector Loc, BestLoc;
+	local float D, BestD;
+	local bool bFound;
+	local string Extra;
+
+	BP = bbPlayer(Owner);
+	if (BP == None || BP.bDrawDebugData == false)
+		return;
+	foreach AllActors(class'ST_ShockProj', P) {
+		if (P.Instigator != Owner || P.bDeleteMe)
+			continue;
+		if (Level.NetMode == NM_Client) {
+			if (P.bHidden)
+				continue;
+			Loc = P.Location;
+		} else if (BP.IGPlus_PredictiveShockCombos() == false) {
+			Loc = P.Location; // the old client-side animation is tested live
+		} else if (P.IGPlus_OwnerSeesBall(BP, Loc) == false) {
+			continue;
+		}
+		D = VSize((Loc - Start) - Dir * ((Loc - Start) dot Dir));
+		if (bFound == false || D < BestD) {
+			bFound = true;
+			BestD = D;
+			BestLoc = Loc;
+			Best = P;
+		}
+	}
+	if (bFound == false)
+		return;
+	if (Level.NetMode == NM_Client && BP.IGPlus_PredictiveShockCombos() == false) {
+		Extra = ", old client-side animation";
+	} else if (Level.NetMode == NM_Client) {
+		Extra = ", ball "$int((BestLoc - Start) dot Dir)$"uu out, beam reaches "$int(Reach)$"uu, ";
+		if (Best.Physics == PHYS_None)
+			Extra = Extra$"ball stopped";
+		else if (Best.IGPlus_bFromMover || BP.IGPlus_OnMovingLift())
+			Extra = Extra$"lift, server decides";
+		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc,
+				Best.CollisionRadius - IGPLUS_COMBO_MARGIN, Best.CollisionHeight - IGPLUS_COMBO_MARGIN))
+			Extra = Extra$"clear hit, drawn";
+		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc, Best.CollisionRadius, Best.CollisionHeight))
+			Extra = Extra$"edge hit, server decides";
+		else
+			Extra = Extra$"misses it";
+	}
+	BP.ClientDebugMessage("Shock beam ("$Side$") from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)
+		$", ball at "$class'ST_ShockProj'.static.IGPlus_Vec(BestLoc)$", passes "$int(BestD)$"uu from its centre"$Extra);
+}
+
+// Client and server have our ball and beam within 1-2uu of each other
+// (measured), so a beam this far inside the ball hits it on the server too.
+const IGPLUS_COMBO_MARGIN = 3.0;
+
+// Client: the nearest of our own flying balls the beam passes clearly through
+// before MaxDist (IGPlus_BeamReach). Nearer the edge, or for a ball fired from
+// a lift, the server's combo is shown instead.
+simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, float MaxDist) {
+	local ST_ShockProj P, Best;
+	local float D, BestD;
+
+	foreach AllActors(class'ST_ShockProj', P) {
+		if (P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe
+			|| P.Physics == PHYS_None || P.Instigator != Owner || P.IGPlus_bFromMover)
+			continue;
+		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, MaxDist, P.Location,
+				P.CollisionRadius - IGPLUS_COMBO_MARGIN, P.CollisionHeight - IGPLUS_COMBO_MARGIN) == false)
+			continue;
+		D = (P.Location - Start) dot Dir;
+		if (Best == None || D < BestD) {
+			Best = P;
+			BestD = D;
+		}
+	}
+	return Best;
 }
 
 simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
@@ -372,6 +515,20 @@ simulated function bool ClientAltFire(float Value) {
 	return Super.ClientAltFire(Value); 
 }
 
+// Client: where our shot leaves the gun, as the server spawns it.
+simulated function vector IGPlus_ShotStart(rotator Aim, vector Loc) {
+	local vector X, Y, Z;
+	local float Hand;
+
+	Hand = 1.0;
+	if (PlayerPawn(Owner) != None)
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	GetAxes(Aim, X, Y, Z);
+	if (bHideWeapon)
+		return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
+}
+
 simulated function ClientSpawnAltProjectileEffects(
 	optional bool bUseShotData,
 	optional rotator ShotView,
@@ -409,16 +566,31 @@ simulated function ClientSpawnAltProjectileEffects(
 	else
 		Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 
-	if (bbP != None)
+	// Predictive Shock Combos: our ball leaves our own weapon. On a moving lift
+	// the server's leaves from further along the lift's path, and the server
+	// allows for that when it tests our beam (ST_ShockProj.IGPlus_OwnerSeesBall).
+	// The old client-side animation shifts its ball toward the server's.
+	if (bbP != None && bbP.IGPlus_PredictiveShockCombos() == false)
 		Start.Z += bbP.GetMoverFireZOffset();
 
 	LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start, AimRot));
 	if (LocalDummy != None) {
 		LocalDummy.RemoteRole = ROLE_None;
 		LocalDummy.Instigator = PawnOwner;
-		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-		LocalDummy.bCollideWorld = false;
+		LocalDummy.LifeSpan = FMax(0.2, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;
 		LocalDummy.SetCollision(false, false, false);
+		if (bbP != None && bbP.IGPlus_PredictiveShockCombos()) {
+			// Our own ball until the server's takes over from it (ST_ShockProj):
+			// it stops at walls like the server's, nothing else touches it.
+			LocalDummy.IGPlus_bLocalBall = true;
+			LocalDummy.IGPlus_bOwnTimeline = true;
+			LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
+			LocalDummy.IGPlus_bFromMover = bbP.IGPlus_OnMovingLift();
+		} else {
+			LocalDummy.bCollideWorld = false;
+		}
+		if (bbP != None && bbP.bDrawDebugData)
+			bbP.ClientDebugMessage("Shock ball (client) from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)$" aim "$(AimRot.Pitch & 65535)$","$(AimRot.Yaw & 65535));
 	}
 }
 
@@ -454,6 +626,10 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	local actor Other;
 	local Pawn PawnOwner;
 	local vector SmokeLocation;
+	local vector LiftLead;
+	local bbPlayer bbP;
+	local vector LiftHitLoc, LiftHitNormal;
+	local bool bLiftHit;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -464,6 +640,16 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	GetAxes(AimRot,X,Y,Z);
 	StartTrace = AimLoc + DrawOffsetLoc + FireOffset.Y * Y + FireOffset.Z * Z; 
 	SmokeLocation = AimLoc + DrawOffsetLoc + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	// On a moving lift the shooter's screen has the shooter a round trip of
+	// lift travel behind here (bbPlayer.IGPlus_OwnLiftLead): the shot leaves
+	// from there, as the sniper's does. The drawn beam still leaves the
+	// shooter where others see it. The shooter's own lift counts where that
+	// screen had it too (bbPlayer.IGPlus_TraceMover), the real one not at all.
+	bbP = bbPlayer(PawnOwner);
+	if (IsPingCompEnabled() && bbP != None)
+		LiftLead = bbP.IGPlus_OwnLiftLead();
+	if (LiftLead != vect(0,0,0))
+		StartTrace -= LiftLead;
 
 	EndTrace = StartTrace + (Accuracy * (FRand() - 0.5 )* Y * 1000) + (Accuracy * (FRand() - 0.5 ) * Z * 1000);
 
@@ -486,13 +672,36 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	Tracked = None;
 	bBotSpecialMove = false;
 
+	if (LiftLead != vect(0,0,0)) {
+		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		if (bLiftHit) {
+			LiftHitLoc -= LiftLead;
+			EndTrace = LiftHitLoc;
+		}
+		bbP.IGPlus_OwnLiftShotShift = LiftLead;
+	}
 	if (WImp.WeaponSettings.ShockBeamUseReducedHitbox)
 		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
-		
+	if (LiftLead != vect(0,0,0)) {
+		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
+		if (bLiftHit && Other == None) {
+			Other = PawnOwner.Base;
+			HitLocation = LiftHitLoc;
+			HitNormal = LiftHitNormal;
+		}
+	}
+
 	PendingSmokeLocation = SmokeLocation;
+	IGPlus_DebugBeam("server", StartTrace, Normal(EndTrace - StartTrace));
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+
+	// Predicted Disc Boost: correct the thrower's disc if this missed it.
+	if (bbPlayer(PawnOwner) != None && bbPlayer(PawnOwner).IGPlus_PredictedDiscBoost
+		&& ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator')) != None)
+		ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator')).IGPlus_DetBoostMissCheck(
+			bbPlayer(PawnOwner), Other, StartTrace, HitLocation, vector(AdjustedAim));
 }
 
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
@@ -537,6 +746,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	if (Proj != None)
 	{ 
 		AmmoType.UseAmmo(2);
+		Proj.IGPlus_ComboBy = PawnOwner;
 		Proj.SuperExplosion();
 		return;
 	}

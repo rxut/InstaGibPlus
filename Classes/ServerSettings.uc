@@ -67,6 +67,12 @@ var config float MaxJitterTime;
 var config float WarpFixDelay;
 var config float FireTimeout;
 var config float DetFireClockMargin;
+var config bool  bEnablePredictedSwitching;
+var config bool  bEnablePredictedTranslocation;
+var config bool  bEnablePredictedSelfKnockback;
+var config bool  bEnablePushSafeAim;
+var config bool  bEnableDeterministicTranslocator;
+var config bool  bEnablePredictedDiscBoost;
 var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
@@ -116,6 +122,28 @@ struct ForceSettingsEntry{
 };
 var config array<ForceSettingsEntry> ForcedSettings;
 
+// Predicted switching is built on the ServerMove path.
+function bool PredictedSwitchingActive() {
+	return bEnablePredictedSwitching && !bEnableInputReplication;
+}
+
+// Both also need ping compensation for their weapon (checked at use).
+function bool PredictedTranslocationActive() {
+	return bEnablePredictedTranslocation && !bEnableInputReplication;
+}
+
+function bool PredictedSelfKnockbackActive() {
+	return bEnablePredictedSelfKnockback && !bEnableInputReplication;
+}
+
+function bool PushSafeAimActive() {
+	return bEnablePushSafeAim && !bEnableInputReplication;
+}
+
+function bool DeterministicTranslocatorActive() {
+	return bEnableDeterministicTranslocator && !bEnableInputReplication;
+}
+
 function DumpSetting(PlayerPawn P, string S) {
 	P.ClientMessage(S$"="$GetPropertyText(S));
 }
@@ -158,6 +186,12 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "WarpFixDelay");
 	DumpSetting(P, "FireTimeout");
 	DumpSetting(P, "DetFireClockMargin");
+	DumpSetting(P, "bEnablePredictedSwitching");
+	DumpSetting(P, "bEnablePredictedTranslocation");
+	DumpSetting(P, "bEnablePredictedSelfKnockback");
+	DumpSetting(P, "bEnablePushSafeAim");
+	DumpSetting(P, "bEnableDeterministicTranslocator");
+	DumpSetting(P, "bEnablePredictedDiscBoost");
 	DumpSetting(P, "MinNetUpdateRate");
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
@@ -213,6 +247,12 @@ defaultproperties
 	WarpFixDelay=0.25
 	FireTimeout=0.1
 	DetFireClockMargin=0.5
+	bEnablePredictedSwitching=True
+	bEnablePredictedTranslocation=True
+	bEnablePredictedSelfKnockback=True
+	bEnablePushSafeAim=True
+	bEnableDeterministicTranslocator=True
+	bEnablePredictedDiscBoost=True
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False

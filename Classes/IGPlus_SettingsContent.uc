@@ -72,6 +72,18 @@ var localized string MoreInformationText;
 	var localized string FakeCAPIntervalText;
 	var localized string FakeCAPIntervalHelp;
 
+	var UWindowCheckbox Chk_CameraCorrectionSmoothing;
+	var localized string CameraCorrectionSmoothingText;
+	var localized string CameraCorrectionSmoothingHelp;
+
+	var IGPlus_EditControl Edit_CameraCorrectionSmoothingTime;
+	var localized string CameraCorrectionSmoothingTimeText;
+	var localized string CameraCorrectionSmoothingTimeHelp;
+
+	var UWindowCheckbox Chk_SmoothLiftJump;
+	var localized string SmoothLiftJumpText;
+	var localized string SmoothLiftJumpHelp;
+
 // Advanced
 	var UWindowLabelControl Lbl_Advanced;
 	var localized string AdvancedText;
@@ -446,6 +458,9 @@ var localized string MoreInformationText;
 	var UWindowCheckbox Chk_ShockProjectileUseClientSideAnimations;
 	var localized string ShockProjectileUseClientSideAnimationsText;
 	var localized string ShockProjectileUseClientSideAnimationsHelp;
+	var UWindowCheckbox Chk_PredictiveShockCombos;
+	var localized string PredictiveShockCombosText;
+	var localized string PredictiveShockCombosHelp;
 
 	var UWindowCheckbox Chk_PulseUseClientSideAnimations;
 	var localized string PulseUseClientSideAnimationsText;
@@ -885,11 +900,15 @@ function Created() {
 	Edit_DesiredNetUpdateRate = CreateEdit(ECT_Integer, DesiredNetUpdateRateText, DesiredNetUpdateRateHelp, 4, 32);
 	Edit_DesiredNetspeed = CreateEdit(ECT_Integer, DesiredNetspeedText, DesiredNetspeedHelp, , 64);
 	Edit_FakeCAPInterval = CreateEdit(ECT_Real, FakeCAPIntervalText, FakeCAPIntervalHelp, , 64);
+	Chk_CameraCorrectionSmoothing = CreateCheckbox(CameraCorrectionSmoothingText, CameraCorrectionSmoothingHelp);
+	Edit_CameraCorrectionSmoothingTime = CreateEdit(ECT_Real, CameraCorrectionSmoothingTimeText, CameraCorrectionSmoothingTimeHelp, , 64);
+	Chk_SmoothLiftJump = CreateCheckbox(SmoothLiftJumpText, SmoothLiftJumpHelp);
 
 	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
 	Chk_ShockBeamUseClientSideAnimations = CreateCheckbox(ShockBeamUseClientSideAnimationsText, ShockBeamUseClientSideAnimationsHelp);
 	Chk_ShockProjectileUseClientSideAnimations = CreateCheckbox(ShockProjectileUseClientSideAnimationsText, ShockProjectileUseClientSideAnimationsHelp);
+	Chk_PredictiveShockCombos = CreateCheckbox(PredictiveShockCombosText, PredictiveShockCombosHelp);
 	Chk_PulseUseClientSideAnimations = CreateCheckbox(PulseUseClientSideAnimationsText, PulseUseClientSideAnimationsHelp);
 	Chk_RipperUseClientSideAnimations = CreateCheckbox(RipperUseClientSideAnimationsText, RipperUseClientSideAnimationsHelp);
 	Chk_FlakUseClientSideAnimations = CreateCheckbox(FlakUseClientSideAnimationsText, FlakUseClientSideAnimationsHelp);
@@ -1072,6 +1091,9 @@ function Load() {
 	Edit_DesiredNetUpdateRate.SetValue(string(int(Settings.DesiredNetUpdateRate)));
 	Edit_DesiredNetspeed.SetValue(string(Settings.DesiredNetspeed));
 	Edit_FakeCAPInterval.SetValue(string(Settings.FakeCAPInterval));
+	Chk_CameraCorrectionSmoothing.bChecked = Settings.bCameraCorrectionSmoothing;
+	Edit_CameraCorrectionSmoothingTime.SetValue(string(Settings.CameraCorrectionSmoothingTime));
+	Chk_SmoothLiftJump.bChecked = Settings.bSmoothLiftJump;
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
@@ -1160,6 +1182,7 @@ function Load() {
 	Chk_BioUseClientSideAnimations.bChecked = Settings.bBioUseClientSideAnimations;
 	Chk_ShockBeamUseClientSideAnimations.bChecked = Settings.bShockBeamUseClientSideAnimations;
 	Chk_ShockProjectileUseClientSideAnimations.bChecked = Settings.bShockProjectileUseClientSideAnimations;
+	Chk_PredictiveShockCombos.bChecked = Settings.bPredictiveShockCombos;
 	Chk_PulseUseClientSideAnimations.bChecked = Settings.bPulseUseClientSideAnimations;
 	Chk_RipperUseClientSideAnimations.bChecked = Settings.bRipperUseClientSideAnimations;
 	Chk_FlakUseClientSideAnimations.bChecked = Settings.bFlakUseClientSideAnimations;
@@ -1196,6 +1219,9 @@ function Save() {
 	Settings.DesiredNetUpdateRate = int(Edit_DesiredNetUpdateRate.GetValue());
 	Settings.DesiredNetspeed = int(Edit_DesiredNetspeed.GetValue());
 	Settings.FakeCAPInterval = float(Edit_FakeCAPInterval.GetValue());
+	Settings.bCameraCorrectionSmoothing = Chk_CameraCorrectionSmoothing.bChecked;
+	Settings.CameraCorrectionSmoothingTime = FMax(0.0, float(Edit_CameraCorrectionSmoothingTime.GetValue()));
+	Settings.bSmoothLiftJump = Chk_SmoothLiftJump.bChecked;
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
@@ -1285,6 +1311,7 @@ function Save() {
 	Settings.bBioUseClientSideAnimations = Chk_BioUseClientSideAnimations.bChecked;
 	Settings.bShockBeamUseClientSideAnimations = Chk_ShockBeamUseClientSideAnimations.bChecked;
 	Settings.bShockProjectileUseClientSideAnimations = Chk_ShockProjectileUseClientSideAnimations.bChecked;
+	Settings.bPredictiveShockCombos = Chk_PredictiveShockCombos.bChecked;
 	Settings.bPulseUseClientSideAnimations = Chk_PulseUseClientSideAnimations.bChecked;
 	Settings.bRipperUseClientSideAnimations = Chk_RipperUseClientSideAnimations.bChecked;
 	Settings.bFlakUseClientSideAnimations = Chk_FlakUseClientSideAnimations.bChecked;
@@ -1298,6 +1325,7 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bBioUseClientSideAnimations", Chk_BioUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bShockBeamUseClientSideAnimations", Chk_ShockBeamUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bShockProjectileUseClientSideAnimations", Chk_ShockProjectileUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bPredictiveShockCombos", Chk_PredictiveShockCombos.bChecked);
 		P.UpdateReplicatedWeaponSetting("bPulseUseClientSideAnimations", Chk_PulseUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bRipperUseClientSideAnimations", Chk_RipperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bFlakUseClientSideAnimations", Chk_FlakUseClientSideAnimations.bChecked);
@@ -1375,6 +1403,14 @@ defaultproperties
 
 		FakeCAPIntervalText="Fake CAP Interval"
 		FakeCAPIntervalHelp="Server will acknowledge your movement every this many seconds"
+
+		CameraCorrectionSmoothingText="Camera-Only Correction Smoothing"
+		CameraCorrectionSmoothingHelp="Experimental. If checked, server corrections move you at once and only the camera eases to the new spot"
+		SmoothLiftJumpText="Smooth Lift Jump"
+		SmoothLiftJumpHelp="Experimental. When you jump or step off a moving lift, your view glides to where the server has you instead of snapping there a ping later"
+
+		CameraCorrectionSmoothingTimeText="Camera Smoothing Time"
+		CameraCorrectionSmoothingTimeHelp="Seconds until a correction is (nearly) gone from the camera"
 
 	AdvancedText="Advanced"
 
@@ -1652,6 +1688,8 @@ defaultproperties
 
 		ShockProjectileUseClientSideAnimationsText="Client-Side Animations Shock Projectile"
 		ShockProjectileUseClientSideAnimationsHelp="If checked, use client-side animations for Shock Projectile"
+		PredictiveShockCombosText="Predictive Shock Combos"
+		PredictiveShockCombosHelp="With both Shock client-side animations: your ball is shown where the server tests your beam, and your combos show the moment you hit. Off: the old client-side animations"
 
 		PulseUseClientSideAnimationsText="Client-Side Animations Pulse Rifle"
 		PulseUseClientSideAnimationsHelp="If checked, use client-side animations for Pulse Rifle"

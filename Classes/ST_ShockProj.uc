@@ -11,6 +11,20 @@ var vector ExtrapolationDelta;
 
 var ST_ProjectileDummy Dummy;
 
+// Client-side shock balls: the owner's client draws its own ball at its age
+// since the owner fired, which is where the server tests the owner's beam.
+var bool IGPlus_bOwnTimeline;
+var bool IGPlus_bLocalBall;   // the owner's own copy, until the server's arrives
+var float IGPlus_SpawnTS;     // client: when the local copy was fired
+var bool IGPlus_bFromMover;   // client: fired from a lift (positions disagree there)
+var float IGPlus_ComboTS;     // client: when a predicted combo hid this ball
+var vector IGPlus_WallNormal; // client: hidden ball stopped at a wall, mark not made yet
+var Pawn IGPlus_ComboBy;      // server: whose beam set off SuperExplosion
+var float IGPlus_FireTS;      // server: the owner's move timestamp at the shot
+var float IGPlus_FireTime;    // server: Level.TimeSeconds at the shot
+var vector IGPlus_FireLoc;    // server: where the shot left from
+var vector IGPlus_FireLiftLead; // server: the owner's lift lead at the shot (bbPlayer.IGPlus_OwnLiftLead)
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -38,12 +52,22 @@ simulated function PostBeginPlay() {
 		bbP = bbPlayer(Instigator);
 		WS = GetWeaponSettings();
 
-        if (Instigator != none && Instigator.IsA('bbPlayer') && WS != None && WS.bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
-            PureRef = bbPlayer(Instigator).zzUTPure;
-        
-        if (PureRef != None && WS != None && WS.bEnablePingCompensation && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false) {
-            PureRef.RegisterProjectile(self);
-        }
+		// Every ball, whatever its owner's settings, so every beam is tested
+		// where its shooter saw the ball (UTPure.CompensateFor tests an owner's
+		// own client-side ball live instead).
+		if (Level.NetMode != NM_Client && bbP != None && WS != None && WS.bEnablePingCompensation)
+			PureRef = bbP.zzUTPure;
+		if (bbP != None) {
+			IGPlus_FireTS = bbP.CurrentTimeStamp;
+			IGPlus_FireTime = Level.TimeSeconds;
+			IGPlus_FireLoc = Location;
+			if (Level.NetMode != NM_Client)
+				IGPlus_FireLiftLead = bbP.IGPlus_OwnLiftLead();
+			if (Level.NetMode != NM_Client && bbP.bDrawDebugData)
+				bbP.ClientDebugMessage("Shock ball (server) from "$IGPlus_Vec(Location)$" aim "$(Rotation.Pitch & 65535)$","$(Rotation.Yaw & 65535));
+		}
+		if (PureRef != None)
+			PureRef.RegisterProjectile(self);
 
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break; // Find master :D
@@ -58,8 +82,8 @@ simulated function PostBeginPlay() {
 
 simulated function PostNetBeginPlay() {
 	local PlayerPawn In;
-	local ST_ShockRifle SR;
 	local bbPlayer bbP;
+	local ST_ShockRifle SR;
 
 	bbP = bbPlayer(Instigator);
 
@@ -69,39 +93,197 @@ simulated function PostNetBeginPlay() {
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
-
 		if (InstigatingPlayer != none) {
-			SR = ST_ShockRifle(InstigatingPlayer.Weapon);
-			if (SR != none && SR.LocalDummy != none && SR.LocalDummy.bDeleteMe == false)
-				SR.LocalDummy.Destroy();
+			// Own timeline only for a ball that came over the network: offline
+			// and on a listen host this is the real ball.
+			if (bbP.IGPlus_PredictiveShockCombos() && bbP.zzbDemoPlayback == false
+				&& Level.NetMode == NM_Client
+			) {
+				IGPlus_TakeOverLocalBall();
+			} else {
+				// The old client-side animation: our copy gives way, and Tick
+				// extrapolates this one.
+				SR = ST_ShockRifle(InstigatingPlayer.Weapon);
+				if (SR != none && SR.LocalDummy != none && SR.LocalDummy.bDeleteMe == false)
+					SR.LocalDummy.Destroy();
+			}
+			return;
 		}
-	} else {
-		Disable('Tick');
 	}
+	Disable('Tick');
+}
+
+// Client: the server's copy of our ball has arrived. Carry on from our own
+// copy (same shot, same age); without one, catch up by the round trip it is
+// behind (sent a one-way after our shot, received a one-way after that).
+simulated function IGPlus_TakeOverLocalBall() {
+	local ST_ShockProj P, Mine;
+	local vector Start, Delta;
+	local bool bOldCollideWorld;
+
+	IGPlus_bOwnTimeline = true;
+
+	foreach AllActors(class'ST_ShockProj', P)
+		if (P.IGPlus_bLocalBall && P.bDeleteMe == false && P.Instigator == Instigator
+			&& (Mine == None || P.IGPlus_SpawnTS < Mine.IGPlus_SpawnTS))
+			Mine = P;
+
+	if (Mine == None) {
+		// Our copy ran out (late packet): this catch-up is only rough, so no
+		// combo is drawn on this ball. The server decides it.
+		IGPlus_bFromMover = true;
+		Start = Location;
+		Delta = Velocity * (0.001 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		Move(Delta);
+		if (VSize(Location - Start) < VSize(Delta) - 1.0)
+			SetPhysics(PHYS_None); // reached a wall: stop there like our own copy
+		return;
+	}
+
+	bOldCollideWorld = bCollideWorld;
+	bCollideWorld = false;
+	SetLocation(Mine.Location);
+	bCollideWorld = bOldCollideWorld;
+	Velocity = Mine.Velocity;
+	if (Mine.Physics == PHYS_None)
+		SetPhysics(PHYS_None);
+	IGPlus_ComboTS = Mine.IGPlus_ComboTS;
+	IGPlus_WallNormal = Mine.IGPlus_WallNormal;
+	IGPlus_bFromMover = Mine.IGPlus_bFromMover;
+	if (Mine.bHidden)
+		IGPlus_HideBall();
+	Mine.Destroy();
 }
 
 simulated event Tick(float Delta) {
-    local vector NewXPolDelta;
-    super.Tick(Delta);
+	local vector NewXPolDelta;
 
-	if (InstigatingPlayer == none)
-        return;
+	super.Tick(Delta);
 
-	if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
-        return;
-	
-    // Catch up to server
-    if (OldLocation == Location)
-        MoveSmooth(Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+	if (InstigatingPlayer == None)
+		return;
 
-    // Extrapolate locally to compensate for ping
-    NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
-    Move(NewXPolDelta - ExtrapolationDelta);
-    ExtrapolationDelta = NewXPolDelta;
+	// The old client-side animation (Predictive Shock Combos off).
+	if (IGPlus_bOwnTimeline == false) {
+		if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+			return;
+		// Catch up to server
+		if (OldLocation == Location)
+			MoveSmooth(Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		// Extrapolate locally to compensate for ping
+		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		Move(NewXPolDelta - ExtrapolationDelta);
+		ExtrapolationDelta = NewXPolDelta;
+		return;
+	}
+
+	// A combo we drew that the server didn't make: the ball is still here.
+	if (IGPlus_ComboTS > 0.0 && InstigatingPlayer != None
+		&& Level.TimeSeconds - IGPlus_ComboTS > InstigatingPlayer.PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.25
+	) {
+		IGPlus_ComboTS = 0.0;
+		IGPlus_ShowBall();
+		if (IGPlus_WallNormal != vect(0,0,0))
+			IGPlus_WallMark(IGPlus_WallNormal);
+		bbPlayer(InstigatingPlayer).ClientDebugMessage("Shock combo: drawn here but the server missed, ball shown again");
+	}
+}
+
+// The owner's own ball stops at a wall like the server's does, which is
+// exploding there; its explosion reaches the owner a round trip later.
+simulated function HitWall(vector HitNormal, actor Wall) {
+	if (IGPlus_bOwnTimeline == false) {
+		Super.HitWall(HitNormal, Wall);
+		return;
+	}
+	SetPhysics(PHYS_None);
+	// A combo we drew hid it: it never got here unless the server says so.
+	if (bHidden)
+		IGPlus_WallNormal = HitNormal;
+	else
+		IGPlus_WallMark(HitNormal);
+}
+
+simulated function IGPlus_WallMark(vector HitNormal) {
+	if (ExplosionDecal != None && Level.NetMode != NM_DedicatedServer)
+		Spawn(ExplosionDecal, self,, Location, rotator(HitNormal));
+}
+
+// Client: our own beam set this ball off. The server's ring for it is dropped
+// when it gets here (IGPlus_OwnerComboRing), so this is the combo we see.
+simulated function IGPlus_PredictCombo() {
+	// Not against the wall after all: no push from that.
+	if (bbPlayer(Instigator) != None)
+		bbPlayer(Instigator).IGPlus_SKCancelShockBall();
+	Spawn(class'ut_ComboRing',,'', Location, Instigator.ViewRotation);
+	PlaySound(ExploSound,,20.0,,2000,0.6);
+	IGPlus_ComboTS = Level.TimeSeconds;
+	IGPlus_HideBall();
+	if (bbPlayer(Instigator) != None) {
+		bbPlayer(Instigator).IGPlus_PredComboTS = Level.TimeSeconds;
+		bbPlayer(Instigator).IGPlus_PredComboLoc = Location;
+		bbPlayer(Instigator).ClientDebugMessage("Shock combo: drawn on the beam's frame");
+	}
+}
+
+static function string IGPlus_Vec(vector V) {
+	return int(V.X)$","$int(V.Y)$","$int(V.Z);
+}
+
+simulated function IGPlus_HideBall() {
+	bHidden = true;
+	LightType = LT_None;
+}
+
+simulated function IGPlus_ShowBall() {
+	bHidden = false;
+	if (Level.bDropDetail == false)
+		LightType = default.LightType;
+}
+
+// Server: where the owner's screen has this ball for the owner's move being
+// processed: its age since the shot in the owner's own timestamps, along its
+// straight path. Not the live ball, which is off by up to a server frame of
+// packet timing. False when the owner's screen has it stopped at a wall it
+// hasn't reached here yet: it is gone at that age.
+function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
+	local float Live, Age;
+	local bool bSeen;
+
+	Loc = Location;
+	bSeen = true;
+	// Input replication stamps a packet's inputs with its newest time: test live.
+	if (P.IGPlus_EnableInputReplication == false) {
+		Live = Level.TimeSeconds - IGPlus_FireTime;
+		// ponytail: +-0.2s bounds how far a client clock can move the ball
+		Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS, FMax(0.0, Live - 0.2), Live + 0.2);
+		Loc = IGPlus_FireLoc + Velocity * Age;
+		bSeen = Age <= Live || FastTrace(Loc, Location);
+	}
+	// The owner fired it from a round trip of lift travel behind the server's
+	// spot (a moving lift): the owner's beam leaves from the owner's own spot
+	// (ST_ShockRifle.TraceFireAt), so the ball is tested where the owner's
+	// screen has it too.
+	Loc -= IGPlus_FireLiftLead;
+	return bSeen;
+}
+
+// Server: the owner's own beam, with the conditions under which the owner's
+// client draws its own combos (ST_ShockRifle.ClientTraceFire).
+function bool IGPlus_OwnerMayDrawCombo() {
+	local bbPlayer P;
+
+	P = bbPlayer(Instigator);
+	return P != None && IGPlus_ComboBy == P && P.RemoteRole == ROLE_AutonomousProxy
+		&& GetWeaponSettings() != None && GetWeaponSettings().bEnablePingCompensation
+		&& P.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations
+		&& P.IGPlus_PredictiveShockCombos();
 }
 
 function SuperExplosion() {
 	local float ComboDamage, ComboRadius, ComboMomentum;
+	local IGPlus_OwnerComboRing Ring;
+	local vector OwnerLoc;
 
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
@@ -133,14 +315,34 @@ function SuperExplosion() {
 			Location);
 	}
 
-	Spawn(Class'ut_ComboRing',,'',Location, Instigator.ViewRotation);
-	PlaySound(ExploSound,,20.0,,2000,0.6);
+	if (IGPlus_OwnerMayDrawCombo()) {
+		// The owner's client plays the sound itself if it didn't draw this one.
+		Ring = Spawn(class'IGPlus_OwnerComboRing', Instigator,'', Location, Instigator.ViewRotation);
+		if (Ring != None) {
+			// The owner sees the ring where its beam met the ball on its own
+			// screen, which is where its client drew it.
+			IGPlus_OwnerSeesBall(bbPlayer(Instigator), OwnerLoc);
+			Ring.IGPlus_OwnerShift = OwnerLoc - Location;
+			Ring.PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
+		}
+	} else {
+		Spawn(Class'ut_ComboRing',,'',Location, Instigator.ViewRotation);
+		PlaySound(ExploSound,,20.0,,2000,0.6);
+	}
 
 	Destroy();
 }
 
 function Explode(vector HitLocation,vector HitNormal) {
+	local bbPlayer bbP;
+
 	PlaySound(ImpactSound, SLOT_Misc, 0.5,,, 0.5+FRand());
+	// Predicted self-knockback: its age is its travel over its speed.
+	bbP = bbPlayer(Instigator);
+	if (IGPlus_FireTS > 0.0 && Speed > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+		bbP.IGPlus_SKBeginCapture();
+	else
+		bbP = none;
 	if (WImp.WeaponSettings.bEnableEnhancedSplashShockProjectile) {
 		WImp.EnhancedHurtRadius(
 			self,
@@ -157,6 +359,8 @@ function Explode(vector HitLocation,vector HitNormal) {
 			WImp.WeaponSettings.ShockProjectileMomentum * MomentumTransfer,
 			Location);
 	}
+	if (bbP != none)
+		bbP.IGPlus_SKEndCaptureFor(self, IGPlus_FireTS + VSize(Location - IGPlus_FireLoc) / Speed, Location);
 	if (WImp.WeaponSettings.ShockProjectileDamage > 60)
 		Spawn(class'ut_RingExplosion3',,, HitLocation+HitNormal*8,rotator(HitNormal));
 	else

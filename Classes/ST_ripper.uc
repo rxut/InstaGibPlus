@@ -144,12 +144,32 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 	DetPlayFireAnim(bAlt);
 	if (BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
 		SpawnClientSideRazorAt(bAlt, StepView, StepLoc);
+	if (bAlt)
+		BP.IGPlus_SKPredictRipperAlt(IGPlus_ShotStart(StepView, StepLoc), StepView);
+}
+
+// Client: where our shot leaves the gun, as the server spawns it.
+simulated function vector IGPlus_ShotStart(rotator Aim, vector Loc) {
+	local vector X, Y, Z;
+	local float Hand;
+
+	Hand = 1.0;
+	if (PlayerPawn(Owner) != None)
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	GetAxes(Aim, X, Y, Z);
+	if (bHideWeapon)
+		return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 }
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
+	local vector LiftLead;
 
 	PawnOwner = Pawn(Owner);
+	// Push-Safe Aim on a moving lift: from where the shooter's screen had it.
+	if (bbPlayer(Owner) != None)
+		LiftLead = bbPlayer(Owner).IGPlus_LiftAimLead();
 
 	AmmoType.UseAmmo(1);
 
@@ -162,7 +182,7 @@ function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	// (see ST_ShockRifle.HandleDetServerFire).
 	if (!bChangeWeapon && !IsInState('DownWeapon'))
 		DetPlayFireAnim(bAlt);
-	SpawnServerRazorAt(bAlt, StepLoc, StepView, StepView);
+	SpawnServerRazorAt(bAlt, StepLoc - LiftLead, StepView, StepView, LiftLead != vect(0,0,0));
 }
 
 function PostBeginPlay()
@@ -193,12 +213,13 @@ function SpawnServerRazorAlt()
 	SpawnServerRazorAt(true, Owner.Location, AimRot, PawnOwner.ViewRotation);
 }
 
-function SpawnServerRazorAt(bool bAlt, vector ShotLoc, rotator AimRot, rotator OffsetRot)
+function SpawnServerRazorAt(bool bAlt, vector ShotLoc, rotator AimRot, rotator OffsetRot, optional bool bLiftAim)
 {
 	local Vector Start, X, Y, Z;
 	local Pawn PawnOwner;
 	local Projectile Razor;
 	local bbPlayer bbP;
+	local IGPlus_LiftShot LS;
 
 	PawnOwner = Pawn(Owner);
 	bbP = bbPlayer(PawnOwner);
@@ -215,10 +236,22 @@ function SpawnServerRazorAt(bool bAlt, vector ShotLoc, rotator AimRot, rotator O
 		Razor = Spawn(class'ST_Razor2Alt', Owner,, Start, AimRot);
 	else
 		Razor = Spawn(class'ST_Razor2', Owner,, Start, AimRot);
+	if (bbP != None)
+		bbP.IGPlus_DebugProjStart("Ripper", Start);
+	// Predicted self-knockback anchors the alt blade's push to this step.
+	if (bAlt && ST_Razor2Alt(Razor) != None && bbP != None && bbP.IGPlus_PredictedSelfKnockback && IsDetActive()) {
+		ST_Razor2Alt(Razor).IGPlus_FireTS = bbP.CurrentTimeStamp;
+		ST_Razor2Alt(Razor).IGPlus_SpawnLoc = Razor.Location;
+		ST_Razor2Alt(Razor).IGPlus_Speed = VSize(Razor.Velocity);
+	}
+	if (bLiftAim && bbP != None)
+		LS = class'IGPlus_LiftShot'.static.Begin(Razor, bbP);
 
 	if (bbP != None && IsPingCompEnabled()) {
 		WImp.SimulateProjectile(Razor, bbP.PingAverage);
 	}
+	if (LS != None)
+		LS.Hold();
 }
 
 function Finish()
@@ -371,7 +404,11 @@ simulated function SpawnClientSideRazorAt(bool bAlt, rotator ShotView, vector Sh
 		Start = ShotLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 	else
 		Start = ShotLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-	Start.Z += bbP.GetMoverFireZOffset();
+	// Push-Safe Aim: from where we see ourselves, also on a lift (the
+	// server's leave from there too).
+	if (bbP.IGPlus_PushSafeAim == false || IsDetActive() == false)
+		Start.Z += bbP.GetMoverFireZOffset();
+	bbP.IGPlus_DebugProjStart("Ripper", Start);
 
 	if (bAlt) {
 		AltDummy = Spawn(class'ST_Razor2Alt', Owner,, Start, ShotView);

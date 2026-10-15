@@ -104,6 +104,39 @@ var float IGPlus_DetLastClockLogTS;
 // (it learns of the switch one round trip later). Set when the switch is seen.
 var float IGPlus_DetInFlightSlack;
 var float IGPlus_DetLastRejectLogTS;
+// Predicted switching (Docs/predicted-weapon-switching.md). Both sides run the
+// same timeline from the press timestamp TS (move clock):
+//   holster = max(TS, post-shot hold), equip = holster + down, gate = equip + select.
+var bool IGPlus_PredictedSwitching;   // server setting, replicated to the owner
+var bool IGPlus_PredictedTranslocation; // server setting, replicated to the owner
+var bool IGPlus_PredictedSelfKnockback; // server setting, replicated to the owner
+var bool IGPlus_PushSafeAim;            // server setting, replicated to the owner
+var bool IGPlus_DetTranslocator;        // server setting, replicated to the owner
+var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
+var float IGPlus_PredComboTS;           // client: our last drawn shock combo (IGPlus_OwnerComboRing)
+var vector IGPlus_PredComboLoc;
+var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
+var bool IGPlus_PSActive;
+var int IGPlus_PSSerial;
+var Weapon IGPlus_PSFrom;
+var Weapon IGPlus_PSTarget;
+var float IGPlus_PSTS;
+var float IGPlus_PSHolsterTS;
+var float IGPlus_PSEquipTS;
+var float IGPlus_PSGate;
+var float IGPlus_PSPrevGate;          // client: From's gate, restored on cancel
+var bool bPSHolsterStarted;
+var bool bPSForcing;                  // server: the timeline's own ChangedWeapon
+var Weapon IGPlus_PSKeep;             // client: weapon the timeline put up (vs stale echoes)
+var Weapon IGPlus_PSFiltFrom[8];      // client: server ClientPutDowns to drop (see IGPlus_PSFilterDrops)
+var Weapon IGPlus_PSFiltT1[8];
+var Weapon IGPlus_PSFiltT2[8];
+var float IGPlus_PSFiltUntil[8];
+// Predicted switching, phase 1 (server, log only): client predictions vs outcome.
+var int IGPlus_PredSwitchTotal;
+var int IGPlus_PredSwitchClientMatch;
+var int IGPlus_PredSwitchLogicMatch;
+var float IGPlus_PredSwitchLastLogTS;
 // Client: frame timestamp of the latest locally predicted Det shot.
 var float IGPlus_DetClientShotTS;
 var float IGPlus_DetLastShotTS;
@@ -217,6 +250,26 @@ var vector IGPlus_PreAdjustLocation;
 var vector IGPlus_AdjustLocationOffset;
 var float IGPlus_AdjustLocationAlpha;
 var bool IGPlus_AdjustLocationOverride;
+// Camera-only correction smoothing (Settings.bCameraCorrectionSmoothing):
+// corrections land in the simulation at once, the camera eases after them.
+var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
+var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
+var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving lift (always eased)
+var float IGPlus_LiftExitTS;                // when we last left a moving lift
+var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
+var Actor IGPlus_DbgLastBase;               // debug: base before the last change
+var vector IGPlus_OwnLiftShotShift;         // server: a shot leaves from our screen's spot on a lift (TraceShot skips the real lift)
+var bool IGPlus_DbgLiftRising;
+var float IGPlus_DbgLiftExitZ;
+var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
+
+// Push-Safe Aim (bEnablePushSafeAim), server side: pushes the client has not
+// seen yet (move timeline), and where the client last said it was.
+var float IGPlus_PSAPushTS[8];
+var vector IGPlus_PSAPushDV[8];
+var int IGPlus_PSAPushNext;
+var vector IGPlus_PSALastClientLoc;
+var float IGPlus_PSALastClientTS;
 
 struct ServerMoveParams {
 	var vector Location;
@@ -228,6 +281,12 @@ var bool bHaveReceivedServerMove;
 var ServerMoveParams LastServerMoveParams;
 var int TlocCounter;
 var vector TlocPrevLocation;
+var int IGPlus_PreAdjustTlocCounter;          // TlocCounter before the first CAP of an update
+var ST_TranslocatorTarget IGPlus_TlocHiddenDisc; // disc hidden by a predicted translocation
+var float IGPlus_TlocHiddenUntil;
+var float IGPlus_TlocHideArrivingUntil; // our local disc was used: hide the server's when it arrives
+var float IGPlus_TlocLastPressTS;       // last translocator fire/alt press (move timeline)
+var float IGPlus_TlocPredictTS;         // when a predicted translocation used the disc up
 var bool IGPlus_DidTranslocate;
 var bool IGPlus_NotifiedTranslocate;
 var bool IGPlus_WantCAP;
@@ -311,6 +370,14 @@ var IGPlus_WeaponImplementationBase IGPlus_WImpBase;
 	const IGPLUS_DetWEAPON_Eightball = 5;
 	const IGPLUS_DetWEAPON_SniperRifle = 6; // wire format caps indices at 7 (3 bits)
 
+	// Predicted self-knockback: what pushed us. Splashes are recomputed from
+	// where we are when they land, the hammer's push is direct.
+	const IGPLUS_SK_ROCKET = 0;
+	const IGPLUS_SK_FLAKSLUG = 1;
+	const IGPLUS_SK_SHOCKBALL = 2;
+	const IGPLUS_SK_RIPPERALT = 3;
+	const IGPLUS_SK_HAMMER = 4;
+
 var Utilities Utils;
 var StringUtils StringUtils;
 var bbPlayerStatics PlayerStatics;
@@ -332,6 +399,30 @@ var bool IGPlus_ForcedSettings_Applied;
 var IGPlus_DamageEvent IGPlus_DamageEvent_First;
 var IGPlus_DamageEvent IGPlus_DamageEvent_Latest;
 var IGPlus_DamageEvent IGPlus_DamageEvent_FreeList;
+
+// Predicted rocket self-knockback (bEnablePredictedSelfKnockback). An own
+// rocket's push lands on the shooter's move timeline at fire step + rocket age,
+// at the end of the first move at or past that time, on both machines. The
+// server queues real explosions here, the client queues predicted ones.
+struct IGPlus_SelfKnockback {
+	var float TargetTS;
+	var int RocketIndex;
+	var vector HitLocation;
+	var vector SourceLocation;
+	var float SourceRadius;
+	var float Radius;
+	var float Momentum;
+	var bool bEnhanced;
+	var bool bHasFallback;
+	var vector FallbackPush; // server: what TakeDamage computed at the explosion; hammer: the push
+	var byte Kind;           // IGPLUS_SK_*
+};
+var IGPlus_SelfKnockback IGPlus_SKQueue[16];
+var ST_HitTestHelper IGPlus_SKBall; // client: stands in for our own shock ball (IGPlus_SKFly)
+var int IGPlus_SKQueueCount;
+var bool IGPlus_SKCapturing;
+var bool IGPlus_SKCapturedHit;
+var vector IGPlus_SKCaptured;
 var float IGPlus_DamageEvent_PrevHealth;
 var bool IGPlus_DamageEvent_ShowOnDeath;
 
@@ -480,6 +571,7 @@ var IGPlus_DataBuffer IGPlus_InputReplicationBuffer;
 var float IGPlus_LastInputSendTime;
 var float MinDodgeClickTime;
 var IGPlus_InputLogFile IGPlus_InputLogFile;
+var IGPlus_DebugLogFile IGPlus_DebugLogFile; // client: debug lines to a file while enableDebugData is on
 var bool bTraceInput;
 
 var IGPlus_NetStats NetStatsElem;
@@ -500,6 +592,7 @@ struct ClientWeaponSettings {
 	var bool bBioUseClientSideAnimations;
 	var bool bShockBeamUseClientSideAnimations;
 	var bool bShockProjectileUseClientSideAnimations;
+	var bool bPredictiveShockCombos;
 	var bool bPulseUseClientSideAnimations;
 	var bool bRipperUseClientSideAnimations;
 	var bool bFlakUseClientSideAnimations;
@@ -532,6 +625,12 @@ replication
 		IGPlus_EnableWarpFix,
 		IGPlus_WarpFixDelay,
 		IGPlus_UseFastWeaponSwitch,
+		IGPlus_PredictedSwitching,
+		IGPlus_PredictedTranslocation,
+		IGPlus_PredictedSelfKnockback,
+		IGPlus_PushSafeAim,
+		IGPlus_DetTranslocator,
+		IGPlus_PredictedDiscBoost,
 		KillCamDelay,
 		KillCamDuration,
 		LastKiller,
@@ -608,6 +707,10 @@ replication
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
 		xxClientSwitchPending,
+		xxClientPSReject,
+		xxClientPSResume,
+		xxClientPSTimes,
+		xxClientPSFilterDone,
 		xxClientDetEntryGate,
 		xxSetTeleRadius,
 		xxSetTimes,
@@ -657,6 +760,8 @@ replication
 		xxServerMoveDead;
 
 	reliable if ( Role < ROLE_Authority )
+		xxServerWeaponCommand,
+		xxServerPredictedSwitch,
 		DropFlag,
 		Go,
 		Hold,
@@ -834,6 +939,10 @@ simulated event Destroyed() {
 
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.StopLog();
+	if (IGPlus_DebugLogFile != none)
+		IGPlus_DebugLogFile.Destroy();
+	if (IGPlus_SKBall != none)
+		IGPlus_SKBall.Destroy();
 	super.Destroyed();
 }
 
@@ -1231,6 +1340,7 @@ simulated event PostNetBeginPlay()
 	ClientWeaponSettingsData.bBioUseClientSideAnimations = Settings.bBioUseClientSideAnimations;
 	ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = Settings.bShockBeamUseClientSideAnimations;
 	ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = Settings.bShockProjectileUseClientSideAnimations;
+	ClientWeaponSettingsData.bPredictiveShockCombos = Settings.bPredictiveShockCombos;
 	ClientWeaponSettingsData.bPulseUseClientSideAnimations = Settings.bPulseUseClientSideAnimations;
 	ClientWeaponSettingsData.bRipperUseClientSideAnimations = Settings.bRipperUseClientSideAnimations;
 	ClientWeaponSettingsData.bFlakUseClientSideAnimations = Settings.bFlakUseClientSideAnimations;
@@ -1371,6 +1481,12 @@ event Possess()
 		IGPlus_AlwaysRenderFlagCarrier = zzUTPure.Settings.bAlwaysRenderFlagCarrier;
 		IGPlus_AlwaysRenderDroppedFlags = zzUTPure.Settings.bAlwaysRenderDroppedFlags;
 		IGPlus_UseFastWeaponSwitch = zzUTPure.Settings.bUseFastWeaponSwitch;
+		IGPlus_PredictedSwitching = zzUTPure.Settings.PredictedSwitchingActive();
+		IGPlus_PredictedTranslocation = zzUTPure.Settings.PredictedTranslocationActive();
+		IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
+		IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
+		IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
+		IGPlus_PredictedDiscBoost = zzUTPure.Settings.bEnablePredictedDiscBoost;
 		IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
 		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -1762,6 +1878,12 @@ function ClientDebugMessage(coerce string S, optional name Type, optional bool b
 
 	if (bDrawDebugData) {
 		ClientMessage("["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S, Type, bBeep);
+		if (Level.NetMode != NM_DedicatedServer) {
+			if (IGPlus_DebugLogFile == none)
+				IGPlus_DebugLogFile = Spawn(class'IGPlus_DebugLogFile');
+			if (IGPlus_DebugLogFile != none)
+				IGPlus_DebugLogFile.WriteLine("["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S);
+		}
 	} else {
 		zzPrevClientMessage = "["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S;
 		ClientDemoMessage(zzPrevClientMessage, Type, bBeep);
@@ -2175,14 +2297,19 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 
 	// Higor: keep track of Position prior to adjustment
 	// and stop current smoothed adjustment (if in progress).
-	if (bUpdatePosition == false)
+	if (bUpdatePosition == false) {
 		IGPlus_PreAdjustLocation = Location;
+		IGPlus_PreAdjustTlocCounter = TlocCounter;
+	}
 	if ( VSize(IGPlus_AdjustLocationOffset) > 0 )
 	{
 		IGPlus_AdjustLocationAlpha = 0;
 		IGPlus_AdjustLocationOffset = vect(0,0,0);
 	}
 	IGPlus_AdjustLocationOverride = (TlocCounter != (MiscData&3));
+	// The server translocated us: same as above, no step smoothing.
+	if (IGPlus_AdjustLocationOverride)
+		IgnoreZChangeTicks = 2;
 
 	SetPhysics(GetPhysics((MiscData >> 2) & 0xF));
 	TlocCounter = MiscData & 3;
@@ -2191,8 +2318,10 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 	if ( Mover(NewBase) != None )
 		NewLoc += NewBase.Location;
 
-	if (GetStateName() != NewState)
+	if (GetStateName() != NewState) {
+		IGPlus_CameraCorrectionSnap = true;
 		GotoState(newState);
+	}
 
 	Carried = CarriedDecoration;
 	OldLoc = Location;
@@ -2231,11 +2360,18 @@ function xxFakeCAP(float TimeStamp)
 	IGPlus_AdjustLocationAlpha = 0;
 	IGPlus_AdjustLocationOffset = vect(0,0,0);
 
+	// A real CAP later this frame skips this; keep it current for it.
+	if (bUpdatePosition == false) {
+		IGPlus_PreAdjustLocation = Location;
+		IGPlus_PreAdjustTlocCounter = TlocCounter;
+	}
 	bUpdatePosition = true;
 }
 
 function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 	local int MergeCount, MoveIndex;
+	local IGPlus_SelfKnockback K;
+	local vector Push;
 	local float dt;
 	local bool bDoJump;
 	local EDodgeDir DoDodge;
@@ -2245,6 +2381,9 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 	SetRotation(M.Rotation);
 	ViewRotation = M.IGPlus_SavedViewRotation;
 	bDodging = M.SavedDodging;
+
+	if (M.bIGPlusTloc)
+		IGPlus_ReplayTranslocate(M.IGPlusTlocDest);
 
 	MergeCount = M.IGPlus_MergeCount + 1;
 	dt = M.Delta / MergeCount;
@@ -2263,6 +2402,20 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 		bDoDuck = (MoveIndex < M.DuckChangeIndex) ^^ M.bDuck;
 
 		IGPlus_MoveAutonomous(dt, bDoRun, bDoDuck, bDoJump, DoDodge, M.Acceleration, rot(0,0,0));
+	}
+
+	if (M.IGPlus_LiftExitShift != vect(0,0,0))
+		MoveSmooth(M.IGPlus_LiftExitShift);
+	Velocity.Z += M.IGPlus_LiftExitVelZ;
+
+	for (MoveIndex = 0; MoveIndex < M.IGPlus_SKPushCount; MoveIndex++) {
+		if (M.IGPlus_SKKind[MoveIndex] == IGPLUS_SK_HAMMER) {
+			IGPlus_SKAddVelocity(M.IGPlus_SKPush[MoveIndex]);
+			continue;
+		}
+		IGPlus_SKPredictedEntry(M.IGPlus_SKHit[MoveIndex], K, M.IGPlus_SKKind[MoveIndex]);
+		if (IGPlus_SKCompute(K, Push))
+			IGPlus_SKAddVelocity(Push);
 	}
 
 	M.IGPlus_SavedLocation = Location;
@@ -2286,6 +2439,311 @@ function IGPlus_FreeAcknowledgedMoves(float TimeStamp) {
 	SavedMoves = CurrentMove.NextMove;
 	CurrentMove.NextMove = FreeMoves;
 	FreeMoves = FirstMove;
+}
+
+// Camera-only correction smoothing. Delta is where the view was minus where
+// the corrected simulation now is. Teleports (translocation, respawn) and
+// anything too large to be a smoothing case snap instead.
+function IGPlus_CameraCorrectionAdd(vector Delta) {
+	IGPlus_CameraCorrectionOffset += Delta;
+	// Shots leave from the real position, so while the camera lags they land
+	// off the crosshair by the offset. 50uu matches the old smoothing limit:
+	// anything bigger snaps so aim is right at once.
+	if (IGPlus_AdjustLocationOverride || IGPlus_CameraCorrectionSnap
+		|| VSize(IGPlus_CameraCorrectionOffset) > 50
+		|| Settings.CameraCorrectionSmoothingTime <= 0.0
+	) {
+		IGPlus_CameraCorrectionOffset = vect(0,0,0);
+		if (VSize(Delta) > 1)
+			NetStatsElem.bInstantRelocation = true;
+	}
+	IGPlus_CameraCorrectionSnap = false;
+}
+
+simulated function IGPlus_CameraCorrectionDecay(float DeltaTime) {
+	if (IGPlus_LiftExitCamOffset != vect(0,0,0)) {
+		// ~95% gone after IGPLUS_LIFT_EXIT_EASE seconds
+		IGPlus_LiftExitCamOffset *= Exp(-3.0 * (DeltaTime / Level.TimeDilation) / IGPLUS_LIFT_EXIT_EASE);
+		if (VSize(IGPlus_LiftExitCamOffset) < 0.05)
+			IGPlus_LiftExitCamOffset = vect(0,0,0);
+	}
+	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
+		return;
+
+	if (Settings.bCameraCorrectionSmoothing == false || Settings.CameraCorrectionSmoothingTime <= 0.0) {
+		IGPlus_CameraCorrectionOffset = vect(0,0,0);
+		return;
+	}
+
+	// ~95% gone after CameraCorrectionSmoothingTime seconds
+	IGPlus_CameraCorrectionOffset *= Exp(-3.0 * (DeltaTime / Level.TimeDilation) / Settings.CameraCorrectionSmoothingTime);
+	if (VSize(IGPlus_CameraCorrectionOffset) < 0.05)
+		IGPlus_CameraCorrectionOffset = vect(0,0,0);
+}
+
+// Moves the first-person camera by the remaining correction offset, stopping
+// short of walls so the view never ends up inside geometry.
+simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
+	IGPlus_CameraCorrectionApplied = vect(0,0,0);
+	if (Settings.bCameraCorrectionSmoothing == false)
+		IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	if (IGPlus_CameraCorrectionOffset == vect(0,0,0) && IGPlus_LiftExitCamOffset == vect(0,0,0))
+		return;
+
+	IGPlus_CameraCorrectionApplied = IGPlus_ClippedCameraOffset(CameraLocation);
+	CameraLocation += IGPlus_CameraCorrectionApplied;
+}
+
+// Camera offset as rendered from Eye: the remaining correction (and lift exit
+// ease), stopped short of walls.
+simulated function vector IGPlus_ClippedCameraOffset(vector Eye) {
+	local vector Offset, Desired, HitLocation, HitNormal;
+
+	Offset = IGPlus_CameraCorrectionOffset + IGPlus_LiftExitCamOffset;
+	Desired = Eye + Offset;
+	if (Trace(HitLocation, HitNormal, Desired, Eye, false) != none)
+		Desired = HitLocation - 2.0 * Normal(Offset);
+	return Desired - Eye;
+}
+
+// --- Predicted lift exit --------------------------------------------------------
+
+// A rider's client has its lift a round trip of travel behind the server's
+// (lift updates arrive a one-way late, moves reach the server a one-way late),
+// so the server has the rider that much further along the lift's path. While
+// riding, positions are compared on the lift and agree. On leaving it the
+// server's correction arrives a ping later as one jump (90uu measured).
+
+const IGPLUS_LIFT_EXIT_EASE = 0.1;
+
+// Client: how far Lift moves over the next Ahead seconds of its current
+// keyframe move (eased like the engine's physMovingBrush), and how much faster
+// it is going then. False when it is not moving here.
+simulated function bool IGPlus_LiftAhead(Mover Lift, float Ahead, out vector Lead, out vector VelLead) {
+	local vector Path;
+	local float A0, A1, G0, G1, D0, D1;
+
+	if (Lift == None || Lift.Physics != PHYS_MovingBrush || Lift.bInterpolating == false || Lift.PhysRate <= 0.0)
+		return false;
+
+	Path = Lift.BasePos + Lift.KeyPos[Lift.KeyNum] - Lift.OldPos;
+	A0 = FClamp(Lift.PhysAlpha, 0.0, 1.0);
+	A1 = FClamp(Lift.PhysAlpha + Lift.PhysRate * Ahead, 0.0, 1.0);
+	if (Lift.MoverGlideType == MV_GlideByTime) {
+		G0 = A0 * A0 * (3.0 - 2.0 * A0);
+		G1 = A1 * A1 * (3.0 - 2.0 * A1);
+		D0 = 6.0 * A0 * (1.0 - A0);
+		D1 = 6.0 * A1 * (1.0 - A1);
+	} else {
+		G0 = A0;
+		G1 = A1;
+		D0 = 1.0;
+		D1 = 1.0;
+		if (A1 >= 1.0)
+			D1 = 0.0;
+	}
+	Lead = Path * (G1 - G0);
+	VelLead = Path * Lift.PhysRate * (D1 - D0);
+	return true;
+}
+
+// Client, after the move in which we left Lift (moving here): go where the
+// server has us, ease the camera over it, and keep it in the move for replays.
+simulated function IGPlus_LeftMovingLift(Mover Lift, IGPlus_SavedMove Move) {
+	local vector Lead, VelLead, Before;
+
+	IGPlus_LiftExitTS = Level.TimeSeconds;
+	if (IGPlus_LiftAhead(Lift, float(PingAverage) * 0.001 * Level.TimeDilation, Lead, VelLead) == false)
+		return;
+	// Down: our lift is still above where the server has us, in the way. The
+	// server's correction is eased on the camera instead (ClientUpdatePosition).
+	if (Lead.Z < 0.0)
+		return;
+	// Walked onto a floor: the floor decides our height on both sides.
+	if (Physics != PHYS_Falling)
+		return;
+
+	Before = Location;
+	MoveSmooth(Lead);
+	Move.IGPlus_LiftExitShift = Location - Before;
+	// A jump (or a dodge that keeps Z momentum) took the lift's speed: the
+	// server's lift is further along, at another speed.
+	if (Move.bPressedJump
+		|| (bDodgePreserveZMomentum && Move.DodgeMove > DODGE_None && Move.DodgeMove < DODGE_Active))
+		Move.IGPlus_LiftExitVelZ = VelLead.Z;
+	Velocity.Z += Move.IGPlus_LiftExitVelZ;
+
+	IGPlus_LiftExitCamOffset -= Move.IGPlus_LiftExitShift;
+	IgnoreZChangeTicks = 2; // not a step up: no eye-height smoothing on top
+	ClientDebugMessage("Left a moving lift: moved "$int(Move.IGPlus_LiftExitShift.Z)$"uu to the server's spot, speed "$int(Move.IGPlus_LiftExitVelZ));
+}
+
+// Debug (enableDebugData): stepping on or off a lift, on each side. A lift
+// that waits for riders starts again when one lands on it.
+singular event BaseChange() {
+	local string Side;
+
+	if (bDrawDebugData && (Mover(Base) != None || Mover(IGPlus_DbgLastBase) != None)) {
+		Side = "server";
+		if (Level.NetMode == NM_Client)
+			Side = "client";
+		ClientDebugMessage("Base ("$Side$"): "$IGPlus_DbgLastBase$" -> "$Base$" at Z="$int(Location.Z)
+			$" velZ="$int(Velocity.Z)$" "$GetEnum(enum'EPhysics', Physics));
+	}
+	IGPlus_DbgLastBase = Base;
+	super.BaseChange();
+}
+
+// Debug (enableDebugData): where we left a moving lift and the top of the
+// jump, on each side (the server decides the jump from our inputs).
+simulated function IGPlus_DebugLiftJumpTop(Actor OldBase) {
+	local string Side;
+
+	if (bDrawDebugData == false)
+		return;
+	if (Mover(OldBase) != None && OldBase.Velocity != vect(0,0,0) && Base != OldBase) {
+		IGPlus_DbgLiftJump = true;
+		IGPlus_DbgLiftExitZ = Location.Z;
+		IGPlus_DbgLiftRising = Velocity.Z > 0.0;
+		return;
+	}
+	if (IGPlus_DbgLiftJump == false)
+		return;
+	if (Physics != PHYS_Falling) {
+		IGPlus_DbgLiftJump = false;
+		return;
+	}
+	if (IGPlus_DbgLiftRising && Velocity.Z <= 0.0) {
+		IGPlus_DbgLiftJump = false;
+		Side = "server";
+		if (Level.NetMode == NM_Client)
+			Side = "client";
+		ClientDebugMessage("Lift jump ("$Side$"): left the lift at Z="$int(IGPlus_DbgLiftExitZ)$", top Z="$int(Location.Z));
+		return;
+	}
+	IGPlus_DbgLiftRising = Velocity.Z > 0.0;
+}
+
+// Client: the server's corrections for leaving a lift are still arriving.
+simulated function bool IGPlus_InLiftExitWindow() {
+	return IGPlus_LiftExitTS > 0.0
+		&& Level.TimeSeconds - IGPlus_LiftExitTS < PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.3;
+}
+
+// Push-Safe Aim, client: the view that sends a shot from the real position
+// through the point under the crosshair of the (offset) rendered camera. The
+// unshifted shot would hit D*Dir + Offset from the real origin.
+simulated function bool IGPlus_PSAAimView(out rotator AimView) {
+	local vector Dir, Eye, Offset, HitLocation, HitNormal;
+	local float D;
+
+	Eye = Location + EyeHeight * vect(0,0,1) + WalkBob;
+	Offset = IGPlus_ClippedCameraOffset(Eye);
+	if (Offset == vect(0,0,0))
+		return false;
+
+	Dir = vector(ViewRotation);
+	if (Trace(HitLocation, HitNormal, Eye + Offset + 30000.0 * Dir, Eye + Offset, true) == none)
+		return false; // nothing under the crosshair: parallel is right
+
+	D = (HitLocation - (Eye + Offset)) dot Dir;
+	if (D < 50.0)
+		return false;
+
+	AimView = rotator(D * Dir + Offset);
+	AimView.Roll = ViewRotation.Roll;
+	return true;
+}
+
+// Push-Safe Aim, server: a push we applied that the client hasn't seen yet,
+// stamped on the move timeline.
+function IGPlus_PSANotePush(vector DV) {
+	IGPlus_PSAPushTS[IGPlus_PSAPushNext] = CurrentTimeStamp;
+	IGPlus_PSAPushDV[IGPlus_PSAPushNext] = DV;
+	IGPlus_PSAPushNext = (IGPlus_PSAPushNext + 1) % arraycount(IGPlus_PSAPushTS);
+}
+
+simulated function bool IGPlus_PSAClear(vector A, vector B) {
+	local vector HitLocation, HitNormal;
+	return Trace(HitLocation, HitNormal, A, B, false) == none;
+}
+
+// Push-Safe Aim, server: where a Det shot leaves from. The client fired from
+// the start of this (single-frame) move. Use that when the gap to our
+// position is the drift of pushes it hadn't seen (each push's speed change
+// times its age), and the line between both bodies and eyes is clear.
+function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int MergeCount) {
+	local vector ClientStart, Gap, Expected;
+	local float ShotTS, Age, MaxAge, Drift, Window, Slack;
+	local int i;
+
+	if (IGPlus_PushSafeAim == false || MergeCount != 0 || Mover(SM.ClientBase) != none)
+		return Location;
+
+	ClientStart = SM.ClientLocation - SM.ClientVelocity * SM.MoveDeltaTime;
+	if (SM.ClientBase != none)
+		ClientStart += SM.ClientBase.Location;
+	// Exact when the previous move (and nothing between) reported it.
+	if (IGPlus_PSALastClientTS == PrevTS
+		&& Abs(SM.TimeStamp - PrevTS - SM.MoveDeltaTime) < 0.5 * SM.MoveDeltaTime
+		&& VSize(IGPlus_PSALastClientLoc - ClientStart) < 4.0)
+		ClientStart = IGPlus_PSALastClientLoc;
+
+	Gap = Location - ClientStart;
+	if (VSize(Gap) < 0.5)
+		return Location;
+
+	ShotTS = SM.TimeStamp - SM.MoveDeltaTime;
+	Window = (FMax(0.1, PlayerReplicationInfo.Ping * 0.0015) + 0.1) * Level.TimeDilation;
+	for (i = 0; i < arraycount(IGPlus_PSAPushTS); i++) {
+		if (IGPlus_PSAPushTS[i] <= 0.0)
+			continue;
+		Age = ShotTS - IGPlus_PSAPushTS[i];
+		if (Age <= 0.0 || Age > Window)
+			continue;
+		Expected += IGPlus_PSAPushDV[i] * Age;
+		Drift += VSize(IGPlus_PSAPushDV[i]) * Age;
+		MaxAge = FMax(MaxAge, Age);
+	}
+	if (Drift <= 0.0)
+		return Location;
+
+	// ponytail: 25% of the drift, plus what ground vs air acceleration and
+	// gravity can add since the push, plus 8uu
+	Slack = 0.25 * Drift + 0.5 * (AccelRate + VSize(Region.Zone.ZoneGravity)) * MaxAge * MaxAge + 8.0;
+	if (VSize(Gap - Expected) > Slack)
+		return Location;
+
+	if (IGPlus_PSAClear(ClientStart, Location) == false
+		|| IGPlus_PSAClear(ClientStart + BaseEyeHeight * vect(0,0,1), Location + BaseEyeHeight * vect(0,0,1)) == false)
+		return Location;
+
+	return ClientStart;
+}
+
+// PlayerViewOffset change that moves the first-person weapon by WorldOffset.
+// CalcDrawOffset's scale depends on FOVFix and screen size (469), so probe it
+// instead of re-deriving it: the offset term is linear, X may scale apart
+// from Y/Z (FOVFix 2).
+simulated function vector IGPlus_WeaponViewOffsetFor(Weapon W, vector WorldOffset) {
+	local vector SavedPVO, D0, DX, DY, LocalOffset, Result;
+
+	SavedPVO = W.PlayerViewOffset;
+	D0 = W.CalcDrawOffset();
+	W.PlayerViewOffset = SavedPVO + vect(1,0,0);
+	DX = (W.CalcDrawOffset() - D0) << ViewRotation;
+	W.PlayerViewOffset = SavedPVO + vect(0,1,0);
+	DY = (W.CalcDrawOffset() - D0) << ViewRotation;
+	W.PlayerViewOffset = SavedPVO;
+
+	if (Abs(DX.X) < 0.0001 || Abs(DY.Y) < 0.0001)
+		return vect(0,0,0);
+
+	LocalOffset = WorldOffset << ViewRotation;
+	Result.X = LocalOffset.X / DX.X;
+	Result.Y = LocalOffset.Y / DY.Y;
+	Result.Z = LocalOffset.Z / DY.Y;
+	return Result;
 }
 
 function ClientUpdatePosition()
@@ -2327,25 +2785,46 @@ function ClientUpdatePosition()
 			IGPlus_ClientReplayMove(IGPlus_SavedMove(PendingMove));
 		}
 
-		// Higor: evaluate location adjustment and see if we should either
-		// - Discard it
-		// - Negate and process over a certain amount of time.
-		// - Keep adjustment as is (instant relocation)
-		// Deaod: On second thought, lets never discard adjustments.
-		IGPlus_AdjustLocationOffset = (Location - IGPlus_PreAdjustLocation);
-		AdjustDistance = VSize(IGPlus_AdjustLocationOffset);
-		IGPlus_AdjustLocationAlpha = 0;
-		if ((AdjustDistance < 50) &&
-			FastTrace(Location,IGPlus_PreAdjustLocation) &&
-			IGPlus_AdjustLocationOverride == false
+		// Replay redid predicted translocations: only a counter that still
+		// differs means the shown and corrected states are a teleport apart.
+		if (IGPlus_PredictedTranslocation)
+			IGPlus_AdjustLocationOverride = (TlocCounter != IGPlus_PreAdjustTlocCounter);
+
+		if (IGPlus_InLiftExitWindow() && IGPlus_AdjustLocationOverride == false
+			&& IGPlus_CameraCorrectionSnap == false
+			&& VSize(IGPlus_PreAdjustLocation - Location) < 150.0
 		) {
-			// Undo adjustment and re-enact smoothly
-			PostAdjustLocation = Location;
-			MoveSmooth(-IGPlus_AdjustLocationOffset);
-			IGPlus_AdjustLocationAlpha = FMax(0.1, PlayerReplicationInfo.Ping*0.001);
-			IGPlus_AdjustLocationOffset = (PostAdjustLocation - Location) / IGPlus_AdjustLocationAlpha;
+			// Just left a moving lift: what the prediction missed (all of it
+			// from a lift going down) eases on the camera instead of a snap.
+			IGPlus_AdjustLocationOffset = vect(0,0,0);
+			IGPlus_AdjustLocationAlpha = 0;
+			IGPlus_LiftExitCamOffset += IGPlus_PreAdjustLocation - Location;
+		} else if (Settings.bCameraCorrectionSmoothing) {
+			// Keep the corrected simulation; only the camera eases toward it.
+			IGPlus_AdjustLocationOffset = vect(0,0,0);
+			IGPlus_AdjustLocationAlpha = 0;
+			IGPlus_CameraCorrectionAdd(IGPlus_PreAdjustLocation - Location);
 		} else {
-			NetStatsElem.bInstantRelocation = true;
+			// Higor: evaluate location adjustment and see if we should either
+			// - Discard it
+			// - Negate and process over a certain amount of time.
+			// - Keep adjustment as is (instant relocation)
+			// Deaod: On second thought, lets never discard adjustments.
+			IGPlus_AdjustLocationOffset = (Location - IGPlus_PreAdjustLocation);
+			AdjustDistance = VSize(IGPlus_AdjustLocationOffset);
+			IGPlus_AdjustLocationAlpha = 0;
+			if ((AdjustDistance < 50) &&
+				FastTrace(Location,IGPlus_PreAdjustLocation) &&
+				IGPlus_AdjustLocationOverride == false
+			) {
+				// Undo adjustment and re-enact smoothly
+				PostAdjustLocation = Location;
+				MoveSmooth(-IGPlus_AdjustLocationOffset);
+				IGPlus_AdjustLocationAlpha = FMax(0.1, PlayerReplicationInfo.Ping*0.001);
+				IGPlus_AdjustLocationOffset = (PostAdjustLocation - Location) / IGPlus_AdjustLocationAlpha;
+			} else {
+				NetStatsElem.bInstantRelocation = true;
+			}
 		}
 	}
 
@@ -2489,6 +2968,9 @@ function TakeFallingDamage()
 // started the holster yet and stock client states would holster on their own.
 simulated function xxClientSwitchPending(Weapon PendW, float GuardSecs) {
 	if (Role == ROLE_Authority && Level.NetMode != NM_Standalone)
+		return;
+	// Our predicted switch owns the pending state until its equip point.
+	if (IGPlus_PSRunning())
 		return;
 	if (PendW == Weapon)
 		IGPlus_DetClientSwitchPending = none; // switch cancelled back to equipped
@@ -2699,9 +3181,12 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 	local float TargetTimeStamp;
 	local ST_MoverDummy MD;
 	local vector HistoricalLoc;
+	local float Lead;
 
 	if (Mover(Base) == None || PlayerReplicationInfo == None)
 		return 0.0;
+	if (bFullPing == false)
+		Lead = IGPlus_ClientLiftLeadZ();
 
 	if (bFullPing)
 		Latency = PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation;
@@ -2714,12 +3199,780 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 			TargetTimeStamp = Level.TimeSeconds - Latency;
 			HistoricalLoc = MD.GetHistoricalLocation(TargetTimeStamp);
 			ClientDebugMessage("MoverZOffset: history="$int(Base.Location.Z - HistoricalLoc.Z)$" linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping$" velZ="$int(Base.Velocity.Z));
-			return Base.Location.Z - HistoricalLoc.Z;
+			return Base.Location.Z - HistoricalLoc.Z + Lead;
 		}
 	}
 
-	ClientDebugMessage("MoverZOffset: fallback linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping);
-	return Base.Velocity.Z * Latency;
+	ClientDebugMessage("MoverZOffset: fallback linear="$int(Base.Velocity.Z * Latency)$" lift lead="$int(Lead)$" ping="$PlayerReplicationInfo.Ping);
+	return Base.Velocity.Z * Latency + Lead;
+}
+
+// Client: how much higher the server has us on a moving lift, a round trip
+// of its travel (IGPlus_LiftAhead). The server fires projectiles from there,
+// so our own copies start there too and fly the server's path.
+simulated function float IGPlus_ClientLiftLeadZ() {
+	local vector Lead, VelLead;
+
+	if (Level.NetMode == NM_Client && IGPlus_OnMovingLift()
+		&& IGPlus_LiftAhead(Mover(Base), float(PingAverage) * 0.001 * Level.TimeDilation, Lead, VelLead))
+		return Lead.Z;
+	return 0.0;
+}
+
+// Server: how far our lift is ahead along its path of where our client's
+// screen has it for the move being processed. The client sees the lift a
+// one-way late and its moves arrive a one-way late: a round trip of travel
+// (measured 40-90uu on a fast lift). Zero off a lift or on a resting one.
+function vector IGPlus_OwnLiftLead() {
+	local ST_MoverDummy MD;
+
+	if (Mover(Base) == None || zzUTPure == None || IGPlus_OwnLiftLagMs() <= 0)
+		return vect(0,0,0);
+	MD = zzUTPure.FindMoverDummy(Mover(Base));
+	if (MD == None)
+		return vect(0,0,0);
+	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(IGPlus_OwnLiftLagMs()) * 0.001 * Level.TimeDilation);
+}
+
+// Server, Push-Safe Aim: on a moving lift our projectile shots leave from
+// where our screen has us, this far behind (IGPlus_LiftShot). Zero otherwise.
+function vector IGPlus_LiftAimLead() {
+	local vector Lead;
+
+	if (IGPlus_PushSafeAim == false || GetWeaponSettings() == None || GetWeaponSettings().bEnablePingCompensation == false)
+		return vect(0,0,0);
+	Lead = IGPlus_OwnLiftLead();
+	if (VSize(Lead) <= 2.0)
+		return vect(0,0,0);
+	return Lead;
+}
+
+// Server: how long ago our screen's lift was where it is now, capped like the
+// rest of ping compensation.
+function int IGPlus_OwnLiftLagMs() {
+	return Min(PingAverage, GetWeaponSettings().PingCompensationMax);
+}
+
+// Where Start->End first meets Lift, nothing else counted. Our lift where our
+// screen has it is the real one moved back by its lead: a shot moved forward
+// by the lead meets the real one at the same spots. The real lift is never
+// moved for this: a rider set down on it again restarts a waiting lift.
+simulated function bool IGPlus_TraceMover(Mover Lift, vector Start, vector End, out vector HitLoc, out vector HitNormal, optional vector Extent) {
+	local Actor A;
+
+	foreach TraceActors(class'Actor', A, HitLoc, HitNormal, End, Start, Extent)
+		if (A == Lift)
+			return true;
+	return false;
+}
+
+// Debug (enableDebugData): where a projectile shot starts, on each side.
+simulated function IGPlus_DebugProjStart(string What, vector Start) {
+	local string Side;
+
+	if (bDrawDebugData == false)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	ClientDebugMessage(What$" ("$Side$") from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)
+		$" lift lead "$int(IGPlus_DebugLiftLead().Z));
+}
+
+simulated function vector IGPlus_DebugLiftLead() {
+	if (Level.NetMode == NM_Client)
+		return vect(0,0,0);
+	return IGPlus_OwnLiftLead();
+}
+
+// Client: on a lift that is moving here. The server's test of our own beam
+// against our own ball allows for the lift (ST_ShockProj.IGPlus_OwnerSeesBall),
+// but only roughly while it moves, so no combo is drawn early then.
+simulated function bool IGPlus_OnMovingLift() {
+	return Mover(Base) != None && Base.Velocity != vect(0,0,0);
+}
+
+// Client-side shock balls on our own timeline, with predicted combos
+// (ST_ShockProj); off is the old client-side animation.
+simulated function bool IGPlus_PredictiveShockCombos() {
+	return ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations
+		&& ClientWeaponSettingsData.bPredictiveShockCombos;
+}
+
+// --- Predicted rocket self-knockback -----------------------------------------
+
+simulated function IGPlus_SKQueueAdd(
+	float TargetTS,
+	int RocketIndex,
+	vector HitLocation,
+	vector SourceLocation,
+	float SourceRadius,
+	float Radius,
+	float Momentum,
+	bool bEnhanced,
+	bool bHasFallback,
+	vector FallbackPush,
+	optional byte Kind
+) {
+	local int i, j;
+
+	// Pushes due in the same move apply in (TargetTS, RocketIndex) order on
+	// both machines; sequential AddVelocity is order-sensitive.
+	if (IGPlus_SKQueueCount >= arraycount(IGPlus_SKQueue))
+		IGPlus_SKQueueCount = arraycount(IGPlus_SKQueue) - 1; // drop the latest-due entry
+
+	for (i = 0; i < IGPlus_SKQueueCount; i++)
+		if (TargetTS < IGPlus_SKQueue[i].TargetTS
+			|| (TargetTS == IGPlus_SKQueue[i].TargetTS && RocketIndex < IGPlus_SKQueue[i].RocketIndex))
+			break;
+
+	for (j = IGPlus_SKQueueCount; j > i; j--)
+		IGPlus_SKQueue[j] = IGPlus_SKQueue[j - 1];
+
+	IGPlus_SKQueue[i].TargetTS = TargetTS;
+	IGPlus_SKQueue[i].RocketIndex = RocketIndex;
+	IGPlus_SKQueue[i].HitLocation = HitLocation;
+	IGPlus_SKQueue[i].SourceLocation = SourceLocation;
+	IGPlus_SKQueue[i].SourceRadius = SourceRadius;
+	IGPlus_SKQueue[i].Radius = Radius;
+	IGPlus_SKQueue[i].Momentum = Momentum;
+	IGPlus_SKQueue[i].bEnhanced = bEnhanced;
+	IGPlus_SKQueue[i].bHasFallback = bHasFallback;
+	IGPlus_SKQueue[i].FallbackPush = FallbackPush;
+	IGPlus_SKQueue[i].Kind = Kind;
+	IGPlus_SKQueueCount++;
+}
+
+// Own-rocket push on this pawn at its current location: the instigator case
+// of EnhancedHurtRadius / HurtRadiusWithSelfDamage, then TakeDamage's self
+// scaling. False when the server's wraparound (blocked line) path would decide.
+simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push) {
+	local vector Delta, DeltaXY, Closest, Dir, MomentumDelta;
+	local float Dist, DamageScale, MomentumScale;
+
+	Push = vect(0,0,0);
+	// The hammer pushes us directly (already scaled).
+	if (K.Kind == IGPLUS_SK_HAMMER) {
+		Push = K.FallbackPush;
+		return true;
+	}
+	Delta = Location - K.HitLocation;
+	DeltaXY = Delta * vect(1,1,0);
+
+	if (K.bEnhanced) {
+		// CollChecker (cylinder of Radius at HitLocation) must touch us.
+		if (Abs(Delta.Z) > CollisionHeight + K.Radius || VSize(DeltaXY) > CollisionRadius + K.Radius)
+			return true;
+
+		Dir = Normal(Delta);
+		if (Abs(Delta.Z) <= CollisionHeight) {
+			Closest = K.HitLocation + Normal(DeltaXY) * (VSize(DeltaXY) - CollisionRadius);
+		} else if (VSize(DeltaXY) <= CollisionRadius) {
+			if (Delta.Z > 0.0)
+				Closest = K.HitLocation + FMax(Delta.Z - CollisionHeight, 0.0) * vect(0,0,1);
+			else
+				Closest = K.HitLocation + FMin(Delta.Z + CollisionHeight, 0.0) * vect(0,0,1);
+		} else {
+			// Same as EnhancedHurtRadius (uses the source's radius here).
+			Closest = Location + Dir * (K.SourceRadius / VSize(Dir * vect(1,1,0)));
+			if (Delta.Z > 0.0)
+				Closest.Z = Location.Z - CollisionHeight;
+			else
+				Closest.Z = Location.Z + CollisionHeight;
+		}
+
+		Dist = VSize(Closest - K.HitLocation);
+		if (Dist > K.Radius)
+			return true;
+
+		if (FastTrace(Location, K.SourceLocation) == false)
+			return false;
+
+		MomentumDelta = Location - K.HitLocation;
+		DamageScale = FMin(1.0 - Dist / K.Radius, 1.0);
+		if (DamageScale <= 0.0)
+			return true;
+		MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - CollisionRadius) / K.Radius, 0.0, 1.0);
+		Dir = Normal(MomentumDelta);
+		// The ripper's alt pushes no steeper than 0.45 up (Razor2Alt.BlowUp).
+		if (K.Kind == IGPLUS_SK_RIPPERALT)
+			Dir.Z = FMin(0.45, Dir.Z);
+		Push = MomentumScale * K.Momentum * Dir;
+	} else {
+		// VisibleCollidingActors: our cylinder within Radius, and visible from
+		// HitLocation.
+		if (VSize(Delta) >= K.Radius + CollisionRadius || FastTrace(Location, K.HitLocation) == false)
+			return true;
+
+		Dist = FMax(1, VSize(Delta));
+		DamageScale = 1.0 - FMax(0, (Dist - CollisionRadius) / K.Radius);
+		if (DamageScale <= 0.0)
+			return true;
+		Dir = Delta / Dist;
+		if (K.Kind == IGPLUS_SK_RIPPERALT)
+			Dir.Z = FMin(0.45, Dir.Z);
+		Push = DamageScale * K.Momentum * Dir;
+	}
+
+	// TakeDamage: own momentum is scaled by 0.6, then divided by mass.
+	Push *= 0.6;
+	if (Mass != 0)
+		Push = Push / Mass;
+	return true;
+}
+
+// ServerAddMomentum followed by Pawn.AddVelocity.
+simulated function IGPlus_SKAddVelocity(vector Push) {
+	if (Push == vect(0,0,0))
+		return;
+
+	if (Physics == PHYS_Walking) {
+		Push.Z = FMax(Push.Z, 0.4 * VSize(Push));
+		SetPhysics(PHYS_Falling);
+	}
+	if ((Velocity.Z > 380) && (Push.Z > 0))
+		Push.Z *= 0.5;
+	Velocity += Push;
+}
+
+// Applies every push due at or before TS. On the client, Move records them for
+// replay. Returns true if any push was applied.
+simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
+	local int i;
+	local vector Push;
+	local bool bApplied;
+
+	while (IGPlus_SKQueueCount > 0 && IGPlus_SKQueue[0].TargetTS <= TS) {
+		// ponytail: 0.25s staleness drop covers death/respawn; a move gap that
+		// long just costs a correction
+		if (IGPlus_SKQueue[0].TargetTS >= TS - 0.25) {
+			if (IGPlus_SKCompute(IGPlus_SKQueue[0], Push) == false) {
+				if (IGPlus_SKQueue[0].bHasFallback)
+					Push = IGPlus_SKQueue[0].FallbackPush;
+				else
+					Push = vect(0,0,0);
+			}
+
+			if (Push != vect(0,0,0)) {
+				IGPlus_SKDebug("lands on move "$TS, IGPlus_SKQueue[0], Push);
+				IGPlus_SKAddVelocity(Push);
+				bApplied = true;
+				// Replays recompute it from the replayed position.
+				if (Move != none && Move.IGPlus_SKPushCount < arraycount(Move.IGPlus_SKHit)) {
+					Move.IGPlus_SKHit[Move.IGPlus_SKPushCount] = IGPlus_SKQueue[0].HitLocation;
+					Move.IGPlus_SKKind[Move.IGPlus_SKPushCount] = IGPlus_SKQueue[0].Kind;
+					Move.IGPlus_SKPush[Move.IGPlus_SKPushCount] = Push;
+					Move.IGPlus_SKPushCount++;
+				}
+			}
+		}
+
+		for (i = 1; i < IGPlus_SKQueueCount; i++)
+			IGPlus_SKQueue[i - 1] = IGPlus_SKQueue[i];
+		IGPlus_SKQueueCount--;
+	}
+
+	return bApplied;
+}
+
+// Server: around an own rocket's splash damage.
+function IGPlus_SKBeginCapture() {
+	IGPlus_SKCapturing = true;
+	IGPlus_SKCapturedHit = false;
+	IGPlus_SKCaptured = vect(0,0,0);
+}
+
+function IGPlus_SKEndCapture(
+	float TargetTS,
+	int RocketIndex,
+	vector HitLocation,
+	vector SourceLocation,
+	float SourceRadius,
+	float Radius,
+	float Momentum,
+	bool bEnhanced,
+	optional byte Kind
+) {
+	local IGPlus_SelfKnockback K;
+	local vector Push;
+
+	IGPlus_SKCapturing = false;
+
+	// A DamageMutator changed our push: the client can't predict that, so
+	// keep the stock timing.
+	if (IGPlus_SKCapturedHit) {
+		K.HitLocation = HitLocation;
+		K.SourceLocation = SourceLocation;
+		K.SourceRadius = SourceRadius;
+		K.Radius = Radius;
+		K.Momentum = Momentum;
+		K.bEnhanced = bEnhanced;
+		K.Kind = Kind;
+		if (IGPlus_SKCompute(K, Push) && VSize(Push - IGPlus_SKCaptured) > 1.0) {
+			IGPlus_SKDebug("changed by a mod, stock timing, worked out "$class'ST_ShockProj'.static.IGPlus_Vec(Push), K, IGPlus_SKCaptured);
+			ServerAddMomentum(IGPlus_SKCaptured);
+			return;
+		}
+	}
+	K.TargetTS = FMax(TargetTS, CurrentTimeStamp);
+	K.HitLocation = HitLocation;
+	K.Kind = Kind;
+	IGPlus_SKDebug("queued", K, IGPlus_SKCaptured);
+
+	// Explosions past their time (move gaps) land on the next move.
+	IGPlus_SKQueueAdd(
+		FMax(TargetTS, CurrentTimeStamp),
+		RocketIndex, HitLocation, SourceLocation, SourceRadius, Radius, Momentum, bEnhanced,
+		IGPlus_SKCapturedHit, IGPlus_SKCaptured, Kind);
+}
+
+// Client: can our own shots' pushes be predicted? Non-469 servers merge short
+// moves regardless of bForcePacketSplit, so a push would not end its move. On
+// a lift the lift is somewhere else on each machine.
+simulated function bool IGPlus_SKCanPredict() {
+	return IGPlus_PredictedSelfKnockback && Level.NetMode == NM_Client && bIs469Server
+		&& Mover(Base) == none && Region.Zone.bWaterZone == false && GetWeaponSettings() != none;
+}
+
+// Client: predict an own rocket's explosion from its launch.
+simulated function IGPlus_SKPredictRocket(vector Start, rotator FireRot, int RocketIndex) {
+	if (IGPlus_SKCanPredict())
+		IGPlus_SKPredictShot(IGPLUS_SK_ROCKET, RocketIndex, Start, vector(FireRot), GetWeaponSettings().RocketSpeed);
+}
+
+// Client: predict an own projectile's explosion from its launch, flying
+// straight. Only world hits close enough to push us are predicted; anything
+// else (pawns, far walls) is left to the server's correction. The server
+// times it by its travel over its launch speed, as here.
+simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vector Dir, float Speed) {
+	local IGPlus_SelfKnockback K;
+	local vector End, HitLocation, HitNormal;
+	local Actor HitActor;
+
+	if (IGPlus_SKCanPredict() == false || Speed <= 0.0)
+		return;
+	IGPlus_SKPredictedEntry(Start, K, Kind);
+
+	// ponytail: hurt radius + 300uu covers jumps; farther walls correct
+	if (K.SourceRadius > 0.0) {
+		// With a size (the shock ball): flown like the server's.
+		if (IGPlus_SKFly(Kind, K.SourceRadius, Start, Dir, K.Radius + 300.0, Speed * 0.01, HitLocation) == false)
+			return;
+	} else {
+		End = Start + Dir * (K.Radius + 300.0);
+		HitActor = IGPlus_SKTrace(Kind, Start, End, K.SourceRadius, HitLocation, HitNormal);
+		if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
+			return;
+
+		// The server's projectile stops 2uu short of the surface (MoveActor's
+		// TestAdjust) and explodes there.
+		HitLocation -= 2.0 * Dir;
+		if (((HitLocation - Start) dot Dir) < 0.0)
+			HitLocation = Start;
+	}
+
+	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / Speed, Kind * 8 + Index, HitLocation, Kind);
+}
+
+// Client: our own projectile with a size (the shock ball) flown through the
+// world as the server's flies, by the same collision code: placed as a spawn
+// places it (out of a wall it overlaps), then moved a physics step at a time.
+// A long box trace stopped it 30uu above the floor where the server's went on.
+// True if it stopped on the world within Dist, at HitLocation (its centre
+// there), with Start where it really started. Anything else on its way (a
+// pawn, a lift) is the server's correction.
+simulated function bool IGPlus_SKFly(byte Kind, float Radius, out vector Start, vector Dir, float Dist, float StepSize, out vector HitLocation) {
+	local vector Extent, Before, HL, HN;
+	local Actor A;
+	local float Flown;
+
+	if (IGPlus_SKBall == None || IGPlus_SKBall.bDeleteMe)
+		IGPlus_SKBall = Spawn(class'ST_HitTestHelper', self);
+	if (IGPlus_SKBall == None)
+		return false;
+	Extent = vect(1,1,0) * Radius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind);
+	IGPlus_SKBall.SetCollisionSize(Extent.X, Extent.Z);
+	IGPlus_SKBall.bCollideWorld = true;
+	// No room for it: the server's spawn fails as well.
+	if (IGPlus_SKBall.SetLocation(Start) == false) {
+		IGPlus_SKBall.bCollideWorld = false;
+		return false;
+	}
+	Start = IGPlus_SKBall.Location;
+	StepSize = FMax(StepSize, 1.0);
+	while (Flown < Dist) {
+		Before = IGPlus_SKBall.Location;
+		IGPlus_SKBall.Move(Dir * StepSize);
+		if (VSize(IGPlus_SKBall.Location - Before) < StepSize - 0.01)
+			break;
+		Flown += StepSize;
+	}
+	HitLocation = IGPlus_SKBall.Location;
+	IGPlus_SKBall.bCollideWorld = false;
+	if (Flown >= Dist)
+		return false;
+
+	foreach TraceActors(class'Actor', A, HL, HN, HitLocation, Start, Extent) {
+		if (A == self || A == Level)
+			continue;
+		if (Pawn(A) != none || Mover(A) != none) {
+			IGPlus_SKDebugNote("not predicted, "$A$" on its way at "$class'ST_ShockProj'.static.IGPlus_Vec(A.Location));
+			return false;
+		}
+	}
+	return true;
+}
+
+simulated function IGPlus_SKDebugNote(string S) {
+	if (bDrawDebugData)
+		ClientDebugMessage("Self-push (client) "$S);
+}
+
+// What our own projectile of this kind stops on from Start to End: what a
+// trace with actors finds, but never us.
+simulated function Actor IGPlus_SKTrace(byte Kind, vector Start, vector End, float Radius, out vector HitLocation, out vector HitNormal) {
+	local Actor A;
+
+	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, End, Start, vect(1,1,0) * Radius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind)) {
+		if (A == self)
+			continue;
+		if (A == Level || Mover(A) != none || Pawn(A) != none || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
+			return A;
+	}
+	return none;
+}
+
+// A lobbed shot's flight time over Travel from launch velocity V0, falling at
+// GZ, with upward speed VzHit where it ended: its level travel over its level
+// speed, or for a steep shot its climb or drop under gravity, whichever tells
+// it better. Both machines time a flak slug's push with this.
+static function float IGPlus_SKArcTime(vector Travel, vector V0, float VzHit, float GZ) {
+	local float LevelSpeed, Root;
+
+	if (GZ == 0.0)
+		return VSize(Travel) / FMax(VSize(V0), 1.0);
+	LevelSpeed = VSize(V0 * vect(1,1,0));
+	if (LevelSpeed > 0.0 && LevelSpeed >= Abs(VzHit))
+		return VSize(Travel * vect(1,1,0)) / LevelSpeed;
+	// Travel.Z = V0.Z t + GZ t^2 / 2: rising the earlier root, falling the later.
+	Root = Sqrt(FMax(Square(V0.Z) + 2.0 * GZ * Travel.Z, 0.0));
+	if (VzHit > 0.0)
+		return (Root - V0.Z) / GZ;
+	return (-V0.Z - Root) / GZ;
+}
+
+simulated function float IGPlus_SKSourceHeight(byte Kind) {
+	switch (Kind) {
+		case IGPLUS_SK_FLAKSLUG:	return class'ST_FlakSlug'.default.CollisionHeight;
+		case IGPLUS_SK_SHOCKBALL:	return class'ST_ShockProj'.default.CollisionHeight;
+		case IGPLUS_SK_RIPPERALT:	return class'ST_Razor2Alt'.default.CollisionHeight;
+	}
+	return class'ST_RocketMk2'.default.CollisionHeight;
+}
+
+// Client: the same for a lobbed shot, stepped along its arc. Both machines
+// time it with IGPlus_SKArcTime.
+simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vector V0) {
+	local IGPlus_SelfKnockback K;
+	local vector P0, P1, V, G, HitLocation, HitNormal;
+	local Actor HitActor;
+	local float Dt, VzHit;
+	local int i;
+
+	if (IGPlus_SKCanPredict() == false || VSize(V0) < 50.0)
+		return;
+	IGPlus_SKPredictedEntry(Start, K, Kind);
+
+	G = Region.Zone.ZoneGravity;
+	Dt = 0.025;
+	P0 = Start;
+	V = V0;
+	// ponytail: 1s of flight within hurt radius + 300uu covers jumps
+	for (i = 0; i < 40; i++) {
+		P1 = P0 + V * Dt + 0.5 * G * Dt * Dt;
+		HitActor = IGPlus_SKTrace(Kind, P0, P1, K.SourceRadius, HitLocation, HitNormal);
+		if (HitActor != none) {
+			if (HitActor != Level && Mover(HitActor) == none)
+				return;
+			VzHit = V.Z + G.Z * Dt * VSize(HitLocation - P0) / FMax(VSize(P1 - P0), 0.01);
+			HitLocation -= 2.0 * Normal(P1 - P0);
+			IGPlus_SKQueuePredicted(Level.TimeSeconds + IGPlus_SKArcTime(HitLocation - Start, V0, VzHit, G.Z),
+				Kind * 8 + Index, HitLocation, Kind);
+			return;
+		}
+		if (VSize(P1 - Start) > K.Radius + 300.0)
+			return;
+		P0 = P1;
+		V += G * Dt;
+	}
+}
+
+// Client: a predicted push of this kind that will not happen after all (our
+// shock ball went off in a combo instead): the earliest one still to come.
+simulated function IGPlus_SKCancelNext(byte Kind) {
+	local int i, j;
+
+	for (i = 0; i < IGPlus_SKQueueCount; i++) {
+		if (IGPlus_SKQueue[i].Kind == Kind && IGPlus_SKQueue[i].TargetTS > Level.TimeSeconds) {
+			for (j = i + 1; j < IGPlus_SKQueueCount; j++)
+				IGPlus_SKQueue[j - 1] = IGPlus_SKQueue[j];
+			IGPlus_SKQueueCount--;
+			return;
+		}
+	}
+}
+
+// An own explosion of this kind at HitLocation, with today's settings.
+simulated function IGPlus_SKPredictedEntry(vector HitLocation, out IGPlus_SelfKnockback K, optional byte Kind) {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	K.HitLocation = HitLocation;
+	K.SourceLocation = HitLocation;
+	K.bHasFallback = false;
+	K.Kind = Kind;
+	switch (Kind) {
+		case IGPLUS_SK_FLAKSLUG:
+			K.SourceRadius = class'ST_FlakSlug'.default.CollisionRadius;
+			K.Radius = WS.FlakSlugHurtRadius;
+			K.Momentum = WS.FlakSlugMomentum * class'ST_FlakSlug'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashFlakSlug;
+			break;
+		case IGPLUS_SK_SHOCKBALL:
+			K.SourceRadius = class'ST_ShockProj'.default.CollisionRadius;
+			K.Radius = WS.ShockProjectileHurtRadius;
+			K.Momentum = WS.ShockProjectileMomentum * class'ST_ShockProj'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashShockProjectile;
+			break;
+		case IGPLUS_SK_RIPPERALT:
+			K.SourceRadius = class'ST_Razor2Alt'.default.CollisionRadius;
+			K.Radius = WS.RipperSecondaryHurtRadius;
+			K.Momentum = WS.RipperSecondaryMomentum * class'ST_Razor2Alt'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashRipperSecondary;
+			break;
+		default:
+			K.SourceRadius = class'ST_RocketMk2'.default.CollisionRadius;
+			K.Radius = WS.RocketHurtRadius;
+			K.Momentum = WS.RocketMomentum * class'ST_RocketMk2'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashRockets;
+	}
+}
+
+simulated function IGPlus_SKQueuePredicted(float TargetTS, int RocketIndex, vector HitLocation, optional byte Kind) {
+	local IGPlus_SelfKnockback K;
+
+	IGPlus_SKPredictedEntry(HitLocation, K, Kind);
+	K.TargetTS = TargetTS;
+	IGPlus_SKDebug("predicted", K);
+	IGPlus_SKQueueAdd(TargetTS, RocketIndex, K.HitLocation, K.SourceLocation, K.SourceRadius,
+		K.Radius, K.Momentum, K.bEnhanced, false, vect(0,0,0), Kind);
+}
+
+// Debug (enableDebugData): our own pushes, on each side.
+simulated function IGPlus_SKDebug(string What, IGPlus_SelfKnockback K, optional vector Push) {
+	local string Side, Kind, Phys;
+
+	if (bDrawDebugData == false)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	switch (K.Kind) {
+		case IGPLUS_SK_FLAKSLUG:	Kind = "flak slug"; break;
+		case IGPLUS_SK_SHOCKBALL:	Kind = "shock ball"; break;
+		case IGPLUS_SK_RIPPERALT:	Kind = "ripper alt"; break;
+		case IGPLUS_SK_HAMMER:		Kind = "hammer/chunks"; break;
+		default:					Kind = "rocket";
+	}
+	Phys = "falling";
+	if (Physics == PHYS_Walking)
+		Phys = "walking";
+	ClientDebugMessage("Self-push ("$Side$") "$Kind$" "$What$" due "$K.TargetTS$" from "$class'ST_ShockProj'.static.IGPlus_Vec(K.HitLocation)
+		$" push "$class'ST_ShockProj'.static.IGPlus_Vec(Push)$" us "$Phys$" at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
+}
+
+// Client: our own flak slug, shock ball and ripper alt blade.
+simulated function IGPlus_SKPredictFlakSlug(vector Start, rotator Aim) {
+	// flakslug.PostBeginPlay: launch speed along the aim, then 200 up.
+	IGPlus_SKPredictArc(IGPLUS_SK_FLAKSLUG, 0, Start,
+		vector(Aim) * class'ST_FlakSlug'.default.Speed + vect(0,0,200));
+}
+
+simulated function IGPlus_SKPredictShockBall(vector Start, rotator Aim) {
+	IGPlus_SKPredictShot(IGPLUS_SK_SHOCKBALL, 0, Start, vector(Aim), class'ST_ShockProj'.default.Speed);
+}
+
+simulated function IGPlus_SKPredictRipperAlt(vector Start, rotator Aim) {
+	IGPlus_SKPredictShot(IGPLUS_SK_RIPPERALT, 0, Start, vector(Aim), class'ST_Razor2Alt'.default.Speed);
+}
+
+// Client: our shock ball went off in a combo, not against the wall.
+simulated function IGPlus_SKCancelShockBall() {
+	IGPlus_SKCancelNext(IGPLUS_SK_SHOCKBALL);
+}
+
+// Server: around an own flak slug's, shock ball's or ripper alt blade's
+// splash (IGPlus_SKBeginCapture first), due TargetTS on our moves.
+function IGPlus_SKEndCaptureFor(Projectile P, float TargetTS, vector HitLocation) {
+	local IGPlus_SelfKnockback K;
+	local byte Kind;
+
+	if (ST_FlakSlug(P) != None)
+		Kind = IGPLUS_SK_FLAKSLUG;
+	else if (ST_ShockProj(P) != None)
+		Kind = IGPLUS_SK_SHOCKBALL;
+	else if (ST_Razor2Alt(P) != None)
+		Kind = IGPLUS_SK_RIPPERALT;
+	IGPlus_SKPredictedEntry(HitLocation, K, Kind);
+	IGPlus_SKEndCapture(TargetTS, Kind * 8, HitLocation, P.Location,
+		K.SourceRadius, K.Radius, K.Momentum, K.bEnhanced, Kind);
+}
+
+// Server: our own flak chunks hitting us on their fast-forward
+// (ST_UTChunkInfo.AddChunk) push us right after our slug does, as in stock.
+// Before it, they would knock us off the floor, and the slug's push would
+// lose the upward kick a push from the floor gets. The client does not
+// predict them: a small correction.
+function IGPlus_SKEndCaptureAfter(float TargetTS) {
+	IGPlus_SKCapturing = false;
+	if (IGPlus_SKCapturedHit)
+		IGPlus_SKQueueHammer(FMax(TargetTS, CurrentTimeStamp), IGPlus_SKCaptured);
+}
+
+// Client: our own hammer's push off a wall, at the end of this move (where
+// the server applies its own, IGPlus_ServerHammerRelease). Also any push
+// already worked out (IGPlus_SKEndCaptureAfter).
+simulated function IGPlus_SKQueueHammer(float TS, vector Push) {
+	IGPlus_SKQueueAdd(TS, IGPLUS_SK_HAMMER * 8, Location, Location, 0, 0, 0, false, true, Push, IGPLUS_SK_HAMMER);
+}
+
+// Hammer release on the move timeline: no input replication (the client's
+// release rides its own move), and the push needs the self-knockback queue.
+simulated function bool IGPlus_PredictHammer() {
+	return IGPlus_PredictedSelfKnockback && IGPlus_EnableInputReplication == false
+		&& (Level.NetMode != NM_Client || bIs469Server);
+}
+
+// --- Predicted translocation -------------------------------------------------
+
+// Replay of a predicted translocation: land where the prediction did, then
+// the rest of Translocator.Translocate's success path.
+function IGPlus_ReplayTranslocate(vector Dest) {
+	local bool bOldCollWorld, bOldActCol, bOldBlockAct, bOldBlockPlayer;
+
+	bCanTeleport = false;
+	bOldActCol = bCollideActors;
+	bOldBlockAct = bBlockActors;
+	bOldBlockPlayer = bBlockPlayers;
+	bOldCollWorld = bCollideWorld;
+	bCollideWorld = false;
+	SetCollision(false, false, false);
+	SetLocation(Dest);
+	bCollideWorld = bOldCollWorld;
+	SetCollision(bOldActCol, bOldBlockAct, bOldBlockPlayer);
+	bCanTeleport = true;
+
+	if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
+		SetPhysics(PHYS_Falling);
+	Velocity.X = 0;
+	Velocity.Y = 0;
+	TlocCounter = (TlocCounter + 1) & 3;
+}
+
+// Client, on the alt-fire press frame before its movement: the server
+// translocates at the same point, to where this client saw the disc (the
+// disc history at this move's age since the throw). Anything the client
+// cannot see (disruption, an enemy knocking the disc) is left to the server.
+function IGPlus_PredictTranslocate(IGPlus_SavedMove Move) {
+	local ST_Translocator TL;
+	local ST_TranslocatorTarget Disc;
+	local WeaponSettingsRepl WS;
+
+	if (Level.NetMode != NM_Client)
+		return;
+
+	TL = ST_Translocator(Weapon);
+	if (TL == none || TL.Class != class'ST_Translocator' || bFire != 0)
+		return;
+	// Bring-up holds the press; NormalFire ignores alt-fire for 0.1s after any
+	// fire or alt-fire (server time, so keep a margin).
+	if (ClientPending != none || TL.IsInState('ClientDown') || TL.IsInState('ClientActive'))
+		return;
+	if (Level.TimeSeconds - IGPlus_TlocLastPressTS < 0.15)
+		return;
+
+	WS = GetWeaponSettings();
+	if (WS == none || WS.TranslocatorCompensatePing == false)
+		return;
+
+	// Our own client disc counts before the server's bTTargetOut arrives.
+	Disc = TL.IGPlus_PredictionDisc();
+	if (Disc == none || (TL.bTTargetOut == false && Disc != TL.TTarget_Client))
+		return;
+
+	IGPlus_TlocPredictTo(Disc, Move);
+
+	IGPlus_TlocPredictTS = Level.TimeSeconds;
+	if (Disc == TL.TTarget_Client) {
+		TL.TTarget_Client = none;
+		Disc.Destroy();
+		// The server's disc is still on its way to us: hide it on arrival.
+		IGPlus_TlocHideArrivingUntil = Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25;
+	} else {
+		IGPlus_TlocHideDisc(Disc);
+	}
+}
+
+// Client: Translocator.Translocate's effect on us, toward Disc, before this
+// frame's movement (where the server translocates too). Every outcome uses
+// the disc up on the server; the caller deals with the disc.
+function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move) {
+	local vector Dest, Start;
+
+	Dest = Disc.Location;
+	if (Disc.Physics == PHYS_None)
+		Dest += vect(0,0,40);
+
+	Start = Location;
+	if (SetLocation(Dest) == false)
+		return;
+	if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
+		SetPhysics(PHYS_Falling);
+	if (FastTrace(Location, Disc.Location) == false) {
+		// The server puts us back too, keeping the falling physics.
+		SetLocation(Start);
+		return;
+	}
+
+	Velocity.X = 0;
+	Velocity.Y = 0;
+	TlocCounter = (TlocCounter + 1) & 3;
+	// A teleport, not a step: UpdateEyeHeight would otherwise take the height
+	// change as stepping onto a ramp (walking -> falling) and ease the camera
+	// through up to MaxStepHeight, a visible dip/hop after every translocate.
+	IgnoreZChangeTicks = 2;
+
+	Move.bIGPlusTloc = true;
+	Move.IGPlusTlocDest = Location;
+
+	// A teleport, not a correction: nothing left to ease.
+	IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	IGPlus_LiftExitCamOffset = vect(0,0,0);
+	IGPlus_AdjustLocationOffset = vect(0,0,0);
+	IGPlus_AdjustLocationAlpha = 0;
+}
+
+// Hide a disc the server is about to destroy; shown again if it stays.
+simulated function IGPlus_TlocHideDisc(ST_TranslocatorTarget Disc) {
+	Disc.bHidden = true;
+	if (Disc.Glow != none)
+		Disc.Glow.bHidden = true;
+	if (Disc.Shadow != none) {
+		Disc.Shadow.Destroy();
+		Disc.Shadow = none;
+	}
+	IGPlus_TlocHiddenDisc = Disc;
+	IGPlus_TlocHiddenUntil = Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25;
 }
 
 function IGPlus_BeforeTranslocate() {
@@ -2729,6 +3982,8 @@ function IGPlus_BeforeTranslocate() {
 function IGPlus_AfterTranslocate() {
 	IGPlus_DidTranslocate = (VSize(Location - TlocPrevLocation) > 1);
 	if (IGPlus_DidTranslocate) {
+		// A teleport, not a step: no eye-height smoothing (as for teleporters).
+		IgnoreZChangeTicks = 2;
 		ExtrapolationDiscardData();
 		IGPlus_NotifiedTranslocate = false;
 	}
@@ -2736,6 +3991,7 @@ function IGPlus_AfterTranslocate() {
 
 function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local float ServerDeltaTime;
+	local Actor DbgOldBase;
 	local float DeltaTime;
 	local float SimTime;
 	local float SimStep;
@@ -2787,6 +4043,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bDetBlockLegacyFire;
 	local Weapon DetWeapon;
 	local bool bDetMoveAcceptedForFire;
+	local float PSAPrevTS;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -2907,6 +4164,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		}
 	}
 
+	PSAPrevTS = CurrentTimeStamp;
 	CurrentTimeStamp = SM.TimeStamp;
 	ServerTimeStamp = Level.TimeSeconds;
 	Rot.Roll = ClientRoll << 8;
@@ -2932,13 +4190,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogServerMove(SM);
 
+	// Predicted switch: holster/equip on this move's timestamp, before binding.
+	IGPlus_PSServerAdvance(SM.TimeStamp);
+
 	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// bDetReady marks client-predicted steps; trust is the binding/window gates.
 	DetWeapon = IGPlus_DetResolveBoundWeapon(SM.DetWeaponIndex, true);
 	// Hard-block legacy fire fallback for deterministic weapons.
 	// A resolved DetWeapon is active by construction.
 	bDetBlockLegacyFire = (DetWeapon != none) || IGPlus_IsDetActiveWeapon(Weapon)
-		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation);
+		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation)
+		|| (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode());
 
 	IGPlus_LastFireEndHeld = bFired;
 	IGPlus_LastAltEndHeld = bAltFired;
@@ -2961,7 +4223,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			DetWeapon,
 			SM.TimeStamp,
 			ViewRotation,
-			Location,
+			IGPlus_PSAShotOrigin(SM, PSAPrevTS, MergeCount),
 			bFired,
 			bAltFired,
 			bForceFire,
@@ -2978,10 +4240,18 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		bAltFire = 0;
 	}
 
+	// Deterministic translocator: the client's action, before this move's
+	// movement like on the client.
+	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
+		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
+		ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
+
 	// Complete fast weapon switch after Det dispatch so Det targets the
 	// pre-switch weapon the client was actually firing.
 	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
 		ChangedWeapon();
+
+	DbgOldBase = Base;
 
 	// Predict new position
 	if ((Level.Pauser == "") && (DeltaTime > 0) && (IGPlus_SkipMovesUntilNextTick == false)) {
@@ -3071,9 +4341,23 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			TlocCounter = (TlocCounter + 1) & 3;
 			IGPlus_DidTranslocate = false;
 		}
+		IGPlus_DebugLiftJumpTop(DbgOldBase);
 
 		bWasPaused = false;
 	}
+
+	// Hammer charged and let go on this move: its push lands at the end of it,
+	// as on the client (ST_ImpactHammer.IGPlus_MoveEnd).
+	if (ST_ImpactHammer(Weapon) != None)
+		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(CurrentTimeStamp, bFire != 0);
+
+	if (IGPlus_SKQueueCount > 0)
+		IGPlus_SKApplyDue(CurrentTimeStamp, none);
+
+	IGPlus_PSALastClientLoc = SM.ClientLocation;
+	if (SM.ClientBase != none)
+		IGPlus_PSALastClientLoc += SM.ClientBase.Location;
+	IGPlus_PSALastClientTS = SM.TimeStamp;
 
 	if (bDetMoveAcceptedForFire)
 		IGPlus_DetFinalizeExpiredPrevWeapon();
@@ -3798,7 +5082,7 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 		WImpBase = IGPlus_GetWeaponImplementationBase();
 		if (WImpBase != None)
 			RewindMs = int(WImpBase.IGPlus_GetHitscanRewindMs(self));
-		zzUTPure.CompensateFor(RewindMs, self);
+		zzUTPure.CompensateFor(RewindMs, self, true);
 		
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {	
 			if (A == self) {
@@ -3831,7 +5115,8 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 					}
 				}
 				} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-					if (A == Base && Mover(A) != None && IGPlus_ShouldIgnoreOwnBaseHit(StartTrace, HitLocation))
+					if (A == Base && Mover(A) != None
+						&& (IGPlus_OwnLiftShotShift != vect(0,0,0) || IGPlus_ShouldIgnoreOwnBaseHit(StartTrace, HitLocation)))
 						continue;
 					if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
 						Other = A;
@@ -4620,7 +5905,9 @@ simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 // equipped. Reliable and ordered after the switch RPCs that precede it.
 function xxClientDetEntryGate(float GateTS, optional Weapon W) {
 	IGPlus_DetClientEntryGateTS = FMax(IGPlus_DetClientEntryGateTS, GateTS);
-	if (W != none)
+	// A late tag for the weapon we already switched away from must not
+	// overwrite the tag our predicted switch set.
+	if (W != none && !(IGPlus_PSActive && W != IGPlus_PSTarget))
 		IGPlus_DetClientGateWeapon = W;
 }
 
@@ -4655,6 +5942,7 @@ function IGPlus_DetClearSwitchTrustState() {
 	IGPlus_DetPendingFireTapTS = 0.0;
 	IGPlus_DetPendingFireTapWeapon = none;
 	IGPlus_DetAutoSwitchPending = none;
+	IGPlus_PSActive = false;
 	IGPlus_DetLastShotTS = 0.0;
 	IGPlus_DetHolsterHoldUntilTS = 0.0;
 
@@ -4770,6 +6058,9 @@ simulated function bool IGPlus_DetFireWindowOpen(Weapon W, float StepTS) {
 	if (W == Weapon) {
 		if (StepTS < IGPlus_DetWeaponGateTS)
 			return false;
+		// Predicted switch: the client stopped predicting this weapon at TS.
+		if (IGPlus_PSActive && W == IGPlus_PSFrom && IGPlus_PSTarget != W && StepTS > IGPlus_PSTS)
+			return false;
 		// A pending switch closes the equipped window once the client can
 		// have learned of it (one round trip, see IGPlus_DetComputeInFlightSlack).
 		if (PendingWeapon != none && PendingWeapon != W
@@ -4797,6 +6088,9 @@ function IGPlus_DetHandleOutOfAmmo(Weapon W) {
 
 	// A late step for the weapon just switched away from must not re-switch.
 	if (W != Weapon)
+		return;
+	// The player already started a predicted switch away from it.
+	if (IGPlus_PSActive && IGPlus_PSFrom == W)
 		return;
 
 	StopFiring();
@@ -5249,8 +6543,9 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 		return false;
 	// Held bits are OR-merged, so a release folded into a held move resolves
 	// as still held (primary->alt would fire primary on the server while the
-	// client predicted alt). Det weapons end the move on a release edge.
-	if (IGPlus_FindDetSupportedWeapon(Weapon) != none
+	// client predicted alt). Det weapons end the move on a release edge, and
+	// so does the hammer when its release rides the move (IGPlus_PredictHammer).
+	if ((IGPlus_FindDetSupportedWeapon(Weapon) != none || (ST_ImpactHammer(Weapon) != none && IGPlus_PredictHammer()))
 		&& ((Pending.bFire && bFire == 0 && !bJustFired)
 			|| (Pending.bAltFire && bAltFire == 0 && !bJustAltFired)))
 		return false;
@@ -5441,7 +6736,8 @@ function IGPlus_ReplicateInput(float Delta) {
 		ServerApplyInput(ReferenceInput.TimeStamp, IGPlus_InputReplicationBuffer.NumBits, B);
 	}
 
-	if ( (Weapon != None) && !Weapon.IsAnimating() )
+	// Not in demo playback: the recording holds our weapon's anims and sounds.
+	if (!IGPlus_InDemoPlayback() && (Weapon != None) && !Weapon.IsAnimating())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -5477,6 +6773,8 @@ function xxReplicateMove(
 ) {
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
 	local EPhysics OldPhys;
+	local Mover ExitLift;
+	local Actor DbgOldBase;
 	local float AdjustAlpha;
 	local float RealDelta;
 	local vector OldAccel;
@@ -5488,6 +6786,10 @@ function xxReplicateMove(
 	local bool bForceAltTap;
 	local bool bDetLocalShot;
 	local bool bDetReplayedTap;
+	local rotator PSARealView, PSAAimView;
+	local bool bPSAAimFix;
+	local int TlocAction;
+	local ST_TranslocatorTarget TlocDisc;
 
 	// Higor: process smooth adjustment.
 	if (IGPlus_AdjustLocationAlpha > 0)
@@ -5506,8 +6808,23 @@ function xxReplicateMove(
 		debugPlayerLocation = Location;
 	}
 
+	// Push-Safe Aim: while the camera still eases after a correction, shots
+	// leave from the real position; aim them through the crosshair point.
+	if (IGPlus_PushSafeAim
+		&& ((IGPlus_CameraCorrectionOffset != vect(0,0,0) && Settings.bCameraCorrectionSmoothing)
+			|| IGPlus_LiftExitCamOffset != vect(0,0,0))
+		&& (DodgeMove <= DODGE_None || DodgeMove >= DODGE_Active)
+		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
+	) {
+		PSARealView = ViewRotation;
+		bPSAAimFix = IGPlus_PSAAimView(PSAAimView);
+		if (bPSAAimFix)
+			ViewRotation = PSAAimView;
+	}
+
 	// Predict per slice, gated on readiness only (input-rep predicts per node).
 	if (IGPlus_EnableInputReplication == false) {
+		IGPlus_PSClientTick();
 		IGPlus_DetTrackClientPendingSwitch();
 		DetLocalWeapon = IGPlus_FindDetSupportedWeapon(Weapon);
 		if (DetLocalWeapon != none && IGPlus_DetIsWeaponReady(DetLocalWeapon)) {
@@ -5538,6 +6855,19 @@ function xxReplicateMove(
 				IGPlus_IsEightballInstantMode(Weapon)
 			);
 			bDetLocalShot = IGPlus_DetClientShotTS == Level.TimeSeconds;
+			// Predicted self-knockback: a rocket shot also starts its move, so
+			// the server's step location is this frame's start, like the client's.
+			// Push-Safe Aim: the server reads the shot origin off the previous move.
+			// Client-side shock balls: the ball and the beam leave from this
+			// frame's start on the server too (a merged move's step starts at
+			// the move's start), or the client's own ball and the server's fly
+			// apart by however far it moved in the merged frames.
+			if (bDetLocalShot && ((IGPlus_PredictedSelfKnockback && (bLocalEightball
+					|| ST_UT_FlakCannon(DetLocalWeapon) != none || ST_ripper(DetLocalWeapon) != none
+					|| ST_ShockRifle(DetLocalWeapon) != none))
+				|| IGPlus_PushSafeAim
+				|| (ST_ShockRifle(DetLocalWeapon) != none && IGPlus_PredictiveShockCombos())))
+				bForcePacketSplit = true;
 			// Send the replayed tap as this frame's press: the move then carries
 			// the force bit and ends here, and the server fires it on this step.
 			if (bDetReplayedTap)
@@ -5551,6 +6881,20 @@ function xxReplicateMove(
 			// Never for a weapon going down: stock drops those clicks.
 			IGPlus_DetLatchFireTap(Level.TimeSeconds, DetLocalWeapon);
 		}
+	}
+
+	if (bPSAAimFix)
+		ViewRotation = PSARealView;
+
+	// Deterministic translocator: decide now, before the merge, so an action
+	// starts its own move (and ends it, below).
+	if (IGPlus_DetTranslocator && IGPlus_EnableInputReplication == false && Level.NetMode == NM_Client
+		&& ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator'
+	) {
+		TlocAction = ST_Translocator(Weapon).IGPlus_DetClientStep(
+			self, Level.TimeSeconds, bJustFired, bFire != 0, bJustAltFired, bAltFire != 0);
+		if (TlocAction != 0)
+			bForcePacketSplit = true;
 	}
 
 	// Get a SavedMove actor to store the movement in.
@@ -5627,6 +6971,11 @@ function xxReplicateMove(
 
 			IGPlus_DetFillMoveBinding(NewMove);
 
+			if (bForceAltTap && IGPlus_PredictedTranslocation && IGPlus_DetTranslocator == false)
+				IGPlus_PredictTranslocate(NewMove);
+			if ((bForceFireTap || bForceAltTap) && ST_Translocator(Weapon) != none)
+				IGPlus_TlocLastPressTS = Level.TimeSeconds;
+
 		if ( Weapon != None ) // approximate pointing so don't have to replicate
 			Weapon.bPointing = ((bFire != 0) || (bAltFire != 0));
 
@@ -5635,11 +6984,30 @@ function xxReplicateMove(
 		NewMove = IGPlus_SavedMove(PendingMove);
 	}
 
+	if (TlocAction != 0) {
+		// The server repeats exactly this on the move (translocator moves
+		// carry no Det charge).
+		NewMove.DetChargeData = TlocAction;
+		if (TlocAction == 3) { // translocate
+			TlocDisc = ST_Translocator(Weapon).IGPlus_DetClientDisc();
+			// The server gibs us where we stand on a disrupted disc.
+			if (IGPlus_PredictedTranslocation && TlocDisc != none
+				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold)
+				IGPlus_TlocPredictTo(TlocDisc, NewMove);
+			ST_Translocator(Weapon).IGPlus_DetClientDiscGone();
+		}
+	}
+
 	bJustFired = false;
 	bJustAltFired = false;
 	OldPhys = Physics;
 
 	IGPlus_TPFix_LastTouched = none;
+
+	ExitLift = None;
+	if (Settings.bSmoothLiftJump && IGPlus_OnMovingLift())
+		ExitLift = Mover(Base);
+	DbgOldBase = Base;
 
 	// Simulate the movement locally.
 	ProcessMove(DeltaTime, NewAccel, DodgeMove, DeltaRot);
@@ -5647,8 +7015,29 @@ function xxReplicateMove(
 
 	CorrectTeleporterVelocity();
 
+	// Left a moving lift: go where the server has us now, not a ping later.
+	if (ExitLift != None && Base != ExitLift) {
+		IGPlus_LeftMovingLift(ExitLift, NewMove);
+		bForcePacketSplit = true;
+	}
+	IGPlus_DebugLiftJumpTop(DbgOldBase);
+
+	// Hammer charged and let go in this move, with fire as the move carries
+	// it: its push lands at the end of it, as on the server
+	// (ST_ImpactHammer.IGPlus_MoveEnd).
+	if (ST_ImpactHammer(Weapon) != None)
+		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(Level.TimeSeconds, NewMove.bFire);
+
+	// A predicted push lands at the end of a move, like on the server.
+	if (IGPlus_SKQueueCount > 0 && IGPlus_SKApplyDue(Level.TimeSeconds, NewMove))
+		bForcePacketSplit = true;
+
 	NewMove.SetRotation( Rotation );
 	NewMove.IGPlus_SavedViewRotation = ViewRotation;
+	// Only the shot frame's move (a single frame) carries the aimed view, so
+	// nothing else (dodges, other weapons) sees it.
+	if (bPSAAimFix && bDetLocalShot)
+		NewMove.IGPlus_SavedViewRotation = PSAAimView;
 	NewMove.IGPlus_SavedLocation = Location;
 	NewMove.IGPlus_SavedVelocity = Velocity;
 
@@ -5657,7 +7046,10 @@ function xxReplicateMove(
 	// on client side, save extra buffered time in LastUpdateTime
 	RealDelta = PendingMove.Delta / Level.TimeDilation;
 
-	NetStatsElem.LocationError = VSize(IGPlus_AdjustLocationOffset * AdjustAlpha);
+	if (Settings.bCameraCorrectionSmoothing)
+		NetStatsElem.LocationError = VSize(IGPlus_CameraCorrectionOffset);
+	else
+		NetStatsElem.LocationError = VSize(IGPlus_AdjustLocationOffset * AdjustAlpha);
 	NetStatsElem.UnconfirmedTime = (Level.TimeSeconds - CurrentTimeStamp) / Level.TimeDilation;
 
 	// The server steps once per move, at the move's last timestamp and view.
@@ -5681,7 +7073,8 @@ function xxReplicateMove(
 
 	SendSavedMove(NewMove, OldMove);
 
-	if ( (Weapon != None) && !Weapon.IsAnimating() )
+	// Not in demo playback: the recording holds our weapon's anims and sounds.
+	if (!IGPlus_InDemoPlayback() && (Weapon != None) && !Weapon.IsAnimating())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -5882,9 +7275,22 @@ function string forcedModelToString(int fm) {
 exec function enableDebugData(bool b) {
 	bDrawDebugData = b;
 	if (b) {
-		ClientMessage("Debug data: on");
+		if (IGPlus_DebugLogFile == none)
+			IGPlus_DebugLogFile = Spawn(class'IGPlus_DebugLogFile');
+		if (IGPlus_DebugLogFile != none) {
+			IGPlus_DebugLogFile.StartLog();
+			ClientMessage("Debug data: on, also written to Logs/"$IGPlus_DebugLogFile.FileName$".log");
+		} else {
+			ClientMessage("Debug data: on");
+		}
 	} else {
-		ClientMessage("Debug data: off");
+		if (IGPlus_DebugLogFile != none) {
+			ClientMessage("Debug data: off, saved Logs/"$IGPlus_DebugLogFile.FileName$".log");
+			IGPlus_DebugLogFile.Destroy();
+			IGPlus_DebugLogFile = none;
+		} else {
+			ClientMessage("Debug data: off");
+		}
 	}
 }
 
@@ -6257,6 +7663,8 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = bValue;
     } else if (Key ~= "bShockProjectileUseClientSideAnimations") {
         ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = bValue;
+    } else if (Key ~= "bPredictiveShockCombos") {
+        ClientWeaponSettingsData.bPredictiveShockCombos = bValue;
     } else if (Key ~= "bPulseUseClientSideAnimations") {
         ClientWeaponSettingsData.bPulseUseClientSideAnimations = bValue;
     } else if (Key ~= "bRipperUseClientSideAnimations") {
@@ -6655,6 +8063,7 @@ event PlayerCalcView(out actor ViewActor, out vector CameraLocation, out rotator
 			CameraRotation = ViewRotation;
 		}
 		CameraLocation += WalkBob;
+		IGPlus_ApplyCameraCorrection(CameraLocation);
 	}
 }
 
@@ -6869,9 +8278,15 @@ simulated function AddVelocity( vector NewVelocity )
 }
 
 function ServerAddMomentum(vector Momentum) {
+	local vector OldVelocity;
+
+	OldVelocity = Velocity;
 	if (Physics == PHYS_Walking)
 		Momentum.Z = FMax(Momentum.Z, 0.4 * VSize(Momentum));
 	Super.AddVelocity(Momentum);
+
+	if (IGPlus_PushSafeAim && Velocity != OldVelocity)
+		IGPlus_PSANotePush(Velocity - OldVelocity);
 }
 
 simulated function NN_Momentum( Vector momentum, name DamageType )
@@ -7066,7 +8481,13 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 	if (InstigatedBy != none)
 		IGPlus_DamageEvent_Add(InstigatedBy.PlayerReplicationInfo, ModifiedDamage1, DamageType);
 
-	ServerAddMomentum(momentum);
+	if (IGPlus_SKCapturing && InstigatedBy == self && Health - actualDamage > 0) {
+		// Own predicted rocket: the push goes onto the move timeline instead.
+		IGPlus_SKCaptured += momentum;
+		IGPlus_SKCapturedHit = true;
+	} else {
+		ServerAddMomentum(momentum);
+	}
 	Health -= actualDamage;
 
 	IGPlus_DamageEvent_SaveHealth();
@@ -8952,6 +10373,27 @@ function xxPlayerTickEvents(float DeltaTime)
 	CurrentTime = Level.TimeSeconds;
 	NetStatsElem.FrameTime = DeltaTime / Level.TimeDilation;
 
+	if (Role == ROLE_AutonomousProxy) {
+		IGPlus_CameraCorrectionDecay(DeltaTime);
+
+		if (IGPlus_DetTloc != none) {
+			if (IGPlus_DetTloc.bDeleteMe)
+				IGPlus_DetTloc = none;
+			else
+				IGPlus_DetTloc.IGPlus_DetClientTick();
+		}
+
+		// A disc the server kept after all (refused translocation) shows again.
+		if (IGPlus_TlocHiddenDisc != none && CurrentTime > IGPlus_TlocHiddenUntil) {
+			if (IGPlus_TlocHiddenDisc.bDeleteMe == false) {
+				IGPlus_TlocHiddenDisc.bHidden = false;
+				if (IGPlus_TlocHiddenDisc.Glow != none)
+					IGPlus_TlocHiddenDisc.Glow.bHidden = false;
+			}
+			IGPlus_TlocHiddenDisc = none;
+		}
+	}
+
 	if (Level.NetMode == NM_Client)
 	{
 		if (ConsoleCommand("get ini:engine.engine.gamerenderdevice SmoothMaskedTextures") ~= "true") {
@@ -9670,7 +11112,24 @@ function IGPlus_DrawServerLocations(Canvas C) {
 }
 
 simulated event RenderOverlays(Canvas C) {
+	local Weapon W;
+	local vector SavedPVO;
+	local bool bShiftWeapon;
+
+	// Keep the first-person weapon on the smoothed camera.
+	W = Weapon;
+	bShiftWeapon = W != none && IGPlus_CameraCorrectionApplied != vect(0,0,0)
+		&& ViewTarget == none && bBehindView == false;
+	if (bShiftWeapon) {
+		SavedPVO = W.PlayerViewOffset;
+		W.PlayerViewOffset += IGPlus_WeaponViewOffsetFor(W, IGPlus_CameraCorrectionApplied);
+	}
+
 	super.RenderOverlays(C);
+
+	if (bShiftWeapon && W != none)
+		W.PlayerViewOffset = SavedPVO;
+	IGPlus_CameraCorrectionApplied = vect(0,0,0);
 
 	InitFlagSprites();
 
@@ -11713,8 +13172,14 @@ function xxClientResetPlayer() {
 function ClientReStart()
 {
 	zzSpawnedTime = Level.TimeSeconds;
+	IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	IGPlus_LiftExitCamOffset = vect(0,0,0);
+	IGPlus_LiftExitTS = 0.0;
 	IGPlus_DetClientSwitchPending = none;
 	IGPlus_DetClientGateWeapon = none; // the respawn equip sends a fresh tagged gate
+	IGPlus_PSActive = false;
+	IGPlus_PSKeep = none;
+	IGPlus_PSFilterClear();
 
 	Super.ClientReStart();
 	PlaySpawn();
@@ -11727,6 +13192,940 @@ function ClientReStart()
 	IgnoreZChangeTicks = 1;
 	if (PlayerReplicationInfo != none)
 		MultiDodgesRemaining = bbPlayerReplicationInfo(PlayerReplicationInfo).MaxMultiDodges;
+}
+
+// ---------------------------------------------------------------------------
+// Predicted weapon switching, phase 1: logging only.
+// The IG+ HUDs catch the switch binds on the client (UPlayer::Exec offers a
+// command to myHUD before the PlayerPawn) and route them here. The client
+// predicts the outcome with the same rules as the server execs below, then the
+// server runs the unchanged exec and logs whether the prediction held.
+// Docs/predicted-weapon-switching.md
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Predicted weapon switching, phase 2 (bEnablePredictedSwitching).
+// The client resolves the switch, starts it at the press timestamp TS and
+// tells the server which weapon and when. Both sides then run one timeline in
+// move-timestamp time: the old weapon stops at TS, holsters at
+// max(TS, post-shot hold), the new weapon is equipped DownTime later and may
+// fire SelectTime after that. The server validates, applies it on the moves
+// whose timestamps cross those points, and rejects what it can't honour.
+// ---------------------------------------------------------------------------
+
+// Holster duration: PlayAnim('Down', DownAnimSpeed, 0.05) = 0.05 tween + DownTime.
+// Fast weapon switch swaps on the spot.
+simulated function float IGPlus_PSDownTimeFor(Weapon W) {
+	local WeaponSettingsRepl WS;
+	local float T;
+
+	if (IGPlus_UseFastWeaponSwitch)
+		return 0.0;
+	WS = GetWeaponSettings();
+	if (WS == none)
+		return 0.1;
+	if (ST_ShockRifle(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.ShockDownTime, WS.default.ShockDownTime);
+	else if (ST_ripper(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.RipperDownTime, WS.default.RipperDownTime);
+	else if (ST_UT_FlakCannon(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.FlakDownTime, WS.default.FlakDownTime);
+	else if (ST_ut_biorifle(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.BioDownTime, WS.default.BioDownTime);
+	else if (ST_UT_Eightball(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.EightballDownTime, WS.default.EightballDownTime);
+	else if (ST_SniperRifle(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.SniperDownTime, WS.default.SniperDownTime);
+	else if (ST_minigun2(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.MinigunDownTime, WS.default.MinigunDownTime);
+	else if (ST_PulseGun(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.PulseDownTime, WS.default.PulseDownTime);
+	else if (ST_enforcer(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.EnforcerDownTime, WS.default.EnforcerDownTime);
+	else if (ST_ImpactHammer(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.HammerDownTime, WS.default.HammerDownTime);
+	else if (ST_Translocator(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.TranslocatorDownTime, WS.default.TranslocatorDownTime);
+	else if (ST_WarheadLauncher(W) != none)
+		T = IGPlus_DetEffectiveAnimTime(WS.WarheadDownTime, WS.default.WarheadDownTime);
+	else
+		T = 0.05;
+	return T + 0.05;
+}
+
+// Same rule as IGPlus_DetSwitchDeferActive, evaluated at TS: a Det weapon
+// holds the holster until its last shot's fire anim ends, the Eightball until
+// its volley anim ends (stock holds it in FireRockets). Identical on both sides.
+simulated function float IGPlus_PSHolsterStart(Weapon From, float TS) {
+	local ST_UT_Eightball EB;
+
+	// Fast weapon switch never waits for fire anims (IGPlus_DetSwitchDeferActive).
+	if (IGPlus_UseFastWeaponSwitch)
+		return TS;
+	EB = ST_UT_Eightball(From);
+	if (EB != none && TS < EB.DetVolleyHoldUntil)
+		return EB.DetVolleyHoldUntil;
+	if (IGPlus_IsDetActiveWeapon(From) && TS >= IGPlus_DetLastShotTS && TS < IGPlus_DetHolsterHoldUntilTS)
+		return IGPlus_DetHolsterHoldUntilTS;
+	return TS;
+}
+
+// Client: one of our switches has not reached its equip point yet (inclusive:
+// with fast weapon switch a second press in the press frame retargets).
+simulated function bool IGPlus_PSRunning() {
+	return IGPlus_PSActive && Level.TimeSeconds <= IGPlus_PSEquipTS;
+}
+
+simulated function bool IGPlus_PSClientCanPredict() {
+	if (!IGPlus_PredictedSwitching || Level.NetMode != NM_Client)
+		return false;
+	if (Weapon == none || TournamentWeapon(Weapon) == none)
+		return false;
+	if (IsInState('Dying') || IsInState('FeigningDeath') || Level.Pauser != ""
+		|| (GameReplicationInfo != none && GameReplicationInfo.GameEndedComments != ""))
+		return false;
+	if (IGPlus_PSRunning())
+		return true;
+	// A server-driven switch is in flight; leave this press to the stock path.
+	if (ClientPending != none
+		|| (IGPlus_DetClientSwitchPending != none && IGPlus_DetClientSwitchPending != Weapon))
+		return false;
+	// Legacy weapons mid-fire hold the holster on their server fire state, and
+	// the warhead may be guiding: keep stock timing for those.
+	if (ST_WarheadLauncher(Weapon) != none)
+		return false;
+	if (!IGPlus_IsDetActiveWeapon(Weapon) && (bFire != 0 || bAltFire != 0
+		|| Weapon.IsInState('ClientFiring') || Weapon.IsInState('ClientAltFiring')))
+		return false;
+	return true;
+}
+
+// Client: remember which ClientPutDown the server will send for a switch we
+// already ran locally (From plus the targets it went through). One record per
+// switch still awaiting its echo (fast weapon switch: one per key press).
+simulated function IGPlus_PSFilterNew(Weapon From, Weapon T, float Until) {
+	local int i;
+
+	for (i = ArrayCount(IGPlus_PSFiltFrom) - 1; i > 0; i--) {
+		IGPlus_PSFiltFrom[i] = IGPlus_PSFiltFrom[i - 1];
+		IGPlus_PSFiltT1[i] = IGPlus_PSFiltT1[i - 1];
+		IGPlus_PSFiltT2[i] = IGPlus_PSFiltT2[i - 1];
+		IGPlus_PSFiltUntil[i] = IGPlus_PSFiltUntil[i - 1];
+	}
+	IGPlus_PSFiltFrom[0] = From;
+	IGPlus_PSFiltT1[0] = T;
+	IGPlus_PSFiltT2[0] = T;
+	IGPlus_PSFiltUntil[0] = Until;
+}
+
+simulated function IGPlus_PSFilterRetarget(Weapon T, float Until) {
+	IGPlus_PSFiltT2[0] = IGPlus_PSFiltT1[0];
+	IGPlus_PSFiltT1[0] = T;
+	IGPlus_PSFiltUntil[0] = Until;
+}
+
+simulated function IGPlus_PSFilterClear() {
+	local int i;
+
+	for (i = 0; i < ArrayCount(IGPlus_PSFiltFrom); i++)
+		IGPlus_PSFiltFrom[i] = none;
+}
+
+// Drops only the server's announcement of our own switch: same outgoing
+// weapon (or its slave enforcer) AND a target we chose. A server-driven switch
+// of the same weapon to anything else gets through.
+simulated function bool IGPlus_PSFilterDrops(Weapon Current, Weapon Next) {
+	local int i;
+	local Weapon F;
+
+	if (Next == none)
+		return false;
+	for (i = 0; i < ArrayCount(IGPlus_PSFiltFrom); i++) {
+		F = IGPlus_PSFiltFrom[i];
+		if (F == none || Level.TimeSeconds > IGPlus_PSFiltUntil[i])
+			continue;
+		if (Next != IGPlus_PSFiltT1[i] && Next != IGPlus_PSFiltT2[i])
+			continue;
+		if (Current == F || (Enforcer(F) != none && Current == Enforcer(F).SlaveEnforcer))
+			return true;
+	}
+	return false;
+}
+
+simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
+	local Weapon Cur, Pend, Target;
+	local float TS;
+	local bool bEquipped;
+
+	TS = Level.TimeSeconds;
+	bEquipped = !IGPlus_PSRunning();
+	if (bEquipped) {
+		Cur = Weapon;
+		Pend = none;
+	} else {
+		Cur = IGPlus_PSFrom;
+		Pend = IGPlus_PSTarget;
+	}
+	if (!IGPlus_ResolveWeaponCommand(Kind, F, C, Cur, Pend, Target)) {
+		// Not knowable here (Next/Prev with nothing up): stock path, unless a
+		// prediction is running, which the stock exec would fight.
+		if (bEquipped)
+			xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
+		return;
+	}
+	// Stock SwitchWeapon's two WeaponChange passes print the no-ammo messages.
+	if (Kind == 1 && Inventory != none
+		&& !(Cur != none && Cur.Inventory != none && IGPlus_PSGroupWalk(Cur.Inventory, F)))
+		IGPlus_PSGroupWalk(Inventory, F);
+	// Stock ignores pressing back to the weapon still up during a switch; a
+	// predicted switch treats it as "go back".
+	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
+		&& ((Kind == 2 && C != none && Cur.IsA(C.Name)) || (Kind == 1 && Cur.InventoryGroup == F)))
+		Target = Cur;
+	if (Target == none) {
+		if (Kind == 2)
+			IGPlus_PSNoAmmoMessage(Cur, C);
+		return;
+	}
+
+	if (!bEquipped) {
+		if (Target == IGPlus_PSTarget)
+			return;
+		if (Target == IGPlus_PSFrom) {
+			// Back to the old weapon. Started or not is decided by TS > HolsterTS
+			// on both sides (a press runs between ticks, before this tick's
+			// holster). The filter stays until the server's xxClientPSFilterDone:
+			// it may already have sent this switch's ClientPutDown.
+			if (!bPSHolsterStarted && TS > IGPlus_PSHolsterTS)
+				IGPlus_PSClientTick();
+			IGPlus_PSSerial++;
+			IGPlus_PSActive = false;
+			IGPlus_PSKeep = none;
+			IGPlus_DetClientSwitchPending = none;
+			IGPlus_DetClientGateWeapon = IGPlus_PSFrom;
+			if (!bPSHolsterStarted) {
+				IGPlus_DetClientEntryGateTS = IGPlus_PSPrevGate; // nothing moved yet
+			} else {
+				// Mid-holster: bring it straight back up from TS (stock BringUp).
+				IGPlus_DetClientEntryGateTS = TS + IGPlus_DetSelectTimeFor(IGPlus_PSFrom);
+				ClientPending = none;
+				if (Weapon == IGPlus_PSFrom)
+					Weapon.GotoState('ClientActive');
+				else if (TournamentWeapon(Weapon) != none)
+					IGPlus_PSClientHolster(IGPlus_PSFrom); // already swapped locally
+			}
+		} else {
+			// Retarget: the holster timing stays, only the incoming weapon changes.
+			IGPlus_PSSerial++;
+			IGPlus_PSApplyTarget(Target, IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(Target));
+		}
+	} else {
+		if (Target == Weapon)
+			return;
+		IGPlus_PSSerial++;
+		IGPlus_PSActive = true;
+		IGPlus_PSFrom = Weapon;
+		IGPlus_PSTarget = Target;
+		IGPlus_PSTS = TS;
+		IGPlus_PSHolsterTS = IGPlus_PSHolsterStart(Weapon, TS);
+		IGPlus_PSEquipTS = IGPlus_PSHolsterTS + IGPlus_PSDownTimeFor(Weapon);
+		IGPlus_PSGate = IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(Target);
+		bPSHolsterStarted = false;
+		IGPlus_PSPrevGate = IGPlus_DetClientEntryGateTS;
+		IGPlus_PSKeep = Weapon;
+		IGPlus_PSFilterNew(Weapon, Target, IGPlus_PSEquipTS + 1.0);
+		// The old weapon stops predicting now; the new one is ready at the gate.
+		IGPlus_DetClientSwitchPending = Target;
+		IGPlus_DetClientGateWeapon = Target;
+		IGPlus_DetClientEntryGateTS = IGPlus_PSGate;
+		if (IGPlus_DetPendingFireTapWeapon == Weapon)
+			IGPlus_DetClearPendingFireTap();
+	}
+	xxServerPredictedSwitch(IGPlus_PSSerial, Target, IGPlus_PSFrom, TS, IGPlus_PSHolsterTS);
+}
+
+// Client: stock GetWeapon's "<weapon> has no ammo" message; the server never
+// sees a predicted press that resolved to nothing.
+simulated function IGPlus_PSNoAmmoMessage(Weapon Cur, class<Weapon> C) {
+	local Inventory Inv;
+	local Weapon W;
+	local int Guard;
+
+	if (C == none || (Cur != none && Cur.IsA(C.Name)))
+		return;
+	for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		if (Inv.IsA(C.Name)) {
+			W = Weapon(Inv);
+			if (W != none && !IGPlus_WeaponHasAmmo(W))
+				ClientMessage(W.ItemName$W.MessageNoAmmo);
+			return;
+		}
+	}
+}
+
+// Client: one stock Weapon.WeaponChange(F) pass from Start. True if it finds a
+// loaded weapon of group F; otherwise every empty one it passed prints its
+// no-ammo message, deepest first, as the stock recursion does.
+simulated function bool IGPlus_PSGroupWalk(Inventory Start, byte F) {
+	local Inventory Inv;
+	local Weapon W, Empty[8];
+	local int Guard, N;
+
+	for (Inv = Start; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		W = Weapon(Inv);
+		if (W == none || W.InventoryGroup != F)
+			continue;
+		if (IGPlus_WeaponHasAmmo(W))
+			return true;
+		if (N < ArrayCount(Empty)) {
+			Empty[N] = W;
+			N++;
+		}
+	}
+	while (N > 0) {
+		N--;
+		ClientMessage(Empty[N].ItemName$Empty[N].MessageNoAmmo);
+	}
+	return false;
+}
+
+// Client: point the running switch at Target (retarget, or the server's
+// target on a resume).
+simulated function IGPlus_PSApplyTarget(Weapon Target, float Gate) {
+	IGPlus_PSTarget = Target;
+	IGPlus_PSGate = Gate;
+	IGPlus_PSFilterRetarget(Target, IGPlus_PSEquipTS + 1.0);
+	if (bPSHolsterStarted) {
+		// Already swapped to the previous target locally: holster that one.
+		if (Weapon != IGPlus_PSFrom && Weapon != Target && TournamentWeapon(Weapon) != none)
+			IGPlus_PSClientHolster(Target);
+		else if (Weapon != Target)
+			ClientPending = Target;
+	}
+	// Always: a stale previous target here blocks the new weapon's readiness
+	// for good (stock only clears it on a non-animating swap frame).
+	IGPlus_DetClientSwitchPending = Target;
+	IGPlus_DetClientGateWeapon = Target;
+	IGPlus_DetClientEntryGateTS = Gate;
+}
+
+// Client: the holster just started; with fast weapon switch finish it on the
+// spot, as the server does (ClientDown.AnimEnd's swap without the anim).
+simulated function IGPlus_PSClientHolster(Weapon Next) {
+	local Weapon Old;
+
+	Old = Weapon;
+	TournamentWeapon(Old).ClientPutDown(Next);
+	if (!IGPlus_UseFastWeaponSwitch || Next == none)
+		return;
+	ClientPending = none;
+	Weapon = Next;
+	Old.GotoState('');
+	Next.GotoState('ClientActive');
+}
+
+// Client, every frame: start the local holster when the timeline says so (the
+// stock ClientDown state then swaps to ClientPending and plays the select), and
+// hold the weapon the timeline put up against late server echoes of an earlier
+// switch (replicated Weapon, RealWeapon).
+simulated function IGPlus_PSClientTick() {
+	if (!IGPlus_PSActive)
+		return;
+	if (Level.TimeSeconds > IGPlus_PSEquipTS + 1.0) {
+		IGPlus_PSActive = false;
+		IGPlus_PSKeep = none;
+		return;
+	}
+	if (!bPSHolsterStarted && Level.TimeSeconds >= IGPlus_PSHolsterTS) {
+		bPSHolsterStarted = true;
+		if (Weapon == IGPlus_PSFrom && TournamentWeapon(Weapon) != none)
+			IGPlus_PSClientHolster(IGPlus_PSTarget);
+	}
+	if (bPSHolsterStarted && Weapon == IGPlus_PSTarget)
+		IGPlus_PSKeep = IGPlus_PSTarget;
+	if (IGPlus_PSKeep != none && Weapon != IGPlus_PSKeep
+		&& IGPlus_PSKeep.Owner == self && !IGPlus_PSKeep.bDeleteMe)
+		Weapon = IGPlus_PSKeep;
+}
+
+// Server -> client: the server's holster starts later than the client thought
+// (later shot hold, or a late or backdated press); move the timeline with it.
+simulated function xxClientPSTimes(int Serial, float HolsterTS) {
+	if (Serial != IGPlus_PSSerial || !IGPlus_PSActive)
+		return;
+	IGPlus_PSHolsterTS = HolsterTS;
+	IGPlus_PSEquipTS = HolsterTS + IGPlus_PSDownTimeFor(IGPlus_PSFrom);
+	IGPlus_PSGate = IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(IGPlus_PSTarget);
+	IGPlus_DetClientEntryGateTS = IGPlus_PSGate;
+	IGPlus_PSFiltUntil[0] = IGPlus_PSEquipTS + 1.0;
+}
+
+// Server -> client: a retarget was refused; the server's switch keeps going to
+// Target. Follow it instead of rolling back.
+simulated function xxClientPSResume(int Serial, Weapon Target, float Gate) {
+	if (Serial != IGPlus_PSSerial || !IGPlus_PSActive || Target == none)
+		return;
+	if (Target != IGPlus_PSTarget)
+		IGPlus_PSApplyTarget(Target, Gate);
+}
+
+// Server -> client: the prediction was refused or overtaken; follow the server.
+simulated function xxClientPSReject(int Serial, Weapon ServerWeapon, float ServerGate) {
+	if (Serial != IGPlus_PSSerial)
+		return; // superseded by a later press
+	IGPlus_PSActive = false;
+	IGPlus_PSKeep = none;
+	// Going on to our own target: its holster echo is still to be dropped.
+	if (ServerWeapon == none || (ServerWeapon != IGPlus_PSFiltT1[0] && ServerWeapon != IGPlus_PSFiltT2[0]))
+		IGPlus_PSFilterClear();
+	IGPlus_DetClientSwitchPending = none;
+	IGPlus_DetClientGateWeapon = ServerWeapon;
+	IGPlus_DetClientEntryGateTS = ServerGate;
+	if (ServerWeapon == none)
+		return;
+	if (Weapon != ServerWeapon) {
+		if (ClientPending != ServerWeapon)
+			Super.ClientPutDown(Weapon, ServerWeapon);
+	} else if (ClientPending != none || Weapon.IsInState('ClientDown')) {
+		// Still on the server's weapon but mid local holster: stand it back up.
+		ClientPending = none;
+		Weapon.GotoState('');
+		Weapon.PlayIdleAnim();
+		if (TournamentWeapon(Weapon) != none)
+			TournamentWeapon(Weapon).bCanClientFire = true;
+	}
+}
+
+function IGPlus_PSLog(string What) {
+	if (Level.TimeSeconds - IGPlus_PredSwitchLastLogTS > 0.25) {
+		IGPlus_PredSwitchLastLogTS = Level.TimeSeconds;
+		Log("[PRED-SWITCH]"@What@PlayerReplicationInfo.PlayerName@"serverW="$Weapon@"pending="$PendingWeapon, 'IGPlus');
+	}
+}
+
+function IGPlus_PSReject(int Serial, string Reason, Weapon ServerWeapon) {
+	IGPlus_PSLog("reject"@Reason);
+	// A server-driven switch under way: send the client where it's going.
+	if (ServerWeapon == Weapon && PendingWeapon != none)
+		ServerWeapon = PendingWeapon;
+	xxClientPSReject(Serial, ServerWeapon, IGPlus_DetWeaponGateTS);
+}
+
+// The weapon must really be in this player's inventory (not just owned, e.g.
+// a slave enforcer), have ammo, and not be a slave.
+function bool IGPlus_PSValidTarget(Weapon T) {
+	local Inventory Inv;
+	local int Guard;
+
+	if (T == none || T.Owner != self || !IGPlus_WeaponHasAmmo(T))
+		return false;
+	if (Enforcer(T) != none && Enforcer(T).bIsSlave)
+		return false;
+	for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		if (Inv == T)
+			return true;
+	}
+	return false;
+}
+
+// Stop the outgoing weapon's DownWeapon (and its slave's) so the anim end
+// can't call ChangedWeapon again after the timeline has equipped.
+function IGPlus_PSStopDownState(Weapon W) {
+	if (W == none)
+		return;
+	W.GotoState('');
+	if (Enforcer(W) != none && Enforcer(W).SlaveEnforcer != none)
+		Enforcer(W).SlaveEnforcer.GotoState('');
+}
+
+function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float TS, float ClientHolsterTS) {
+	local bool bTargetOK;
+
+	// Demo playback replays our own calls to the server: the recorded server
+	// switches the weapon there, a second switch here would play it twice.
+	if (Role < ROLE_Authority)
+		return;
+
+	if (!IGPlus_PredictedSwitching || IsInState('Dying') || IsInState('FeigningDeath')
+		|| Level.Game.bGameEnded || Level.Pauser != "") {
+		IGPlus_PSReject(Serial, "state", Weapon);
+		return;
+	}
+	if (TS > CurrentTimeStamp + 1.0) {
+		IGPlus_PSReject(Serial, "future-ts", Weapon);
+		return;
+	}
+	bTargetOK = IGPlus_PSValidTarget(Target);
+
+	// Retarget / cancel of the switch in progress.
+	if (IGPlus_PSActive && TS <= IGPlus_PSEquipTS && From == IGPlus_PSFrom) {
+		IGPlus_PSSerial = Serial;
+		if (!bTargetOK) {
+			// A refused "back" already ended the client's switch: send it on to ours.
+			if (Target == IGPlus_PSFrom) {
+				IGPlus_PSLog("reject back="$Target);
+				xxClientPSReject(Serial, IGPlus_PSTarget, IGPlus_PSGate);
+				return;
+			}
+			xxClientPSResume(Serial, IGPlus_PSTarget, IGPlus_PSGate);
+			IGPlus_PSLog("resume target="$Target);
+			return;
+		}
+		if (Target == IGPlus_PSFrom) {
+			IGPlus_PSBringBack(Serial, TS, ClientHolsterTS);
+			return;
+		}
+		IGPlus_PSTarget = Target;
+		IGPlus_PSGate = IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(Target);
+		if (bPSHolsterStarted) {
+			PendingWeapon = Target;
+			IGPlus_DetPendingSeen = Target; // no announcement; the client did this
+		}
+		return;
+	}
+
+	// Finish our previous switch first: the client already counts it as done
+	// (its press came after its equip point, or its hold ended earlier).
+	if (IGPlus_PSActive) {
+		if (From == IGPlus_PSTarget)
+			IGPlus_PSServerAdvance(FMax(TS, IGPlus_PSEquipTS));
+		else
+			IGPlus_PSServerAdvance(TS);
+	}
+	if (IGPlus_PSActive) {
+		IGPlus_PSReject(Serial, "overlap", Weapon);
+		return;
+	}
+	if (!bTargetOK) {
+		IGPlus_PSReject(Serial, "target="$Target, Weapon);
+		return;
+	}
+	// An out-of-ammo pick that hasn't started holstering loses to the
+	// player's own choice, as with the stock execs.
+	if (PendingWeapon != none && PendingWeapon == IGPlus_DetAutoSwitchPending
+		&& Weapon != none && !Weapon.bChangeWeapon && !Weapon.IsInState('DownWeapon')) {
+		PendingWeapon = none;
+		IGPlus_DetAutoSwitchPending = none;
+		IGPlus_DetPendingSeen = none;
+		// Retract the auto pick if the client already heard of it and it lands
+		// after our predicted switch's timeline ends.
+		xxClientSwitchPending(none, 0.0);
+	}
+	if (Weapon == none || From != Weapon || Target == Weapon || PendingWeapon != none) {
+		IGPlus_PSReject(Serial, "from="$From, Weapon);
+		return;
+	}
+
+	// No backdating: a press can't start before the moves already processed,
+	// so holds and select time can't be skipped. A late press is moved and the
+	// client told.
+	TS = FMax(TS, CurrentTimeStamp);
+	IGPlus_PSSerial = Serial;
+	IGPlus_PSActive = true;
+	IGPlus_PSFrom = Weapon;
+	IGPlus_PSTarget = Target;
+	IGPlus_PSTS = TS;
+	IGPlus_PSHolsterTS = FMin(FMax(IGPlus_PSHolsterStart(Weapon, TS), ClientHolsterTS), TS + 1.0);
+	IGPlus_PSEquipTS = IGPlus_PSHolsterTS + IGPlus_PSDownTimeFor(Weapon);
+	IGPlus_PSGate = IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(Target);
+	bPSHolsterStarted = false;
+	IGPlus_DetAutoSwitchPending = none;
+	if (IGPlus_PSHolsterTS > ClientHolsterTS + 0.001)
+		xxClientPSTimes(Serial, IGPlus_PSHolsterTS);
+}
+
+// Server: the client went back to From before the equip point, deciding
+// "holster started" by TS > its HolsterTS. Not started: cancel (if our holster
+// raced ahead, undo it keeping the gate the client kept). Started: From comes
+// back up at TS with a fresh select (stock BringUp out of DownWeapon).
+function IGPlus_PSBringBack(int Serial, float TS, float ClientHolsterTS) {
+	// A server-driven switch took over during the holster: it wins.
+	if (bPSHolsterStarted && (PendingWeapon != IGPlus_PSTarget || Weapon != IGPlus_PSFrom)) {
+		IGPlus_PSAbort("back-overtaken");
+		return;
+	}
+	IGPlus_PSActive = false;
+	if (TS <= ClientHolsterTS) {
+		if (bPSHolsterStarted)
+			IGPlus_PSBringUpFrom(IGPlus_DetWeaponGateTS);
+	} else {
+		if (!bPSHolsterStarted) {
+			// Run the holster the client ran (settles the weapon's fire state).
+			IGPlus_PSActive = true;
+			IGPlus_PSServerAdvance(IGPlus_PSHolsterTS);
+			if (!IGPlus_PSActive)
+				return; // aborted, client already told
+			IGPlus_PSActive = false;
+		}
+		// No backdating past processed moves; ChangedWeapon sends the gate and
+		// the client takes the later one.
+		IGPlus_PSBringUpFrom(FMax(TS, CurrentTimeStamp) + IGPlus_DetSelectTimeFor(IGPlus_PSFrom));
+	}
+	// Ordered after any ClientPutDown our holster sent: the client may drop
+	// its filter for this switch now.
+	xxClientPSFilterDone(Serial);
+}
+
+function IGPlus_PSBringUpFrom(float Gate) {
+	local Weapon TransPrev;
+
+	IGPlus_PSGate = Gate;
+	PendingWeapon = IGPlus_PSFrom;
+	// Translocator.BringUp forgets the weapon it returns to; this isn't a new equip.
+	if (Translocator(IGPlus_PSFrom) != none)
+		TransPrev = Translocator(IGPlus_PSFrom).PreviousWeapon;
+	bPSForcing = true;
+	ChangedWeapon(); // Weapon == PendingWeapon in DownWeapon: BringUp
+	bPSForcing = false;
+	if (Translocator(IGPlus_PSFrom) != none)
+		Translocator(IGPlus_PSFrom).PreviousWeapon = TransPrev;
+}
+
+simulated function xxClientPSFilterDone(int Serial) {
+	if (Serial == IGPlus_PSSerial)
+		IGPlus_PSFilterClear();
+}
+
+// Server: drop the prediction (a server-driven switch took over, or From is
+// gone). Finish a holster already under way first (its anim-end call to
+// ChangedWeapon was swallowed), then tell the client where the server is going.
+function IGPlus_PSAbort(string Reason) {
+	local Weapon Dest;
+
+	IGPlus_PSActive = false;
+	if (bPSHolsterStarted && Weapon != none && Weapon.IsInState('DownWeapon') && PendingWeapon != none) {
+		IGPlus_PSStopDownState(Weapon);
+		ChangedWeapon();
+	}
+	Dest = Weapon;
+	if (PendingWeapon != none)
+		Dest = PendingWeapon;
+	IGPlus_PSReject(IGPlus_PSSerial, Reason, Dest);
+}
+
+// Server, every received move (before binding and Det steps).
+function IGPlus_PSServerAdvance(float StepTS) {
+	local Weapon Old;
+
+	if (!IGPlus_PSActive)
+		return;
+	if (!bPSHolsterStarted) {
+		if (PendingWeapon != none) {
+			IGPlus_PSAbort("server-switch");
+			return;
+		}
+		if (StepTS < IGPlus_PSHolsterTS)
+			return;
+		if (Weapon != IGPlus_PSFrom) {
+			IGPlus_PSAbort("from-gone");
+			return;
+		}
+		bPSHolsterStarted = true;
+		PendingWeapon = IGPlus_PSTarget;
+		// Keep the pending-weapon tracker from announcing what the client did.
+		IGPlus_DetPendingSeen = PendingWeapon;
+		IGPlus_DetPendingSeenTS = IGPlus_PSTS;
+		Old = Weapon;
+		Old.bChangeWeapon = true;
+		if (!Old.IsInState('DownWeapon')) {
+			Old.GotoState('DownWeapon');
+			// Its Begin code (TweenDown) runs next tick; a bring-back or a fast
+			// switch leaves DownWeapon before that. The client ran it at holster.
+			Old.TweenDown();
+		}
+	}
+	if (StepTS < IGPlus_PSEquipTS)
+		return;
+	if (PendingWeapon != IGPlus_PSTarget) {
+		IGPlus_PSAbort("pending-changed");
+		return;
+	}
+	Old = Weapon;
+	if (Old != IGPlus_PSTarget)
+		IGPlus_PSStopDownState(Old);
+	bPSForcing = true;
+	ChangedWeapon();
+	bPSForcing = false;
+	IGPlus_PSActive = false;
+}
+
+// Kind: 1 = SwitchWeapon(F), 2 = GetWeapon(C), 3 = NextWeapon, 4 = PrevWeapon.
+// Entry point for the IG+ HUDs' exec stubs; falls back to the stock command for
+// any non-bbPlayer owner (spectators).
+static function IGPlus_HUDWeaponCommand(Actor HUDOwner, byte Kind, byte F, class<Weapon> C) {
+	local PlayerPawn P;
+
+	P = PlayerPawn(HUDOwner);
+	if (bbPlayer(P) != none) {
+		bbPlayer(P).IGPlus_ClientWeaponCommand(Kind, F, C);
+		return;
+	}
+	if (P == none)
+		return;
+	switch (Kind) {
+		case 1: P.SwitchWeapon(F); break;
+		case 2: P.GetWeapon(C); break;
+		case 3: P.NextWeapon(); break;
+		case 4: P.PrevWeapon(); break;
+	}
+}
+
+simulated function IGPlus_ClientWeaponCommand(byte Kind, byte F, class<Weapon> C) {
+	local Weapon Predicted, ClientPend;
+	local bool bKnown;
+
+	if (Level.NetMode != NM_Client) {
+		IGPlus_RunWeaponCommand(Kind, F, C);
+		return;
+	}
+	if (IGPlus_PSClientCanPredict()) {
+		IGPlus_PSClientCommand(Kind, F, C);
+		return;
+	}
+	ClientPend = ClientPending;
+	if (ClientPend == none)
+		ClientPend = IGPlus_DetClientSwitchPending;
+	bKnown = IGPlus_ResolveWeaponCommand(Kind, F, C, Weapon, ClientPend, Predicted);
+	xxServerWeaponCommand(Kind, F, C, bKnown, Predicted, Weapon, ClientPend);
+}
+
+function IGPlus_RunWeaponCommand(byte Kind, byte F, class<Weapon> C) {
+	switch (Kind) {
+		case 1: SwitchWeapon(F); break;
+		case 2: GetWeapon(C); break;
+		case 3: NextWeapon(); break;
+		case 4: PrevWeapon(); break;
+	}
+}
+
+function xxServerWeaponCommand(byte Kind, byte F, class<Weapon> C, bool bClientKnown,
+	Weapon ClientTarget, Weapon ClientWeapon, Weapon ClientPend
+) {
+	local Weapon W0, P0, LogicTarget, ServerTarget;
+	local bool bLogicKnown, bUnchanged, bClientMatch, bLogicMatch;
+
+	// Demo playback (see xxServerPredictedSwitch).
+	if (Role < ROLE_Authority)
+		return;
+
+	W0 = Weapon;
+	P0 = PendingWeapon;
+	bLogicKnown = IGPlus_ResolveWeaponCommand(Kind, F, C, W0, P0, LogicTarget);
+	IGPlus_RunWeaponCommand(Kind, F, C);
+
+	// The execs bail out here without switching; nothing to compare.
+	if (IsInState('Dying') || Level.Game.bGameEnded || Level.Pauser != "")
+		return;
+
+	if (Weapon != W0)
+		ServerTarget = Weapon;
+	else if (PendingWeapon != P0)
+		ServerTarget = PendingWeapon;
+	bUnchanged = Weapon == W0 && PendingWeapon == P0;
+
+	bClientMatch = bClientKnown && IGPlus_PredSwitchMatches(ClientTarget, ServerTarget, bUnchanged, P0);
+	bLogicMatch = bLogicKnown && IGPlus_PredSwitchMatches(LogicTarget, ServerTarget, bUnchanged, P0);
+
+	IGPlus_PredSwitchTotal++;
+	if (bClientMatch)
+		IGPlus_PredSwitchClientMatch++;
+	if (bLogicMatch)
+		IGPlus_PredSwitchLogicMatch++;
+
+	if ((!bClientMatch || !bLogicMatch) && Level.TimeSeconds - IGPlus_PredSwitchLastLogTS > 0.25) {
+		IGPlus_PredSwitchLastLogTS = Level.TimeSeconds;
+		Log("[PRED-SWITCH] mismatch"@PlayerReplicationInfo.PlayerName
+			@"cmd="$IGPlus_WeaponCommandName(Kind, F, C)
+			@"client="$ClientTarget$"(known="$bClientKnown$")"
+			@"logic="$LogicTarget$"(known="$bLogicKnown$")"
+			@"server="$ServerTarget$"(unchanged="$bUnchanged$")"
+			@"clientW="$ClientWeapon@"clientPend="$ClientPend
+			@"serverW="$W0@"serverPend="$P0, 'IGPlus');
+	}
+	if (IGPlus_PredSwitchTotal % 25 == 0)
+		Log("[PRED-SWITCH] summary"@PlayerReplicationInfo.PlayerName
+			@"commands="$IGPlus_PredSwitchTotal
+			@"clientMatch="$IGPlus_PredSwitchClientMatch
+			@"logicMatch="$IGPlus_PredSwitchLogicMatch, 'IGPlus');
+}
+
+// An unchanged outcome also matches predicting the weapon already pending
+// (re-selecting it rewrites PendingWeapon with the same value).
+static final function bool IGPlus_PredSwitchMatches(Weapon Predicted, Weapon ServerTarget, bool bUnchanged, Weapon PendBefore) {
+	if (Predicted == ServerTarget)
+		return true;
+	return bUnchanged && Predicted != none && Predicted == PendBefore;
+}
+
+static final function string IGPlus_WeaponCommandName(byte Kind, byte F, class<Weapon> C) {
+	switch (Kind) {
+		case 1: return "SwitchWeapon"@F;
+		case 2: return "GetWeapon"@C;
+		case 3: return "NextWeapon";
+		case 4: return "PrevWeapon";
+	}
+	return "?";
+}
+
+static final function bool IGPlus_WeaponHasAmmo(Weapon W) {
+	return W.AmmoType == none || W.AmmoType.AmmoAmount > 0;
+}
+
+// First weapon of group F with ammo at or after Start. Stock
+// Weapon.WeaponChange does this recursively but is not simulated, so it does
+// nothing on the client.
+static final function Weapon IGPlus_FindGroupWeapon(Inventory Start, byte F) {
+	local Inventory Inv;
+	local Weapon W;
+	local int Guard;
+
+	for (Inv = Start; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		W = Weapon(Inv);
+		if (W != none && W.InventoryGroup == F && IGPlus_WeaponHasAmmo(W))
+			return W;
+	}
+	return none;
+}
+
+// Mirrors the switch execs below: Target = the weapon the command switches to,
+// none if it changes nothing. Returns false when the outcome is not knowable
+// from here (Next/Prev with no weapon up fall back to SwitchToBestWeapon).
+simulated function bool IGPlus_ResolveWeaponCommand(byte Kind, byte F, class<Weapon> C,
+	Weapon Cur, Weapon Pend, out Weapon Target
+) {
+	local Inventory Inv;
+	local Weapon Base, W, Prev;
+	local int Group, Guard;
+	local bool bFound;
+
+	Target = none;
+	switch (Kind) {
+	case 1: // SwitchWeapon(F)
+		if (Inventory == none)
+			return true;
+		if (Cur != none && Cur.Inventory != none)
+			W = IGPlus_FindGroupWeapon(Cur.Inventory, F);
+		if (W == none)
+			W = IGPlus_FindGroupWeapon(Inventory, F);
+		if (W != Cur)
+			Target = W;
+		return true;
+
+	case 2: // GetWeapon(C)
+		if (Inventory == none || C == none || (Cur != none && Cur.IsA(C.Name)))
+			return true;
+		for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+			Guard++;
+			if (Inv.IsA(C.Name)) {
+				W = Weapon(Inv);
+				if (W != none && IGPlus_WeaponHasAmmo(W))
+					Target = W;
+				return true;
+			}
+		}
+		return true;
+
+	case 3: // NextWeapon
+		if (Cur == none)
+			return false;
+		Base = Cur;
+		if (Pend != none)
+			Base = Pend;
+		Group = 100;
+		for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+			Guard++;
+			W = Weapon(Inv);
+			if (W == none)
+				continue;
+			if (W.InventoryGroup == Base.InventoryGroup) {
+				if (W == Base)
+					bFound = true;
+				else if (bFound && IGPlus_WeaponHasAmmo(W)) {
+					Target = W;
+					break;
+				}
+			} else if (W.InventoryGroup > Base.InventoryGroup && IGPlus_WeaponHasAmmo(W)
+				&& W.InventoryGroup < Group) {
+				Group = W.InventoryGroup;
+				Target = W;
+			}
+		}
+		bFound = false;
+		Group = Base.InventoryGroup;
+		Guard = 0;
+		if (Target == none)
+			for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+				Guard++;
+				W = Weapon(Inv);
+				if (W == none)
+					continue;
+				if (W.InventoryGroup == Base.InventoryGroup) {
+					if (W == Base) {
+						bFound = true;
+						if (Prev != none)
+							Target = Prev;
+					} else if (!bFound && Target == none && IGPlus_WeaponHasAmmo(W))
+						Prev = W;
+				} else if (W.InventoryGroup < Group && IGPlus_WeaponHasAmmo(W)) {
+					Group = W.InventoryGroup;
+					Target = W;
+				}
+			}
+		return true;
+
+	case 4: // PrevWeapon
+		if (Cur == none)
+			return false;
+		Base = Cur;
+		if (Pend != none)
+			Base = Pend;
+		Group = 0;
+		for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+			Guard++;
+			W = Weapon(Inv);
+			if (W == none)
+				continue;
+			if (W.InventoryGroup == Base.InventoryGroup) {
+				if (W == Base) {
+					bFound = true;
+					if (Prev != none) {
+						Target = Prev;
+						break;
+					}
+				} else if (!bFound && IGPlus_WeaponHasAmmo(W))
+					Prev = W;
+			} else if (W.InventoryGroup < Base.InventoryGroup && IGPlus_WeaponHasAmmo(W)
+				&& W.InventoryGroup >= Group) {
+				Group = W.InventoryGroup;
+				Target = W;
+			}
+		}
+		bFound = false;
+		Group = Base.InventoryGroup;
+		Guard = 0;
+		if (Target == none)
+			for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+				Guard++;
+				W = Weapon(Inv);
+				if (W == none)
+					continue;
+				if (W.InventoryGroup == Base.InventoryGroup) {
+					if (W == Base)
+						bFound = true;
+					else if (bFound && Target == none && IGPlus_WeaponHasAmmo(W))
+						Target = W;
+				} else if (W.InventoryGroup > Group && IGPlus_WeaponHasAmmo(W)) {
+					Group = W.InventoryGroup;
+					Target = W;
+				}
+			}
+		return true;
+	}
+	return false;
 }
 
 exec function GetWeapon(class<Weapon> NewWeaponClass )
@@ -11979,10 +14378,18 @@ exec function NextWeapon()
 }
 
 simulated function ChangedWeapon() {
-	if (Weapon != None && IGPlus_UseFastWeaponSwitch) {
+	// Predicted switch: the old weapon's DownWeapon anim ending calls this on
+	// server time; the timeline equips at IGPlus_PSEquipTS instead.
+	if (Role == ROLE_Authority && IGPlus_PSActive && bPSHolsterStarted && !bPSForcing
+		&& PendingWeapon == IGPlus_PSTarget)
+		return;
+
+	// (Not for a predicted bring-back: stock BringUp needs DownWeapon.)
+	if (Weapon != None && IGPlus_UseFastWeaponSwitch && !(bPSForcing && Weapon == PendingWeapon)) {
 		Weapon.GotoState('');
 		IGPlus_MarkDeterministicSwitchGuard();
-		ClientPutDown(none, PendingWeapon);
+		if (!bPSForcing) // a predicted switch: the client already swapped
+			ClientPutDown(none, PendingWeapon);
 	}
 
 	// Grace for in-flight steps still targeting the outgoing weapon.
@@ -11993,6 +14400,12 @@ simulated function ChangedWeapon() {
 		IGPlus_DetInFlightSlack = IGPlus_DetComputeInFlightSlack();
 		IGPlus_DetPrevWeaponStepTS = CurrentTimeStamp + IGPlus_DetInFlightSlack;
 		IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + FMax(0.25, IGPlus_DetInFlightSlack + 0.13);
+		if (bPSForcing) {
+			// The client stopped predicting the old weapon after TS (a step
+			// stamped TS was built before the press).
+			IGPlus_DetPrevWeaponStepTS = IGPlus_PSTS + 0.0001;
+			IGPlus_DetPrevWeaponUntilTS = CurrentTimeStamp + 0.25;
+		}
 		// Drop only a click queued for the outgoing weapon. A click on the
 		// incoming one (client already in its select) must survive, or the
 		// client fires it alone. Client mirrors this in ClientPutDown.
@@ -12008,6 +14421,8 @@ simulated function ChangedWeapon() {
 			// Gate from the real select duration, not a floor; replicate the
 			// post-FMax value so the client holds the server's exact gate.
 			IGPlus_DetWeaponGateTS = FMax(IGPlus_DetWeaponGateTS, CurrentTimeStamp + IGPlus_DetSelectTimeFor(Weapon));
+			if (bPSForcing)
+				IGPlus_DetWeaponGateTS = IGPlus_PSGate; // the gate the client already holds
 			xxClientDetEntryGate(IGPlus_DetWeaponGateTS, Weapon);
 		} else {
 			// v4 steps clear bFire/bAltFire; restore held state for legacy weapons.
@@ -12018,8 +14433,58 @@ simulated function ChangedWeapon() {
 	}
 }
 
+// Demo playback: the recording holds our own weapon's animations and sounds
+// as our screen had them (DemoPlaySound, AnimSequence). The recorded server
+// calls below drove them while recording, so here they would play them again:
+// the select of a switch, a hammer blast. With predicted switching and
+// self-knockback our screen ran them a ping before these calls came in, so the
+// second copy is heard apart from the first.
+function ClientWeaponEvent(name EventType)
+{
+	if (IGPlus_InDemoPlayback())
+		return;
+	Super.ClientWeaponEvent(EventType);
+}
+
+function SendClientFire(Weapon W, int N)
+{
+	if (IGPlus_InDemoPlayback())
+		return;
+	Super.SendClientFire(W, N);
+}
+
+function SendClientAltFire(Weapon W, int N)
+{
+	if (IGPlus_InDemoPlayback())
+		return;
+	Super.SendClientAltFire(W, N);
+}
+
+// Stock: the server's select-end "this weapon is really up". During a predicted
+// switch a late one for the previous weapon would undo the local switch.
+function RealWeapon(Weapon Real, int N)
+{
+	if (IGPlus_InDemoPlayback())
+		return;
+	if (IGPlus_PSActive && (IGPlus_PSRunning() || Real != IGPlus_PSKeep)) {
+		if (N > WeaponUpdate)
+			WeaponUpdate = N;
+		return;
+	}
+	Super.RealWeapon(Real, N);
+}
+
 function ClientPutDown(Weapon Current, Weapon Next)
 {
+	if (IGPlus_InDemoPlayback())
+		return;
+	// The server's holster announcement for a switch this client predicted:
+	// it already ran the holster and select locally.
+	if (IGPlus_PSFilterDrops(Current, Next))
+		return;
+	// Anything else is a server-driven switch: it overrides our prediction.
+	IGPlus_PSActive = false;
+	IGPlus_PSKeep = none;
 	IGPlus_MarkDeterministicSwitchGuard();
 	IGPlus_DetClientSwitchPending = none; // the real holster has started
 	if (IGPlus_DetPendingFireTapWeapon != Next)
@@ -12215,14 +14680,18 @@ simulated function bool IGPlus_DetectDemoPlayback() {
 	return false;
 }
 
-simulated function bool IGPlus_ShowRealModelsInDemo() {
+simulated function bool IGPlus_InDemoPlayback() {
 	// Recheck once a second so we never depend on the demo spectator spawning first
 	if (IGPlus_IsDemoPlayback == false && Level.NetMode == NM_Client && Level.TimeSeconds >= IGPlus_DemoCheckTime) {
 		IGPlus_IsDemoPlayback = IGPlus_DetectDemoPlayback();
 		IGPlus_DemoCheckTime = Level.TimeSeconds + 1.0;
 	}
 
-	return IGPlus_IsDemoPlayback && Settings != none && Settings.bDemoShowRealModels;
+	return IGPlus_IsDemoPlayback || zzbDemoPlayback;
+}
+
+simulated function bool IGPlus_ShowRealModelsInDemo() {
+	return IGPlus_InDemoPlayback() && IGPlus_IsDemoPlayback && Settings != none && Settings.bDemoShowRealModels;
 }
 
 // Client demos record the recording player's forced skins.
@@ -13187,6 +15656,12 @@ function IGPlus_ApplyNetcodeSettingsToPlayers() {
 			continue;
 
 		BP.IGPlus_EnableInputReplication = zzUTPure.Settings.bEnableInputReplication;
+		BP.IGPlus_PredictedSwitching = zzUTPure.Settings.PredictedSwitchingActive();
+		BP.IGPlus_PredictedTranslocation = zzUTPure.Settings.PredictedTranslocationActive();
+		BP.IGPlus_PredictedSelfKnockback = zzUTPure.Settings.PredictedSelfKnockbackActive();
+		BP.IGPlus_PushSafeAim = zzUTPure.Settings.PushSafeAimActive();
+		BP.IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
+		BP.IGPlus_PredictedDiscBoost = zzUTPure.Settings.bEnablePredictedDiscBoost;
 		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
 		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
 
@@ -13306,6 +15781,12 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bAllowMultiWeapon");
 	IGPlus_ServerSendSetting("bDelayedPickupSpawn");
 	IGPlus_ServerSendSetting("bUseFastWeaponSwitch");
+	IGPlus_ServerSendSetting("bEnablePredictedSwitching");
+	IGPlus_ServerSendSetting("bEnablePredictedTranslocation");
+	IGPlus_ServerSendSetting("bEnablePredictedSelfKnockback");
+	IGPlus_ServerSendSetting("bEnablePushSafeAim");
+	IGPlus_ServerSendSetting("bEnableDeterministicTranslocator");
+	IGPlus_ServerSendSetting("bEnablePredictedDiscBoost");
 	IGPlus_ServerSendSetting("bTellSpectators");
 
 	IGPlus_ServerSendSetting("bJumpingPreservesMomentum");

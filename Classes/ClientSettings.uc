@@ -63,6 +63,9 @@ var config bool   bDemoShowClientMessages;
 var config bool   bDebugMovement;
 var config bool   bEnableKillCam;
 var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
+var config bool   bCameraCorrectionSmoothing; // Apply corrections to the simulation at once, ease only the camera
+var config float  CameraCorrectionSmoothingTime; // Seconds until ~95% of a correction is gone from the camera
+var config bool   bSmoothLiftJump; // Leaving a moving lift: move to the server's spot at once, camera eased
 var config float  MinDodgeClickTime; // Minimum time between two presses of the same direction for them to count as a dodge
 var config bool   bUseOldMouseInput;
 var config PIDControllerSettings SmoothVRController;
@@ -139,6 +142,7 @@ var CrosshairLayer TopLayer;
 var config bool   bBioUseClientSideAnimations;
 var config bool   bShockBeamUseClientSideAnimations;
 var config bool   bShockProjectileUseClientSideAnimations;
+var config bool   bPredictiveShockCombos;
 var config bool   bPulseUseClientSideAnimations;
 var config bool   bRipperUseClientSideAnimations;
 var config bool   bFlakUseClientSideAnimations;
@@ -378,6 +382,9 @@ simulated function string DumpSettings() {
 		GetSetting("bDebugMovement")$
 		GetSetting("bEnableKillCam")$
 		GetSetting("FakeCAPInterval")$
+		GetSetting("bCameraCorrectionSmoothing")$
+		GetSetting("CameraCorrectionSmoothingTime")$
+		GetSetting("bSmoothLiftJump")$
 		GetSetting("MinDodgeClickTime")$
 		GetSetting("bUseOldMouseInput")$
 		GetSetting("SmoothVRController")$
@@ -423,6 +430,7 @@ simulated function string DumpSettings() {
 		GetSetting("bBioUseClientSideAnimations")$
 		GetSetting("bShockBeamUseClientSideAnimations")$
 		GetSetting("bShockProjectileUseClientSideAnimations")$
+		GetSetting("bPredictiveShockCombos")$
 		GetSetting("bPulseUseClientSideAnimations")$
 		GetSetting("bRipperUseClientSideAnimations")$
 		GetSetting("bFlakUseClientSideAnimations")$
@@ -482,6 +490,9 @@ defaultproperties
 	bDebugMovement=False
 	bEnableKillCam=False
 	FakeCAPInterval=0.1
+	bCameraCorrectionSmoothing=False
+	CameraCorrectionSmoothingTime=0.1
+	bSmoothLiftJump=True
 	MinDodgeClickTime=0
 	bUseOldMouseInput=False
 	SmoothVRController=(p=0.09,i=0.05,d=0.00)
@@ -527,6 +538,7 @@ defaultproperties
 	bBioUseClientSideAnimations=False
 	bShockBeamUseClientSideAnimations=False
 	bShockProjectileUseClientSideAnimations=False
+	bPredictiveShockCombos=True
 	bPulseUseClientSideAnimations=False
 	bRipperUseClientSideAnimations=False
 	bFlakUseClientSideAnimations=False

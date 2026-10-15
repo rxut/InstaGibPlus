@@ -194,6 +194,29 @@ function CompSwap(vector Loc, float CR, float CH, int HistoricalIndex) {
     bCompActive = true;
 }
 
+// Stand in for Actual at Loc with Actual's current collision (the
+// deterministic translocator's own disc, placed where its thrower saw it).
+function CompSwapAt(vector Loc) {
+    if (Actual == None || Actual.bDeleteMe || bCompActive)
+        return;
+
+    WasColliding = Actual.bCollideActors;
+    WasBlockingActors = Actual.bBlockActors;
+    WasBlockingPlayers = Actual.bBlockPlayers;
+    WasProjTarget = Actual.bProjTarget;
+
+    Actual.SetCollision(false, false, false);
+    Actual.bProjTarget = false;
+
+    SetLocation(Loc);
+    if (CollisionRadius != Actual.CollisionRadius || CollisionHeight != Actual.CollisionHeight)
+        SetCollisionSize(Actual.CollisionRadius, Actual.CollisionHeight);
+    SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
+    bProjTarget = WasProjTarget;
+
+    bCompActive = true;
+}
+
 function CompEnd() {
     if (bCompActive) {
         bCompActive = false;

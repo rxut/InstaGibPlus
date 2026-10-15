@@ -69,6 +69,9 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [DesiredNetUpdateRate](#desirednetupdaterate)
 1. [DesiredNetspeed](#desirednetspeed)
 1. [FakeCAPInterval](#fakecapinterval)
+1. [bCameraCorrectionSmoothing](#bcameracorrectionsmoothing)
+1. [CameraCorrectionSmoothingTime](#cameracorrectionsmoothingtime)
+1. [bSmoothLiftJump](#bsmoothliftjump)
 1. [bNoSmoothing](#bnosmoothing)
 1. [bLogClientMessages](#blogclientmessages)
 1. [bDemoShowClientMessages](#bdemoshowclientmessages)
@@ -117,6 +120,7 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bBioUseClientSideAnimations](#bbiouseclientsideanimations)
 1. [bShockBeamUseClientSideAnimations](#bshockbeamuseclientsideanimations)
 1. [bShockProjectileUseClientSideAnimations](#bshockprojectileuseclientsideanimations)
+1. [bPredictiveShockCombos](#bpredictiveshockcombos)
 1. [bPulseUseClientSideAnimations](#bpulseuseclientsideanimations)
 1. [bRipperUseClientSideAnimations](#bripperuseclientsideanimations)
 1. [bFlakUseClientSideAnimations](#bflakuseclientsideanimations)
@@ -428,6 +432,25 @@ Tells the server to send an acknowledgement of your movement updates (see [Desir
 
 Smaller values (closer to 0) result in acknowledgements being sent more frequently, negative values send an acknowledgement for every movement update.
 Higher values result in less frequent acknowledgements which can result in degraded client performance (FPS), or even crashes.
+
+## bCameraCorrectionSmoothing
+**Type: bool**  
+**Default: False**  
+
+If set to `True`, a correction from the server moves you to the corrected spot at once, but your camera eases there over [CameraCorrectionSmoothingTime](#cameracorrectionsmoothingtime) instead of jumping. If [bEnablePushSafeAim](#benablepushsafeaim) is on, shots still go through your crosshair while the camera catches up.
+
+## CameraCorrectionSmoothingTime
+**Type: float**  
+**Default: 0.1**  
+**Unit: s**  
+
+How long the camera takes to ease out a correction (about 95% of it is gone after this time). Only used with [bCameraCorrectionSmoothing](#bcameracorrectionsmoothing).
+
+## bSmoothLiftJump
+**Type: bool**  
+**Default: True**  
+
+If set to `True`, when you jump or step off a moving lift, you move straight to where the server has you and your view eases there, instead of snapping there a ping later.
 
 ## bNoSmoothing
 **Type: bool**  
@@ -778,6 +801,12 @@ Enable client-side animation timing for Shock Beam ping-compensated logic.
 
 Enable client-side animation timing for Shock Projectile ping-compensated logic.
 
+## bPredictiveShockCombos
+**Type: bool**  
+**Default: True**  
+
+Only used with [bShockProjectileUseClientSideAnimations](#bshockprojectileuseclientsideanimations). If set to `True`, your own shock ball flies on your own timeline, where the server tests your beam against it, so a combo shows the moment you hit it. If set to `False`, the older client-side animation is used.
+
 ## bPulseUseClientSideAnimations
 **Type: bool**  
 **Default: False**  
@@ -887,7 +916,7 @@ Parameters marked `optional` do not have to be supplied.
 ## EnableDebugData
 **Parameters: (bool b)**  
 
-Displays a variety of useful debugging information on screen.
+Displays a variety of useful debugging information on screen. While on, the debug lines are also written to a new file in your UT Logs folder, named IGPlusDebug_\<date\>_\<time\>.log. Turning it off closes the file.
 ## EnableHitSound
 **Parameters: (bool b)**
 
@@ -1261,6 +1290,12 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [WarpFixDelay](#warpfixdelay)
 1. [FireTimeout](#firetimeout)
 1. [DetFireClockMargin](#detfireclockmargin)
+1. [bEnablePredictedSwitching](#benablepredictedswitching)
+1. [bEnablePushSafeAim](#benablepushsafeaim)
+1. [bEnablePredictedSelfKnockback](#benablepredictedselfknockback)
+1. [bEnableDeterministicTranslocator](#benabledeterministictranslocator)
+1. [bEnablePredictedTranslocation](#benablepredictedtranslocation)
+1. [bEnablePredictedDiscBoost](#benablepredicteddiscboost)
 1. [bEnableCarcassCollision](#benablecarcasscollision)
 1. [ShowTouchedPackage](#showtouchedpackage)
 1. [bEnableDamageDebugMode](#benabledamagedebugmode)
@@ -1901,6 +1936,48 @@ Shots more than this long in the past are rejected.
 **Unit: seconds**  
 
 Stops clients whose clock runs fast, such as speed hacks, from firing deterministic weapons faster than normal. Normal lag does not trigger it. 0 or less disables the check.
+
+## bEnablePredictedSwitching
+
+**Type: bool**  
+**Default: True**  
+
+If True, weapon switches start on the client the moment the key is pressed instead of one round trip later, and the server applies them at the same timestamp: the holster, the swap and the moment the new weapon may fire land on the same instants on both sides. The server validates every switch and rolls the client back if it can't honour one. Requires bEnableInputReplication to be False, works with or without bUseFastWeaponSwitch, and IG+'s own HUD on the client. Switches the server makes itself (out of ammo, pickups, respawn) are unchanged.
+
+## bEnablePushSafeAim
+
+**Type: bool**  
+**Default: True**  
+
+If True, a shot fired right after the shooter was pushed leaves from where the shooter's screen had them, not from where the push had already moved them on the server. Projectiles fired from a moving lift leave from where the shooter saw themselves on the lift, and meet the lift where the shooter saw it. With [bCameraCorrectionSmoothing](#bcameracorrectionsmoothing), shots go through the crosshair while the camera eases out a correction. Requires bEnableInputReplication to be False. The lift part needs the weapon's bEnablePingCompensation.
+
+## bEnablePredictedSelfKnockback
+
+**Type: bool**  
+**Default: True**  
+
+If True, the push from your own rockets, flak slug, shock ball, ripper alt-fire and impact hammer is applied on your client the moment it happens, and the server applies the same push at the same point in your movement, so you aren't corrected a ping later. The server still decides the push. If it differs from what your client predicted, you get a normal correction. Requires bEnableInputReplication to be False and a 469 server. Projectiles also need their weapon's ping compensation.
+
+## bEnableDeterministicTranslocator
+
+**Type: bool**  
+**Default: True**  
+
+If True, translocator throws, recalls and translocations follow the same rules on client and server at the same timestamp, and you see your own disc from the moment you throw it. The server's disc follows your own moves, so TranslocatorCompensatePing is not used while this is on. Requires bEnableInputReplication to be False.
+
+## bEnablePredictedTranslocation
+
+**Type: bool**  
+**Default: True**  
+
+If True, translocating moves you to the disc on your screen the moment you press, instead of a round trip later. The server translocates you at the same timestamp. Only for the stock translocator: [bEnableDeterministicTranslocator](#benabledeterministictranslocator) already does this itself. Requires TranslocatorCompensatePing and bEnableInputReplication to be False.
+
+## bEnablePredictedDiscBoost
+
+**Type: bool**  
+**Default: True**  
+
+If True, shooting your own translocator disc with the shock beam pushes it on your screen right away, the same way the server does at the same timestamp. Requires [bEnableDeterministicTranslocator](#benabledeterministictranslocator).
 
 # Weapon Settings
 

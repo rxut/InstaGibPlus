@@ -18,11 +18,25 @@ var int DetWeaponIndex;
 var int DetChargeData;
 // Local merge boundary, including weapons with no deterministic index.
 var Weapon IGPlus_SavedWeapon;
+// Predicted self-knockback explosions applied at the end of this move, in order.
+var vector IGPlus_SKHit[6];
+var byte IGPlus_SKKind[6];     // bbPlayer.IGPLUS_SK_*
+var vector IGPlus_SKPush[6];   // a direct push (hammer), not from a splash
+var int IGPlus_SKPushCount;
+// Predicted translocation at the start of this move.
+var bool bIGPlusTloc;
+var vector IGPlusTlocDest;
+var vector IGPlus_LiftExitShift; // left a moving lift: moved to the server's spot after the move
+var float IGPlus_LiftExitVelZ;
 
 function Clear2() {
     Clear();
     IGPlus_SavedWeapon = none;
     IGPlus_MergeCount = 0;
+    IGPlus_SKPushCount = 0;
+    bIGPlusTloc = false;
+    IGPlus_LiftExitShift = vect(0,0,0);
+    IGPlus_LiftExitVelZ = 0.0;
     JumpIndex = -1;
     DodgeIndex = -1;
     RunChangeIndex = -1;

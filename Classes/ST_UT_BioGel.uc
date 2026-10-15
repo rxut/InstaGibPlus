@@ -10,10 +10,21 @@ var vector ExtrapolationDelta;
 
 var float R1, R2, R3;
 
+// Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
+// near the lift; clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
+// Clients: the lift our shooter rides, and where it and we were last tick
+// (IGPlus_SweepLift).
+var Mover IGPlus_SweepMover;
+var vector IGPlus_SweepMoverLoc, IGPlus_SweepLoc;
+
 replication
 {
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3;
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		IGPlus_HeldVelocity;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -80,6 +91,28 @@ function PostBeginPlay()
 	}
 }
 
+// Debug (enableDebugData): where the shooter's own primary gel goes, on
+// each side.
+simulated function IGPlus_Debug(string What) {
+	local string Side;
+
+	if (Class != class'ST_UT_BioGel' || bClientVisualOnly
+		|| bbPlayer(Instigator) == None || bbPlayer(Instigator).bDrawDebugData == false)
+		return;
+	if (Level.NetMode == NM_Client && Viewport(bbPlayer(Instigator).Player) == None)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	bbPlayer(Instigator).ClientDebugMessage("Bio ("$Side$") "$What$" at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
+}
+
+simulated function Destroyed()
+{
+	IGPlus_Debug("gone");
+	Super.Destroyed();
+}
+
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
@@ -114,12 +147,13 @@ simulated function PostNetBeginPlay()
 				// Teleport real projectile to where the fake was
 				// This prevents the visual "jump" on high ping
 				SetLocation(FakeLocation);
+				IGPlus_Debug("took over from our own copy");
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 			}
 		}
-	} else {
+	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {
 		Disable('Tick');
 	}
 }
@@ -127,6 +161,23 @@ simulated function PostNetBeginPlay()
 simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
+
+	if (Level.NetMode == NM_Client && IsInState('Flying'))
+		IGPlus_SweepLift();
+
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
+	// with it. A zero speed is not sent at all, so what is here is this
+	// class's own start-up guess: replace it.
+	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
+		if (Physics != PHYS_None) {
+			Velocity = IGPlus_HeldVelocity;
+			if (InstigatingPlayer != None)
+				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		}
+		IGPlus_HeldVelocity = vect(0,0,0);
+		if (bCollideActors == false && bClientVisualOnly == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	}
 
     if (InstigatingPlayer == none)
         return;
@@ -141,6 +192,33 @@ simulated event Tick(float Delta) {
         Move(NewXPolDelta - ExtrapolationDelta);
         ExtrapolationDelta = NewXPolDelta;
     }
+}
+
+// Clients: a lift moving into our flying gel does not carry it along here,
+// and a gel inside its brush falls through it (a slow gel, a fast lift going
+// up). Swept against the lift in the lift's own frame, it meets the lift where
+// the server's does (IGPlus_LiftShot) and sticks there.
+simulated function IGPlus_SweepLift() {
+	local vector D, HL, HN;
+
+	if (bbPlayer(Instigator) == None)
+		return;
+	if (IGPlus_SweepMover == None) {
+		IGPlus_SweepMover = Mover(Instigator.Base);
+		if (IGPlus_SweepMover == None)
+			return;
+	} else {
+		D = IGPlus_SweepMover.Location - IGPlus_SweepMoverLoc;
+		if (D != vect(0,0,0) && bbPlayer(Instigator).IGPlus_TraceMover(IGPlus_SweepMover, IGPlus_SweepLoc + D, Location, HL, HN,
+			vect(1,1,0) * CollisionRadius + vect(0,0,1) * CollisionHeight)) {
+			SetLocation(HL);
+			IGPlus_Debug("met the lift moving into it");
+			HitWall(HN, IGPlus_SweepMover);
+			return;
+		}
+	}
+	IGPlus_SweepMoverLoc = IGPlus_SweepMover.Location;
+	IGPlus_SweepLoc = Location;
 }
 
 function Timer()
@@ -188,12 +266,10 @@ state OnSurface
 
 	function BeginState()
 	{
+		// Our own copy stays stuck where it hit until the server's takes
+		// over there (its LifeSpan ends it otherwise).
 		if (bClientVisualOnly)
-		{
-			bHidden = true;
-			Destroy();
 			return;
-		}
 
 		if (WImp != None && WImp.WeaponSettings != None && WImp.WeaponSettings.BioPrimaryInstantExplosion)
 			global.Timer();
@@ -223,6 +299,21 @@ state Exploding
 
 auto state Flying
 {
+	simulated function HitWall(vector HitNormal, actor Wall)
+	{
+		if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
+			return;
+		IGPlus_Debug("stuck on "$Wall);
+		Super.HitWall(HitNormal, Wall);
+	}
+
+	simulated function Landed(vector HitNormal)
+	{
+		if (IGPlus_Lift != None && IGPlus_Lift.PassLanded(HitNormal))
+			return;
+		Super.Landed(HitNormal);
+	}
+
 	function ProcessTouch (Actor Other, vector HitLocation) 
 	{
 		if (bClientVisualOnly)

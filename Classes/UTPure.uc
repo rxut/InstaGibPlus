@@ -527,7 +527,9 @@ function RegisterProjectile(Projectile P) {
     }
 }
 
-function CompensateFor(int Ping, optional Pawn Instigator) {
+// bHitscan: the deterministic translocator's own disc is tested where its
+// thrower saw it (ST_Translocator.IGPlus_DetOwnShotLocation), not ping-rewound.
+function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
@@ -571,9 +573,61 @@ function CompensateFor(int Ping, optional Pawn Instigator) {
 
 	for (PD = ProjDummies; PD != none; PD = PD.Next) {
 		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
+			if (bHitscan && IGPlus_CompOwnDisc(PD, Instigator))
+				continue;
+			if (IGPlus_CompOwnBall(PD, Instigator))
+				continue;
 			PD.CompStart(Ping);
 		}
 	}
+}
+
+// The shooter's own ball with client-side shock balls: its screen shows the
+// ball at its age since the shot (ST_ShockProj.IGPlus_TakeOverLocalBall), so
+// it is tested there, not ping-rewound.
+function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
+	local ST_ShockProj B;
+	local bbPlayer P;
+	local vector Loc;
+
+	B = ST_ShockProj(PD.Actual);
+	P = bbPlayer(Instigator);
+	if (B == none || P == none || B.Instigator != P
+		|| P.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
+		return false;
+	// The old client-side animation (Predictive Shock Combos off) shows the
+	// server's ball about where it is now: test it live, as before.
+	if (P.ClientWeaponSettingsData.bPredictiveShockCombos == false) {
+		PD.CompSwapAt(B.Location);
+		return true;
+	}
+
+	if (B.IGPlus_OwnerSeesBall(P, Loc)) {
+		PD.CompSwapAt(Loc);
+	} else {
+		// Gone at the owner's age: neither the ball nor its stand-in is there.
+		PD.CompSwapAt(B.Location);
+		PD.SetCollision(false, false, false);
+		PD.bProjTarget = false;
+	}
+	return true;
+}
+
+function bool IGPlus_CompOwnDisc(ST_ProjectileDummy PD, Pawn Instigator) {
+	local ST_TranslocatorTarget T;
+	local ST_Translocator TL;
+	local bbPlayer P;
+
+	T = ST_TranslocatorTarget(PD.Actual);
+	P = bbPlayer(Instigator);
+	if (T == none || P == none || T.Instigator != P || T.bIGPlusFullHistory == false)
+		return false;
+	TL = ST_Translocator(T.Master);
+	if (TL == none || TL.TTarget != T || TL.IGPlus_IsDetMode() == false)
+		return false;
+
+	PD.CompSwapAt(TL.IGPlus_DetOwnShotLocation(T, P));
+	return true;
 }
 
 function EndCompensation() {
@@ -1017,6 +1071,12 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bAllowMultiWeapon") return "bAllowMultiWeapon";
 	if (Key ~= "bDelayedPickupSpawn") return "bDelayedPickupSpawn";
 	if (Key ~= "bUseFastWeaponSwitch") return "bUseFastWeaponSwitch";
+	if (Key ~= "bEnablePredictedSwitching") return "bEnablePredictedSwitching";
+	if (Key ~= "bEnablePredictedTranslocation") return "bEnablePredictedTranslocation";
+	if (Key ~= "bEnablePredictedSelfKnockback") return "bEnablePredictedSelfKnockback";
+	if (Key ~= "bEnablePushSafeAim") return "bEnablePushSafeAim";
+	if (Key ~= "bEnableDeterministicTranslocator") return "bEnableDeterministicTranslocator";
+	if (Key ~= "bEnablePredictedDiscBoost") return "bEnablePredictedDiscBoost";
 	if (Key ~= "bTellSpectators") return "bTellSpectators";
 	if (Key ~= "bJumpingPreservesMomentum") return "bJumpingPreservesMomentum";
 	if (Key ~= "bOldLandingMomentum") return "bOldLandingMomentum";
@@ -1080,6 +1140,13 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.IGPlus_AlwaysRenderDroppedFlags = Settings.bAlwaysRenderDroppedFlags;
 			BP.IGPlus_UseFastWeaponSwitch = Settings.bUseFastWeaponSwitch;
 			BP.IGPlus_EnableInputReplication = Settings.bEnableInputReplication;
+			// A switch already in flight finishes; only new presses see the change.
+			BP.IGPlus_PredictedSwitching = Settings.PredictedSwitchingActive();
+			BP.IGPlus_PredictedTranslocation = Settings.PredictedTranslocationActive();
+			BP.IGPlus_PredictedSelfKnockback = Settings.PredictedSelfKnockbackActive();
+			BP.IGPlus_PushSafeAim = Settings.PushSafeAimActive();
+			BP.IGPlus_DetTranslocator = Settings.DeterministicTranslocatorActive();
+			BP.IGPlus_PredictedDiscBoost = Settings.bEnablePredictedDiscBoost;
 			BP.zzMinimumNetspeed = Settings.MinClientRate;
 			BP.zzMaximumNetspeed = Settings.MaxClientRate;
 			BP.zzForceSettingsLevel = Settings.ForceSettingsLevel;

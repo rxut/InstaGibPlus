@@ -22,6 +22,11 @@ var PlayerPawn InstigatingPlayer;
 
 var vector ExtrapolationDelta;
 
+// Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
+// near the lift; clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
@@ -44,7 +49,7 @@ replication
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3, R4, RBounce;
 	reliable if ( Role == ROLE_Authority && bNetInitial )
-		ChunkIndex;
+		ChunkIndex, IGPlus_HeldVelocity;
 }
 
 simulated function float GetFRandValues()
@@ -140,7 +145,8 @@ simulated function PostNetBeginPlay()
 	if (GetWeaponSettings().FlakCompensatePing) {
 
 		if (bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == false) {
-			Disable('Tick');
+			if (IGPlus_HeldVelocity == vect(0,0,0))
+				Disable('Tick');
 			return;
 		}
 
@@ -179,13 +185,14 @@ simulated function PostNetBeginPlay()
 				SetLocation(FakeLocation);
 				// Copy fake's velocity - critical if fake has bounced off a wall
 				Velocity = FakeVelocity;
+				IGPlus_HeldVelocity = vect(0,0,0); // ours, not the server's start
 				// Copy fake's physics mode - stops extrapolation if fake has bounced (PHYS_Falling)
 				SetPhysics(FakePhysics);
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 			}
 		}
-	} else {
+	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {
 		Disable('Tick');
 	}
 }
@@ -193,6 +200,20 @@ simulated function PostNetBeginPlay()
 simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
+
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
+	// with it. A zero speed is not sent at all, so what is here is this
+	// class's own start-up guess (from its rotation): replace it.
+	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
+		if (Physics != PHYS_None) {
+			Velocity = IGPlus_HeldVelocity;
+			if (InstigatingPlayer != None)
+				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		}
+		IGPlus_HeldVelocity = vect(0,0,0);
+		if (bCollideActors == false && bClientVisualOnly == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	}
 
     if (InstigatingPlayer == none)
         return;
@@ -217,7 +238,11 @@ function ProcessTouch (Actor Other, vector HitLocation)
 
 	if (Physics == PHYS_None || bHidden)
 		return;
-	
+
+	// A rewound ball's stand-in (ping compensation): the ball it stands for.
+	if (ST_ProjectileDummy(Other) != None && ST_ProjectileDummy(Other).Actual != None)
+		Other = ST_ProjectileDummy(Other).Actual;
+
 	// For ShockProjectileBlockFlakChunk
     if (ShockProj(Other) != None && !Chunkie.WImp.WeaponSettings.ShockProjectileBlockFlakChunk)
         return;
@@ -266,10 +291,20 @@ simulated function ZoneChange(ZoneInfo NewZone)
 	Super.ZoneChange(NewZone);
 }
 
+simulated function Landed(vector HitNormal)
+{
+	if (IGPlus_Lift != None && IGPlus_Lift.PassLanded(HitNormal))
+		return;
+	Super.Landed(HitNormal);
+}
+
 simulated function HitWall( vector HitNormal, actor Wall )
 {
 		local float Rand;
 		local SmallSpark s;
+
+		if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
+			return;
 
 		if (bClientVisualOnly)
 		{
