@@ -2381,10 +2381,9 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 		IGPlus_MoveAutonomous(dt, bDoRun, bDoDuck, bDoJump, DoDodge, M.Acceleration, rot(0,0,0));
 	}
 
-	if (M.IGPlus_LiftExitShift != vect(0,0,0)) {
+	if (M.IGPlus_LiftExitShift != vect(0,0,0))
 		MoveSmooth(M.IGPlus_LiftExitShift);
-		Velocity.Z += M.IGPlus_LiftExitVelZ;
-	}
+	Velocity.Z += M.IGPlus_LiftExitVelZ;
 
 	for (MoveIndex = 0; MoveIndex < M.IGPlus_SKPushCount; MoveIndex++) {
 		IGPlus_SKPredictedEntry(M.IGPlus_SKHit[MoveIndex], K);
@@ -2533,13 +2532,17 @@ simulated function IGPlus_LeftMovingLift(Mover Lift, IGPlus_SavedMove Move) {
 	// server's correction is eased on the camera instead (ClientUpdatePosition).
 	if (Lead.Z < 0.0)
 		return;
+	// Walked onto a floor: the floor decides our height on both sides.
+	if (Physics != PHYS_Falling)
+		return;
 
 	Before = Location;
 	MoveSmooth(Lead);
 	Move.IGPlus_LiftExitShift = Location - Before;
-	// A jump or a dodge took the lift's speed: the server's lift is further
-	// along, at another speed.
-	if (Move.bPressedJump || (Move.DodgeMove > DODGE_None && Move.DodgeMove < DODGE_Active))
+	// A jump (or a dodge that keeps Z momentum) took the lift's speed: the
+	// server's lift is further along, at another speed.
+	if (Move.bPressedJump
+		|| (bDodgePreserveZMomentum && Move.DodgeMove > DODGE_None && Move.DodgeMove < DODGE_Active))
 		Move.IGPlus_LiftExitVelZ = VelLead.Z;
 	Velocity.Z += Move.IGPlus_LiftExitVelZ;
 
@@ -2745,6 +2748,7 @@ function ClientUpdatePosition()
 			IGPlus_AdjustLocationOverride = (TlocCounter != IGPlus_PreAdjustTlocCounter);
 
 		if (IGPlus_InLiftExitWindow() && IGPlus_AdjustLocationOverride == false
+			&& IGPlus_CameraCorrectionSnap == false
 			&& VSize(IGPlus_PreAdjustLocation - Location) < 150.0
 		) {
 			// Just left a moving lift: what the prediction missed (all of it
@@ -6412,8 +6416,9 @@ function xxReplicateMove(
 
 	// Push-Safe Aim: while the camera still eases after a correction, shots
 	// leave from the real position; aim them through the crosshair point.
-	if (IGPlus_PushSafeAim && IGPlus_CameraCorrectionOffset != vect(0,0,0)
-		&& Settings.bCameraCorrectionSmoothing
+	if (IGPlus_PushSafeAim
+		&& ((IGPlus_CameraCorrectionOffset != vect(0,0,0) && Settings.bCameraCorrectionSmoothing)
+			|| IGPlus_LiftExitCamOffset != vect(0,0,0))
 		&& (DodgeMove <= DODGE_None || DodgeMove >= DODGE_Active)
 		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
 	) {
