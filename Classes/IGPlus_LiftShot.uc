@@ -1,8 +1,9 @@
 // Server: a projectile fired with Push-Safe Aim from a moving lift. It left
 // from where the shooter's screen had them, a round trip of lift travel
-// behind the server. For half a second this flies it against the shooter's
-// lift where that screen has it: the real lift (ahead by D) is gone through,
-// and each move shifted by D is tested against the real lift instead
+// behind the server. Until that lift and the real one meet again, this flies
+// it against the shooter's lift where that screen has it: the real lift
+// (ahead by D) is gone through, and each move shifted by D is tested against
+// the real lift instead
 // (bbPlayer.IGPlus_TraceMover). The real lift is never moved: a rider set
 // down on it again restarts a waiting lift.
 // Between moves the projectile holds still for the engine: no speed (a
@@ -39,8 +40,9 @@ static function IGPlus_LiftShot Begin(Projectile Proj, bbPlayer Shooter) {
 	LS.Lift = Mover(Shooter.Base);
 	LS.MD = Shooter.zzUTPure.FindMoverDummy(LS.Lift);
 	LS.LagMs = Shooter.IGPlus_OwnLiftLagMs();
-	// ponytail: 0.5s covers clearing the lift; past that the real lift counts
-	LS.Until = Shooter.Level.TimeSeconds + 0.5;
+	// Until the screen's lift and the real one are in the same place again
+	// (Tick); ponytail: 2s caps a lift that never stops.
+	LS.Until = Shooter.Level.TimeSeconds + 2.0;
 	SetFor(Proj, LS);
 	return LS;
 }
@@ -132,7 +134,9 @@ event Tick(float Delta) {
 		return;
 	}
 	Unhold();
-	if (Level.TimeSeconds > Until || LagMs < 1.0 || MD == None || P.Physics == PHYS_None) {
+	// A slow shot still near the lift when they part ways would come out of
+	// the real lift on the wrong side: wait for them to meet.
+	if (Level.TimeSeconds > Until || VSize(LeadOver(LagMs)) < 2.0 || MD == None || P.Physics == PHYS_None) {
 		Finish();
 		return;
 	}
