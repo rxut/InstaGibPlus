@@ -295,8 +295,25 @@ function vector GetHistoricalPosition(float RequestTime) {
     return Location;
 }
 
+// Demo playback (udemo's spectator is there).
+simulated function bool IGPlus_InDemoPlayback() {
+	local Pawn P;
+
+	if (Level.NetMode != NM_Client)
+		return false;
+	for (P = Level.PawnList; P != None; P = P.NextPawn)
+		if (P.IsA('DemoPlaybackSpec'))
+			return true;
+	return false;
+}
+
 auto state Pickup {
 	simulated function Tick(float DeltaTime) {
+		// Demo playback: the recording player hid this copy of their own disc
+		// and watched their own local one, which the demo doesn't have. Show
+		// this one, as everyone else saw it.
+		if (bHidden && Role < ROLE_Authority && IGPlus_InDemoPlayback())
+			class'ST_Translocator'.static.IGPlus_DetSetCopyHidden(self, false);
 		// The thrower's hidden copy (deterministic translocator): no shadow.
 		if (bHidden && Role < ROLE_Authority) {
 			Disable('Tick');
