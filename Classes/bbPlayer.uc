@@ -3232,10 +3232,10 @@ function int IGPlus_OwnLiftLagMs() {
 // screen has it is the real one moved back by its lead: a shot moved forward
 // by the lead meets the real one at the same spots. The real lift is never
 // moved for this: a rider set down on it again restarts a waiting lift.
-simulated function bool IGPlus_TraceMover(Mover Lift, vector Start, vector End, out vector HitLoc, out vector HitNormal) {
+simulated function bool IGPlus_TraceMover(Mover Lift, vector Start, vector End, out vector HitLoc, out vector HitNormal, optional vector Extent) {
 	local Actor A;
 
-	foreach TraceActors(class'Actor', A, HitLoc, HitNormal, End, Start)
+	foreach TraceActors(class'Actor', A, HitLoc, HitNormal, End, Start, Extent)
 		if (A == Lift)
 			return true;
 	return false;

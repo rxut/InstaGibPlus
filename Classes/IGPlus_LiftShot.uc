@@ -56,6 +56,8 @@ static function IGPlus_LiftShot Of(Projectile Proj) {
 		return ST_FlakSlug(Proj).IGPlus_Lift;
 	if (ST_UTChunk(Proj) != None)
 		return ST_UTChunk(Proj).IGPlus_Lift;
+	if (ST_UT_BioGel(Proj) != None)
+		return ST_UT_BioGel(Proj).IGPlus_Lift;
 	return None;
 }
 
@@ -70,6 +72,8 @@ static function SetFor(Projectile Proj, IGPlus_LiftShot LS) {
 		ST_FlakSlug(Proj).IGPlus_Lift = LS;
 	else if (ST_UTChunk(Proj) != None)
 		ST_UTChunk(Proj).IGPlus_Lift = LS;
+	else if (ST_UT_BioGel(Proj) != None)
+		ST_UT_BioGel(Proj).IGPlus_Lift = LS;
 }
 
 function SetHeldVelocity(vector V) {
@@ -83,6 +87,8 @@ function SetHeldVelocity(vector V) {
 		ST_FlakSlug(P).IGPlus_HeldVelocity = V;
 	else if (ST_UTChunk(P) != None)
 		ST_UTChunk(P).IGPlus_HeldVelocity = V;
+	else if (ST_UT_BioGel(P) != None)
+		ST_UT_BioGel(P).IGPlus_HeldVelocity = V;
 }
 
 function FastForwarded(float Ms) {
@@ -163,7 +169,7 @@ function Fly(float Delta, float AheadMs) {
 		V += P.Region.Zone.ZoneGravity * Delta;
 	E = S + V * Delta;
 	if (D != vect(0,0,0))
-		bHit = Shooter.IGPlus_TraceMover(Lift, S + D, E + D, HL, HN);
+		bHit = Shooter.IGPlus_TraceMover(Lift, S + D, E + D, HL, HN, Extent());
 	Frac = 1.0;
 	if (bHit)
 		Frac = FClamp(VSize(HL - D - S) / FMax(VSize(E - S), 0.001), 0.0, 1.0);
@@ -185,9 +191,21 @@ function Fly(float Delta, float AheadMs) {
 		Contact(HL, HN, D);
 }
 
+// The projectile's collision size, as the engine moves it.
+function vector Extent() {
+	local vector E;
+
+	E.X = P.CollisionRadius;
+	E.Y = P.CollisionRadius;
+	E.Z = P.CollisionHeight;
+	return E;
+}
+
 // The screen's lift is hit at HL - D: the same spot of the real lift is HL.
-// It lands there (a rocket jump off it pushes as on the shooter's screen, a
-// chunk rests on the lift), and flies on its own after that.
+// It hits it there as a wall (a rocket jump off it pushes as on the
+// shooter's screen, a gel sticks to the lift), and flies on its own after.
+// Projectiles here have no Landed of their own worth more: a wall hit is how
+// they explode, bounce or stick.
 function Contact(vector HL, vector HN, vector D) {
 	local Mover L;
 
@@ -200,13 +218,10 @@ function Contact(vector HL, vector HN, vector D) {
 	L = Lift;
 	bContact = true;
 	bMoving = true;
-	if (P.Physics == PHYS_Falling && HN.Z > 0.7) {
-		P.Landed(HN);
-		if (P != None && P.bDeleteMe == false && P.Physics == PHYS_None)
-			P.SetBase(L);
-	} else {
-		P.HitWall(HN, L);
-	}
+	P.HitWall(HN, L);
+	// Resting on it now: ride it, so it never runs into this.
+	if (P != None && P.bDeleteMe == false && P.Physics == PHYS_None && P.Base != L)
+		P.SetBase(L);
 	bMoving = false;
 	bContact = false;
 	if (P != None && P.bDeleteMe == false)
@@ -247,7 +262,7 @@ function GoThrough() {
 	if (Shooter.bDrawDebugData)
 		Shooter.ClientDebugMessage(P.Class.Name$" (server) goes through the real lift at "$class'ST_ShockProj'.static.IGPlus_Vec(P.Location));
 	bOldCollideWorld = P.bCollideWorld;
-	foreach TraceActors(class'Actor', A, HL, HN, MoveEnd, P.Location) {
+	foreach TraceActors(class'Actor', A, HL, HN, MoveEnd, P.Location, Extent()) {
 		if (A == Lift || A == P || A == P.Instigator || A == self)
 			continue;
 		if (A == Level || Mover(A) != None) {
@@ -260,10 +275,7 @@ function GoThrough() {
 				P.SetPhysics(PHYS_Falling);
 				P.Velocity = PassVelocity;
 			}
-			if (P.Physics == PHYS_Falling && HN.Z > 0.7)
-				P.Landed(HN);
-			else
-				P.HitWall(HN, A);
+			P.HitWall(HN, A);
 			return;
 		}
 	}

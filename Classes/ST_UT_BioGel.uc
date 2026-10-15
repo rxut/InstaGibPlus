@@ -10,10 +10,17 @@ var vector ExtrapolationDelta;
 
 var float R1, R2, R3;
 
+// Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
+// near the lift; clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
+
 replication
 {
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3;
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		IGPlus_HeldVelocity;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -119,7 +126,7 @@ simulated function PostNetBeginPlay()
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 			}
 		}
-	} else {
+	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {
 		Disable('Tick');
 	}
 }
@@ -127,6 +134,20 @@ simulated function PostNetBeginPlay()
 simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
+
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
+	// with it. A zero speed is not sent at all, so what is here is this
+	// class's own start-up guess: replace it.
+	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
+		if (Physics != PHYS_None) {
+			Velocity = IGPlus_HeldVelocity;
+			if (InstigatingPlayer != None)
+				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		}
+		IGPlus_HeldVelocity = vect(0,0,0);
+		if (bCollideActors == false && bClientVisualOnly == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	}
 
     if (InstigatingPlayer == none)
         return;
@@ -188,12 +209,10 @@ state OnSurface
 
 	function BeginState()
 	{
+		// Our own copy stays stuck where it hit until the server's takes
+		// over there (its LifeSpan ends it otherwise).
 		if (bClientVisualOnly)
-		{
-			bHidden = true;
-			Destroy();
 			return;
-		}
 
 		if (WImp != None && WImp.WeaponSettings != None && WImp.WeaponSettings.BioPrimaryInstantExplosion)
 			global.Timer();
@@ -223,6 +242,20 @@ state Exploding
 
 auto state Flying
 {
+	simulated function HitWall(vector HitNormal, actor Wall)
+	{
+		if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
+			return;
+		Super.HitWall(HitNormal, Wall);
+	}
+
+	simulated function Landed(vector HitNormal)
+	{
+		if (IGPlus_Lift != None && IGPlus_Lift.PassLanded(HitNormal))
+			return;
+		Super.Landed(HitNormal);
+	}
+
 	function ProcessTouch (Actor Other, vector HitLocation) 
 	{
 		if (bClientVisualOnly)

@@ -113,8 +113,17 @@ function IGPlus_ApplyProjectilePingComp(Projectile P) {
 function Projectile IGPlus_DetProjectileFire(class<projectile> ProjClass, vector StepLoc, rotator StepView) {
 	local Projectile P;
 	local vector Start, X, Y, Z;
+	local vector LiftLead;
+	local IGPlus_LiftShot LS;
 
-	StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
+	// Push-Safe Aim on a moving lift: primary gel from where the shooter's
+	// screen had it (IGPlus_LiftShot).
+	if (ProjClass == class'ST_UT_BioGel')
+		LiftLead = bbPlayer(Owner).IGPlus_LiftAimLead();
+	if (LiftLead != vect(0,0,0))
+		StepLoc -= LiftLead;
+	else
+		StepLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	Owner.MakeNoise(Pawn(Owner).SoundDampening);
 	GetAxes(StepView, X, Y, Z);
 	Start = StepLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
@@ -123,7 +132,11 @@ function Projectile IGPlus_DetProjectileFire(class<projectile> ProjClass, vector
 	else
 		bbPlayer(Owner).IGPlus_DebugProjStart("Bio", Start);
 	P = Spawn(ProjClass,,, Start, StepView);
+	if (LiftLead != vect(0,0,0))
+		LS = class'IGPlus_LiftShot'.static.Begin(P, bbPlayer(Owner));
 	IGPlus_ApplyProjectilePingComp(P);
+	if (LS != None)
+		LS.Hold();
 	return P;
 }
 
@@ -390,7 +403,8 @@ simulated function SpawnClientDummyBioGel()
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
 	else
 		Start = Owner.Location + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
-	if (bbPlayer(Owner) != None)
+	// Push-Safe Aim: from where we see ourselves, also on a lift.
+	if (bbPlayer(Owner) != None && (bbPlayer(Owner).IGPlus_PushSafeAim == false || IsDetActive() == false))
 		Start.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (bbPlayer(Owner) != None)
 		bbPlayer(Owner).IGPlus_DebugProjStart("Bio", Start);
@@ -400,7 +414,8 @@ simulated function SpawnClientDummyBioGel()
 	LocalBioGelDummy.Instigator = PawnOwner;
 	LocalBioGelDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
 	LocalBioGelDummy.bClientVisualOnly = true;
-	LocalBioGelDummy.bCollideWorld = false;
+	// Sticks where it hits, as the server's will: the server's takes over
+	// there (ST_UT_BioGel).
 	LocalBioGelDummy.SetCollision(false, false, false);
 }
 
