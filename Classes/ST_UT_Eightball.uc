@@ -1276,8 +1276,11 @@ simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisua
 		FireRot.Pitch = AimRot.Pitch;
 		FireRot.Roll = AimRot.Roll;
 
+		// Self-knockback: the hit on our own lift is where it is on the
+		// server relative to the lift, so from our own spot on it.
 		if (bbPlayer(Owner) != None)
-			bbPlayer(Owner).IGPlus_SKPredictRocket(FireLocation, FireRot, i);
+			bbPlayer(Owner).IGPlus_SKPredictRocket(
+				FireLocation - bbPlayer(Owner).IGPlus_ClientLiftLeadZ() * vect(0,0,1), FireRot, i);
 
 		if (bNoVisuals)
 			r = None;

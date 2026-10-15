@@ -3138,9 +3138,12 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 	local float TargetTimeStamp;
 	local ST_MoverDummy MD;
 	local vector HistoricalLoc;
+	local float Lead;
 
 	if (Mover(Base) == None || PlayerReplicationInfo == None)
 		return 0.0;
+	if (bFullPing == false)
+		Lead = IGPlus_ClientLiftLeadZ();
 
 	if (bFullPing)
 		Latency = PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation;
@@ -3153,12 +3156,24 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 			TargetTimeStamp = Level.TimeSeconds - Latency;
 			HistoricalLoc = MD.GetHistoricalLocation(TargetTimeStamp);
 			ClientDebugMessage("MoverZOffset: history="$int(Base.Location.Z - HistoricalLoc.Z)$" linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping$" velZ="$int(Base.Velocity.Z));
-			return Base.Location.Z - HistoricalLoc.Z;
+			return Base.Location.Z - HistoricalLoc.Z + Lead;
 		}
 	}
 
-	ClientDebugMessage("MoverZOffset: fallback linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping);
-	return Base.Velocity.Z * Latency;
+	ClientDebugMessage("MoverZOffset: fallback linear="$int(Base.Velocity.Z * Latency)$" lift lead="$int(Lead)$" ping="$PlayerReplicationInfo.Ping);
+	return Base.Velocity.Z * Latency + Lead;
+}
+
+// Client: how much higher the server has us on a moving lift, a round trip
+// of its travel (IGPlus_LiftAhead). The server fires projectiles from there,
+// so our own copies start there too and fly the server's path.
+simulated function float IGPlus_ClientLiftLeadZ() {
+	local vector Lead, VelLead;
+
+	if (Level.NetMode == NM_Client && IGPlus_OnMovingLift()
+		&& IGPlus_LiftAhead(Mover(Base), float(PingAverage) * 0.001 * Level.TimeDilation, Lead, VelLead))
+		return Lead.Z;
+	return 0.0;
 }
 
 // Server: how far our lift is ahead along its path of where our client's

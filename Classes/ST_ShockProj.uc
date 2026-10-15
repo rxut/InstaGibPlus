@@ -18,6 +18,7 @@ var bool IGPlus_bLocalBall;   // the owner's own copy, until the server's arrive
 var float IGPlus_SpawnTS;     // client: when the local copy was fired
 var bool IGPlus_bFromMover;   // client: fired from a lift (positions disagree there)
 var float IGPlus_ComboTS;     // client: when a predicted combo hid this ball
+var vector IGPlus_WallNormal; // client: hidden ball stopped at a wall, mark not made yet
 var Pawn IGPlus_ComboBy;      // server: whose beam set off SuperExplosion
 var float IGPlus_FireTS;      // server: the owner's move timestamp at the shot
 var float IGPlus_FireTime;    // server: Level.TimeSeconds at the shot
@@ -147,6 +148,7 @@ simulated function IGPlus_TakeOverLocalBall() {
 	if (Mine.Physics == PHYS_None)
 		SetPhysics(PHYS_None);
 	IGPlus_ComboTS = Mine.IGPlus_ComboTS;
+	IGPlus_WallNormal = Mine.IGPlus_WallNormal;
 	IGPlus_bFromMover = Mine.IGPlus_bFromMover;
 	if (Mine.bHidden)
 		IGPlus_HideBall();
@@ -181,6 +183,8 @@ simulated event Tick(float Delta) {
 	) {
 		IGPlus_ComboTS = 0.0;
 		IGPlus_ShowBall();
+		if (IGPlus_WallNormal != vect(0,0,0))
+			IGPlus_WallMark(IGPlus_WallNormal);
 		bbPlayer(InstigatingPlayer).ClientDebugMessage("Shock combo: drawn here but the server missed, ball shown again");
 	}
 }
@@ -193,6 +197,14 @@ simulated function HitWall(vector HitNormal, actor Wall) {
 		return;
 	}
 	SetPhysics(PHYS_None);
+	// A combo we drew hid it: it never got here unless the server says so.
+	if (bHidden)
+		IGPlus_WallNormal = HitNormal;
+	else
+		IGPlus_WallMark(HitNormal);
+}
+
+simulated function IGPlus_WallMark(vector HitNormal) {
 	if (ExplosionDecal != None && Level.NetMode != NM_DedicatedServer)
 		Spawn(ExplosionDecal, self,, Location, rotator(HitNormal));
 }
