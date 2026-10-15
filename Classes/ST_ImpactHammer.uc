@@ -59,11 +59,13 @@ simulated function Tick(float deltaTime)
 }
 
 // The owner's moves drive this hammer: theirs on the server, ours on the client.
+// Not in demo playback: the recorded server's blast (ClientWeaponEvent) is the
+// one shown there.
 simulated function bool IGPlus_OnMoves() {
 	local bbPlayer P;
 
 	P = bbPlayer(Owner);
-	if (P == None || P.IGPlus_PredictHammer() == false)
+	if (P == None || P.IGPlus_PredictHammer() == false || P.zzbDemoPlayback)
 		return false;
 	if (Level.NetMode == NM_Client)
 		return Role < ROLE_Authority;
@@ -216,8 +218,10 @@ state ClientFiring {
 
 		ChargeSize += 0.75*Delta;
 
-		// Released on the move instead (IGPlus_ClientRelease).
-		if (bbPlayer(Owner).IGPlus_PredictHammer())
+		// Released on the move instead (IGPlus_ClientRelease). In demo
+		// playback our fire button is not there: the recorded server's blast
+		// (ClientWeaponEvent) ends the charge, or it would go off twice.
+		if (bbPlayer(Owner).IGPlus_PredictHammer() || bbPlayer(Owner).zzbDemoPlayback)
 			return;
 
 		if (Pawn(Owner).bFire == 0) {
@@ -267,7 +271,7 @@ simulated function IGPlus_ClientRelease(float TS) {
 
 	P = bbPlayer(Owner);
 	WS = GetWeaponSettings();
-	if (IsInState('ClientFiring') == false || P == none || WS == none || P.IGPlus_PredictHammer() == false)
+	if (IsInState('ClientFiring') == false || P == none || WS == none || P.IGPlus_PredictHammer() == false || P.zzbDemoPlayback)
 		return;
 
 	ChargeSize = 0.75 * (TS - IGPlus_ChargeTS);
