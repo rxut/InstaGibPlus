@@ -255,6 +255,9 @@ var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected po
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
 var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving lift (always eased)
 var float IGPlus_LiftExitTS;                // when we last left a moving lift
+var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
+var bool IGPlus_DbgLiftRising;
+var float IGPlus_DbgLiftExitZ;
 var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
 
 // Push-Safe Aim (bEnablePushSafeAim), server side: pushes the client has not
@@ -2545,6 +2548,36 @@ simulated function IGPlus_LeftMovingLift(Mover Lift, IGPlus_SavedMove Move) {
 	ClientDebugMessage("Left a moving lift: moved "$int(Move.IGPlus_LiftExitShift.Z)$"uu to the server's spot, speed "$int(Move.IGPlus_LiftExitVelZ));
 }
 
+// Debug (enableDebugData): where we left a moving lift and the top of the
+// jump, on each side (the server decides the jump from our inputs).
+simulated function IGPlus_DebugLiftJumpTop(Actor OldBase) {
+	local string Side;
+
+	if (bDrawDebugData == false)
+		return;
+	if (Mover(OldBase) != None && OldBase.Velocity != vect(0,0,0) && Base != OldBase) {
+		IGPlus_DbgLiftJump = true;
+		IGPlus_DbgLiftExitZ = Location.Z;
+		IGPlus_DbgLiftRising = Velocity.Z > 0.0;
+		return;
+	}
+	if (IGPlus_DbgLiftJump == false)
+		return;
+	if (Physics != PHYS_Falling) {
+		IGPlus_DbgLiftJump = false;
+		return;
+	}
+	if (IGPlus_DbgLiftRising && Velocity.Z <= 0.0) {
+		IGPlus_DbgLiftJump = false;
+		Side = "server";
+		if (Level.NetMode == NM_Client)
+			Side = "client";
+		ClientDebugMessage("Lift jump ("$Side$"): left the lift at Z="$int(IGPlus_DbgLiftExitZ)$", top Z="$int(Location.Z));
+		return;
+	}
+	IGPlus_DbgLiftRising = Velocity.Z > 0.0;
+}
+
 // Client: the server's corrections for leaving a lift are still arriving.
 simulated function bool IGPlus_InLiftExitWindow() {
 	return IGPlus_LiftExitTS > 0.0
@@ -3568,6 +3601,7 @@ function IGPlus_AfterTranslocate() {
 
 function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local float ServerDeltaTime;
+	local Actor DbgOldBase;
 	local float DeltaTime;
 	local float SimTime;
 	local float SimStep;
@@ -3827,6 +3861,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
 		ChangedWeapon();
 
+	DbgOldBase = Base;
+
 	// Predict new position
 	if ((Level.Pauser == "") && (DeltaTime > 0) && (IGPlus_SkipMovesUntilNextTick == false)) {
 		if (IGPlus_ShouldJitterBound() && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
@@ -3915,6 +3951,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			TlocCounter = (TlocCounter + 1) & 3;
 			IGPlus_DidTranslocate = false;
 		}
+		IGPlus_DebugLiftJumpTop(DbgOldBase);
 
 		bWasPaused = false;
 	}
@@ -6339,6 +6376,7 @@ function xxReplicateMove(
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
 	local EPhysics OldPhys;
 	local Mover ExitLift;
+	local Actor DbgOldBase;
 	local float AdjustAlpha;
 	local float RealDelta;
 	local vector OldAccel;
@@ -6567,6 +6605,7 @@ function xxReplicateMove(
 	ExitLift = None;
 	if (Settings.bSmoothLiftJump && IGPlus_OnMovingLift())
 		ExitLift = Mover(Base);
+	DbgOldBase = Base;
 
 	// Simulate the movement locally.
 	ProcessMove(DeltaTime, NewAccel, DodgeMove, DeltaRot);
@@ -6579,6 +6618,7 @@ function xxReplicateMove(
 		IGPlus_LeftMovingLift(ExitLift, NewMove);
 		bForcePacketSplit = true;
 	}
+	IGPlus_DebugLiftJumpTop(DbgOldBase);
 
 	// A predicted push lands at the end of a move, like on the server.
 	if (IGPlus_SKQueueCount > 0 && IGPlus_SKApplyDue(Level.TimeSeconds, NewMove))
