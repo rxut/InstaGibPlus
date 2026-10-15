@@ -1490,7 +1490,7 @@ defaultproperties
 	bUseFastWeaponSwitchText="Fast Weapon Switch"
 	bUseFastWeaponSwitchHelp="If checked, enables fast weapon switching"
 	bEnablePredictedSwitchingText="Predicted Weapon Switch"
-	bEnablePredictedSwitchingHelp="Experimental. If checked, weapon switches start on the key press; off while Input Replication is on"
+	bEnablePredictedSwitchingHelp="If checked, weapon switches start on the key press; off while Input Replication is on"
 	bTellSpectatorsText="Tell Spectators on Kick"
 	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"
 

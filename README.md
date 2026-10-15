@@ -1906,9 +1906,9 @@ Deterministic weapons time their refire on the client's move timestamps. The ser
 ## bEnablePredictedSwitching
 
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
-Experimental. If True, weapon switches start on the client the moment the key is pressed instead of one round trip later, and the server applies them at the same timestamp: the holster, the swap and the moment the new weapon may fire land on the same instants on both sides. The server validates every switch and rolls the client back if it can't honour one. Requires bEnableInputReplication to be False, works with or without bUseFastWeaponSwitch, and IG+'s own HUD on the client. Switches the server makes itself (out of ammo, pickups, respawn) are unchanged.
+If True, weapon switches start on the client the moment the key is pressed instead of one round trip later, and the server applies them at the same timestamp: the holster, the swap and the moment the new weapon may fire land on the same instants on both sides. The server validates every switch and rolls the client back if it can't honour one. Requires bEnableInputReplication to be False, works with or without bUseFastWeaponSwitch, and IG+'s own HUD on the client. Switches the server makes itself (out of ammo, pickups, respawn) are unchanged.
 
 # Weapon Settings
 

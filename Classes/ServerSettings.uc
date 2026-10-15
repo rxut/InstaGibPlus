@@ -220,7 +220,7 @@ defaultproperties
 	WarpFixDelay=0.25
 	FireTimeout=0.1
 	DetFireClockMargin=0.5
-	bEnablePredictedSwitching=False
+	bEnablePredictedSwitching=True
 	MinNetUpdateRate=60.0
 	MaxNetUpdateRate=200.0
 	ShowTouchedPackage=False
