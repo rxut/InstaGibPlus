@@ -12228,6 +12228,11 @@ function IGPlus_PSStopDownState(Weapon W) {
 function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float TS, float ClientHolsterTS) {
 	local bool bTargetOK;
 
+	// Demo playback replays our own calls to the server: the recorded server
+	// switches the weapon there, a second switch here would play it twice.
+	if (Role < ROLE_Authority)
+		return;
+
 	if (!IGPlus_PredictedSwitching || IsInState('Dying') || IsInState('FeigningDeath')
 		|| Level.Game.bGameEnded || Level.Pauser != "") {
 		IGPlus_PSReject(Serial, "state", Weapon);
@@ -12485,6 +12490,10 @@ function xxServerWeaponCommand(byte Kind, byte F, class<Weapon> C, bool bClientK
 ) {
 	local Weapon W0, P0, LogicTarget, ServerTarget;
 	local bool bLogicKnown, bUnchanged, bClientMatch, bLogicMatch;
+
+	// Demo playback (see xxServerPredictedSwitch).
+	if (Role < ROLE_Authority)
+		return;
 
 	W0 = Weapon;
 	P0 = PendingWeapon;
