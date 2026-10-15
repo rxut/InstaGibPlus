@@ -2275,6 +2275,9 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 		IGPlus_AdjustLocationOffset = vect(0,0,0);
 	}
 	IGPlus_AdjustLocationOverride = (TlocCounter != (MiscData&3));
+	// The server translocated us: same as above, no step smoothing.
+	if (IGPlus_AdjustLocationOverride)
+		IgnoreZChangeTicks = 2;
 
 	SetPhysics(GetPhysics((MiscData >> 2) & 0xF));
 	TlocCounter = MiscData & 3;
@@ -3375,6 +3378,10 @@ function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move)
 	Velocity.X = 0;
 	Velocity.Y = 0;
 	TlocCounter = (TlocCounter + 1) & 3;
+	// A teleport, not a step: UpdateEyeHeight would otherwise take the height
+	// change as stepping onto a ramp (walking -> falling) and ease the camera
+	// through up to MaxStepHeight, a visible dip/hop after every translocate.
+	IgnoreZChangeTicks = 2;
 
 	Move.bIGPlusTloc = true;
 	Move.IGPlusTlocDest = Location;
@@ -3405,6 +3412,8 @@ function IGPlus_BeforeTranslocate() {
 function IGPlus_AfterTranslocate() {
 	IGPlus_DidTranslocate = (VSize(Location - TlocPrevLocation) > 1);
 	if (IGPlus_DidTranslocate) {
+		// A teleport, not a step: no eye-height smoothing (as for teleporters).
+		IgnoreZChangeTicks = 2;
 		ExtrapolationDiscardData();
 		IGPlus_NotifiedTranslocate = false;
 	}
