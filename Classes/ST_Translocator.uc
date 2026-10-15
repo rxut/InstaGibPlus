@@ -638,7 +638,8 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		return 0;
 	// Stock remembers a click during bring-up (bForceFire) and fires once up.
 	if (IsInState('ClientActive')) {
-		if (bFirePress != bAltPress) {
+		// Stock's bring-up keeps both and fires first (bForceFire wins).
+		if (bFirePress || (bAltPress && IGPlus_DetLatchedPress != 1)) {
 			if (bFirePress)
 				IGPlus_DetLatchedPress = 1;
 			else
@@ -657,8 +658,13 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 
 	bFireIn = bFirePress || bFireHeld;
 	bAltIn = bAltPress || bAltHeld;
-	if (bFireIn == bAltIn)
-		return 0; // nothing, or both: the two-button switch is the server's call
+	if (bFireIn == false && bAltIn == false)
+		return 0;
+	// Both with the two-button switch on: the server's call. Off, stock's Idle
+	// tries Fire first and its NormalFire skips the alt-fire, so fire wins
+	// (a throw right after a translocate while alt is still held).
+	if (bFireIn && bAltIn && P.IGPlus_EnableDualButtonSwitch)
+		return 0;
 	// Stock NormalFire ignores fire and alt-fire for 0.1s after either; held
 	// buttons retry every 0.1s (Idle.Begin).
 	if (TS - IGPlus_DetLastAttemptTS < 0.1)
@@ -800,7 +806,7 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, bool bAltHeld) {
 	local ST_TranslocatorTarget STTarget;
 
-	if (bFireHeld && bAltHeld) {
+	if (bFireHeld && bAltHeld && P.IGPlus_EnableDualButtonSwitch) {
 		// Stock two-button shortcut (NormalFire's check).
 		if (P.PendingWeapon == None)
 			ReturnToPreviousWeapon();
