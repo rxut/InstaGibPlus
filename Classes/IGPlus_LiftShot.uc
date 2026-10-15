@@ -181,6 +181,12 @@ function Fly(float Delta, float AheadMs, optional bool bLive) {
 		Lag0 = LagMs - AheadMs;
 	D0 = LeadOver(Lag0);
 	D1 = LeadOver(Lag0 - DtMs);
+	// The screen's lift and the real one are in the same place (late in a
+	// long fast-forward): the real lift is the one it meets.
+	if (D0 == vect(0,0,0) && D1 == vect(0,0,0)) {
+		P.AutonomousPhysics(Delta);
+		return;
+	}
 	S = P.Location;
 	V = P.Velocity + P.Acceleration * Delta;
 	if (P.Physics == PHYS_Falling)
