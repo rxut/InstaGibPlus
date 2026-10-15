@@ -6736,7 +6736,8 @@ function IGPlus_ReplicateInput(float Delta) {
 		ServerApplyInput(ReferenceInput.TimeStamp, IGPlus_InputReplicationBuffer.NumBits, B);
 	}
 
-	if ( (Weapon != None) && !Weapon.IsAnimating() )
+	// Not in demo playback: the recording holds our weapon's anims and sounds.
+	if (!zzbDemoPlayback && (Weapon != None) && !Weapon.IsAnimating())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -7072,7 +7073,8 @@ function xxReplicateMove(
 
 	SendSavedMove(NewMove, OldMove);
 
-	if ( (Weapon != None) && !Weapon.IsAnimating() )
+	// Not in demo playback: the recording holds our weapon's anims and sounds.
+	if (!zzbDemoPlayback && (Weapon != None) && !Weapon.IsAnimating())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -14428,10 +14430,39 @@ simulated function ChangedWeapon() {
 	}
 }
 
+// Demo playback: the recording holds our own weapon's animations and sounds
+// as our screen had them (DemoPlaySound, AnimSequence). The recorded server
+// calls below drove them while recording, so here they would play them again:
+// the select of a switch, a hammer blast. With predicted switching and
+// self-knockback our screen ran them a ping before these calls came in, so the
+// second copy is heard apart from the first.
+function ClientWeaponEvent(name EventType)
+{
+	if (zzbDemoPlayback)
+		return;
+	Super.ClientWeaponEvent(EventType);
+}
+
+function SendClientFire(Weapon W, int N)
+{
+	if (zzbDemoPlayback)
+		return;
+	Super.SendClientFire(W, N);
+}
+
+function SendClientAltFire(Weapon W, int N)
+{
+	if (zzbDemoPlayback)
+		return;
+	Super.SendClientAltFire(W, N);
+}
+
 // Stock: the server's select-end "this weapon is really up". During a predicted
 // switch a late one for the previous weapon would undo the local switch.
 function RealWeapon(Weapon Real, int N)
 {
+	if (zzbDemoPlayback)
+		return;
 	if (IGPlus_PSActive && (IGPlus_PSRunning() || Real != IGPlus_PSKeep)) {
 		if (N > WeaponUpdate)
 			WeaponUpdate = N;
@@ -14442,6 +14473,8 @@ function RealWeapon(Weapon Real, int N)
 
 function ClientPutDown(Weapon Current, Weapon Next)
 {
+	if (zzbDemoPlayback)
+		return;
 	// The server's holster announcement for a switch this client predicted:
 	// it already ran the holster and select locally.
 	if (IGPlus_PSFilterDrops(Current, Next))
