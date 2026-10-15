@@ -253,6 +253,8 @@ var bool IGPlus_AdjustLocationOverride;
 // corrections land in the simulation at once, the camera eases after them.
 var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
+var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving lift (always eased)
+var float IGPlus_LiftExitTS;                // when we last left a moving lift
 var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
 
 // Push-Safe Aim (bEnablePushSafeAim), server side: pushes the client has not
@@ -2376,6 +2378,11 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 		IGPlus_MoveAutonomous(dt, bDoRun, bDoDuck, bDoJump, DoDodge, M.Acceleration, rot(0,0,0));
 	}
 
+	if (M.IGPlus_LiftExitShift != vect(0,0,0)) {
+		MoveSmooth(M.IGPlus_LiftExitShift);
+		Velocity.Z += M.IGPlus_LiftExitVelZ;
+	}
+
 	for (MoveIndex = 0; MoveIndex < M.IGPlus_SKPushCount; MoveIndex++) {
 		IGPlus_SKPredictedEntry(M.IGPlus_SKHit[MoveIndex], K);
 		if (IGPlus_SKCompute(K, Push))
@@ -2425,6 +2432,12 @@ function IGPlus_CameraCorrectionAdd(vector Delta) {
 }
 
 simulated function IGPlus_CameraCorrectionDecay(float DeltaTime) {
+	if (IGPlus_LiftExitCamOffset != vect(0,0,0)) {
+		// ~95% gone after IGPLUS_LIFT_EXIT_EASE seconds
+		IGPlus_LiftExitCamOffset *= Exp(-3.0 * (DeltaTime / Level.TimeDilation) / IGPLUS_LIFT_EXIT_EASE);
+		if (VSize(IGPlus_LiftExitCamOffset) < 0.05)
+			IGPlus_LiftExitCamOffset = vect(0,0,0);
+	}
 	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
 		return;
 
@@ -2443,26 +2456,99 @@ simulated function IGPlus_CameraCorrectionDecay(float DeltaTime) {
 // short of walls so the view never ends up inside geometry.
 simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 	IGPlus_CameraCorrectionApplied = vect(0,0,0);
-	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
-		return;
-	if (Settings.bCameraCorrectionSmoothing == false) {
+	if (Settings.bCameraCorrectionSmoothing == false)
 		IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	if (IGPlus_CameraCorrectionOffset == vect(0,0,0) && IGPlus_LiftExitCamOffset == vect(0,0,0))
 		return;
-	}
 
 	IGPlus_CameraCorrectionApplied = IGPlus_ClippedCameraOffset(CameraLocation);
 	CameraLocation += IGPlus_CameraCorrectionApplied;
 }
 
-// Camera offset as rendered from Eye: the remaining correction, stopped
-// short of walls.
+// Camera offset as rendered from Eye: the remaining correction (and lift exit
+// ease), stopped short of walls.
 simulated function vector IGPlus_ClippedCameraOffset(vector Eye) {
-	local vector Desired, HitLocation, HitNormal;
+	local vector Offset, Desired, HitLocation, HitNormal;
 
-	Desired = Eye + IGPlus_CameraCorrectionOffset;
+	Offset = IGPlus_CameraCorrectionOffset + IGPlus_LiftExitCamOffset;
+	Desired = Eye + Offset;
 	if (Trace(HitLocation, HitNormal, Desired, Eye, false) != none)
-		Desired = HitLocation - 2.0 * Normal(IGPlus_CameraCorrectionOffset);
+		Desired = HitLocation - 2.0 * Normal(Offset);
 	return Desired - Eye;
+}
+
+// --- Predicted lift exit --------------------------------------------------------
+
+// A rider's client has its lift a round trip of travel behind the server's
+// (lift updates arrive a one-way late, moves reach the server a one-way late),
+// so the server has the rider that much further along the lift's path. While
+// riding, positions are compared on the lift and agree. On leaving it the
+// server's correction arrives a ping later as one jump (90uu measured).
+
+const IGPLUS_LIFT_EXIT_EASE = 0.1;
+
+// Client: how far Lift moves over the next Ahead seconds of its current
+// keyframe move (eased like the engine's physMovingBrush), and how much faster
+// it is going then. False when it is not moving here.
+simulated function bool IGPlus_LiftAhead(Mover Lift, float Ahead, out vector Lead, out vector VelLead) {
+	local vector Path;
+	local float A0, A1, G0, G1, D0, D1;
+
+	if (Lift == None || Lift.Physics != PHYS_MovingBrush || Lift.bInterpolating == false || Lift.PhysRate <= 0.0)
+		return false;
+
+	Path = Lift.BasePos + Lift.KeyPos[Lift.KeyNum] - Lift.OldPos;
+	A0 = FClamp(Lift.PhysAlpha, 0.0, 1.0);
+	A1 = FClamp(Lift.PhysAlpha + Lift.PhysRate * Ahead, 0.0, 1.0);
+	if (Lift.MoverGlideType == MV_GlideByTime) {
+		G0 = A0 * A0 * (3.0 - 2.0 * A0);
+		G1 = A1 * A1 * (3.0 - 2.0 * A1);
+		D0 = 6.0 * A0 * (1.0 - A0);
+		D1 = 6.0 * A1 * (1.0 - A1);
+	} else {
+		G0 = A0;
+		G1 = A1;
+		D0 = 1.0;
+		D1 = 1.0;
+		if (A1 >= 1.0)
+			D1 = 0.0;
+	}
+	Lead = Path * (G1 - G0);
+	VelLead = Path * Lift.PhysRate * (D1 - D0);
+	return true;
+}
+
+// Client, after the move in which we left Lift (moving here): go where the
+// server has us, ease the camera over it, and keep it in the move for replays.
+simulated function IGPlus_LeftMovingLift(Mover Lift, IGPlus_SavedMove Move) {
+	local vector Lead, VelLead, Before;
+
+	IGPlus_LiftExitTS = Level.TimeSeconds;
+	if (IGPlus_LiftAhead(Lift, float(PingAverage) * 0.001 * Level.TimeDilation, Lead, VelLead) == false)
+		return;
+	// Down: our lift is still above where the server has us, in the way. The
+	// server's correction is eased on the camera instead (ClientUpdatePosition).
+	if (Lead.Z < 0.0)
+		return;
+
+	Before = Location;
+	MoveSmooth(Lead);
+	Move.IGPlus_LiftExitShift = Location - Before;
+	// A jump or a dodge took the lift's speed: the server's lift is further
+	// along, at another speed.
+	if (Move.bPressedJump || (Move.DodgeMove > DODGE_None && Move.DodgeMove < DODGE_Active))
+		Move.IGPlus_LiftExitVelZ = VelLead.Z;
+	Velocity.Z += Move.IGPlus_LiftExitVelZ;
+
+	IGPlus_LiftExitCamOffset -= Move.IGPlus_LiftExitShift;
+	IgnoreZChangeTicks = 2; // not a step up: no eye-height smoothing on top
+	ClientDebugMessage("Left a moving lift: moved "$int(Move.IGPlus_LiftExitShift.Z)$"uu to the server's spot, speed "$int(Move.IGPlus_LiftExitVelZ));
+}
+
+// Client: the server's corrections for leaving a lift are still arriving.
+simulated function bool IGPlus_InLiftExitWindow() {
+	return IGPlus_LiftExitTS > 0.0
+		&& Level.TimeSeconds - IGPlus_LiftExitTS < PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.3;
 }
 
 // Push-Safe Aim, client: the view that sends a shot from the real position
@@ -2625,7 +2711,15 @@ function ClientUpdatePosition()
 		if (IGPlus_PredictedTranslocation)
 			IGPlus_AdjustLocationOverride = (TlocCounter != IGPlus_PreAdjustTlocCounter);
 
-		if (Settings.bCameraCorrectionSmoothing) {
+		if (IGPlus_InLiftExitWindow() && IGPlus_AdjustLocationOverride == false
+			&& VSize(IGPlus_PreAdjustLocation - Location) < 150.0
+		) {
+			// Just left a moving lift: what the prediction missed (all of it
+			// from a lift going down) eases on the camera instead of a snap.
+			IGPlus_AdjustLocationOffset = vect(0,0,0);
+			IGPlus_AdjustLocationAlpha = 0;
+			IGPlus_LiftExitCamOffset += IGPlus_PreAdjustLocation - Location;
+		} else if (Settings.bCameraCorrectionSmoothing) {
 			// Keep the corrected simulation; only the camera eases toward it.
 			IGPlus_AdjustLocationOffset = vect(0,0,0);
 			IGPlus_AdjustLocationAlpha = 0;
@@ -3440,6 +3534,7 @@ function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move)
 
 	// A teleport, not a correction: nothing left to ease.
 	IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	IGPlus_LiftExitCamOffset = vect(0,0,0);
 	IGPlus_AdjustLocationOffset = vect(0,0,0);
 	IGPlus_AdjustLocationAlpha = 0;
 }
@@ -6243,6 +6338,7 @@ function xxReplicateMove(
 ) {
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
 	local EPhysics OldPhys;
+	local Mover ExitLift;
 	local float AdjustAlpha;
 	local float RealDelta;
 	local vector OldAccel;
@@ -6468,11 +6564,21 @@ function xxReplicateMove(
 
 	IGPlus_TPFix_LastTouched = none;
 
+	ExitLift = None;
+	if (Settings.bPredictLiftExit && IGPlus_OnMovingLift())
+		ExitLift = Mover(Base);
+
 	// Simulate the movement locally.
 	ProcessMove(DeltaTime, NewAccel, DodgeMove, DeltaRot);
 	AutonomousPhysics(DeltaTime);
 
 	CorrectTeleporterVelocity();
+
+	// Left a moving lift: go where the server has us now, not a ping later.
+	if (ExitLift != None && Base != ExitLift) {
+		IGPlus_LeftMovingLift(ExitLift, NewMove);
+		bForcePacketSplit = true;
+	}
 
 	// A predicted push lands at the end of a move, like on the server.
 	if (IGPlus_SKQueueCount > 0 && IGPlus_SKApplyDue(Level.TimeSeconds, NewMove))
@@ -12602,6 +12708,8 @@ function ClientReStart()
 {
 	zzSpawnedTime = Level.TimeSeconds;
 	IGPlus_CameraCorrectionOffset = vect(0,0,0);
+	IGPlus_LiftExitCamOffset = vect(0,0,0);
+	IGPlus_LiftExitTS = 0.0;
 	IGPlus_DetClientSwitchPending = none;
 	IGPlus_DetClientGateWeapon = none; // the respawn equip sends a fresh tagged gate
 	IGPlus_PSActive = false;

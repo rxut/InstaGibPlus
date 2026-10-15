@@ -24,6 +24,8 @@ var int IGPlus_SKPushCount;
 // Predicted translocation at the start of this move.
 var bool bIGPlusTloc;
 var vector IGPlusTlocDest;
+var vector IGPlus_LiftExitShift; // left a moving lift: moved to the server's spot after the move
+var float IGPlus_LiftExitVelZ;
 
 function Clear2() {
     Clear();
@@ -31,6 +33,8 @@ function Clear2() {
     IGPlus_MergeCount = 0;
     IGPlus_SKPushCount = 0;
     bIGPlusTloc = false;
+    IGPlus_LiftExitShift = vect(0,0,0);
+    IGPlus_LiftExitVelZ = 0.0;
     JumpIndex = -1;
     DodgeIndex = -1;
     RunChangeIndex = -1;
