@@ -51,6 +51,13 @@ var bool IGPlus_bDetKnockPending;
 var vector IGPlus_DetKnockLoc, IGPlus_DetKnockVel;
 var bool IGPlus_bDetKnockLanded;
 var float IGPlus_DetKnockAge;
+var float IGPlus_DetLastActionTS;              // client: move time of our last action
+var float IGPlus_DetLastActionTime;            // client: when it was taken (for the safety net)
+var int IGPlus_DetLatchedPress;                // client: 1 fire, 2 alt pressed during bring-up
+var float IGPlus_DetLatchTS;
+// Server: throw time of the disc that is out, 0 if none. The client's safety
+// net matches it once none of its own actions can still be in flight.
+var float IGPlus_DetServerDiscTS;
 
 replication
 {
@@ -58,7 +65,7 @@ replication
     unreliable if( Role==ROLE_Authority )
         ServerTimeSinceLastFire, ServerTimeSinceTargetSpawn;
     reliable if (bNetOwner && Role == ROLE_Authority)
-        IGPlus_DiscRepl;
+        IGPlus_DiscRepl, IGPlus_DetServerDiscTS;
     reliable if (Role == ROLE_Authority)
         IGPlus_ClientDetSync, IGPlus_ClientDetKnock;
 }
@@ -107,8 +114,13 @@ function Tick(float DeltaTime)
         if (IGPlus_bDetExpectOut && TTarget == None)
         {
             IGPlus_bDetExpectOut = false;
-            IGPlus_ClientDetSync(false, IGPlus_ThrowTS);
+            IGPlus_ClientDetSync(false, IGPlus_ThrowTS, 0.0);
         }
+
+        if (TTarget == None || ST_TranslocatorTarget(TTarget) == None || ST_TranslocatorTarget(TTarget).bIGPlusFullHistory == false)
+            IGPlus_DetServerDiscTS = 0.0;
+        else
+            IGPlus_DetServerDiscTS = IGPlus_ThrowTS;
     }
 }
 
@@ -317,13 +329,13 @@ function ThrowTarget()
 
 		// Without ping comp the deterministic translocator still looks the
 		// disc up by age: start its history at the throw.
-		if (bbP != none && bbP.IGPlus_DetTranslocator && TTarget != None
+		if (IGPlus_IsDetMode() && TTarget != None
 			&& ST_TranslocatorTarget(TTarget).HistoryCount == 0)
 			ST_TranslocatorTarget(TTarget).InitSimulationHistory(TTarget.Location, 0.0, 0.0);
 
-		if (bbP != none && (GetWeaponSettings().TranslocatorCompensatePing || bbP.IGPlus_DetTranslocator)) {
+		if (bbP != none && (GetWeaponSettings().TranslocatorCompensatePing || IGPlus_IsDetMode())) {
 			// Fragger's Translocate() has no restore path: stock lookup only.
-			if ((bbP.IGPlus_PredictedTranslocation || bbP.IGPlus_DetTranslocator)
+			if ((bbP.IGPlus_PredictedTranslocation || IGPlus_IsDetMode())
 				&& TTarget != None && Class == class'ST_Translocator') {
 				IGPlus_ThrowTS = bbP.CurrentTimeStamp;
 				IGPlus_DiscRepl = ST_TranslocatorTarget(TTarget);
@@ -331,12 +343,15 @@ function ThrowTarget()
 				// Ping over PingCompensationMax: the thrower sees a younger
 				// server disc. Not without ping comp (nothing fast-forwarded),
 				// nor deterministic (the thrower watches its own disc).
-				if (GetWeaponSettings().TranslocatorCompensatePing && bbP.IGPlus_DetTranslocator == false)
+				if (GetWeaponSettings().TranslocatorCompensatePing && IGPlus_IsDetMode() == false)
 					IGPlus_DiscRepl.IGPlus_AgeBias = FMax(0.0,
 						float(bbP.PingAverage) * 0.001 * Level.TimeDilation - IGPlus_DiscRepl.TotalSimulationTime);
 				// Landed during the fast-forward: Tick is off until a knock.
 				if (IGPlus_DiscRepl.Physics == PHYS_None)
 					IGPlus_DiscRepl.IGPlus_HistoryAnchor = Level.TimeSeconds;
+				// Shot, stuck or bounced during the fast-forward: tell the thrower.
+				if (IGPlus_DiscRepl.IGPlus_bChangedEarly)
+					IGPlus_DetServerDiscChanged(IGPlus_DiscRepl);
 			}
 		}
 	}
@@ -602,8 +617,11 @@ function bool IGPlus_GibIfDisrupted() {
 
 // --- Deterministic translocator -------------------------------------------------
 
+// Server: deterministic for remote players only; a listen server's own or an
+// offline player has no moves and keeps the stock translocator.
 simulated function bool IGPlus_IsDetMode() {
-	return bbPlayer(Owner) != None && bbPlayer(Owner).IGPlus_DetTranslocator && Class == class'ST_Translocator';
+	return bbPlayer(Owner) != None && bbPlayer(Owner).IGPlus_DetTranslocator
+		&& Owner.RemoteRole == ROLE_AutonomousProxy && Class == class'ST_Translocator';
 }
 
 // Client, at the start of its frame (before movement): decide and act.
@@ -612,12 +630,31 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	local bool bFireIn, bAltIn;
 	local int Action;
 
+	if (P.Weapon != self || P.ClientPending != None || IsInState('ClientDown'))
+		return 0;
+	// Stock remembers a click during bring-up (bForceFire) and fires once up.
+	if (IsInState('ClientActive')) {
+		if (bFirePress != bAltPress) {
+			if (bFirePress)
+				IGPlus_DetLatchedPress = 1;
+			else
+				IGPlus_DetLatchedPress = 2;
+			IGPlus_DetLatchTS = TS;
+		}
+		return 0;
+	}
+	if (IGPlus_DetLatchedPress != 0) {
+		if (bFirePress == false && bAltPress == false && TS - IGPlus_DetLatchTS < 0.5) {
+			bFirePress = (IGPlus_DetLatchedPress == 1);
+			bAltPress = (IGPlus_DetLatchedPress == 2);
+		}
+		IGPlus_DetLatchedPress = 0;
+	}
+
 	bFireIn = bFirePress || bFireHeld;
 	bAltIn = bAltPress || bAltHeld;
 	if (bFireIn == bAltIn)
 		return 0; // nothing, or both: the two-button switch is the server's call
-	if (P.Weapon != self || P.ClientPending != None || IsInState('ClientDown') || IsInState('ClientActive'))
-		return 0;
 	// Stock NormalFire ignores fire and alt-fire for 0.1s after either; held
 	// buttons retry every 0.1s (Idle.Begin).
 	if (TS - IGPlus_DetLastAttemptTS < 0.1)
@@ -635,6 +672,10 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		Action = IGPLUS_DETTLOC_TRANSLOCATE;
 	}
 
+	if (Action != 0) {
+		IGPlus_DetLastActionTS = TS;
+		IGPlus_DetLastActionTime = Level.TimeSeconds;
+	}
 	if (Action == IGPLUS_DETTLOC_THROW) {
 		IGPlus_DetClientThrow(P, TS);
 	} else if (Action == IGPLUS_DETTLOC_RECALL) {
@@ -660,13 +701,19 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 
 	IGPlus_DetLocalDisc = Spawn(class'ST_TranslocatorTarget', Owner,, Start);
 	if (IGPlus_DetLocalDisc != None) {
+		IGPlus_DetLocalDisc.IGPlus_bLocalDisc = true;
+		IGPlus_DetLocalDisc.Instigator = P;
 		IGPlus_DetLocalDisc.Master = self;
 		IGPlus_DetLocalDisc.RemoteRole = ROLE_None;
 		IGPlus_DetLocalDisc.bCollideWorld = false;
 		IGPlus_DetLocalDisc.SetCollision(false, false, false);
 		IGPlus_DetLocalDisc.Throw(P, MaxTossForce, Start);
 		// Only after Throw, so DropFrom's SetLocation can't fail (eaf4d45).
+		// Then collide like the server's disc, so lifts and doors stop it too
+		// (its Touch ignores everything; nothing here may shoot it).
 		IGPlus_DetLocalDisc.bCollideWorld = true;
+		IGPlus_DetLocalDisc.SetCollision(true, false, false);
+		IGPlus_DetLocalDisc.bProjTarget = false;
 	}
 
 	PlayFiring();
@@ -702,14 +749,38 @@ simulated function IGPlus_DetClientTick() {
 		S.bHidden = (IGPlus_bDetShowServerDisc == false);
 		if (S.Glow != None)
 			S.Glow.bHidden = S.bHidden;
-		if (S.bHidden && S.Shadow != None) {
-			S.Shadow.Destroy();
-			S.Shadow = None;
+		if (S.bHidden) {
+			if (S.Shadow != None) {
+				S.Shadow.Destroy();
+				S.Shadow = None;
+			}
+			// Nothing on our screen may hit, hear or stop at the hidden copy.
+			if (S.bCollideActors)
+				S.SetCollision(false, false, false);
+			S.bProjTarget = false;
+			S.AmbientSound = None;
+			S.ImpactSound = None;
 		}
 	}
 
 	if (IGPlus_bDetKnockPending && Level.TimeSeconds - IGPlus_DetThrowTS >= IGPlus_DetKnockAge)
 		IGPlus_DetApplyKnock();
+
+	// Safety net for lost actions and missed syncs: once nothing of ours can
+	// still be in flight (a round trip plus replication), match the server.
+	if (bbPlayer(Owner) != None && Level.TimeSeconds - IGPlus_DetLastActionTime
+		> bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.3
+	) {
+		if (IGPlus_DetServerDiscTS == 0.0) {
+			if (IGPlus_bDetOut)
+				IGPlus_DetClientDiscGone();
+		} else if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != IGPlus_DetServerDiscTS) {
+			IGPlus_DetClientDiscGone();
+			IGPlus_bDetOut = true;
+			IGPlus_DetThrowTS = IGPlus_DetServerDiscTS;
+			IGPlus_bDetShowServerDisc = true;
+		}
+	}
 }
 
 // Server, on the move's step (before its movement): repeat the client's
@@ -743,10 +814,11 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 		bPointing = true;
 		bCanClientFire = true;
 		Pawn(Owner).PlayRecoil(FiringSpeed);
+		PlayFiring(); // others hear it (PlayOwnedSound skips the thrower)
 		ThrowTarget();
 		ServerTimeSinceLastFire = 0.0;
 		if (TTarget == None) {
-			IGPlus_ClientDetSync(false, TS);
+			IGPlus_ClientDetSync(false, TS, TS);
 			return;
 		}
 		IGPlus_bDetExpectOut = true;
@@ -783,21 +855,24 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	// Refused (AllowTranslocation): the disc stays out, show it again.
 	if (TTarget != None) {
 		IGPlus_bDetExpectOut = true;
-		IGPlus_ClientDetSync(true, IGPlus_ThrowTS);
+		IGPlus_ClientDetSync(true, IGPlus_ThrowTS, TS);
 	}
 }
 
 function IGPlus_DetReject(int Action, float TS) {
 	if (Action == IGPLUS_DETTLOC_THROW)
-		IGPlus_ClientDetSync(false, TS); // the disc it threw doesn't exist
+		IGPlus_ClientDetSync(false, TS, TS); // the disc it threw doesn't exist
 	if (TTarget != None)
-		IGPlus_ClientDetSync(true, IGPlus_ThrowTS); // ours is still out
+		IGPlus_ClientDetSync(true, IGPlus_ThrowTS, TS); // ours is still out
 }
 
 // Client: the server's truth about our disc. DiscTS names the throw it means,
-// so a sync about an old disc can't remove a newer one.
-simulated function IGPlus_ClientDetSync(bool bOut, float DiscTS) {
+// so a sync about an old disc can't remove a newer one; ActionTS is the move
+// it answers, so an answer older than our latest action can't undo it.
+simulated function IGPlus_ClientDetSync(bool bOut, float DiscTS, float ActionTS) {
 	if (bOut) {
+		if (IGPlus_DetLastActionTS > ActionTS)
+			return; // we acted since; the safety net settles it
 		if (IGPlus_bDetOut && IGPlus_DetThrowTS >= DiscTS)
 			return; // agree, or ours is newer and its own sync will follow
 		IGPlus_DetClientDiscGone();
@@ -894,6 +969,7 @@ function vector IGPlus_DetOwnShotLocation(ST_TranslocatorTarget T, bbPlayer P) {
 		ServerTimeSinceTargetSpawn - 0.2,
 		ServerTimeSinceTargetSpawn + 0.2));
 	T.IGPlus_OwnShotFrame = Level.TimeSeconds;
+	P.IGPlus_DetOwnShotDisc = T;
 	return T.IGPlus_GetHistoryAt(T.IGPlus_OwnShotAge, bLanded);
 }
 
@@ -920,6 +996,7 @@ function IGPlus_DetRebaseDisc(ST_TranslocatorTarget T, float Age) {
 	bBlkActors = T.bBlockActors;
 	bBlkPlayers = T.bBlockPlayers;
 	T.SetCollision(false, false, false);
+	T.IGPlus_bRebasing = true;
 	T.SetLocation(Pos);
 	T.SetPhysics(PHYS_Falling);
 	T.Velocity = V;
@@ -933,6 +1010,7 @@ function IGPlus_DetRebaseDisc(ST_TranslocatorTarget T, float Age) {
 		T.IGPlus_RecordHistory(Now - Remaining);
 	}
 
+	T.IGPlus_bRebasing = false;
 	if (T.bDeleteMe == false)
 		T.SetCollision(bColActors, bBlkActors, bBlkPlayers);
 }

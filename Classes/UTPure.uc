@@ -587,10 +587,10 @@ function bool IGPlus_CompOwnDisc(ST_ProjectileDummy PD, Pawn Instigator) {
 
 	T = ST_TranslocatorTarget(PD.Actual);
 	P = bbPlayer(Instigator);
-	if (T == none || P == none || T.Instigator != P || P.IGPlus_DetTranslocator == false || T.bIGPlusFullHistory == false)
+	if (T == none || P == none || T.Instigator != P || T.bIGPlusFullHistory == false)
 		return false;
 	TL = ST_Translocator(T.Master);
-	if (TL == none || TL.TTarget != T)
+	if (TL == none || TL.TTarget != T || TL.IGPlus_IsDetMode() == false)
 		return false;
 
 	PD.CompSwapAt(TL.IGPlus_DetOwnShotLocation(T, P));

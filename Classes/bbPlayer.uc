@@ -113,6 +113,7 @@ var bool IGPlus_PushSafeAim;            // server setting, replicated to the own
 var bool IGPlus_DetTranslocator;        // server setting, replicated to the owner
 var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
+var ST_TranslocatorTarget IGPlus_DetOwnShotDisc; // server: own disc tested by this move's own hitscan
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
 var Weapon IGPlus_PSFrom;
@@ -3620,7 +3621,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// A resolved DetWeapon is active by construction.
 	bDetBlockLegacyFire = (DetWeapon != none) || IGPlus_IsDetActiveWeapon(Weapon)
 		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation)
-		|| (IGPlus_DetTranslocator && ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator');
+		|| (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode());
 
 	IGPlus_LastFireEndHeld = bFired;
 	IGPlus_LastAltEndHeld = bAltFired;
@@ -3662,8 +3663,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// Deterministic translocator: the client's action, before this move's
 	// movement like on the client.
-	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator
-		&& ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator')
+	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
+		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
 		ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
 
 	// Complete fast weapon switch after Det dispatch so Det targets the
@@ -3765,6 +3766,15 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	if (IGPlus_SKQueueCount > 0)
 		IGPlus_SKApplyDue(CurrentTimeStamp, none);
+
+	if (IGPlus_DetOwnShotDisc != none) {
+		if (IGPlus_DetOwnShotDisc.bDeleteMe == false && IGPlus_DetOwnShotDisc.IGPlus_OwnShotFrame == Level.TimeSeconds) {
+			IGPlus_DetOwnShotDisc.IGPlus_OwnShotFrame = 0.0;
+			if (IGPlus_PredictedDiscBoost && ST_Translocator(IGPlus_DetOwnShotDisc.Master) != none)
+				ST_Translocator(IGPlus_DetOwnShotDisc.Master).IGPlus_DetServerDiscChanged(IGPlus_DetOwnShotDisc);
+		}
+		IGPlus_DetOwnShotDisc = none;
+	}
 
 	IGPlus_PSALastClientLoc = SM.ClientLocation;
 	if (SM.ClientBase != none)
@@ -6286,7 +6296,7 @@ function xxReplicateMove(
 
 	// Deterministic translocator: decide now, before the merge, so an action
 	// starts its own move (and ends it, below).
-	if (IGPlus_DetTranslocator && IGPlus_EnableInputReplication == false
+	if (IGPlus_DetTranslocator && IGPlus_EnableInputReplication == false && Level.NetMode == NM_Client
 		&& ST_Translocator(Weapon) != none && Weapon.Class == class'ST_Translocator'
 	) {
 		TlocAction = ST_Translocator(Weapon).IGPlus_DetClientStep(

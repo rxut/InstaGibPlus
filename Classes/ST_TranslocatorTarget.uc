@@ -19,6 +19,9 @@ var float IGPlus_AgeBias;       // fast-forward shortfall when ping exceeded Pin
 // against this disc where its screen had it (this server frame, at this age).
 var float IGPlus_OwnShotFrame;
 var float IGPlus_OwnShotAge;
+var bool IGPlus_bChangedEarly;  // shot/stuck/bounced before full history (fast-forward)
+var bool IGPlus_bRebasing;      // re-flying after the thrower's own hit
+var bool IGPlus_bLocalDisc;     // client: the thrower's own deterministic disc
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -167,6 +170,14 @@ function IGPlus_RecordHistory(float Age) {
     SimulationLanded[i] = bLanded;
 }
 
+// Server: something only the server saw changed the disc's path.
+function IGPlus_NoteChanged() {
+    if (bIGPlusFullHistory == false)
+        IGPlus_bChangedEarly = true;
+    else if (ST_Translocator(Master) != None)
+        ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
+}
+
 // Age since the throw now (server). Within a server frame of the truth.
 function float IGPlus_CurrentAge() {
     if (IGPlus_HistoryAnchor == 0.0)
@@ -220,6 +231,11 @@ function vector IGPlus_GetHistoryAt(float Age, out byte bLanded) {
         }
     }
 
+    // A resting disc records nothing more, but may ride a lift: use it as is.
+    if (Physics == PHYS_None) {
+        bLanded = 1;
+        return Location;
+    }
     bLanded = SimulationLanded[HistoryCount-1];
     return SimulationHistory[HistoryCount-1];
 }
@@ -282,8 +298,9 @@ auto state Pickup {
 	simulated event Landed(vector HitNormal) {
 		super.Landed(HitNormal);
 
-		// Record where it came to rest (Landed switched Tick off).
-		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0)
+		// Record where it came to rest (Landed switched Tick off). A re-fly
+		// records its own steps.
+		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0 && IGPlus_bRebasing == false)
 			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor));
 	}
 
@@ -297,6 +314,8 @@ auto state Pickup {
 		// Landed() switched Tick off; a knocked disc flies again.
 		if (bIGPlusFullHistory)
 			Enable('Tick');
+		if (bIGPlusFullHistory == false)
+			IGPlus_bChangedEarly = true;
 		if (ST_Translocator(Master) != None) {
 			// The thrower's own hitscan: push the disc at the point of its
 			// path the thrower saw, not where it is now.
@@ -319,9 +338,14 @@ auto state Pickup {
 		local vector NewPos;
 		local UTPlusDummy Dummy;
 		local Pawn ActualPawn;
+		local vector OldVelocity;
 		
+		// The thrower's own client disc only collides to be stopped by lifts.
+		if (IGPlus_bLocalDisc)
+			return;
 		if (Other.IsA('ST_HitTestHelper'))
 			return;
+		OldVelocity = Velocity;
 			
 		// Handle UTPlusDummy touches during lag compensation
 		if (Other.IsA('UTPlusDummy')) {
@@ -352,8 +376,7 @@ auto state Pickup {
 				NewPos.Z = Location.Z;
 				SetLocation(NewPos);
 				Velocity = vect(0,0,0);
-				if (ST_Translocator(Master) != None)
-					ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
+				IGPlus_NoteChanged();
 				
 				// Check team game rules
 				if (Level.Game.bTeamGame && 
@@ -372,10 +395,9 @@ auto state Pickup {
 		
 		// Original touch handling for non-dummy actors
 		super.Touch(Other);
-		// The stock code sticks the disc to non-thrower pawns it hits.
-		if (Other.bIsPawn && bDeleteMe == false && Velocity == vect(0,0,0) && Physics != PHYS_None
-			&& ST_Translocator(Master) != None)
-			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
+		// Stock sticks the disc to pawns and bounces it off other actors.
+		if (bDeleteMe == false && Velocity != OldVelocity)
+			IGPlus_NoteChanged();
 	}
 }
 
