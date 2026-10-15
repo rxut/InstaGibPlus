@@ -282,6 +282,7 @@ simulated function ClientTraceFire(
 	local bbPlayer bbP;
 	local rotator AimRot;
 	local vector AimLoc;
+	local ST_ShockProj Ball;
 
     PawnOwner = Pawn(Owner);
 	
@@ -333,7 +334,39 @@ simulated function ClientTraceFire(
 		HitLocation = EndTrace;
 	}
 
+	// Our own ball on the beam (client-side shock balls): the combo is here and
+	// now; the server's skips us (ST_ShockProj.SuperExplosion).
+	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
+		Ball = IGPlus_OwnBallOnBeam(StartTrace, X, VSize(HitLocation - StartTrace));
+		if (Ball != None) {
+			HitLocation = Ball.Location;
+			Ball.IGPlus_PredictCombo();
+		}
+	}
+
 	ClientSpawnBeam(HitLocation, SmokeLocation);
+}
+
+// Client: the nearest of our own flying balls the beam passes through before
+// MaxDist. The world trace stops at the surface of the server's copy, hence 1uu.
+simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, float MaxDist) {
+	local ST_ShockProj P, Best;
+	local float D, BestD;
+
+	foreach AllActors(class'ST_ShockProj', P) {
+		if (P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe
+			|| P.Physics == PHYS_None || P.Instigator != Owner)
+			continue;
+		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(
+				Start, Dir, MaxDist + 1.0, P.Location, P.CollisionRadius, P.CollisionHeight) == false)
+			continue;
+		D = (P.Location - Start) dot Dir;
+		if (Best == None || D < BestD) {
+			Best = P;
+			BestD = D;
+		}
+	}
+	return Best;
 }
 
 simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
@@ -440,9 +473,13 @@ simulated function ClientSpawnAltProjectileEffects(
 	if (LocalDummy != None) {
 		LocalDummy.RemoteRole = ROLE_None;
 		LocalDummy.Instigator = PawnOwner;
-		LocalDummy.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-		LocalDummy.bCollideWorld = false;
+		LocalDummy.LifeSpan = FMax(0.2, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;
 		LocalDummy.SetCollision(false, false, false);
+		// Our own ball until the server's takes over from it (ST_ShockProj):
+		// it stops at walls like the server's, nothing else touches it.
+		LocalDummy.IGPlus_bLocalBall = true;
+		LocalDummy.IGPlus_bOwnTimeline = true;
+		LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
 	}
 }
 
@@ -567,6 +604,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	if (Proj != None)
 	{ 
 		AmmoType.UseAmmo(2);
+		Proj.IGPlus_ComboBy = PawnOwner;
 		Proj.SuperExplosion();
 		return;
 	}

@@ -575,9 +575,28 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
 			if (bHitscan && IGPlus_CompOwnDisc(PD, Instigator))
 				continue;
+			if (bHitscan && IGPlus_CompOwnBall(PD, Instigator))
+				continue;
 			PD.CompStart(Ping);
 		}
 	}
+}
+
+// The shooter's own ball with client-side shock balls: its screen shows the
+// ball at its age since the shot (ST_ShockProj.IGPlus_TakeOverLocalBall), so
+// it is tested there, not ping-rewound.
+function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
+	local ST_ShockProj B;
+	local bbPlayer P;
+
+	B = ST_ShockProj(PD.Actual);
+	P = bbPlayer(Instigator);
+	if (B == none || P == none || B.Instigator != P
+		|| P.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
+		return false;
+
+	PD.CompSwapAt(B.IGPlus_OwnerSeenLocation(P));
+	return true;
 }
 
 function bool IGPlus_CompOwnDisc(ST_ProjectileDummy PD, Pawn Instigator) {
