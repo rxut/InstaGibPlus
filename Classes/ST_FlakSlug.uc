@@ -223,7 +223,7 @@ simulated function HitWall (vector HitNormal, actor Wall)
 			D.DirectionalAttach(initialDir, HitNormal);
 	}
 	if (Role < ROLE_Authority) {
-		IGPlus_Debug("hit "$Wall.Name);
+		IGPlus_Debug("hit "$Wall);
 		IGPlus_ClientGone();
 		return;
 	}

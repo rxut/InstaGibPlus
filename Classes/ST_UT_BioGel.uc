@@ -87,6 +87,28 @@ function PostBeginPlay()
 	}
 }
 
+// Debug (enableDebugData): where the shooter's own primary gel goes, on
+// each side.
+simulated function IGPlus_Debug(string What) {
+	local string Side;
+
+	if (Class != class'ST_UT_BioGel' || bClientVisualOnly
+		|| bbPlayer(Instigator) == None || bbPlayer(Instigator).bDrawDebugData == false)
+		return;
+	if (Level.NetMode == NM_Client && Viewport(bbPlayer(Instigator).Player) == None)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	bbPlayer(Instigator).ClientDebugMessage("Bio ("$Side$") "$What$" at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
+}
+
+simulated function Destroyed()
+{
+	IGPlus_Debug("gone");
+	Super.Destroyed();
+}
+
 simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
@@ -121,6 +143,7 @@ simulated function PostNetBeginPlay()
 				// Teleport real projectile to where the fake was
 				// This prevents the visual "jump" on high ping
 				SetLocation(FakeLocation);
+				IGPlus_Debug("took over from our own copy");
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
@@ -246,6 +269,7 @@ auto state Flying
 	{
 		if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
 			return;
+		IGPlus_Debug("stuck on "$Wall);
 		Super.HitWall(HitNormal, Wall);
 	}
 
