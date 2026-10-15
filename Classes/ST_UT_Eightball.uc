@@ -1406,7 +1406,7 @@ state FireRockets
 		// Push-Safe Aim on a moving lift: rockets leave from where the
 		// shooter's screen had it, and near that lift they meet it where that
 		// screen has it (ST_RocketMk2.IGPlus_OwnLiftStart).
-		bLiftAim = bDetFire && bFireLoad && LockedTarget == None && DetServerLiftLead != vect(0,0,0);
+		bLiftAim = bDetFire && bFireLoad && LockedTarget == None && VSize(DetServerLiftLead) > 2.0;
 		if (bLiftAim)
 			StartLoc -= DetServerLiftLead + DetServerMoverZ * vect(0,0,1);
 		if (bDetFire && bbP != None)
