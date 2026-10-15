@@ -136,7 +136,7 @@ event Tick(float Delta) {
 		Finish();
 		return;
 	}
-	Fly(Delta, 0.0);
+	Fly(Delta, 0.0, true);
 	if (P != None && P.bDeleteMe == false && Of(P) == self)
 		Hold();
 }
@@ -153,30 +153,46 @@ function Finish() {
 	Destroy();
 }
 
-// Delta of flight, AheadMs further along than LagMs allows for (in the
-// fast-forward).
-function Fly(float Delta, float AheadMs) {
-	local vector D, S, E, V, HL, HN;
-	local float Lag, Frac;
+// How far ahead the real lift is of where it was LagAgoMs ago.
+function vector LeadOver(float LagAgoMs) {
+	if (LagAgoMs < 1.0 || MD == None)
+		return vect(0,0,0);
+	return Lift.Location - MD.GetHistoricalLocation(Level.TimeSeconds - LagAgoMs * 0.001 * Level.TimeDilation);
+}
+
+// Delta of flight. In the fast-forward it starts AheadMs further along than
+// LagMs allows for; live (bLive) it is the tick that just passed.
+// The screen's lift moves during it too: the move is tested from where that
+// lift was at its start to where it is at its end, else a lift rising past
+// the projectile between two moves never meets it.
+function Fly(float Delta, float AheadMs, optional bool bLive) {
+	local vector D0, D1, D, S, E, V, HL, HN, At;
+	local float DtMs, Lag0, Frac;
 	local bool bHit;
 
-	Lag = LagMs - AheadMs;
-	if (Lag >= 1.0 && MD != None)
-		D = Lift.Location - MD.GetHistoricalLocation(Level.TimeSeconds - Lag * 0.001 * Level.TimeDilation);
+	DtMs = Delta * 1000.0 / Level.TimeDilation;
+	if (bLive)
+		Lag0 = LagMs + DtMs;
+	else
+		Lag0 = LagMs - AheadMs;
+	D0 = LeadOver(Lag0);
+	D1 = LeadOver(Lag0 - DtMs);
 	S = P.Location;
 	V = P.Velocity + P.Acceleration * Delta;
 	if (P.Physics == PHYS_Falling)
 		V += P.Region.Zone.ZoneGravity * Delta;
 	E = S + V * Delta;
-	if (D != vect(0,0,0))
-		bHit = Shooter.IGPlus_TraceMover(Lift, S + D, E + D, HL, HN, Extent());
+	if (D0 != vect(0,0,0) || D1 != vect(0,0,0))
+		bHit = Shooter.IGPlus_TraceMover(Lift, S + D0, E + D1, HL, HN, Extent());
 	Frac = 1.0;
 	if (bHit)
-		Frac = FClamp(VSize(HL - D - S) / FMax(VSize(E - S), 0.001), 0.0, 1.0);
+		Frac = FClamp(VSize(HL - (S + D0)) / FMax(VSize((E + D1) - (S + D0)), 0.001), 0.0, 1.0);
+	D = D0 + (D1 - D0) * Frac;
+	At = S + (E - S) * Frac;
 
 	bMoving = true;
 	bLandingPassed = false;
-	MoveEnd = S + (E - S) * Frac;
+	MoveEnd = At;
 	if (Frac > 0.0)
 		P.AutonomousPhysics(Delta * Frac);
 	bMoving = false;
@@ -187,7 +203,7 @@ function Fly(float Delta, float AheadMs) {
 		P.Velocity = PassVelocity;
 	}
 	// Reached it, unless something else turned it first.
-	if (bHit && VSize(P.Location - (HL - D)) < 8.0)
+	if (bHit && VSize(P.Location - At) < 8.0)
 		Contact(HL, HN, D);
 }
 
