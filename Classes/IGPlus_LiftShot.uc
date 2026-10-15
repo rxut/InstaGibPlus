@@ -191,6 +191,9 @@ function Fly(float Delta, float AheadMs) {
 function Contact(vector HL, vector HN, vector D) {
 	local Mover L;
 
+	if (Shooter.bDrawDebugData)
+		Shooter.ClientDebugMessage(P.Class.Name$" (server) hit our lift where our screen has it at "
+			$class'ST_ShockProj'.static.IGPlus_Vec(HL - D)$", real lift spot "$class'ST_ShockProj'.static.IGPlus_Vec(HL));
 	if (ST_RocketMk2(P) != None)
 		ST_RocketMk2(P).IGPlus_SpawnLoc += D; // same travel for the self-knockback timing
 	P.SetLocation(HL + 2.0 * HN);
@@ -241,6 +244,8 @@ function GoThrough() {
 	local vector HL, HN;
 	local bool bOldCollideWorld;
 
+	if (Shooter.bDrawDebugData)
+		Shooter.ClientDebugMessage(P.Class.Name$" (server) goes through the real lift at "$class'ST_ShockProj'.static.IGPlus_Vec(P.Location));
 	bOldCollideWorld = P.bCollideWorld;
 	foreach TraceActors(class'Actor', A, HL, HN, MoveEnd, P.Location) {
 		if (A == Lift || A == P || A == P.Instigator || A == self)

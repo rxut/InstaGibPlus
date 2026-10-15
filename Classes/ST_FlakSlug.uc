@@ -38,8 +38,23 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 }
 
 // ChunkTrail is its own actor -- destroying the owner only orphans it.
+// Debug (enableDebugData): where the shooter's own slug goes, on each side.
+simulated function IGPlus_Debug(string What) {
+	local string Side;
+
+	if (bClientVisualOnly || bbPlayer(Instigator) == None || bbPlayer(Instigator).bDrawDebugData == false)
+		return;
+	if (Level.NetMode == NM_Client && Viewport(bbPlayer(Instigator).Player) == None)
+		return;
+	Side = "server";
+	if (Level.NetMode == NM_Client)
+		Side = "client";
+	bbPlayer(Instigator).ClientDebugMessage("Flak slug ("$Side$") "$What$" at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
+}
+
 simulated function Destroyed()
 {
+	IGPlus_Debug("gone");
 	if (bClientVisualOnly && Trail != None)
 		Trail.Destroy();
 	Super.Destroyed();
@@ -72,6 +87,7 @@ simulated function PostNetBeginPlay()
 				// Teleport real projectile to where the fake was
 				// This prevents the visual "jump" on high ping
 				SetLocation(FakeLocation);
+				IGPlus_Debug("took over from our own copy");
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
@@ -154,6 +170,7 @@ simulated function Landed( vector HitNormal )
 			D.DirectionalAttach(initialDir, HitNormal);
 	}
 	if (Role < ROLE_Authority) {
+		IGPlus_Debug("landed");
 		IGPlus_ClientGone();
 		return;
 	}
@@ -192,6 +209,7 @@ simulated function HitWall (vector HitNormal, actor Wall)
 			D.DirectionalAttach(initialDir, HitNormal);
 	}
 	if (Role < ROLE_Authority) {
+		IGPlus_Debug("hit "$Wall.Name);
 		IGPlus_ClientGone();
 		return;
 	}
