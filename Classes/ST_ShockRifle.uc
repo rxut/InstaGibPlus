@@ -613,7 +613,8 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	local vector SmokeLocation;
 	local vector LiftLead;
 	local bbPlayer bbP;
-	local ST_MoverDummy LiftMD;
+	local vector LiftHitLoc, LiftHitNormal;
+	local bool bLiftHit;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -627,17 +628,13 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	// On a moving lift the shooter's screen has the shooter a round trip of
 	// lift travel behind here (bbPlayer.IGPlus_OwnLiftLead): the shot leaves
 	// from there, as the sniper's does. The drawn beam still leaves the
-	// shooter where others see it. The shooter's own lift goes back to where
-	// that screen had it too, so the muzzle sits as high above the floor.
+	// shooter where others see it. The shooter's own lift counts where that
+	// screen had it too (bbPlayer.IGPlus_TraceMover), the real one not at all.
 	bbP = bbPlayer(PawnOwner);
 	if (IsPingCompEnabled() && bbP != None)
 		LiftLead = bbP.IGPlus_OwnLiftLead();
-	if (LiftLead != vect(0,0,0)) {
+	if (LiftLead != vect(0,0,0))
 		StartTrace -= LiftLead;
-		LiftMD = bbP.zzUTPure.FindMoverDummy(Mover(PawnOwner.Base));
-		if (LiftMD != None)
-			LiftMD.CompStart(bbP.IGPlus_OwnLiftLagMs());
-	}
 
 	EndTrace = StartTrace + (Accuracy * (FRand() - 0.5 )* Y * 1000) + (Accuracy * (FRand() - 0.5 ) * Z * 1000);
 
@@ -660,12 +657,26 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	Tracked = None;
 	bBotSpecialMove = false;
 
+	if (LiftLead != vect(0,0,0)) {
+		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		if (bLiftHit) {
+			LiftHitLoc -= LiftLead;
+			EndTrace = LiftHitLoc;
+		}
+		bbP.IGPlus_OwnLiftShotShift = LiftLead;
+	}
 	if (WImp.WeaponSettings.ShockBeamUseReducedHitbox)
 		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
-	if (LiftMD != None)
-		LiftMD.CompEnd(); // EndCompensation usually did already
+	if (LiftLead != vect(0,0,0)) {
+		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
+		if (bLiftHit && Other == None) {
+			Other = PawnOwner.Base;
+			HitLocation = LiftHitLoc;
+			HitNormal = LiftHitNormal;
+		}
+	}
 
 	PendingSmokeLocation = SmokeLocation;
 	IGPlus_DebugBeam("server", StartTrace, Normal(EndTrace - StartTrace));

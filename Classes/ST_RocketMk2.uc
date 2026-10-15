@@ -21,6 +21,9 @@ var float IGPlus_OwnLiftUntil;
 var bool IGPlus_bHeld;
 var vector IGPlus_HeldVelocity; // also tells clients its speed (sent held still)
 var vector IGPlus_HeldAcceleration;
+var bool IGPlus_bOwnLiftMoving;     // inside IGPlus_OwnLiftMove
+var bool IGPlus_bOwnLiftHitNow;     // the hit on the shooter's lift itself
+var vector IGPlus_OwnLiftMoveEnd;
 var bool IGPlus_bTookOver;      // client: carries on from our own copy
 
 replication
@@ -159,9 +162,11 @@ auto state Flying
 			return;
 		}
 
-		IGPlus_OwnLiftHit(Wall);
-		if (bDeleteMe)
+		// The real lift is ahead of the one the shooter's screen has.
+		if (Wall != None && Wall == IGPlus_OwnLift && IGPlus_bOwnLiftMoving && IGPlus_bOwnLiftHitNow == false) {
+			IGPlus_OwnLiftPassThrough();
 			return;
+		}
 
 		if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
 			Wall.TakeDamage( Damage, instigator, Location, MomentumTransfer * Normal(Velocity), '');
@@ -200,9 +205,6 @@ auto state Flying
 	function BlowUp(vector HitLocation)
 	{
 		local bbPlayer bbP;
-
-		if (IGPlus_OwnLift != None)
-			IGPlus_OwnLiftRestore();
 
 		bbP = bbPlayer(Instigator);
 		if (IGPlus_FireTS > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
@@ -250,16 +252,69 @@ function IGPlus_OwnLiftStart(bbPlayer P) {
 	IGPlus_OwnLiftUntil = Level.TimeSeconds + 0.5;
 }
 
-// Server: put our lift where the shooter's screen has it while this rocket is
-// AheadMs further along than its lag allows for (the fast-forward).
-function IGPlus_OwnLiftRewind(float AheadMs) {
-	if (IGPlus_OwnLift != None && IGPlus_OwnLiftMD != None && IGPlus_OwnLiftLagMs - AheadMs >= 1.0)
-		IGPlus_OwnLiftMD.CompStart(int(IGPlus_OwnLiftLagMs - AheadMs));
+// Server: Delta of flight (AheadMs further along than the lag, in the
+// fast-forward) against our lift where the shooter's screen has it. That is
+// the real lift moved back by D: the move moved forward by D is tested
+// against the real one (bbPlayer.IGPlus_TraceMover), and the real one is
+// gone through (IGPlus_OwnLiftPassThrough).
+function IGPlus_OwnLiftMove(float Delta, float AheadMs) {
+	local vector D, S, E, HL, HN;
+	local float LagMs, Frac;
+	local bool bHit;
+
+	LagMs = IGPlus_OwnLiftLagMs - AheadMs;
+	if (LagMs >= 1.0 && IGPlus_OwnLiftMD != None)
+		D = IGPlus_OwnLift.Location - IGPlus_OwnLiftMD.GetHistoricalLocation(Level.TimeSeconds - LagMs * 0.001 * Level.TimeDilation);
+	S = Location;
+	E = S + (Velocity + Acceleration * Delta) * Delta;
+	if (D != vect(0,0,0) && bbPlayer(Instigator) != None)
+		bHit = bbPlayer(Instigator).IGPlus_TraceMover(IGPlus_OwnLift, S + D, E + D, HL, HN);
+	Frac = 1.0;
+	if (bHit)
+		Frac = FClamp(VSize(HL - D - S) / FMax(VSize(E - S), 0.001), 0.0, 1.0);
+
+	IGPlus_bOwnLiftMoving = true;
+	IGPlus_OwnLiftMoveEnd = S + (E - S) * Frac;
+	if (Frac > 0.0)
+		AutonomousPhysics(Delta * Frac);
+	IGPlus_bOwnLiftMoving = false;
+
+	if (bHit && bDeleteMe == false) {
+		// The same spot of the real lift, so a rocket jump off it pushes as it
+		// did on the shooter's screen.
+		IGPlus_SpawnLoc += D; // same travel for the self-knockback timing
+		SetLocation(HL + 2.0 * HN);
+		IGPlus_bOwnLiftHitNow = true;
+		IGPlus_bOwnLiftMoving = true;
+		HitWall(HN, IGPlus_OwnLift);
+		IGPlus_bOwnLiftMoving = false;
+		IGPlus_bOwnLiftHitNow = false;
+	}
 }
 
-function IGPlus_OwnLiftRestore() {
-	if (IGPlus_OwnLiftMD != None)
-		IGPlus_OwnLiftMD.CompEnd();
+// Server: through the real lift, on to where this move ends; anything else
+// in the way is hit.
+function IGPlus_OwnLiftPassThrough() {
+	local Actor A;
+	local vector HL, HN;
+	local bool bOldCollideWorld;
+
+	bOldCollideWorld = bCollideWorld;
+	foreach TraceActors(class'Actor', A, HL, HN, IGPlus_OwnLiftMoveEnd, Location) {
+		if (A == IGPlus_OwnLift || A == Instigator || A == self)
+			continue;
+		if (A == Level || Mover(A) != None) {
+			bCollideWorld = false;
+			SetLocation(HL + 2.0 * HN);
+			bCollideWorld = bOldCollideWorld;
+			IGPlus_bOwnLiftMoving = false;
+			HitWall(HN, A);
+			return;
+		}
+	}
+	bCollideWorld = false;
+	SetLocation(IGPlus_OwnLiftMoveEnd);
+	bCollideWorld = bOldCollideWorld;
 }
 
 // Server: one tick of flight against our lift where the shooter's screen has
@@ -274,9 +329,7 @@ function IGPlus_OwnLiftStep(float Delta) {
 			bbPlayer(Instigator).ClientDebugMessage("Rocket (server) flies on its own at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
 		return;
 	}
-	IGPlus_OwnLiftRewind(0.0);
-	AutonomousPhysics(Delta);
-	IGPlus_OwnLiftRestore();
+	IGPlus_OwnLiftMove(Delta, 0.0);
 	if (bDeleteMe == false)
 		IGPlus_OwnLiftHold();
 }
@@ -303,19 +356,6 @@ function IGPlus_OwnLiftUnhold() {
 	Acceleration = IGPlus_HeldAcceleration;
 	SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
 	IGPlus_bHeld = false;
-}
-
-// Server: a hit on our lift where the shooter's screen has it lands on the
-// same spot of the real lift, so a rocket jump off it pushes as it did there.
-function IGPlus_OwnLiftHit(Actor Wall) {
-	local vector Shift;
-
-	if (Wall == None || Wall != IGPlus_OwnLift || IGPlus_OwnLiftMD == None || IGPlus_OwnLiftMD.bCompActive == false)
-		return;
-	Shift = IGPlus_OwnLiftMD.SavedMoverLoc - IGPlus_OwnLift.Location;
-	IGPlus_OwnLiftRestore();
-	IGPlus_SpawnLoc += Shift; // same travel for the self-knockback timing
-	SetLocation(Location + Shift);
 }
 
 defaultproperties {

@@ -1268,14 +1268,14 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
       break;
     
     PureRef.CompensateFor(int(SimPing), Projectiles[0].Instigator);
-    // Rockets from a moving lift (Push-Safe Aim): the shooter's own lift too.
-    for (i = 0; i < NumProjectiles; i++)
-      if (ST_RocketMk2(Projectiles[i]) != None && !Projectiles[i].bDeleteMe)
-        ST_RocketMk2(Projectiles[i]).IGPlus_OwnLiftRewind(TotalMs - SimPing);
-    
     for (i = 0; i < NumProjectiles; i++) {
       if (Projectiles[i] != None && !Projectiles[i].bDeleteMe) {
-        Projectiles[i].AutonomousPhysics(DeltaTime);
+        // Rockets from a moving lift (Push-Safe Aim) meet the shooter's lift
+        // where the shooter's screen has it.
+        if (ST_RocketMk2(Projectiles[i]) != None && ST_RocketMk2(Projectiles[i]).IGPlus_OwnLift != None)
+          ST_RocketMk2(Projectiles[i]).IGPlus_OwnLiftMove(DeltaTime, TotalMs - SimPing);
+        else
+          Projectiles[i].AutonomousPhysics(DeltaTime);
       }
     }
     
@@ -1357,6 +1357,9 @@ simulated function Actor TraceShotInternal(
 				if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 					// If compensated muzzle origin clips into the instigator's own mover, skip
 					// only the immediate self-base hit so the ray can continue normally.
+					if (A == PawnOwner.Base && Mover(A) != None && bbPlayer(PawnOwner) != None
+						&& bbPlayer(PawnOwner).IGPlus_OwnLiftShotShift != vect(0,0,0))
+						continue;
 					if (bCompensated && A == PawnOwner.Base && Mover(A) != None) {
 						if (ShouldIgnoreCompensatedSelfBaseHit(PawnOwner, StartTrace, HitLocation, ResolveSelfBaseSamplePing(PawnOwner, RewindPing)))
 							continue;

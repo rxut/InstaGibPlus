@@ -257,6 +257,7 @@ var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving
 var float IGPlus_LiftExitTS;                // when we last left a moving lift
 var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
 var Actor IGPlus_DbgLastBase;               // debug: base before the last change
+var vector IGPlus_OwnLiftShotShift;         // server: a shot leaves from our screen's spot on a lift (TraceShot skips the real lift)
 var bool IGPlus_DbgLiftRising;
 var float IGPlus_DbgLiftExitZ;
 var bool IGPlus_CameraCorrectionSnap;      // a CAP changed our state (respawn etc.): don't ease
@@ -3214,6 +3215,19 @@ function int IGPlus_OwnLiftLagMs() {
 	return Min(PingAverage, GetWeaponSettings().PingCompensationMax);
 }
 
+// Where Start->End first meets Lift, nothing else counted. Our lift where our
+// screen has it is the real one moved back by its lead: a shot moved forward
+// by the lead meets the real one at the same spots. The real lift is never
+// moved for this: a rider set down on it again restarts a waiting lift.
+simulated function bool IGPlus_TraceMover(Mover Lift, vector Start, vector End, out vector HitLoc, out vector HitNormal) {
+	local Actor A;
+
+	foreach TraceActors(class'Actor', A, HitLoc, HitNormal, End, Start)
+		if (A == Lift)
+			return true;
+	return false;
+}
+
 // Debug (enableDebugData): where a projectile shot starts, on each side.
 simulated function IGPlus_DebugProjStart(string What, vector Start) {
 	local string Side;
@@ -4762,7 +4776,8 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 					}
 				}
 				} else if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
-					if (A == Base && Mover(A) != None && IGPlus_ShouldIgnoreOwnBaseHit(StartTrace, HitLocation))
+					if (A == Base && Mover(A) != None
+						&& (IGPlus_OwnLiftShotShift != vect(0,0,0) || IGPlus_ShouldIgnoreOwnBaseHit(StartTrace, HitLocation)))
 						continue;
 					if (bSProjBlocks || !A.IsA('ShockProj') || bWeaponShock) {
 						Other = A;
