@@ -90,7 +90,8 @@ simulated function PostNetBeginPlay()
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
 
-		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator && Level.NetMode == NM_Client) {
+		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator && Level.NetMode == NM_Client
+			&& IGPlus_InDemoPlayback() == false) {
 			// Deterministic translocator: the thrower watches its own disc;
 			// ST_Translocator.IGPlus_DetClientTick keeps this copy hidden.
 			class'ST_Translocator'.static.IGPlus_DetSetCopyHidden(self, true);
@@ -295,12 +296,15 @@ function vector GetHistoricalPosition(float RequestTime) {
     return Location;
 }
 
-// Demo playback (udemo's spectator is there).
+// Demo playback: udemo's spectator, or UT's own playback through the
+// recorder's eyes (bbPlayer.IGPlus_InDemoPlayback knows both).
 simulated function bool IGPlus_InDemoPlayback() {
 	local Pawn P;
 
 	if (Level.NetMode != NM_Client)
 		return false;
+	if (bbPlayer(Instigator) != None && bbPlayer(Instigator).IGPlus_InDemoPlayback())
+		return true;
 	for (P = Level.PawnList; P != None; P = P.NextPawn)
 		if (P.IsA('DemoPlaybackSpec'))
 			return true;

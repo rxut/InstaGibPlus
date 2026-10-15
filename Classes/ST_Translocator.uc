@@ -770,7 +770,8 @@ simulated function IGPlus_DetClientTick() {
 
 	S = IGPlus_DiscRepl;
 	if (S != None && S.bDeleteMe == false) {
-		IGPlus_DetSetCopyHidden(S, IGPlus_bDetShowServerDisc == false);
+		// Not in demo playback: the local disc we watched isn't in the demo.
+		IGPlus_DetSetCopyHidden(S, IGPlus_bDetShowServerDisc == false && S.IGPlus_InDemoPlayback() == false);
 	}
 
 	if (IGPlus_bDetKnockPending && Level.TimeSeconds - IGPlus_DetThrowTS >= IGPlus_DetKnockAge)
@@ -800,6 +801,9 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 		return;
 	S.bHidden = bHide;
 	if (bHide) {
+		// Still recorded by a client demo, hidden: playback shows it
+		// (ST_TranslocatorTarget's Pickup.Tick). Only our demo recorder reads this here.
+		S.bAlwaysRelevant = true;
 		if (S.Shadow != None) {
 			S.Shadow.Destroy();
 			S.Shadow = None;
