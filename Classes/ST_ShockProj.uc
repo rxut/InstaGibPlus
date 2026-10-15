@@ -140,6 +140,7 @@ simulated event Tick(float Delta) {
 	) {
 		IGPlus_ComboTS = 0.0;
 		IGPlus_ShowBall();
+		bbPlayer(InstigatingPlayer).ClientDebugMessage("Shock combo: drawn here but the server missed, ball shown again");
 	}
 }
 
@@ -165,6 +166,7 @@ simulated function IGPlus_PredictCombo() {
 	if (bbPlayer(Instigator) != None) {
 		bbPlayer(Instigator).IGPlus_PredComboTS = Level.TimeSeconds;
 		bbPlayer(Instigator).IGPlus_PredComboLoc = Location;
+		bbPlayer(Instigator).ClientDebugMessage("Shock combo: drawn on the beam's frame");
 	}
 }
 

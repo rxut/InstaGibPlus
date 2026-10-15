@@ -20,9 +20,11 @@ simulated function PostNetBeginPlay() {
 			&& VSize(Location - P.IGPlus_PredComboLoc) < 64.0
 		) {
 			P.IGPlus_PredComboTS = 0.0;
+			P.ClientDebugMessage("Shock combo: server agreed ("$int(VSize(Location - P.IGPlus_PredComboLoc))$"uu apart)");
 			Destroy();
 			return;
 		}
+		P.ClientDebugMessage("Shock combo: server made one this client didn't draw, shown late");
 		PlaySound(class'ShockProj'.default.ExploSound,,20.0,,2000,0.6);
 	}
 	Super.PostBeginPlay();

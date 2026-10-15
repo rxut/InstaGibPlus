@@ -466,7 +466,10 @@ simulated function ClientSpawnAltProjectileEffects(
 	else
 		Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 
-	if (bbP != None)
+	// The deterministic server fires its ball from the shot's spot with no
+	// mover shift (DeterministicProjectileFire), and ours must fly its line.
+	// The shift only matches the legacy explicit fire, which adds it too.
+	if (bbP != None && bUseShotData == false)
 		Start.Z += bbP.GetMoverFireZOffset();
 
 	LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start, AimRot));
