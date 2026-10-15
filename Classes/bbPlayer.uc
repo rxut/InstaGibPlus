@@ -569,6 +569,7 @@ var IGPlus_DataBuffer IGPlus_InputReplicationBuffer;
 var float IGPlus_LastInputSendTime;
 var float MinDodgeClickTime;
 var IGPlus_InputLogFile IGPlus_InputLogFile;
+var IGPlus_DebugLogFile IGPlus_DebugLogFile; // client: debug lines to a file while enableDebugData is on
 var bool bTraceInput;
 
 var IGPlus_NetStats NetStatsElem;
@@ -936,6 +937,8 @@ simulated event Destroyed() {
 
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.StopLog();
+	if (IGPlus_DebugLogFile != none)
+		IGPlus_DebugLogFile.Destroy();
 	super.Destroyed();
 }
 
@@ -1872,6 +1875,12 @@ function ClientDebugMessage(coerce string S, optional name Type, optional bool b
 
 	if (bDrawDebugData) {
 		ClientMessage("["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S, Type, bBeep);
+		if (Level.NetMode != NM_DedicatedServer) {
+			if (IGPlus_DebugLogFile == none)
+				IGPlus_DebugLogFile = Spawn(class'IGPlus_DebugLogFile');
+			if (IGPlus_DebugLogFile != none)
+				IGPlus_DebugLogFile.WriteLine("["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S);
+		}
 	} else {
 		zzPrevClientMessage = "["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S;
 		ClientDemoMessage(zzPrevClientMessage, Type, bBeep);
@@ -7114,9 +7123,22 @@ function string forcedModelToString(int fm) {
 exec function enableDebugData(bool b) {
 	bDrawDebugData = b;
 	if (b) {
-		ClientMessage("Debug data: on");
+		if (IGPlus_DebugLogFile == none)
+			IGPlus_DebugLogFile = Spawn(class'IGPlus_DebugLogFile');
+		if (IGPlus_DebugLogFile != none) {
+			IGPlus_DebugLogFile.StartLog();
+			ClientMessage("Debug data: on, also written to Logs/"$IGPlus_DebugLogFile.FileName$".log");
+		} else {
+			ClientMessage("Debug data: on");
+		}
 	} else {
-		ClientMessage("Debug data: off");
+		if (IGPlus_DebugLogFile != none) {
+			ClientMessage("Debug data: off, saved Logs/"$IGPlus_DebugLogFile.FileName$".log");
+			IGPlus_DebugLogFile.Destroy();
+			IGPlus_DebugLogFile = none;
+		} else {
+			ClientMessage("Debug data: off");
+		}
 	}
 }
 
