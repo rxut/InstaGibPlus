@@ -340,7 +340,9 @@ simulated function ClientTraceFire(
 	// Only where the server is sure to agree: a combo shown that didn't happen
 	// is worse than one shown a ping late. Never from a lift, where our
 	// position and the server's disagree.
-	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
+	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations
+		&& (bbP.IGPlus_PredictiveShockCombos() || bbP.bDrawDebugData)
+	) {
 		Reach = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
 		IGPlus_DebugBeam("client", StartTrace, X, Reach);
 		if (bbP.IGPlus_PredictiveShockCombos() && bbP.IGPlus_OnMovingLift() == false)
@@ -572,7 +574,7 @@ simulated function ClientSpawnAltProjectileEffects(
 		} else {
 			LocalDummy.bCollideWorld = false;
 		}
-		if (bbP != None)
+		if (bbP != None && bbP.bDrawDebugData)
 			bbP.ClientDebugMessage("Shock ball (client) from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)$" aim "$(AimRot.Pitch & 65535)$","$(AimRot.Yaw & 65535));
 	}
 }
@@ -609,6 +611,9 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	local actor Other;
 	local Pawn PawnOwner;
 	local vector SmokeLocation;
+	local vector LiftLead;
+	local bbPlayer bbP;
+	local ST_MoverDummy LiftMD;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -622,10 +627,17 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	// On a moving lift the shooter's screen has the shooter a round trip of
 	// lift travel behind here (bbPlayer.IGPlus_OwnLiftLead): the shot leaves
 	// from there, as the sniper's does. The drawn beam still leaves the
-	// shooter where others see it. TraceShot skips the shooter's own lift
-	// near the muzzle.
-	if (IsPingCompEnabled() && bbPlayer(PawnOwner) != None)
-		StartTrace -= bbPlayer(PawnOwner).IGPlus_OwnLiftLead();
+	// shooter where others see it. The shooter's own lift goes back to where
+	// that screen had it too, so the muzzle sits as high above the floor.
+	bbP = bbPlayer(PawnOwner);
+	if (IsPingCompEnabled() && bbP != None)
+		LiftLead = bbP.IGPlus_OwnLiftLead();
+	if (LiftLead != vect(0,0,0)) {
+		StartTrace -= LiftLead;
+		LiftMD = bbP.zzUTPure.FindMoverDummy(Mover(PawnOwner.Base));
+		if (LiftMD != None)
+			LiftMD.CompStart(bbP.IGPlus_OwnLiftLagMs());
+	}
 
 	EndTrace = StartTrace + (Accuracy * (FRand() - 0.5 )* Y * 1000) + (Accuracy * (FRand() - 0.5 ) * Z * 1000);
 
@@ -652,7 +664,9 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
-		
+	if (LiftMD != None)
+		LiftMD.CompEnd(); // EndCompensation usually did already
+
 	PendingSmokeLocation = SmokeLocation;
 	IGPlus_DebugBeam("server", StartTrace, Normal(EndTrace - StartTrace));
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);

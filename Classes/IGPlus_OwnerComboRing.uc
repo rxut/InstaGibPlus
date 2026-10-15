@@ -22,6 +22,8 @@ simulated function PostBeginPlay() {
 simulated function PostNetBeginPlay() {
 	local bbPlayer P;
 
+	if (Level.NetMode != NM_Client)
+		return; // PostBeginPlay did it
 	P = bbPlayer(Owner);
 	if (P != None && Viewport(P.Player) != None) {
 		if (IGPlus_OwnerShift != vect(0,0,0))

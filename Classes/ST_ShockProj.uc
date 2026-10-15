@@ -62,7 +62,7 @@ simulated function PostBeginPlay() {
 			IGPlus_FireLoc = Location;
 			if (Level.NetMode != NM_Client)
 				IGPlus_FireLiftLead = bbP.IGPlus_OwnLiftLead();
-			if (Level.NetMode != NM_Client)
+			if (Level.NetMode != NM_Client && bbP.bDrawDebugData)
 				bbP.ClientDebugMessage("Shock ball (server) from "$IGPlus_Vec(Location)$" aim "$(Rotation.Pitch & 65535)$","$(Rotation.Yaw & 65535));
 		}
 		if (PureRef != None)
@@ -93,7 +93,11 @@ simulated function PostNetBeginPlay() {
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
 		if (InstigatingPlayer != none) {
-			if (bbP.IGPlus_PredictiveShockCombos() && bbP.zzbDemoPlayback == false) {
+			// Own timeline only for a ball that came over the network: offline
+			// and on a listen host this is the real ball.
+			if (bbP.IGPlus_PredictiveShockCombos() && bbP.zzbDemoPlayback == false
+				&& Level.NetMode == NM_Client
+			) {
 				IGPlus_TakeOverLocalBall();
 			} else {
 				// The old client-side animation: our copy gives way, and Tick
@@ -124,6 +128,9 @@ simulated function IGPlus_TakeOverLocalBall() {
 			Mine = P;
 
 	if (Mine == None) {
+		// Our copy ran out (late packet): this catch-up is only rough, so no
+		// combo is drawn on this ball. The server decides it.
+		IGPlus_bFromMover = true;
 		Start = Location;
 		Delta = Velocity * (0.001 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
 		Move(Delta);
@@ -261,6 +268,7 @@ function bool IGPlus_OwnerMayDrawCombo() {
 function SuperExplosion() {
 	local float ComboDamage, ComboRadius, ComboMomentum;
 	local IGPlus_OwnerComboRing Ring;
+	local vector OwnerLoc;
 
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
@@ -296,8 +304,10 @@ function SuperExplosion() {
 		// The owner's client plays the sound itself if it didn't draw this one.
 		Ring = Spawn(class'IGPlus_OwnerComboRing', Instigator,'', Location, Instigator.ViewRotation);
 		if (Ring != None) {
-			// The owner's screen has this ball the lift's lead lower (or higher).
-			Ring.IGPlus_OwnerShift = -IGPlus_FireLiftLead;
+			// The owner sees the ring where its beam met the ball on its own
+			// screen, which is where its client drew it.
+			IGPlus_OwnerSeesBall(bbPlayer(Instigator), OwnerLoc);
+			Ring.IGPlus_OwnerShift = OwnerLoc - Location;
 			Ring.PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
 		}
 	} else {

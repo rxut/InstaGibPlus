@@ -3168,12 +3168,18 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 function vector IGPlus_OwnLiftLead() {
 	local ST_MoverDummy MD;
 
-	if (Mover(Base) == None || zzUTPure == None || PingAverage <= 0)
+	if (Mover(Base) == None || zzUTPure == None || IGPlus_OwnLiftLagMs() <= 0)
 		return vect(0,0,0);
 	MD = zzUTPure.FindMoverDummy(Mover(Base));
 	if (MD == None)
 		return vect(0,0,0);
-	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(PingAverage) * 0.001 * Level.TimeDilation);
+	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(IGPlus_OwnLiftLagMs()) * 0.001 * Level.TimeDilation);
+}
+
+// Server: how long ago our screen's lift was where it is now, capped like the
+// rest of ping compensation.
+function int IGPlus_OwnLiftLagMs() {
+	return Min(PingAverage, GetWeaponSettings().PingCompensationMax);
 }
 
 // Debug (enableDebugData): where a projectile shot starts, on each side.
