@@ -8,6 +8,10 @@ var bool bClientVisualOnly;
 var PlayerPawn InstigatingPlayer;
 
 var vector ExtrapolationDelta;
+// Server, predicted self-knockback: the shooter's fire step and launch.
+var float IGPlus_FireTS;
+var vector IGPlus_SpawnLoc;
+var vector IGPlus_SpawnVel;
 
 // Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
 // near the lift; clients, its speed, as it was sent held still.
@@ -234,12 +238,23 @@ function NewExplode(vector HitLocation, vector HitNormal)
 {
 	local vector start;
 	local ST_UTChunkInfo CI;
+	local bbPlayer bbP;
+	local float LevelSpeed;
 
 	if (bClientVisualOnly)
 		{
 			bHidden = true;
 			return;
 		}
+
+	// Predicted self-knockback: its age is its level travel over its level
+	// launch speed (gravity leaves those alone), as the shooter's guess.
+	bbP = bbPlayer(Instigator);
+	LevelSpeed = VSize(IGPlus_SpawnVel * vect(1,1,0));
+	if (IGPlus_FireTS > 0.0 && LevelSpeed >= 50.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+		bbP.IGPlus_SKBeginCapture();
+	else
+		bbP = none;
 
 	if (WImp.WeaponSettings.bEnableEnhancedSplashFlakSlug) {
 		WImp.EnhancedHurtRadius(
@@ -257,6 +272,9 @@ function NewExplode(vector HitLocation, vector HitNormal)
 			WImp.WeaponSettings.FlakSlugMomentum * MomentumTransfer,
 			HitLocation);
 	}
+	if (bbP != none)
+		bbP.IGPlus_SKEndCaptureFor(self,
+			IGPlus_FireTS + VSize((Location - IGPlus_SpawnLoc) * vect(1,1,0)) / LevelSpeed, HitLocation);
 	start = Location + 10 * HitNormal;
  	Spawn( class'ut_FlameExplosion',,,Start);
 	CI = Spawn(Class'ST_UTChunkInfo', Instigator);

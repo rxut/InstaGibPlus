@@ -212,6 +212,9 @@ simulated function IGPlus_WallMark(vector HitNormal) {
 // Client: our own beam set this ball off. The server's ring for it is dropped
 // when it gets here (IGPlus_OwnerComboRing), so this is the combo we see.
 simulated function IGPlus_PredictCombo() {
+	// Not against the wall after all: no push from that.
+	if (bbPlayer(Instigator) != None)
+		bbPlayer(Instigator).IGPlus_SKCancelShockBall();
 	Spawn(class'ut_ComboRing',,'', Location, Instigator.ViewRotation);
 	PlaySound(ExploSound,,20.0,,2000,0.6);
 	IGPlus_ComboTS = Level.TimeSeconds;
@@ -331,7 +334,15 @@ function SuperExplosion() {
 }
 
 function Explode(vector HitLocation,vector HitNormal) {
+	local bbPlayer bbP;
+
 	PlaySound(ImpactSound, SLOT_Misc, 0.5,,, 0.5+FRand());
+	// Predicted self-knockback: its age is its travel over its speed.
+	bbP = bbPlayer(Instigator);
+	if (IGPlus_FireTS > 0.0 && Speed > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+		bbP.IGPlus_SKBeginCapture();
+	else
+		bbP = none;
 	if (WImp.WeaponSettings.bEnableEnhancedSplashShockProjectile) {
 		WImp.EnhancedHurtRadius(
 			self,
@@ -348,6 +359,8 @@ function Explode(vector HitLocation,vector HitNormal) {
 			WImp.WeaponSettings.ShockProjectileMomentum * MomentumTransfer,
 			Location);
 	}
+	if (bbP != none)
+		bbP.IGPlus_SKEndCaptureFor(self, IGPlus_FireTS + VSize(Location - IGPlus_FireLoc) / Speed, Location);
 	if (WImp.WeaponSettings.ShockProjectileDamage > 60)
 		Spawn(class'ut_RingExplosion3',,, HitLocation+HitNormal*8,rotator(HitNormal));
 	else

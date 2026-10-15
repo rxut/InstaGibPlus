@@ -144,6 +144,22 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 	DetPlayFireAnim(bAlt);
 	if (BP.ClientWeaponSettingsData.bRipperUseClientSideAnimations)
 		SpawnClientSideRazorAt(bAlt, StepView, StepLoc);
+	if (bAlt)
+		BP.IGPlus_SKPredictRipperAlt(IGPlus_ShotStart(StepView, StepLoc), StepView);
+}
+
+// Client: where our shot leaves the gun, as the server spawns it.
+simulated function vector IGPlus_ShotStart(rotator Aim, vector Loc) {
+	local vector X, Y, Z;
+	local float Hand;
+
+	Hand = 1.0;
+	if (PlayerPawn(Owner) != None)
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	GetAxes(Aim, X, Y, Z);
+	if (bHideWeapon)
+		return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 }
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
@@ -222,6 +238,12 @@ function SpawnServerRazorAt(bool bAlt, vector ShotLoc, rotator AimRot, rotator O
 		Razor = Spawn(class'ST_Razor2', Owner,, Start, AimRot);
 	if (bbP != None)
 		bbP.IGPlus_DebugProjStart("Ripper", Start);
+	// Predicted self-knockback anchors the alt blade's push to this step.
+	if (bAlt && ST_Razor2Alt(Razor) != None && bbP != None && bbP.IGPlus_PredictedSelfKnockback && IsDetActive()) {
+		ST_Razor2Alt(Razor).IGPlus_FireTS = bbP.CurrentTimeStamp;
+		ST_Razor2Alt(Razor).IGPlus_SpawnLoc = Razor.Location;
+		ST_Razor2Alt(Razor).IGPlus_Speed = VSize(Razor.Velocity);
+	}
 	if (bLiftAim && bbP != None)
 		LS = class'IGPlus_LiftShot'.static.Begin(Razor, bbP);
 

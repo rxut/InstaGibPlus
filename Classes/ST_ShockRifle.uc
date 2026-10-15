@@ -141,6 +141,7 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		PlayAltFiring();
 		if (BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects(true, StepView, StepLoc);
+		BP.IGPlus_SKPredictShockBall(IGPlus_ShotStart(StepView, StepLoc), StepView);
 	} else {
 		PlayFiring();
 		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
@@ -512,6 +513,20 @@ simulated function bool ClientAltFire(float Value) {
 	}
 	
 	return Super.ClientAltFire(Value); 
+}
+
+// Client: where our shot leaves the gun, as the server spawns it.
+simulated function vector IGPlus_ShotStart(rotator Aim, vector Loc) {
+	local vector X, Y, Z;
+	local float Hand;
+
+	Hand = 1.0;
+	if (PlayerPawn(Owner) != None)
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	GetAxes(Aim, X, Y, Z);
+	if (bHideWeapon)
+		return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 }
 
 simulated function ClientSpawnAltProjectileEffects(

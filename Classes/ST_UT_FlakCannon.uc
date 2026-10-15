@@ -156,6 +156,7 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		PlayAltFiring();
 		if (BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
 			SpawnClientSideSlug();
+		BP.IGPlus_SKPredictFlakSlug(IGPlus_ShotStart(StepView, StepLoc), StepView);
 	} else {
 		PlayFiring();
 		if (BP.ClientWeaponSettingsData.bFlakUseClientSideAnimations)
@@ -343,6 +344,12 @@ function SpawnServerSlugAt(vector Start, rotator AimRot, rotator OffsetRot, opti
 	
 	Slug = Spawn(class'ST_FlakSlug', Owner,, Start, AimRot);
 	Slug.WImp = WImp;
+	// Predicted self-knockback anchors its push to this step.
+	if (Slug != None && bbP != None && bbP.IGPlus_PredictedSelfKnockback && IsDetActive()) {
+		Slug.IGPlus_FireTS = bbP.CurrentTimeStamp;
+		Slug.IGPlus_SpawnLoc = Slug.Location;
+		Slug.IGPlus_SpawnVel = Slug.Velocity;
+	}
 	if (bLiftAim && bbP != None)
 		LS = class'IGPlus_LiftShot'.static.Begin(Slug, bbP);
 
@@ -530,6 +537,20 @@ state ClientAltFiring {
 			GotoState('ClientReload');
 		}
 	}
+}
+
+// Client: where our shot leaves the gun, as the server spawns it.
+simulated function vector IGPlus_ShotStart(rotator Aim, vector Loc) {
+	local vector X, Y, Z;
+	local float Hand;
+
+	Hand = 1.0;
+	if (PlayerPawn(Owner) != None)
+		Hand = FClamp(PlayerPawn(Owner).Handedness, -1.0, 1.0);
+	GetAxes(Aim, X, Y, Z);
+	if (bHideWeapon)
+		return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Z * Z;
+	return Loc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 }
 
 simulated function SpawnClientChunk(class<ST_UTChunk> ChunkClass, vector Pos, rotator Rot, int Index) {

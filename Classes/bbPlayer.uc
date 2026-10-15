@@ -369,6 +369,14 @@ var IGPlus_WeaponImplementationBase IGPlus_WImpBase;
 	const IGPLUS_DetWEAPON_Eightball = 5;
 	const IGPLUS_DetWEAPON_SniperRifle = 6; // wire format caps indices at 7 (3 bits)
 
+	// Predicted self-knockback: what pushed us. Splashes are recomputed from
+	// where we are when they land, the hammer's push is direct.
+	const IGPLUS_SK_ROCKET = 0;
+	const IGPLUS_SK_FLAKSLUG = 1;
+	const IGPLUS_SK_SHOCKBALL = 2;
+	const IGPLUS_SK_RIPPERALT = 3;
+	const IGPLUS_SK_HAMMER = 4;
+
 var Utilities Utils;
 var StringUtils StringUtils;
 var bbPlayerStatics PlayerStatics;
@@ -405,7 +413,8 @@ struct IGPlus_SelfKnockback {
 	var float Momentum;
 	var bool bEnhanced;
 	var bool bHasFallback;
-	var vector FallbackPush; // server: what TakeDamage computed at the explosion
+	var vector FallbackPush; // server: what TakeDamage computed at the explosion; hammer: the push
+	var byte Kind;           // IGPLUS_SK_*
 };
 var IGPlus_SelfKnockback IGPlus_SKQueue[16];
 var int IGPlus_SKQueueCount;
@@ -2388,7 +2397,11 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 	Velocity.Z += M.IGPlus_LiftExitVelZ;
 
 	for (MoveIndex = 0; MoveIndex < M.IGPlus_SKPushCount; MoveIndex++) {
-		IGPlus_SKPredictedEntry(M.IGPlus_SKHit[MoveIndex], K);
+		if (M.IGPlus_SKKind[MoveIndex] == IGPLUS_SK_HAMMER) {
+			IGPlus_SKAddVelocity(M.IGPlus_SKPush[MoveIndex]);
+			continue;
+		}
+		IGPlus_SKPredictedEntry(M.IGPlus_SKHit[MoveIndex], K, M.IGPlus_SKKind[MoveIndex]);
 		if (IGPlus_SKCompute(K, Push))
 			IGPlus_SKAddVelocity(Push);
 	}
@@ -3286,7 +3299,8 @@ simulated function IGPlus_SKQueueAdd(
 	float Momentum,
 	bool bEnhanced,
 	bool bHasFallback,
-	vector FallbackPush
+	vector FallbackPush,
+	optional byte Kind
 ) {
 	local int i, j;
 
@@ -3313,6 +3327,7 @@ simulated function IGPlus_SKQueueAdd(
 	IGPlus_SKQueue[i].bEnhanced = bEnhanced;
 	IGPlus_SKQueue[i].bHasFallback = bHasFallback;
 	IGPlus_SKQueue[i].FallbackPush = FallbackPush;
+	IGPlus_SKQueue[i].Kind = Kind;
 	IGPlus_SKQueueCount++;
 }
 
@@ -3324,6 +3339,11 @@ simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push
 	local float Dist, DamageScale, MomentumScale;
 
 	Push = vect(0,0,0);
+	// The hammer pushes us directly (already scaled).
+	if (K.Kind == IGPLUS_SK_HAMMER) {
+		Push = K.FallbackPush;
+		return true;
+	}
 	Delta = Location - K.HitLocation;
 	DeltaXY = Delta * vect(1,1,0);
 
@@ -3361,7 +3381,11 @@ simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push
 		if (DamageScale <= 0.0)
 			return true;
 		MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - CollisionRadius) / K.Radius, 0.0, 1.0);
-		Push = MomentumScale * K.Momentum * Normal(MomentumDelta);
+		Dir = Normal(MomentumDelta);
+		// The ripper's alt pushes no steeper than 0.45 up (Razor2Alt.BlowUp).
+		if (K.Kind == IGPLUS_SK_RIPPERALT)
+			Dir.Z = FMin(0.45, Dir.Z);
+		Push = MomentumScale * K.Momentum * Dir;
 	} else {
 		// VisibleCollidingActors: within Radius and visible from HitLocation.
 		if (VSize(Delta) >= K.Radius || FastTrace(Location, K.HitLocation) == false)
@@ -3371,7 +3395,10 @@ simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push
 		DamageScale = 1.0 - FMax(0, (Dist - CollisionRadius) / K.Radius);
 		if (DamageScale <= 0.0)
 			return true;
-		Push = DamageScale * K.Momentum * (Delta / Dist);
+		Dir = Delta / Dist;
+		if (K.Kind == IGPLUS_SK_RIPPERALT)
+			Dir.Z = FMin(0.45, Dir.Z);
+		Push = DamageScale * K.Momentum * Dir;
 	}
 
 	// TakeDamage: own momentum is scaled by 0.6, then divided by mass.
@@ -3419,6 +3446,8 @@ simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
 				// Replays recompute it from the replayed position.
 				if (Move != none && Move.IGPlus_SKPushCount < arraycount(Move.IGPlus_SKHit)) {
 					Move.IGPlus_SKHit[Move.IGPlus_SKPushCount] = IGPlus_SKQueue[0].HitLocation;
+					Move.IGPlus_SKKind[Move.IGPlus_SKPushCount] = IGPlus_SKQueue[0].Kind;
+					Move.IGPlus_SKPush[Move.IGPlus_SKPushCount] = Push;
 					Move.IGPlus_SKPushCount++;
 				}
 			}
@@ -3447,7 +3476,8 @@ function IGPlus_SKEndCapture(
 	float SourceRadius,
 	float Radius,
 	float Momentum,
-	bool bEnhanced
+	bool bEnhanced,
+	optional byte Kind
 ) {
 	local IGPlus_SelfKnockback K;
 	local vector Push;
@@ -3463,6 +3493,7 @@ function IGPlus_SKEndCapture(
 		K.Radius = Radius;
 		K.Momentum = Momentum;
 		K.bEnhanced = bEnhanced;
+		K.Kind = Kind;
 		if (IGPlus_SKCompute(K, Push) && VSize(Push - IGPlus_SKCaptured) > 1.0) {
 			ServerAddMomentum(IGPlus_SKCaptured);
 			return;
@@ -3473,63 +3504,196 @@ function IGPlus_SKEndCapture(
 	IGPlus_SKQueueAdd(
 		FMax(TargetTS, CurrentTimeStamp),
 		RocketIndex, HitLocation, SourceLocation, SourceRadius, Radius, Momentum, bEnhanced,
-		IGPlus_SKCapturedHit, IGPlus_SKCaptured);
+		IGPlus_SKCapturedHit, IGPlus_SKCaptured, Kind);
 }
 
-// Client: predict an own rocket's explosion from its launch. Only world hits
-// close enough for a rocket jump are predicted; anything else (pawns, far
-// walls, water) is left to the server's correction.
+// Client: can our own shots' pushes be predicted? Non-469 servers merge short
+// moves regardless of bForcePacketSplit, so a push would not end its move. On
+// a lift the lift is somewhere else on each machine.
+simulated function bool IGPlus_SKCanPredict() {
+	return IGPlus_PredictedSelfKnockback && Level.NetMode == NM_Client && bIs469Server
+		&& Mover(Base) == none && Region.Zone.bWaterZone == false && GetWeaponSettings() != none;
+}
+
+// Client: predict an own rocket's explosion from its launch.
 simulated function IGPlus_SKPredictRocket(vector Start, rotator FireRot, int RocketIndex) {
-	local WeaponSettingsRepl WS;
+	if (IGPlus_SKCanPredict())
+		IGPlus_SKPredictShot(IGPLUS_SK_ROCKET, RocketIndex, Start, vector(FireRot), GetWeaponSettings().RocketSpeed);
+}
+
+// Client: predict an own projectile's explosion from its launch, flying
+// straight. Only world hits close enough to push us are predicted; anything
+// else (pawns, far walls) is left to the server's correction. The server
+// times it by its travel over its launch speed, as here.
+simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vector Dir, float Speed) {
+	local IGPlus_SelfKnockback K;
 	local vector End, HitLocation, HitNormal;
 	local Actor HitActor;
 
-	// Non-469 servers merge short moves regardless of bForcePacketSplit, so
-	// the push would not end its move. Lift rockets use a different mover
-	// position on each machine.
-	if (IGPlus_PredictedSelfKnockback == false || Level.NetMode != NM_Client
-		|| bIs469Server == false || Mover(Base) != none)
+	if (IGPlus_SKCanPredict() == false || Speed <= 0.0)
 		return;
+	IGPlus_SKPredictedEntry(Start, K, Kind);
 
-	WS = GetWeaponSettings();
-	if (WS == none || WS.RocketSpeed <= 0.0 || Region.Zone.bWaterZone)
-		return;
-
-	// ponytail: hurt radius + 300uu covers rocket jumps; farther walls correct
-	End = Start + vector(FireRot) * (WS.RocketHurtRadius + 300.0);
+	// ponytail: hurt radius + 300uu covers jumps; farther walls correct
+	End = Start + Dir * (K.Radius + 300.0);
 	HitActor = Trace(HitLocation, HitNormal, End, Start, true);
 	if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
 		return;
 
-	// The server's rocket stops 2uu short of the surface (MoveActor's
+	// The server's projectile stops 2uu short of the surface (MoveActor's
 	// TestAdjust) and explodes there.
-	HitLocation -= 2.0 * vector(FireRot);
-	if (((HitLocation - Start) dot vector(FireRot)) < 0.0)
+	HitLocation -= 2.0 * Dir;
+	if (((HitLocation - Start) dot Dir) < 0.0)
 		HitLocation = Start;
 
-	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / WS.RocketSpeed, RocketIndex, HitLocation);
+	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / Speed, Kind * 8 + Index, HitLocation, Kind);
 }
 
-// A predicted own-rocket explosion at HitLocation, with today's settings.
-simulated function IGPlus_SKPredictedEntry(vector HitLocation, out IGPlus_SelfKnockback K) {
+// Client: the same for a lobbed shot, stepped along its arc. The server times
+// it by its level travel over its level launch speed (gravity leaves that
+// alone), as here.
+simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vector V0) {
+	local IGPlus_SelfKnockback K;
+	local vector P0, P1, V, G, HitLocation, HitNormal;
+	local Actor HitActor;
+	local float Dt, LevelSpeed;
+	local int i;
+
+	LevelSpeed = VSize(V0 * vect(1,1,0));
+	if (IGPlus_SKCanPredict() == false || LevelSpeed < 50.0)
+		return;
+	IGPlus_SKPredictedEntry(Start, K, Kind);
+
+	G = Region.Zone.ZoneGravity;
+	Dt = 0.025;
+	P0 = Start;
+	V = V0;
+	// ponytail: 1s of flight within hurt radius + 300uu covers jumps
+	for (i = 0; i < 40; i++) {
+		P1 = P0 + V * Dt + 0.5 * G * Dt * Dt;
+		HitActor = Trace(HitLocation, HitNormal, P1, P0, true);
+		if (HitActor != none) {
+			if (HitActor != Level && Mover(HitActor) == none)
+				return;
+			HitLocation -= 2.0 * Normal(P1 - P0);
+			IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize((HitLocation - Start) * vect(1,1,0)) / LevelSpeed,
+				Kind * 8 + Index, HitLocation, Kind);
+			return;
+		}
+		if (VSize(P1 - Start) > K.Radius + 300.0)
+			return;
+		P0 = P1;
+		V += G * Dt;
+	}
+}
+
+// Client: a predicted push of this kind that will not happen after all (our
+// shock ball went off in a combo instead): the earliest one still to come.
+simulated function IGPlus_SKCancelNext(byte Kind) {
+	local int i, j;
+
+	for (i = 0; i < IGPlus_SKQueueCount; i++) {
+		if (IGPlus_SKQueue[i].Kind == Kind && IGPlus_SKQueue[i].TargetTS > Level.TimeSeconds) {
+			for (j = i + 1; j < IGPlus_SKQueueCount; j++)
+				IGPlus_SKQueue[j - 1] = IGPlus_SKQueue[j];
+			IGPlus_SKQueueCount--;
+			return;
+		}
+	}
+}
+
+// An own explosion of this kind at HitLocation, with today's settings.
+simulated function IGPlus_SKPredictedEntry(vector HitLocation, out IGPlus_SelfKnockback K, optional byte Kind) {
 	local WeaponSettingsRepl WS;
 
 	WS = GetWeaponSettings();
 	K.HitLocation = HitLocation;
 	K.SourceLocation = HitLocation;
-	K.SourceRadius = class'ST_RocketMk2'.default.CollisionRadius;
-	K.Radius = WS.RocketHurtRadius;
-	K.Momentum = WS.RocketMomentum * class'ST_RocketMk2'.default.MomentumTransfer;
-	K.bEnhanced = WS.bEnableEnhancedSplashRockets;
 	K.bHasFallback = false;
+	K.Kind = Kind;
+	switch (Kind) {
+		case IGPLUS_SK_FLAKSLUG:
+			K.SourceRadius = class'ST_FlakSlug'.default.CollisionRadius;
+			K.Radius = WS.FlakSlugHurtRadius;
+			K.Momentum = WS.FlakSlugMomentum * class'ST_FlakSlug'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashFlakSlug;
+			break;
+		case IGPLUS_SK_SHOCKBALL:
+			K.SourceRadius = class'ST_ShockProj'.default.CollisionRadius;
+			K.Radius = WS.ShockProjectileHurtRadius;
+			K.Momentum = WS.ShockProjectileMomentum * class'ST_ShockProj'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashShockProjectile;
+			break;
+		case IGPLUS_SK_RIPPERALT:
+			K.SourceRadius = class'ST_Razor2Alt'.default.CollisionRadius;
+			K.Radius = WS.RipperSecondaryHurtRadius;
+			K.Momentum = WS.RipperSecondaryMomentum * class'ST_Razor2Alt'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashRipperSecondary;
+			break;
+		default:
+			K.SourceRadius = class'ST_RocketMk2'.default.CollisionRadius;
+			K.Radius = WS.RocketHurtRadius;
+			K.Momentum = WS.RocketMomentum * class'ST_RocketMk2'.default.MomentumTransfer;
+			K.bEnhanced = WS.bEnableEnhancedSplashRockets;
+	}
 }
 
-simulated function IGPlus_SKQueuePredicted(float TargetTS, int RocketIndex, vector HitLocation) {
+simulated function IGPlus_SKQueuePredicted(float TargetTS, int RocketIndex, vector HitLocation, optional byte Kind) {
 	local IGPlus_SelfKnockback K;
 
-	IGPlus_SKPredictedEntry(HitLocation, K);
+	IGPlus_SKPredictedEntry(HitLocation, K, Kind);
 	IGPlus_SKQueueAdd(TargetTS, RocketIndex, K.HitLocation, K.SourceLocation, K.SourceRadius,
-		K.Radius, K.Momentum, K.bEnhanced, false, vect(0,0,0));
+		K.Radius, K.Momentum, K.bEnhanced, false, vect(0,0,0), Kind);
+}
+
+// Client: our own flak slug, shock ball and ripper alt blade.
+simulated function IGPlus_SKPredictFlakSlug(vector Start, rotator Aim) {
+	// flakslug.PostBeginPlay: launch speed along the aim, then 200 up.
+	IGPlus_SKPredictArc(IGPLUS_SK_FLAKSLUG, 0, Start,
+		vector(Aim) * class'ST_FlakSlug'.default.Speed + vect(0,0,200));
+}
+
+simulated function IGPlus_SKPredictShockBall(vector Start, rotator Aim) {
+	IGPlus_SKPredictShot(IGPLUS_SK_SHOCKBALL, 0, Start, vector(Aim), class'ST_ShockProj'.default.Speed);
+}
+
+simulated function IGPlus_SKPredictRipperAlt(vector Start, rotator Aim) {
+	IGPlus_SKPredictShot(IGPLUS_SK_RIPPERALT, 0, Start, vector(Aim), class'ST_Razor2Alt'.default.Speed);
+}
+
+// Client: our shock ball went off in a combo, not against the wall.
+simulated function IGPlus_SKCancelShockBall() {
+	IGPlus_SKCancelNext(IGPLUS_SK_SHOCKBALL);
+}
+
+// Server: around an own flak slug's, shock ball's or ripper alt blade's
+// splash (IGPlus_SKBeginCapture first), due TargetTS on our moves.
+function IGPlus_SKEndCaptureFor(Projectile P, float TargetTS, vector HitLocation) {
+	local IGPlus_SelfKnockback K;
+	local byte Kind;
+
+	if (ST_FlakSlug(P) != None)
+		Kind = IGPLUS_SK_FLAKSLUG;
+	else if (ST_ShockProj(P) != None)
+		Kind = IGPLUS_SK_SHOCKBALL;
+	else if (ST_Razor2Alt(P) != None)
+		Kind = IGPLUS_SK_RIPPERALT;
+	IGPlus_SKPredictedEntry(HitLocation, K, Kind);
+	IGPlus_SKEndCapture(TargetTS, Kind * 8, HitLocation, P.Location,
+		K.SourceRadius, K.Radius, K.Momentum, K.bEnhanced, Kind);
+}
+
+// Client: our own hammer's push off a wall, at the end of this move (where
+// the server applies its own, IGPlus_ServerHammerRelease).
+simulated function IGPlus_SKQueueHammer(float TS, vector Push) {
+	IGPlus_SKQueueAdd(TS, IGPLUS_SK_HAMMER * 8, Location, Location, 0, 0, 0, false, true, Push, IGPLUS_SK_HAMMER);
+}
+
+// Hammer release on the move timeline: no input replication (the client's
+// release rides its own move), and the push needs the self-knockback queue.
+simulated function bool IGPlus_PredictHammer() {
+	return IGPlus_PredictedSelfKnockback && IGPlus_EnableInputReplication == false
+		&& (Level.NetMode != NM_Client || bIs469Server);
 }
 
 // --- Predicted translocation -------------------------------------------------
@@ -4024,6 +4188,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 		bWasPaused = false;
 	}
+
+	// Hammer let go on this move: its push lands at the end of it, as on the
+	// client (ST_ImpactHammer.IGPlus_ServerRelease).
+	if (bFire == 0 && ST_ImpactHammer(Weapon) != None)
+		ST_ImpactHammer(Weapon).IGPlus_ServerRelease(CurrentTimeStamp);
 
 	if (IGPlus_SKQueueCount > 0)
 		IGPlus_SKApplyDue(CurrentTimeStamp, none);
@@ -6534,7 +6703,10 @@ function xxReplicateMove(
 			// frame's start on the server too (a merged move's step starts at
 			// the move's start), or the client's own ball and the server's fly
 			// apart by however far it moved in the merged frames.
-			if (bDetLocalShot && ((bLocalEightball && IGPlus_PredictedSelfKnockback) || IGPlus_PushSafeAim
+			if (bDetLocalShot && ((IGPlus_PredictedSelfKnockback && (bLocalEightball
+					|| ST_UT_FlakCannon(DetLocalWeapon) != none || ST_ripper(DetLocalWeapon) != none
+					|| ST_ShockRifle(DetLocalWeapon) != none))
+				|| IGPlus_PushSafeAim
 				|| (ST_ShockRifle(DetLocalWeapon) != none && IGPlus_PredictiveShockCombos())))
 				bForcePacketSplit = true;
 			// Send the replayed tap as this frame's press: the move then carries
@@ -6690,6 +6862,11 @@ function xxReplicateMove(
 		bForcePacketSplit = true;
 	}
 	IGPlus_DebugLiftJumpTop(DbgOldBase);
+
+	// Hammer let go in this move: its push lands at the end of it, as on the
+	// server (ST_ImpactHammer.IGPlus_ClientRelease).
+	if (bFire == 0 && ST_ImpactHammer(Weapon) != None)
+		ST_ImpactHammer(Weapon).IGPlus_ClientRelease(Level.TimeSeconds);
 
 	// A predicted push lands at the end of a move, like on the server.
 	if (IGPlus_SKQueueCount > 0 && IGPlus_SKApplyDue(Level.TimeSeconds, NewMove))

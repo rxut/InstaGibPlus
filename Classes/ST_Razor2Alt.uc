@@ -7,6 +7,10 @@ var bool bClientVisualOnly;
 
 var PlayerPawn InstigatingPlayer;
 var vector ExtrapolationDelta;
+// Server, predicted self-knockback: the shooter's fire step and launch.
+var float IGPlus_FireTS;
+var vector IGPlus_SpawnLoc;
+var float IGPlus_Speed;
 
 // Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
 // near the lift; clients, its speed, as it was sent held still.
@@ -165,6 +169,7 @@ auto state Flying
 		local actor Victims;
 		local float damageScale, dist;
 		local vector dir;
+		local bbPlayer bbP;
 
 		if (bClientVisualOnly)
 		{
@@ -172,6 +177,13 @@ auto state Flying
 			Destroy();
 			return;
 		}
+
+		// Predicted self-knockback: its age is its travel over its speed.
+		bbP = bbPlayer(Instigator);
+		if (IGPlus_FireTS > 0.0 && IGPlus_Speed > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
+			bbP.IGPlus_SKBeginCapture();
+		else
+			bbP = none;
 
 		if (WImp.WeaponSettings.bEnableEnhancedSplashRipperSecondary) {
 			WImp.EnhancedHurtRadius(
@@ -207,6 +219,9 @@ auto state Flying
 			}
 			bHurtEntry = false;
 		}
+		if (bbP != none)
+			bbP.IGPlus_SKEndCaptureFor(self,
+				IGPlus_FireTS + VSize(Location - IGPlus_SpawnLoc) / IGPlus_Speed, HitLocation);
 		MakeNoise(1.0);
 	}
 }

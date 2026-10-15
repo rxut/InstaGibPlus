@@ -20,6 +20,8 @@ var int DetChargeData;
 var Weapon IGPlus_SavedWeapon;
 // Predicted self-knockback explosions applied at the end of this move, in order.
 var vector IGPlus_SKHit[6];
+var byte IGPlus_SKKind[6];     // bbPlayer.IGPLUS_SK_*
+var vector IGPlus_SKPush[6];   // a direct push (hammer), not from a splash
 var int IGPlus_SKPushCount;
 // Predicted translocation at the start of this move.
 var bool bIGPlusTloc;
