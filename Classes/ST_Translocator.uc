@@ -217,7 +217,7 @@ simulated function ClientThrowTarget()
 
 	GetAxes(bbP.ViewRotation,X,Y,Z);
 
-	TTarget_Client = Spawn(class'ST_TranslocatorTarget', Owner,, Start);
+	TTarget_Client = Spawn(class'ST_TranslocatorTarget', Owner,, Start, IGPlus_ClientDiscRotation());
 
 	LastClientDiscSpawnTime = Level.TimeSeconds;
 
@@ -694,6 +694,18 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	return Action;
 }
 
+// Client: a disc spawns with our rotation, which here is the first-person
+// weapon's (view pitch and weapon roll, set each frame by RenderOverlays).
+// The server's disc gets the server weapon's level one: fly flat like it.
+simulated function rotator IGPlus_ClientDiscRotation() {
+	local rotator R;
+
+	R = Rotation;
+	R.Pitch = 0;
+	R.Roll = 0;
+	return R;
+}
+
 // Client: our own disc, from the same start, aim and frame as the server's.
 simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 	local vector Start;
@@ -708,7 +720,7 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 	Start = Owner.Location + CalcDrawOffsetClient();
 	P.ViewRotation = P.AdjustToss(TossForce, Start, 0, true, true);
 
-	IGPlus_DetLocalDisc = Spawn(class'ST_TranslocatorTarget', Owner,, Start);
+	IGPlus_DetLocalDisc = Spawn(class'ST_TranslocatorTarget', Owner,, Start, IGPlus_ClientDiscRotation());
 	if (IGPlus_DetLocalDisc != None) {
 		IGPlus_DetLocalDisc.IGPlus_bLocalDisc = true;
 		IGPlus_DetLocalDisc.Instigator = P;
