@@ -14,6 +14,18 @@ var WeaponSettingsRepl WSettings;
 var float IGPlus_ChargeTS;
 var float IGPlus_ReleaseTS;
 var bool IGPlus_bQueuePush;
+// A bring-up is up on the owner's moves at IGPlus_ReadyTS on both machines
+// (stock: the server's select end, a round trip before our client may charge).
+// Fire held during it charges from then, a tap goes off then, as stock does at
+// its select end (IGPlus_MoveEnd).
+var float IGPlus_ReadyTS;
+var bool IGPlus_bPressQueued;
+
+replication
+{
+	reliable if (Role == ROLE_Authority)
+		IGPlus_ClientReadyAt;
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -44,6 +56,108 @@ simulated function Tick(float deltaTime)
 {	// This fixes the really annoying issue regarding IH sound
 	if (Pawn(Owner) == None || Pawn(Owner).Weapon != Self)
 		AmbientSound = None;
+}
+
+// The owner's moves drive this hammer: theirs on the server, ours on the client.
+simulated function bool IGPlus_OnMoves() {
+	local bbPlayer P;
+
+	P = bbPlayer(Owner);
+	if (P == None || P.IGPlus_PredictHammer() == false)
+		return false;
+	if (Level.NetMode == NM_Client)
+		return Role < ROLE_Authority;
+	return P.RemoteRole == ROLE_AutonomousProxy;
+}
+
+simulated function float IGPlus_SelectTime() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == None)
+		return class'WeaponSettingsRepl'.default.HammerSelectTime;
+	return class'bbPlayer'.static.IGPlus_DetEffectiveAnimTime(WS.HammerSelectTime, WS.default.HammerSelectTime);
+}
+
+function BringUp() {
+	Super.BringUp();
+	if (bbPlayer(Owner) == None)
+		return;
+	IGPlus_ReadyTS = bbPlayer(Owner).CurrentTimeStamp + IGPlus_SelectTime();
+	IGPlus_bPressQueued = false;
+	if (bbPlayer(Owner).RemoteRole == ROLE_AutonomousProxy)
+		IGPlus_ClientReadyAt(IGPlus_ReadyTS);
+}
+
+simulated function IGPlus_ClientReadyAt(float TS) {
+	IGPlus_ReadyTS = TS;
+}
+
+function Fire(float Value) {
+	// Not up on the owner's moves yet: IGPlus_MoveEnd charges it then.
+	if (IGPlus_OnMoves() && bbPlayer(Owner).CurrentTimeStamp < IGPlus_ReadyTS)
+		return;
+	Super.Fire(Value);
+}
+
+simulated function bool ClientFire(float Value) {
+	if (Level.NetMode == NM_Client && IGPlus_OnMoves()) {
+		// Not before IGPlus_ReadyTS (IGPlus_MoveEnd charges it then), and only
+		// with fire held: no charge from the server's late select end.
+		if (Level.TimeSeconds < IGPlus_ReadyTS || Pawn(Owner).bFire == 0)
+			return false;
+		if (IsInState('ClientFiring'))
+			return true;
+		bCanClientFire = true;
+	}
+	return Super.ClientFire(Value);
+}
+
+simulated function bool IGPlus_Idle() {
+	if (Level.NetMode == NM_Client)
+		return !(IsInState('ClientFiring') || IsInState('ClientFireBlast') || IsInState('ClientAltFiring') || IsInState('ClientDown'));
+	return !(IsInState('Firing') || IsInState('FireBlast') || IsInState('AltFiring') || IsInState('DownWeapon') || bChangeWeapon);
+}
+
+// Both machines, at the end of each of the owner's moves (bbPlayer), with
+// fire as the move carries it: a bring-up charges from IGPlus_ReadyTS if fire
+// was held during it, and a let-go releases.
+simulated function IGPlus_MoveEnd(float TS, bool bHeld) {
+	if (IGPlus_OnMoves() == false)
+		return;
+	if (TS < IGPlus_ReadyTS) {
+		if (bHeld)
+			IGPlus_bPressQueued = true;
+		return;
+	}
+	if ((bHeld || IGPlus_bPressQueued) && IGPlus_Idle()) {
+		bWeaponUp = true;
+		if (Level.NetMode == NM_Client) {
+			bCanClientFire = true;
+			Super.ClientFire(0);
+		} else {
+			Super.Fire(0);
+		}
+	}
+	IGPlus_bPressQueued = false;
+	if (bHeld == false) {
+		if (Level.NetMode == NM_Client)
+			IGPlus_ClientRelease(TS);
+		else
+			IGPlus_ServerRelease(TS);
+	}
+}
+
+state ClientActive
+{
+	simulated function BeginState()
+	{
+		Super.BeginState();
+		// Our own guess until the server's IGPlus_ClientReadyAt arrives.
+		if (IGPlus_ReadyTS <= Level.TimeSeconds)
+			IGPlus_ReadyTS = Level.TimeSeconds + IGPlus_SelectTime();
+		IGPlus_bPressQueued = false;
+	}
 }
 
 State ClientDown

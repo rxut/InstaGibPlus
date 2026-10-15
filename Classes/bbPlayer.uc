@@ -4347,10 +4347,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		bWasPaused = false;
 	}
 
-	// Hammer let go on this move: its push lands at the end of it, as on the
-	// client (ST_ImpactHammer.IGPlus_ServerRelease).
-	if (bFire == 0 && ST_ImpactHammer(Weapon) != None)
-		ST_ImpactHammer(Weapon).IGPlus_ServerRelease(CurrentTimeStamp);
+	// Hammer charged and let go on this move: its push lands at the end of it,
+	// as on the client (ST_ImpactHammer.IGPlus_MoveEnd).
+	if (ST_ImpactHammer(Weapon) != None)
+		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(CurrentTimeStamp, bFire != 0);
 
 	if (IGPlus_SKQueueCount > 0)
 		IGPlus_SKApplyDue(CurrentTimeStamp, none);
@@ -7022,10 +7022,11 @@ function xxReplicateMove(
 	}
 	IGPlus_DebugLiftJumpTop(DbgOldBase);
 
-	// Hammer let go in this move: its push lands at the end of it, as on the
-	// server (ST_ImpactHammer.IGPlus_ClientRelease).
-	if (bFire == 0 && ST_ImpactHammer(Weapon) != None)
-		ST_ImpactHammer(Weapon).IGPlus_ClientRelease(Level.TimeSeconds);
+	// Hammer charged and let go in this move, with fire as the move carries
+	// it: its push lands at the end of it, as on the server
+	// (ST_ImpactHammer.IGPlus_MoveEnd).
+	if (ST_ImpactHammer(Weapon) != None)
+		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(Level.TimeSeconds, NewMove.bFire);
 
 	// A predicted push lands at the end of a move, like on the server.
 	if (IGPlus_SKQueueCount > 0 && IGPlus_SKApplyDue(Level.TimeSeconds, NewMove))
