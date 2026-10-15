@@ -6737,7 +6737,7 @@ function IGPlus_ReplicateInput(float Delta) {
 	}
 
 	// Not in demo playback: the recording holds our weapon's anims and sounds.
-	if (!zzbDemoPlayback && (Weapon != None) && !Weapon.IsAnimating())
+	if (!IGPlus_InDemoPlayback() && (Weapon != None) && !Weapon.IsAnimating())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -7074,7 +7074,7 @@ function xxReplicateMove(
 	SendSavedMove(NewMove, OldMove);
 
 	// Not in demo playback: the recording holds our weapon's anims and sounds.
-	if (!zzbDemoPlayback && (Weapon != None) && !Weapon.IsAnimating())
+	if (!IGPlus_InDemoPlayback() && (Weapon != None) && !Weapon.IsAnimating())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -14441,21 +14441,21 @@ simulated function ChangedWeapon() {
 // second copy is heard apart from the first.
 function ClientWeaponEvent(name EventType)
 {
-	if (zzbDemoPlayback)
+	if (IGPlus_InDemoPlayback())
 		return;
 	Super.ClientWeaponEvent(EventType);
 }
 
 function SendClientFire(Weapon W, int N)
 {
-	if (zzbDemoPlayback)
+	if (IGPlus_InDemoPlayback())
 		return;
 	Super.SendClientFire(W, N);
 }
 
 function SendClientAltFire(Weapon W, int N)
 {
-	if (zzbDemoPlayback)
+	if (IGPlus_InDemoPlayback())
 		return;
 	Super.SendClientAltFire(W, N);
 }
@@ -14464,7 +14464,7 @@ function SendClientAltFire(Weapon W, int N)
 // switch a late one for the previous weapon would undo the local switch.
 function RealWeapon(Weapon Real, int N)
 {
-	if (zzbDemoPlayback)
+	if (IGPlus_InDemoPlayback())
 		return;
 	if (IGPlus_PSActive && (IGPlus_PSRunning() || Real != IGPlus_PSKeep)) {
 		if (N > WeaponUpdate)
@@ -14476,7 +14476,7 @@ function RealWeapon(Weapon Real, int N)
 
 function ClientPutDown(Weapon Current, Weapon Next)
 {
-	if (zzbDemoPlayback)
+	if (IGPlus_InDemoPlayback())
 		return;
 	// The server's holster announcement for a switch this client predicted:
 	// it already ran the holster and select locally.
@@ -14680,14 +14680,18 @@ simulated function bool IGPlus_DetectDemoPlayback() {
 	return false;
 }
 
-simulated function bool IGPlus_ShowRealModelsInDemo() {
+simulated function bool IGPlus_InDemoPlayback() {
 	// Recheck once a second so we never depend on the demo spectator spawning first
 	if (IGPlus_IsDemoPlayback == false && Level.NetMode == NM_Client && Level.TimeSeconds >= IGPlus_DemoCheckTime) {
 		IGPlus_IsDemoPlayback = IGPlus_DetectDemoPlayback();
 		IGPlus_DemoCheckTime = Level.TimeSeconds + 1.0;
 	}
 
-	return IGPlus_IsDemoPlayback && Settings != none && Settings.bDemoShowRealModels;
+	return IGPlus_IsDemoPlayback || zzbDemoPlayback;
+}
+
+simulated function bool IGPlus_ShowRealModelsInDemo() {
+	return IGPlus_InDemoPlayback() && IGPlus_IsDemoPlayback && Settings != none && Settings.bDemoShowRealModels;
 }
 
 // Client demos record the recording player's forced skins.

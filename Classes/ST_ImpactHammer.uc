@@ -65,7 +65,7 @@ simulated function bool IGPlus_OnMoves() {
 	local bbPlayer P;
 
 	P = bbPlayer(Owner);
-	if (P == None || P.IGPlus_PredictHammer() == false || P.zzbDemoPlayback)
+	if (P == None || P.IGPlus_PredictHammer() == false || P.IGPlus_InDemoPlayback())
 		return false;
 	if (Level.NetMode == NM_Client)
 		return Role < ROLE_Authority;
@@ -221,7 +221,7 @@ state ClientFiring {
 		// Released on the move instead (IGPlus_ClientRelease). In demo
 		// playback our fire button is not there: the recorded server's blast
 		// (ClientWeaponEvent) ends the charge, or it would go off twice.
-		if (bbPlayer(Owner).IGPlus_PredictHammer() || bbPlayer(Owner).zzbDemoPlayback)
+		if (bbPlayer(Owner).IGPlus_PredictHammer() || bbPlayer(Owner).IGPlus_InDemoPlayback())
 			return;
 
 		if (Pawn(Owner).bFire == 0) {
@@ -271,7 +271,7 @@ simulated function IGPlus_ClientRelease(float TS) {
 
 	P = bbPlayer(Owner);
 	WS = GetWeaponSettings();
-	if (IsInState('ClientFiring') == false || P == none || WS == none || P.IGPlus_PredictHammer() == false || P.zzbDemoPlayback)
+	if (IsInState('ClientFiring') == false || P == none || WS == none || P.IGPlus_PredictHammer() == false || P.IGPlus_InDemoPlayback())
 		return;
 
 	ChargeSize = 0.75 * (TS - IGPlus_ChargeTS);
