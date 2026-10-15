@@ -283,6 +283,7 @@ simulated function ClientTraceFire(
 	local rotator AimRot;
 	local vector AimLoc;
 	local ST_ShockProj Ball;
+	local float Reach;
 
     PawnOwner = Pawn(Owner);
 	
@@ -335,10 +336,15 @@ simulated function ClientTraceFire(
 	}
 
 	// Our own ball on the beam (client-side shock balls): the combo is here and
-	// now; the server's skips us (ST_ShockProj.SuperExplosion).
+	// now, and the server's ring for it is dropped (IGPlus_OwnerComboRing).
+	// Only where the server is sure to agree: a combo shown that didn't happen
+	// is worse than one shown a ping late. Never from a lift, where our
+	// position and the server's disagree.
 	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
-		IGPlus_DebugBeam("client", StartTrace, X);
-		Ball = IGPlus_OwnBallOnBeam(StartTrace, X, VSize(HitLocation - StartTrace));
+		Reach = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
+		IGPlus_DebugBeam("client", StartTrace, X, Reach);
+		if (Mover(PawnOwner.Base) == None)
+			Ball = IGPlus_OwnBallOnBeam(StartTrace, X, Reach);
 		if (Ball != None) {
 			HitLocation = Ball.Location;
 			Ball.IGPlus_PredictCombo();
@@ -348,14 +354,31 @@ simulated function ClientTraceFire(
 	ClientSpawnBeam(HitLocation, SmokeLocation);
 }
 
+// Client: how far our beam goes before something other than our own balls
+// stops it, by the server's blocking rules (bbPlayer.TraceShot). A trace that
+// stops on our own ball can end short of it, so it must not set the reach.
+simulated function float IGPlus_BeamReach(vector Start, vector End) {
+	local Actor A;
+	local vector HitLoc, HitNorm;
+
+	foreach TraceActors(class'Actor', A, HitLoc, HitNorm, End, Start) {
+		if (A == Owner || (ST_ShockProj(A) != None && ST_ShockProj(A).IGPlus_bOwnTimeline))
+			continue;
+		if (A == Level || Mover(A) != None || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
+			return VSize(HitLoc - Start);
+	}
+	return VSize(End - Start);
+}
+
 // Debug (enableDebugData): how close this beam passes the shooter's own ball,
 // as each side has it (the server where the shooter's screen has it).
-simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir) {
-	local ST_ShockProj P;
+simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optional float Reach) {
+	local ST_ShockProj P, Best;
 	local bbPlayer BP;
 	local vector Loc, BestLoc;
 	local float D, BestD;
 	local bool bFound;
+	local string Extra;
 
 	BP = bbPlayer(Owner);
 	if (BP == None || BP.bDrawDebugData == false)
@@ -375,25 +398,46 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir) {
 			bFound = true;
 			BestD = D;
 			BestLoc = Loc;
+			Best = P;
 		}
 	}
-	if (bFound)
-		BP.ClientDebugMessage("Shock beam ("$Side$") from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)
-			$", ball at "$class'ST_ShockProj'.static.IGPlus_Vec(BestLoc)$", passes "$int(BestD)$"uu from its centre");
+	if (bFound == false)
+		return;
+	if (Level.NetMode == NM_Client) {
+		Extra = ", ball "$int((BestLoc - Start) dot Dir)$"uu out, beam reaches "$int(Reach)$"uu, ";
+		if (Best.Physics == PHYS_None)
+			Extra = Extra$"ball stopped";
+		else if (Best.IGPlus_bFromMover || Mover(Pawn(Owner).Base) != None)
+			Extra = Extra$"lift, server decides";
+		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc,
+				Best.CollisionRadius - IGPLUS_COMBO_MARGIN, Best.CollisionHeight - IGPLUS_COMBO_MARGIN))
+			Extra = Extra$"clear hit, drawn";
+		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc, Best.CollisionRadius, Best.CollisionHeight))
+			Extra = Extra$"edge hit, server decides";
+		else
+			Extra = Extra$"misses it";
+	}
+	BP.ClientDebugMessage("Shock beam ("$Side$") from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)
+		$", ball at "$class'ST_ShockProj'.static.IGPlus_Vec(BestLoc)$", passes "$int(BestD)$"uu from its centre"$Extra);
 }
 
-// Client: the nearest of our own flying balls the beam passes through before
-// MaxDist. The world trace stops at the surface of the server's copy, hence 1uu.
+// Client and server have our ball and beam within 1-2uu of each other
+// (measured), so a beam this far inside the ball hits it on the server too.
+const IGPLUS_COMBO_MARGIN = 3.0;
+
+// Client: the nearest of our own flying balls the beam passes clearly through
+// before MaxDist (IGPlus_BeamReach). Nearer the edge, or for a ball fired from
+// a lift, the server's combo is shown instead.
 simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, float MaxDist) {
 	local ST_ShockProj P, Best;
 	local float D, BestD;
 
 	foreach AllActors(class'ST_ShockProj', P) {
 		if (P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe
-			|| P.Physics == PHYS_None || P.Instigator != Owner)
+			|| P.Physics == PHYS_None || P.Instigator != Owner || P.IGPlus_bFromMover)
 			continue;
-		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(
-				Start, Dir, MaxDist + 1.0, P.Location, P.CollisionRadius, P.CollisionHeight) == false)
+		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, MaxDist, P.Location,
+				P.CollisionRadius - IGPLUS_COMBO_MARGIN, P.CollisionHeight - IGPLUS_COMBO_MARGIN) == false)
 			continue;
 		D = (P.Location - Start) dot Dir;
 		if (Best == None || D < BestD) {
@@ -518,6 +562,7 @@ simulated function ClientSpawnAltProjectileEffects(
 		LocalDummy.IGPlus_bLocalBall = true;
 		LocalDummy.IGPlus_bOwnTimeline = true;
 		LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
+		LocalDummy.IGPlus_bFromMover = Mover(PawnOwner.Base) != None;
 		if (bbP != None)
 			bbP.ClientDebugMessage("Shock ball (client) from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)$" aim "$(AimRot.Pitch & 65535)$","$(AimRot.Yaw & 65535));
 	}

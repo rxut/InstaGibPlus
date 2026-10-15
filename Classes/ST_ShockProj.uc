@@ -15,6 +15,7 @@ var ST_ProjectileDummy Dummy;
 var bool IGPlus_bOwnTimeline;
 var bool IGPlus_bLocalBall;   // the owner's own copy, until the server's arrives
 var float IGPlus_SpawnTS;     // client: when the local copy was fired
+var bool IGPlus_bFromMover;   // client: fired from a lift (positions disagree there)
 var float IGPlus_ComboTS;     // client: when a predicted combo hid this ball
 var Pawn IGPlus_ComboBy;      // server: whose beam set off SuperExplosion
 var float IGPlus_FireTS;      // server: the owner's move timestamp at the shot
@@ -128,6 +129,7 @@ simulated function IGPlus_TakeOverLocalBall() {
 	if (Mine.Physics == PHYS_None)
 		SetPhysics(PHYS_None);
 	IGPlus_ComboTS = Mine.IGPlus_ComboTS;
+	IGPlus_bFromMover = Mine.IGPlus_bFromMover;
 	if (Mine.bHidden)
 		IGPlus_HideBall();
 	Mine.Destroy();
