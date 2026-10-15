@@ -153,7 +153,22 @@ simulated function Landed( vector HitNormal )
 		if ( D != None )
 			D.DirectionalAttach(initialDir, HitNormal);
 	}
+	if (Role < ROLE_Authority) {
+		IGPlus_ClientGone();
+		return;
+	}
 	Explode(Location,HitNormal);
+}
+
+// Clients: the server explodes it, a ping later. Meanwhile it neither slides
+// along what it hit nor sits on it: it is gone from here.
+simulated function IGPlus_ClientGone() {
+	bHidden = true;
+	LightType = LT_None;
+	AmbientSound = None;
+	if (Trail != None)
+		Trail.bHidden = true;
+	SetPhysics(PHYS_None);
 }
 
 
@@ -175,6 +190,10 @@ simulated function HitWall (vector HitNormal, actor Wall)
 		D = Spawn(class'Botpack.DirectionalBlast',self);
 		if ( D != None )
 			D.DirectionalAttach(initialDir, HitNormal);
+	}
+	if (Role < ROLE_Authority) {
+		IGPlus_ClientGone();
+		return;
 	}
 	Super.HitWall(HitNormal, Wall);
 }
