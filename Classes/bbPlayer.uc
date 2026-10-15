@@ -6565,7 +6565,7 @@ function xxReplicateMove(
 	IGPlus_TPFix_LastTouched = none;
 
 	ExitLift = None;
-	if (Settings.bPredictLiftExit && IGPlus_OnMovingLift())
+	if (Settings.bSmoothLiftJump && IGPlus_OnMovingLift())
 		ExitLift = Mover(Base);
 
 	// Simulate the movement locally.

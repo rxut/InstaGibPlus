@@ -80,9 +80,9 @@ var localized string MoreInformationText;
 	var localized string CameraCorrectionSmoothingTimeText;
 	var localized string CameraCorrectionSmoothingTimeHelp;
 
-	var UWindowCheckbox Chk_PredictLiftExit;
-	var localized string PredictLiftExitText;
-	var localized string PredictLiftExitHelp;
+	var UWindowCheckbox Chk_SmoothLiftJump;
+	var localized string SmoothLiftJumpText;
+	var localized string SmoothLiftJumpHelp;
 
 // Advanced
 	var UWindowLabelControl Lbl_Advanced;
@@ -902,7 +902,7 @@ function Created() {
 	Edit_FakeCAPInterval = CreateEdit(ECT_Real, FakeCAPIntervalText, FakeCAPIntervalHelp, , 64);
 	Chk_CameraCorrectionSmoothing = CreateCheckbox(CameraCorrectionSmoothingText, CameraCorrectionSmoothingHelp);
 	Edit_CameraCorrectionSmoothingTime = CreateEdit(ECT_Real, CameraCorrectionSmoothingTimeText, CameraCorrectionSmoothingTimeHelp, , 64);
-	Chk_PredictLiftExit = CreateCheckbox(PredictLiftExitText, PredictLiftExitHelp);
+	Chk_SmoothLiftJump = CreateCheckbox(SmoothLiftJumpText, SmoothLiftJumpHelp);
 
 	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
@@ -1093,7 +1093,7 @@ function Load() {
 	Edit_FakeCAPInterval.SetValue(string(Settings.FakeCAPInterval));
 	Chk_CameraCorrectionSmoothing.bChecked = Settings.bCameraCorrectionSmoothing;
 	Edit_CameraCorrectionSmoothingTime.SetValue(string(Settings.CameraCorrectionSmoothingTime));
-	Chk_PredictLiftExit.bChecked = Settings.bPredictLiftExit;
+	Chk_SmoothLiftJump.bChecked = Settings.bSmoothLiftJump;
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
@@ -1221,7 +1221,7 @@ function Save() {
 	Settings.FakeCAPInterval = float(Edit_FakeCAPInterval.GetValue());
 	Settings.bCameraCorrectionSmoothing = Chk_CameraCorrectionSmoothing.bChecked;
 	Settings.CameraCorrectionSmoothingTime = FMax(0.0, float(Edit_CameraCorrectionSmoothingTime.GetValue()));
-	Settings.bPredictLiftExit = Chk_PredictLiftExit.bChecked;
+	Settings.bSmoothLiftJump = Chk_SmoothLiftJump.bChecked;
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
@@ -1406,8 +1406,8 @@ defaultproperties
 
 		CameraCorrectionSmoothingText="Camera-Only Correction Smoothing"
 		CameraCorrectionSmoothingHelp="Experimental. If checked, server corrections move you at once and only the camera eases to the new spot"
-		PredictLiftExitText="Predict Lift Exit"
-		PredictLiftExitHelp="Experimental. When you leave a moving lift, move to where the server has you at once with the camera eased, instead of a snap a ping later"
+		SmoothLiftJumpText="Smooth Lift Jump"
+		SmoothLiftJumpHelp="Experimental. When you jump or step off a moving lift, your view glides to where the server has you instead of snapping there a ping later"
 
 		CameraCorrectionSmoothingTimeText="Camera Smoothing Time"
 		CameraCorrectionSmoothingTimeHelp="Seconds until a correction is (nearly) gone from the camera"
