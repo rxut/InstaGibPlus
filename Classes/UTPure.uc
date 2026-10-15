@@ -595,6 +595,10 @@ function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
 	if (B == none || P == none || B.Instigator != P
 		|| P.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations == false)
 		return false;
+	// The old client-side animation (Predictive Shock Combos off) shows the
+	// ball about where it is now: test it live, as before.
+	if (P.ClientWeaponSettingsData.bPredictiveShockCombos == false)
+		return true;
 
 	if (B.IGPlus_OwnerSeesBall(P, Loc)) {
 		PD.CompSwapAt(Loc);

@@ -454,6 +454,9 @@ var localized string MoreInformationText;
 	var UWindowCheckbox Chk_ShockProjectileUseClientSideAnimations;
 	var localized string ShockProjectileUseClientSideAnimationsText;
 	var localized string ShockProjectileUseClientSideAnimationsHelp;
+	var UWindowCheckbox Chk_PredictiveShockCombos;
+	var localized string PredictiveShockCombosText;
+	var localized string PredictiveShockCombosHelp;
 
 	var UWindowCheckbox Chk_PulseUseClientSideAnimations;
 	var localized string PulseUseClientSideAnimationsText;
@@ -900,6 +903,7 @@ function Created() {
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
 	Chk_ShockBeamUseClientSideAnimations = CreateCheckbox(ShockBeamUseClientSideAnimationsText, ShockBeamUseClientSideAnimationsHelp);
 	Chk_ShockProjectileUseClientSideAnimations = CreateCheckbox(ShockProjectileUseClientSideAnimationsText, ShockProjectileUseClientSideAnimationsHelp);
+	Chk_PredictiveShockCombos = CreateCheckbox(PredictiveShockCombosText, PredictiveShockCombosHelp);
 	Chk_PulseUseClientSideAnimations = CreateCheckbox(PulseUseClientSideAnimationsText, PulseUseClientSideAnimationsHelp);
 	Chk_RipperUseClientSideAnimations = CreateCheckbox(RipperUseClientSideAnimationsText, RipperUseClientSideAnimationsHelp);
 	Chk_FlakUseClientSideAnimations = CreateCheckbox(FlakUseClientSideAnimationsText, FlakUseClientSideAnimationsHelp);
@@ -1172,6 +1176,7 @@ function Load() {
 	Chk_BioUseClientSideAnimations.bChecked = Settings.bBioUseClientSideAnimations;
 	Chk_ShockBeamUseClientSideAnimations.bChecked = Settings.bShockBeamUseClientSideAnimations;
 	Chk_ShockProjectileUseClientSideAnimations.bChecked = Settings.bShockProjectileUseClientSideAnimations;
+	Chk_PredictiveShockCombos.bChecked = Settings.bPredictiveShockCombos;
 	Chk_PulseUseClientSideAnimations.bChecked = Settings.bPulseUseClientSideAnimations;
 	Chk_RipperUseClientSideAnimations.bChecked = Settings.bRipperUseClientSideAnimations;
 	Chk_FlakUseClientSideAnimations.bChecked = Settings.bFlakUseClientSideAnimations;
@@ -1299,6 +1304,7 @@ function Save() {
 	Settings.bBioUseClientSideAnimations = Chk_BioUseClientSideAnimations.bChecked;
 	Settings.bShockBeamUseClientSideAnimations = Chk_ShockBeamUseClientSideAnimations.bChecked;
 	Settings.bShockProjectileUseClientSideAnimations = Chk_ShockProjectileUseClientSideAnimations.bChecked;
+	Settings.bPredictiveShockCombos = Chk_PredictiveShockCombos.bChecked;
 	Settings.bPulseUseClientSideAnimations = Chk_PulseUseClientSideAnimations.bChecked;
 	Settings.bRipperUseClientSideAnimations = Chk_RipperUseClientSideAnimations.bChecked;
 	Settings.bFlakUseClientSideAnimations = Chk_FlakUseClientSideAnimations.bChecked;
@@ -1312,6 +1318,7 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bBioUseClientSideAnimations", Chk_BioUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bShockBeamUseClientSideAnimations", Chk_ShockBeamUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bShockProjectileUseClientSideAnimations", Chk_ShockProjectileUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bPredictiveShockCombos", Chk_PredictiveShockCombos.bChecked);
 		P.UpdateReplicatedWeaponSetting("bPulseUseClientSideAnimations", Chk_PulseUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bRipperUseClientSideAnimations", Chk_RipperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bFlakUseClientSideAnimations", Chk_FlakUseClientSideAnimations.bChecked);
@@ -1672,6 +1679,8 @@ defaultproperties
 
 		ShockProjectileUseClientSideAnimationsText="Client-Side Animations Shock Projectile"
 		ShockProjectileUseClientSideAnimationsHelp="If checked, use client-side animations for Shock Projectile"
+		PredictiveShockCombosText="Predictive Shock Combos"
+		PredictiveShockCombosHelp="With both Shock client-side animations: your ball is shown where the server tests your beam, and your combos show the moment you hit. Off: the old client-side animations"
 
 		PulseUseClientSideAnimationsText="Client-Side Animations Pulse Rifle"
 		PulseUseClientSideAnimationsHelp="If checked, use client-side animations for Pulse Rifle"

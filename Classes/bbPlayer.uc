@@ -573,6 +573,7 @@ struct ClientWeaponSettings {
 	var bool bBioUseClientSideAnimations;
 	var bool bShockBeamUseClientSideAnimations;
 	var bool bShockProjectileUseClientSideAnimations;
+	var bool bPredictiveShockCombos;
 	var bool bPulseUseClientSideAnimations;
 	var bool bRipperUseClientSideAnimations;
 	var bool bFlakUseClientSideAnimations;
@@ -1317,6 +1318,7 @@ simulated event PostNetBeginPlay()
 	ClientWeaponSettingsData.bBioUseClientSideAnimations = Settings.bBioUseClientSideAnimations;
 	ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = Settings.bShockBeamUseClientSideAnimations;
 	ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = Settings.bShockProjectileUseClientSideAnimations;
+	ClientWeaponSettingsData.bPredictiveShockCombos = Settings.bPredictiveShockCombos;
 	ClientWeaponSettingsData.bPulseUseClientSideAnimations = Settings.bPulseUseClientSideAnimations;
 	ClientWeaponSettingsData.bRipperUseClientSideAnimations = Settings.bRipperUseClientSideAnimations;
 	ClientWeaponSettingsData.bFlakUseClientSideAnimations = Settings.bFlakUseClientSideAnimations;
@@ -3026,6 +3028,13 @@ simulated function float GetMoverFireZOffset(optional bool bFullPing) {
 
 	ClientDebugMessage("MoverZOffset: fallback linear="$int(Base.Velocity.Z * Latency)$" ping="$PlayerReplicationInfo.Ping);
 	return Base.Velocity.Z * Latency;
+}
+
+// Client-side shock balls on our own timeline, with predicted combos
+// (ST_ShockProj); off is the old client-side animation.
+simulated function bool IGPlus_PredictiveShockCombos() {
+	return ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations
+		&& ClientWeaponSettingsData.bPredictiveShockCombos;
 }
 
 // --- Predicted rocket self-knockback -----------------------------------------
@@ -6280,7 +6289,7 @@ function xxReplicateMove(
 			// the move's start), or the client's own ball and the server's fly
 			// apart by however far it moved in the merged frames.
 			if (bDetLocalShot && ((bLocalEightball && IGPlus_PredictedSelfKnockback) || IGPlus_PushSafeAim
-				|| (ST_ShockRifle(DetLocalWeapon) != none && ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)))
+				|| (ST_ShockRifle(DetLocalWeapon) != none && IGPlus_PredictiveShockCombos())))
 				bForcePacketSplit = true;
 			// Send the replayed tap as this frame's press: the move then carries
 			// the force bit and ends here, and the server fires it on this step.
@@ -7045,6 +7054,8 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bShockBeamUseClientSideAnimations = bValue;
     } else if (Key ~= "bShockProjectileUseClientSideAnimations") {
         ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations = bValue;
+    } else if (Key ~= "bPredictiveShockCombos") {
+        ClientWeaponSettingsData.bPredictiveShockCombos = bValue;
     } else if (Key ~= "bPulseUseClientSideAnimations") {
         ClientWeaponSettingsData.bPulseUseClientSideAnimations = bValue;
     } else if (Key ~= "bRipperUseClientSideAnimations") {

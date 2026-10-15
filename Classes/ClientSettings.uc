@@ -141,6 +141,7 @@ var CrosshairLayer TopLayer;
 var config bool   bBioUseClientSideAnimations;
 var config bool   bShockBeamUseClientSideAnimations;
 var config bool   bShockProjectileUseClientSideAnimations;
+var config bool   bPredictiveShockCombos;
 var config bool   bPulseUseClientSideAnimations;
 var config bool   bRipperUseClientSideAnimations;
 var config bool   bFlakUseClientSideAnimations;
@@ -427,6 +428,7 @@ simulated function string DumpSettings() {
 		GetSetting("bBioUseClientSideAnimations")$
 		GetSetting("bShockBeamUseClientSideAnimations")$
 		GetSetting("bShockProjectileUseClientSideAnimations")$
+		GetSetting("bPredictiveShockCombos")$
 		GetSetting("bPulseUseClientSideAnimations")$
 		GetSetting("bRipperUseClientSideAnimations")$
 		GetSetting("bFlakUseClientSideAnimations")$
@@ -533,6 +535,7 @@ defaultproperties
 	bBioUseClientSideAnimations=False
 	bShockBeamUseClientSideAnimations=False
 	bShockProjectileUseClientSideAnimations=False
+	bPredictiveShockCombos=True
 	bPulseUseClientSideAnimations=False
 	bRipperUseClientSideAnimations=False
 	bFlakUseClientSideAnimations=False

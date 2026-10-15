@@ -343,7 +343,7 @@ simulated function ClientTraceFire(
 	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
 		Reach = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
 		IGPlus_DebugBeam("client", StartTrace, X, Reach);
-		if (Mover(PawnOwner.Base) == None)
+		if (bbP.IGPlus_PredictiveShockCombos() && Mover(PawnOwner.Base) == None)
 			Ball = IGPlus_OwnBallOnBeam(StartTrace, X, Reach);
 		if (Ball != None) {
 			HitLocation = Ball.Location;
@@ -387,9 +387,11 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optio
 		if (P.Instigator != Owner || P.bDeleteMe)
 			continue;
 		if (Level.NetMode == NM_Client) {
-			if (P.IGPlus_bOwnTimeline == false || P.bHidden)
+			if (P.bHidden)
 				continue;
 			Loc = P.Location;
+		} else if (BP.IGPlus_PredictiveShockCombos() == false) {
+			Loc = P.Location; // the old client-side animation is tested live
 		} else if (P.IGPlus_OwnerSeesBall(BP, Loc) == false) {
 			continue;
 		}
@@ -403,7 +405,9 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optio
 	}
 	if (bFound == false)
 		return;
-	if (Level.NetMode == NM_Client) {
+	if (Level.NetMode == NM_Client && BP.IGPlus_PredictiveShockCombos() == false) {
+		Extra = ", old client-side animation";
+	} else if (Level.NetMode == NM_Client) {
 		Extra = ", ball "$int((BestLoc - Start) dot Dir)$"uu out, beam reaches "$int(Reach)$"uu, ";
 		if (Best.Physics == PHYS_None)
 			Extra = Extra$"ball stopped";
@@ -545,10 +549,10 @@ simulated function ClientSpawnAltProjectileEffects(
 	else
 		Start = AimLoc + CalcDrawOffsetClient() + FireOffset.X * X + FireOffset.Y * Hand * Y + FireOffset.Z * Z;
 
-	// The deterministic server fires its ball from the shot's spot with no
-	// mover shift (DeterministicProjectileFire), and ours must fly its line.
-	// The shift only matches the legacy explicit fire, which adds it too.
-	if (bbP != None && bUseShotData == false)
+	// On a moving lift the server has us further along the lift's path than our
+	// screen does (40-90uu measured), and fires from there: lead our ball by
+	// the lift's travel over half a ping toward the server's ball.
+	if (bbP != None)
 		Start.Z += bbP.GetMoverFireZOffset();
 
 	LocalDummy = ST_ShockProj(Spawn(AltProjectileClass,,, Start, AimRot));
@@ -557,12 +561,16 @@ simulated function ClientSpawnAltProjectileEffects(
 		LocalDummy.Instigator = PawnOwner;
 		LocalDummy.LifeSpan = FMax(0.2, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;
 		LocalDummy.SetCollision(false, false, false);
-		// Our own ball until the server's takes over from it (ST_ShockProj):
-		// it stops at walls like the server's, nothing else touches it.
-		LocalDummy.IGPlus_bLocalBall = true;
-		LocalDummy.IGPlus_bOwnTimeline = true;
-		LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
-		LocalDummy.IGPlus_bFromMover = Mover(PawnOwner.Base) != None;
+		if (bbP != None && bbP.IGPlus_PredictiveShockCombos()) {
+			// Our own ball until the server's takes over from it (ST_ShockProj):
+			// it stops at walls like the server's, nothing else touches it.
+			LocalDummy.IGPlus_bLocalBall = true;
+			LocalDummy.IGPlus_bOwnTimeline = true;
+			LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
+			LocalDummy.IGPlus_bFromMover = Mover(PawnOwner.Base) != None;
+		} else {
+			LocalDummy.bCollideWorld = false;
+		}
 		if (bbP != None)
 			bbP.ClientDebugMessage("Shock ball (client) from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)$" aim "$(AimRot.Pitch & 65535)$","$(AimRot.Yaw & 65535));
 	}

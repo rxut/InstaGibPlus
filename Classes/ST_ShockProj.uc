@@ -7,6 +7,7 @@ var WeaponSettingsRepl WSettings;
 var float Health;
 
 var PlayerPawn InstigatingPlayer;
+var vector ExtrapolationDelta;
 
 var ST_ProjectileDummy Dummy;
 
@@ -78,19 +79,26 @@ simulated function PostBeginPlay() {
 simulated function PostNetBeginPlay() {
 	local PlayerPawn In;
 	local bbPlayer bbP;
+	local ST_ShockRifle SR;
 
 	bbP = bbPlayer(Instigator);
 
 	super.PostNetBeginPlay();
 
-	if (bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations
-		&& bbP.zzbDemoPlayback == false
-	) {
+	if (bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
 		In = PlayerPawn(Instigator);
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
 		if (InstigatingPlayer != none) {
-			IGPlus_TakeOverLocalBall();
+			if (bbP.IGPlus_PredictiveShockCombos() && bbP.zzbDemoPlayback == false) {
+				IGPlus_TakeOverLocalBall();
+			} else {
+				// The old client-side animation: our copy gives way, and Tick
+				// extrapolates this one.
+				SR = ST_ShockRifle(InstigatingPlayer.Weapon);
+				if (SR != none && SR.LocalDummy != none && SR.LocalDummy.bDeleteMe == false)
+					SR.LocalDummy.Destroy();
+			}
 			return;
 		}
 	}
@@ -136,7 +144,26 @@ simulated function IGPlus_TakeOverLocalBall() {
 }
 
 simulated event Tick(float Delta) {
+	local vector NewXPolDelta;
+
 	super.Tick(Delta);
+
+	if (InstigatingPlayer == None)
+		return;
+
+	// The old client-side animation (Predictive Shock Combos off).
+	if (IGPlus_bOwnTimeline == false) {
+		if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+			return;
+		// Catch up to server
+		if (OldLocation == Location)
+			MoveSmooth(Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		// Extrapolate locally to compensate for ping
+		NewXPolDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
+		Move(NewXPolDelta - ExtrapolationDelta);
+		ExtrapolationDelta = NewXPolDelta;
+		return;
+	}
 
 	// A combo we drew that the server didn't make: the ball is still here.
 	if (IGPlus_ComboTS > 0.0 && InstigatingPlayer != None
@@ -218,7 +245,7 @@ function bool IGPlus_OwnerMayDrawCombo() {
 	return P != None && IGPlus_ComboBy == P && P.RemoteRole == ROLE_AutonomousProxy
 		&& GetWeaponSettings() != None && GetWeaponSettings().bEnablePingCompensation
 		&& P.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations
-		&& P.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations;
+		&& P.IGPlus_PredictiveShockCombos();
 }
 
 function SuperExplosion() {
