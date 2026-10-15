@@ -211,7 +211,8 @@ function IGPlus_HalveHistory() {
 // Position and landed state at Age seconds after the throw.
 function vector IGPlus_GetHistoryAt(float Age, out byte bLanded) {
     local int i;
-    local float Alpha;
+    local float Alpha, Now, T;
+    local vector End;
 
     if (HistoryCount <= 0) {
         bLanded = byte(Physics == PHYS_None);
@@ -233,12 +234,31 @@ function vector IGPlus_GetHistoryAt(float Age, out byte bLanded) {
 
     // A resting disc records nothing more, but may ride a lift: use it as is
     // (Location is still the rest spot right after a hit sets it falling).
-    if (SimulationLanded[HistoryCount-1] != 0) {
+    i = HistoryCount - 1;
+    if (SimulationLanded[i] != 0) {
         bLanded = 1;
         return Location;
     }
-    bLanded = SimulationLanded[HistoryCount-1];
-    return SimulationHistory[HistoryCount-1];
+    bLanded = 0;
+    if (bIGPlusFullHistory == false)
+        return SimulationHistory[i];
+
+    // Entries are 10ms apart and taken before each frame's physics, so the
+    // newest can be two server frames old: the live disc is the newest point.
+    Now = IGPlus_CurrentAge();
+    if (Age < Now && Now > SimulationTimes[i]) {
+        Alpha = (Age - SimulationTimes[i]) / (Now - SimulationTimes[i]);
+        return SimulationHistory[i] + Alpha * (Location - SimulationHistory[i]);
+    }
+    // Past the live disc: a move that arrived early (jitter). Fly it on briefly.
+    bLanded = byte(Physics == PHYS_None);
+    if (Physics != PHYS_Falling)
+        return Location;
+    T = FMin(Age - Now, 0.05);
+    End = Location + Velocity * T + 0.5 * T * T * Region.Zone.ZoneGravity;
+    if (FastTrace(End, Location))
+        return End;
+    return Location;
 }
 
 function vector GetHistoricalPosition(float RequestTime) {
