@@ -10,6 +10,7 @@ var WeaponSettingsRepl WSettings;
 var class<ST_UTChunk> ChunkClasses[4];
 
 var ST_FlakSlug LocalSlugDummy;
+var bool IGPlus_bLocalSlugGone;    // our copy hit something before the server's arrived
 
 // Det deterministic fire state
 var float NextDetFireTS;
@@ -684,7 +685,9 @@ simulated function SpawnClientSideSlug()
         LocalSlugDummy.RemoteRole = ROLE_None;
         LocalSlugDummy.Instigator = PawnOwner;
         LocalSlugDummy.bClientVisualOnly = true;
-        LocalSlugDummy.bCollideWorld = false;
+        // Hits walls like the server's will (and stops there, ST_FlakSlug):
+        // the server's takes over where it is.
+        IGPlus_bLocalSlugGone = false;
         LocalSlugDummy.SetCollision(false, false, false);
         // Floor: 25% slack over the RTT is under one net update at low ping.
         LocalSlugDummy.LifeSpan = FMax(0.15, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;

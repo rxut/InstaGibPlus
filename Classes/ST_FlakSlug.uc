@@ -88,6 +88,10 @@ simulated function PostNetBeginPlay()
 				// This prevents the visual "jump" on high ping
 				SetLocation(FakeLocation);
 				IGPlus_Debug("took over from our own copy");
+				// Our copy already hit something: so did the server's. Its
+				// explosion follows.
+				if (FC.IGPlus_bLocalSlugGone)
+					IGPlus_ClientGone();
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
@@ -157,9 +161,10 @@ simulated function Landed( vector HitNormal )
 	if (IGPlus_Lift != None && IGPlus_Lift.PassLanded(HitNormal))
 		return;
 
+	// Our own copy stops where it hits, as the server's explodes there.
 	if (bClientVisualOnly)
 		{
-			bHidden = true;
+			IGPlus_ClientGone();
 			return;
 		}
 
@@ -180,6 +185,13 @@ simulated function Landed( vector HitNormal )
 // Clients: the server explodes it, a ping later. Meanwhile it neither slides
 // along what it hit nor sits on it: it is gone from here.
 simulated function IGPlus_ClientGone() {
+	local ST_UT_FlakCannon FC;
+
+	if (bClientVisualOnly && Pawn(Owner) != None) {
+		FC = ST_UT_FlakCannon(Pawn(Owner).Weapon);
+		if (FC != None && FC.LocalSlugDummy == self)
+			FC.IGPlus_bLocalSlugGone = true;
+	}
 	bHidden = true;
 	LightType = LT_None;
 	AmbientSound = None;
@@ -196,9 +208,10 @@ simulated function HitWall (vector HitNormal, actor Wall)
 	if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
 		return;
 
+	// Our own copy stops where it hits, as the server's explodes there.
 	if (bClientVisualOnly)
 		{
-			bHidden = true;
+			IGPlus_ClientGone();
 			return;
 		}
 
