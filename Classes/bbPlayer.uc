@@ -3629,13 +3629,12 @@ simulated function IGPlus_SKDebugNote(string S) {
 }
 
 // What our own projectile of this kind stops on from Start to End: what a
-// trace with actors finds, but never us, and our shock ball flies through
-// shock balls (our own copy, just fired here, among them).
+// trace with actors finds, but never us.
 simulated function Actor IGPlus_SKTrace(byte Kind, vector Start, vector End, float Radius, out vector HitLocation, out vector HitNormal) {
 	local Actor A;
 
 	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, End, Start, vect(1,1,0) * Radius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind)) {
-		if (A == self || (Kind == IGPLUS_SK_SHOCKBALL && ShockProj(A) != none))
+		if (A == self)
 			continue;
 		if (A == Level || Mover(A) != none || Pawn(A) != none || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
 			return A;
