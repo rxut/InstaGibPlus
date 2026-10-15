@@ -15,6 +15,8 @@ var WeaponSettingsRepl WSettings;
 // Server-side deterministic fire data (from ServerMove_v4 step)
 var vector DetServerFireLoc;
 var rotator DetServerFireRot;
+var vector DetServerLiftLead;   // Push-Safe Aim: how far ahead our lift is of the shooter's screen
+var float DetServerMoverZ;      // the half-ping lift shift in DetServerFireLoc
 var bool bUseDetServerFireData;
 
 // Det deterministic fire — shared between client and server
@@ -103,19 +105,18 @@ function bool DetPrepareServerFireContext(
 	out int NumRockets,
 	out PlayerPawn P
 ) {
-	local vector DbgX, DbgY, DbgZ;
-
 	P = PlayerPawn(Owner);
 	if (P == none)
 		return false;
 
 	DetServerFireLoc = StepLoc;
-	if (bbPlayer(Owner) != none)
-		DetServerFireLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
-	if (bbPlayer(Owner) != none && bbPlayer(Owner).bDrawDebugData) {
-		GetAxes(StepView, DbgX, DbgY, DbgZ);
-		bbPlayer(Owner).IGPlus_DebugProjStart("Rocket",
-			DetServerFireLoc + CalcDrawOffset() + FireOffset.X * DbgX + FireOffset.Y * DbgY + FireOffset.Z * DbgZ);
+	DetServerMoverZ = 0.0;
+	DetServerLiftLead = vect(0,0,0);
+	if (bbPlayer(Owner) != none) {
+		DetServerMoverZ = bbPlayer(Owner).GetMoverFireZOffset();
+		DetServerFireLoc.Z += DetServerMoverZ;
+		if (bbPlayer(Owner).IGPlus_PushSafeAim && IsPingCompEnabled())
+			DetServerLiftLead = bbPlayer(Owner).IGPlus_OwnLiftLead();
 	}
 	DetServerFireRot = StepView;
 	bUseDetServerFireData = true;
@@ -1244,7 +1245,9 @@ simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisua
 	GetAxes(PawnOwner.ViewRotation,X,Y,Z);
 	
 	StartLoc = Owner.Location + ClientDrawOffset + FireOffset.X * X + LocalYMod * Y + FireOffset.Z * Z;
-	if (bbPlayer(Owner) != None)
+	// Push-Safe Aim: rockets leave from where we see ourselves, also on a lift
+	// (the server's do too).
+	if (bbPlayer(Owner) != None && (bbPlayer(Owner).IGPlus_PushSafeAim == false || IsDetActive() == false))
 		StartLoc.Z += bbPlayer(Owner).GetMoverFireZOffset();
 	if (bbPlayer(Owner) != None)
 		bbPlayer(Owner).IGPlus_DebugProjStart("Rocket", StartLoc);
@@ -1276,11 +1279,8 @@ simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisua
 		FireRot.Pitch = AimRot.Pitch;
 		FireRot.Roll = AimRot.Roll;
 
-		// Self-knockback: the hit on our own lift is where it is on the
-		// server relative to the lift, so from our own spot on it.
 		if (bbPlayer(Owner) != None)
-			bbPlayer(Owner).IGPlus_SKPredictRocket(
-				FireLocation - bbPlayer(Owner).IGPlus_ClientLiftLeadZ() * vect(0,0,1), FireRot, i);
+			bbPlayer(Owner).IGPlus_SKPredictRocket(FireLocation, FireRot, i);
 
 		if (bNoVisuals)
 			r = None;
@@ -1324,6 +1324,7 @@ state FireRockets
 		local int NumSpawnedRockets;
 		local rotator AimRot;
 		local bool bDetFire;
+		local bool bLiftAim;
 
 		if (bCanClientFire == false)
 		{
@@ -1402,6 +1403,15 @@ state FireRockets
 		else
 			RocketRad = 4;
 
+		// Push-Safe Aim on a moving lift: rockets leave from where the
+		// shooter's screen had it, and near that lift they meet it where that
+		// screen has it (ST_RocketMk2.IGPlus_OwnLiftStart).
+		bLiftAim = bDetFire && bFireLoad && LockedTarget == None && DetServerLiftLead != vect(0,0,0);
+		if (bLiftAim)
+			StartLoc -= DetServerLiftLead + DetServerMoverZ * vect(0,0,1);
+		if (bDetFire && bbP != None)
+			bbP.IGPlus_DebugProjStart("Rocket", StartLoc);
+
 		NumSpawnedRockets = 0;
 		
 		for (i = 0; i < RocketsLoaded; i++)
@@ -1439,6 +1449,8 @@ state FireRockets
 					r.WImp = WImp;
 					r.NumExtraRockets = DupRockets;
 					r.RocketIndex = i;
+					if (bLiftAim)
+						r.IGPlus_OwnLiftStart(bbP);
 					// Predicted self-knockback anchors the push to this step.
 					if (bDetFire && bbP != none && bbP.IGPlus_PredictedSelfKnockback) {
 						r.IGPlus_FireTS = bbP.CurrentTimeStamp;
@@ -1476,6 +1488,10 @@ state FireRockets
 		{
 			WImp.BatchSimulateProjectiles(SpawnedRockets, NumSpawnedRockets, bbP.PingAverage);
 		}
+		if (bLiftAim)
+			for (i = 0; i < NumSpawnedRockets; i++)
+				if (ST_RocketMk2(SpawnedRockets[i]) != None && SpawnedRockets[i].bDeleteMe == false)
+					ST_RocketMk2(SpawnedRockets[i]).IGPlus_OwnLiftHold();
 		
 		bTightWad=False;
 		bRotated = false;

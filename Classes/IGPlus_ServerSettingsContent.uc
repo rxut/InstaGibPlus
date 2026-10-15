@@ -1534,7 +1534,7 @@ defaultproperties
 	bEnablePredictedDiscBoostText="Predicted Disc Boost"
 	bEnablePredictedDiscBoostHelp="Experimental. With the Deterministic Translocator, your own shock beam pushes your own disc on your screen right away"
 	bEnableDeterministicTranslocatorHelp="Experimental. If checked, throw, recall and translocate are decided by the same rules on client and server and you see your own disc; works with or without Translocator ping compensation, off while Input Replication is on"
-	bEnablePushSafeAimHelp="Experimental. If checked, shots fired right after being pushed leave from where the shooter saw themselves, and camera smoothing aims shots through the crosshair; off while Input Replication is on"
+	bEnablePushSafeAimHelp="Experimental. If checked, shots fired right after being pushed, and rockets fired from a moving lift, leave from where the shooter saw themselves, and camera smoothing aims shots through the crosshair; off while Input Replication is on"
 	bEnablePredictedSelfKnockbackHelp="Experimental. If checked, the push from your own rockets is applied on your client right away; needs Rocket ping compensation, off while Input Replication is on"
 	bTellSpectatorsText="Tell Spectators on Kick"
 	bTellSpectatorsHelp="If checked, spectators are told the reason for player kicks"

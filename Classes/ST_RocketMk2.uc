@@ -11,6 +11,13 @@ var int RocketIndex;
 var float IGPlus_FireTS;
 var vector IGPlus_SpawnLoc;
 var float IGPlus_Speed;
+// Server, Push-Safe Aim from a moving lift: the rocket left from where the
+// shooter's screen had them. That screen has the lift a round trip of travel
+// behind, so near it the rocket meets the lift there instead.
+var Mover IGPlus_OwnLift;
+var ST_MoverDummy IGPlus_OwnLiftMD;
+var float IGPlus_OwnLiftLagMs;  // how far behind, after the fast-forward
+var float IGPlus_OwnLiftUntil;
 
 replication
 {
@@ -43,6 +50,12 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
+	// The server moves a lift rocket itself for a while (IGPlus_OwnLiftHold).
+	if (Role < ROLE_Authority && Physics == PHYS_None)
+		SetPhysics(PHYS_Projectile);
+	if (Role < ROLE_Authority && bCollideActors == false)
+		SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+
 	if (Instigator != None && bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRocketUseClientSideAnimations)
 	{
 		In = PlayerPawn(Instigator);
@@ -68,6 +81,11 @@ simulated function PostNetBeginPlay()
 simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
+
+	if (IGPlus_OwnLift != None) {
+		IGPlus_OwnLiftStep(Delta);
+		return;
+	}
 
     if (InstigatingPlayer == none)
         return;
@@ -132,6 +150,10 @@ auto state Flying
 			return;
 		}
 
+		IGPlus_OwnLiftHit(Wall);
+		if (bDeleteMe)
+			return;
+
 		if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
 			Wall.TakeDamage( Damage, instigator, Location, MomentumTransfer * Normal(Velocity), '');
 
@@ -170,6 +192,9 @@ auto state Flying
 	{
 		local bbPlayer bbP;
 
+		if (IGPlus_OwnLift != None)
+			IGPlus_OwnLiftRestore();
+
 		bbP = bbPlayer(Instigator);
 		if (IGPlus_FireTS > 0.0 && bbP != none && bbP.IGPlus_PredictedSelfKnockback)
 			bbP.IGPlus_SKBeginCapture();
@@ -203,6 +228,70 @@ auto state Flying
 
 		MakeNoise(1.0);
 	}
+}
+
+// Server: P fired this from a moving lift with Push-Safe Aim.
+function IGPlus_OwnLiftStart(bbPlayer P) {
+	IGPlus_OwnLift = Mover(P.Base);
+	if (IGPlus_OwnLift == None || P.zzUTPure == None)
+		return;
+	IGPlus_OwnLiftMD = P.zzUTPure.FindMoverDummy(IGPlus_OwnLift);
+	IGPlus_OwnLiftLagMs = P.IGPlus_OwnLiftLagMs();
+	// ponytail: 0.5s covers clearing the lift; past that the live lift counts
+	IGPlus_OwnLiftUntil = Level.TimeSeconds + 0.5;
+}
+
+// Server: put our lift where the shooter's screen has it while this rocket is
+// AheadMs further along than its lag allows for (the fast-forward).
+function IGPlus_OwnLiftRewind(float AheadMs) {
+	if (IGPlus_OwnLift != None && IGPlus_OwnLiftMD != None && IGPlus_OwnLiftLagMs - AheadMs >= 1.0)
+		IGPlus_OwnLiftMD.CompStart(int(IGPlus_OwnLiftLagMs - AheadMs));
+}
+
+function IGPlus_OwnLiftRestore() {
+	if (IGPlus_OwnLiftMD != None)
+		IGPlus_OwnLiftMD.CompEnd();
+}
+
+// Server: one tick of flight against our lift where the shooter's screen has
+// it. Between these the rocket holds still for the engine (IGPlus_OwnLiftHold).
+function IGPlus_OwnLiftStep(float Delta) {
+	SetPhysics(PHYS_Projectile);
+	SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	if (Level.TimeSeconds > IGPlus_OwnLiftUntil || IGPlus_OwnLiftLagMs < 1.0
+		|| IGPlus_OwnLift.bDeleteMe || IGPlus_OwnLiftMD == None
+	) {
+		IGPlus_OwnLift = None;
+		return;
+	}
+	IGPlus_OwnLiftRewind(0.0);
+	AutonomousPhysics(Delta);
+	IGPlus_OwnLiftRestore();
+	if (bDeleteMe == false)
+		IGPlus_OwnLiftHold();
+}
+
+// Server: no engine physics, and no collision, so the real lift (ahead of the
+// one this rocket meets) never runs into it: a lift returns when it does.
+// Clients undo both (PostNetBeginPlay).
+function IGPlus_OwnLiftHold() {
+	if (IGPlus_OwnLift == None)
+		return;
+	SetPhysics(PHYS_None);
+	SetCollision(false, false, false);
+}
+
+// Server: a hit on our lift where the shooter's screen has it lands on the
+// same spot of the real lift, so a rocket jump off it pushes as it did there.
+function IGPlus_OwnLiftHit(Actor Wall) {
+	local vector Shift;
+
+	if (Wall == None || Wall != IGPlus_OwnLift || IGPlus_OwnLiftMD == None || IGPlus_OwnLiftMD.bCompActive == false)
+		return;
+	Shift = IGPlus_OwnLiftMD.SavedMoverLoc - IGPlus_OwnLift.Location;
+	IGPlus_OwnLiftRestore();
+	IGPlus_SpawnLoc += Shift; // same travel for the self-knockback timing
+	SetLocation(Location + Shift);
 }
 
 defaultproperties {

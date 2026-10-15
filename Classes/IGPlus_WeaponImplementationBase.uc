@@ -1230,6 +1230,7 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   local UTPure PureRef;
   local int i;
   local bool bAnyAlive;
+  local float TotalMs;
   
   if (NumProjectiles == 0 || Projectiles[0] == None)
     return;
@@ -1251,7 +1252,8 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
 
   if (DeltaTime <= 0.0)
     return;
-  
+
+  TotalMs = SimPing;
   while (SimPing > 0.0) {
     bAnyAlive = false;
     
@@ -1266,6 +1268,10 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
       break;
     
     PureRef.CompensateFor(int(SimPing), Projectiles[0].Instigator);
+    // Rockets from a moving lift (Push-Safe Aim): the shooter's own lift too.
+    for (i = 0; i < NumProjectiles; i++)
+      if (ST_RocketMk2(Projectiles[i]) != None && !Projectiles[i].bDeleteMe)
+        ST_RocketMk2(Projectiles[i]).IGPlus_OwnLiftRewind(TotalMs - SimPing);
     
     for (i = 0; i < NumProjectiles; i++) {
       if (Projectiles[i] != None && !Projectiles[i].bDeleteMe) {
@@ -1276,6 +1282,10 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
+
+  for (i = 0; i < NumProjectiles; i++)
+    if (ST_RocketMk2(Projectiles[i]) != None)
+      ST_RocketMk2(Projectiles[i]).IGPlus_OwnLiftLagMs -= TotalMs;
 }
 
 simulated function Actor TraceShotInternal(
