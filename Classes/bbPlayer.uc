@@ -417,6 +417,7 @@ struct IGPlus_SelfKnockback {
 	var byte Kind;           // IGPLUS_SK_*
 };
 var IGPlus_SelfKnockback IGPlus_SKQueue[16];
+var ST_HitTestHelper IGPlus_SKBall; // client: stands in for our own shock ball (IGPlus_SKFly)
 var int IGPlus_SKQueueCount;
 var bool IGPlus_SKCapturing;
 var bool IGPlus_SKCapturedHit;
@@ -939,6 +940,8 @@ simulated event Destroyed() {
 		IGPlus_InputLogFile.StopLog();
 	if (IGPlus_DebugLogFile != none)
 		IGPlus_DebugLogFile.Destroy();
+	if (IGPlus_SKBall != none)
+		IGPlus_SKBall.Destroy();
 	super.Destroyed();
 }
 
@@ -3396,8 +3399,9 @@ simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push
 			Dir.Z = FMin(0.45, Dir.Z);
 		Push = MomentumScale * K.Momentum * Dir;
 	} else {
-		// VisibleCollidingActors: within Radius and visible from HitLocation.
-		if (VSize(Delta) >= K.Radius || FastTrace(Location, K.HitLocation) == false)
+		// VisibleCollidingActors: our cylinder within Radius, and visible from
+		// HitLocation.
+		if (VSize(Delta) >= K.Radius + CollisionRadius || FastTrace(Location, K.HitLocation) == false)
 			return true;
 
 		Dist = FMax(1, VSize(Delta));
@@ -3550,19 +3554,78 @@ simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vect
 	IGPlus_SKPredictedEntry(Start, K, Kind);
 
 	// ponytail: hurt radius + 300uu covers jumps; farther walls correct
-	// With the projectile's size: the shock ball's centre stops 12uu off.
-	End = Start + Dir * (K.Radius + 300.0);
-	HitActor = IGPlus_SKTrace(Kind, Start, End, K.SourceRadius, HitLocation, HitNormal);
-	if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
-		return;
+	if (K.SourceRadius > 0.0) {
+		// With a size (the shock ball): flown like the server's.
+		if (IGPlus_SKFly(Kind, K.SourceRadius, Start, Dir, K.Radius + 300.0, Speed * 0.01, HitLocation) == false)
+			return;
+	} else {
+		End = Start + Dir * (K.Radius + 300.0);
+		HitActor = IGPlus_SKTrace(Kind, Start, End, K.SourceRadius, HitLocation, HitNormal);
+		if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
+			return;
 
-	// The server's projectile stops 2uu short of the surface (MoveActor's
-	// TestAdjust) and explodes there.
-	HitLocation -= 2.0 * Dir;
-	if (((HitLocation - Start) dot Dir) < 0.0)
-		HitLocation = Start;
+		// The server's projectile stops 2uu short of the surface (MoveActor's
+		// TestAdjust) and explodes there.
+		HitLocation -= 2.0 * Dir;
+		if (((HitLocation - Start) dot Dir) < 0.0)
+			HitLocation = Start;
+	}
 
 	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / Speed, Kind * 8 + Index, HitLocation, Kind);
+}
+
+// Client: our own projectile with a size (the shock ball) flown through the
+// world as the server's flies, by the same collision code: placed as a spawn
+// places it (out of a wall it overlaps), then moved a physics step at a time.
+// A long box trace stopped it 30uu above the floor where the server's went on.
+// True if it stopped on the world within Dist, at HitLocation (its centre
+// there), with Start where it really started. Anything else on its way (a
+// pawn, a lift) is the server's correction.
+simulated function bool IGPlus_SKFly(byte Kind, float Radius, out vector Start, vector Dir, float Dist, float StepSize, out vector HitLocation) {
+	local vector Extent, Before, HL, HN;
+	local Actor A;
+	local float Flown;
+
+	if (IGPlus_SKBall == None || IGPlus_SKBall.bDeleteMe)
+		IGPlus_SKBall = Spawn(class'ST_HitTestHelper', self);
+	if (IGPlus_SKBall == None)
+		return false;
+	Extent = vect(1,1,0) * Radius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind);
+	IGPlus_SKBall.SetCollisionSize(Extent.X, Extent.Z);
+	IGPlus_SKBall.bCollideWorld = true;
+	// No room for it: the server's spawn fails as well.
+	if (IGPlus_SKBall.SetLocation(Start) == false) {
+		IGPlus_SKBall.bCollideWorld = false;
+		return false;
+	}
+	Start = IGPlus_SKBall.Location;
+	StepSize = FMax(StepSize, 1.0);
+	while (Flown < Dist) {
+		Before = IGPlus_SKBall.Location;
+		IGPlus_SKBall.Move(Dir * StepSize);
+		if (VSize(IGPlus_SKBall.Location - Before) < StepSize - 0.01)
+			break;
+		Flown += StepSize;
+	}
+	HitLocation = IGPlus_SKBall.Location;
+	IGPlus_SKBall.bCollideWorld = false;
+	if (Flown >= Dist)
+		return false;
+
+	foreach TraceActors(class'Actor', A, HL, HN, HitLocation, Start, Extent) {
+		if (A == self || A == Level)
+			continue;
+		if (Pawn(A) != none || Mover(A) != none) {
+			IGPlus_SKDebugNote("not predicted, "$A$" on its way at "$class'ST_ShockProj'.static.IGPlus_Vec(A.Location));
+			return false;
+		}
+	}
+	return true;
+}
+
+simulated function IGPlus_SKDebugNote(string S) {
+	if (bDrawDebugData)
+		ClientDebugMessage("Self-push (client) "$S);
 }
 
 // What our own projectile of this kind stops on from Start to End: what a
