@@ -1935,7 +1935,7 @@ Shots more than this long in the past are rejected.
 **Default: 0.5**  
 **Unit: seconds**  
 
-Deterministic weapons time their refire on the client's move timestamps. The server compares each move's timestamp with its own clock, against the client's least-delayed offset (1% drift allowance; lag spikes only make the client look behind), and stops starting new deterministic shots while it leads by more than this. It stops a speed-hacked client from firing faster. Lag spikes never trip it. 0 or less disables the check.
+Stops clients whose clock runs fast, such as speed hacks, from firing deterministic weapons faster than normal. Normal lag does not trigger it. 0 or less disables the check.
 
 ## bEnablePredictedSwitching
 
@@ -1988,7 +1988,7 @@ Per-preset settings in the `[WeaponSettings*]` sections. Only the netcode-releva
 **Type: bool**  
 **Default: False**  
 
-If enabled, hitscan shots are tested against where targets were on the shooter's screen: the server rewinds every player (and the lift they stand on) by the shooter's ping before tracing. Also switches supported ST_ weapons to the deterministic fire path (see Docs/V5-NOTES.md).
+If enabled, hitscan shots are tested against where targets were on the shooter's screen: the server rewinds every player (and the lift they stand on) by the shooter's ping before tracing. Also switches supported ST_ weapons to the deterministic fire path (see Docs/DETERMINISTIC-NETCODE.md).
 
 ## PingCompensationMax
 
