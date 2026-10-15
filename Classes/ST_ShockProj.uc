@@ -57,6 +57,8 @@ simulated function PostBeginPlay() {
 			IGPlus_FireTS = bbP.CurrentTimeStamp;
 			IGPlus_FireTime = Level.TimeSeconds;
 			IGPlus_FireLoc = Location;
+			if (Level.NetMode != NM_Client)
+				bbP.ClientDebugMessage("Shock ball (server) from "$IGPlus_Vec(Location)$" aim "$(Rotation.Pitch & 65535)$","$(Rotation.Yaw & 65535));
 		}
 		if (PureRef != None)
 			PureRef.RegisterProjectile(self);
@@ -168,6 +170,10 @@ simulated function IGPlus_PredictCombo() {
 		bbPlayer(Instigator).IGPlus_PredComboLoc = Location;
 		bbPlayer(Instigator).ClientDebugMessage("Shock combo: drawn on the beam's frame");
 	}
+}
+
+static function string IGPlus_Vec(vector V) {
+	return int(V.X)$","$int(V.Y)$","$int(V.Z);
 }
 
 simulated function IGPlus_HideBall() {

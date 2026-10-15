@@ -337,6 +337,7 @@ simulated function ClientTraceFire(
 	// Our own ball on the beam (client-side shock balls): the combo is here and
 	// now; the server's skips us (ST_ShockProj.SuperExplosion).
 	if (Level.NetMode == NM_Client && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
+		IGPlus_DebugBeam("client", StartTrace, X);
 		Ball = IGPlus_OwnBallOnBeam(StartTrace, X, VSize(HitLocation - StartTrace));
 		if (Ball != None) {
 			HitLocation = Ball.Location;
@@ -345,6 +346,40 @@ simulated function ClientTraceFire(
 	}
 
 	ClientSpawnBeam(HitLocation, SmokeLocation);
+}
+
+// Debug (enableDebugData): how close this beam passes the shooter's own ball,
+// as each side has it (the server where the shooter's screen has it).
+simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir) {
+	local ST_ShockProj P;
+	local bbPlayer BP;
+	local vector Loc, BestLoc;
+	local float D, BestD;
+	local bool bFound;
+
+	BP = bbPlayer(Owner);
+	if (BP == None || BP.bDrawDebugData == false)
+		return;
+	foreach AllActors(class'ST_ShockProj', P) {
+		if (P.Instigator != Owner || P.bDeleteMe)
+			continue;
+		if (Level.NetMode == NM_Client) {
+			if (P.IGPlus_bOwnTimeline == false || P.bHidden)
+				continue;
+			Loc = P.Location;
+		} else if (P.IGPlus_OwnerSeesBall(BP, Loc) == false) {
+			continue;
+		}
+		D = VSize((Loc - Start) - Dir * ((Loc - Start) dot Dir));
+		if (bFound == false || D < BestD) {
+			bFound = true;
+			BestD = D;
+			BestLoc = Loc;
+		}
+	}
+	if (bFound)
+		BP.ClientDebugMessage("Shock beam ("$Side$") from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)
+			$", ball at "$class'ST_ShockProj'.static.IGPlus_Vec(BestLoc)$", passes "$int(BestD)$"uu from its centre");
 }
 
 // Client: the nearest of our own flying balls the beam passes through before
@@ -483,6 +518,8 @@ simulated function ClientSpawnAltProjectileEffects(
 		LocalDummy.IGPlus_bLocalBall = true;
 		LocalDummy.IGPlus_bOwnTimeline = true;
 		LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
+		if (bbP != None)
+			bbP.ClientDebugMessage("Shock ball (client) from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)$" aim "$(AimRot.Pitch & 65535)$","$(AimRot.Yaw & 65535));
 	}
 }
 
@@ -556,6 +593,7 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
 		
 	PendingSmokeLocation = SmokeLocation;
+	IGPlus_DebugBeam("server", StartTrace, Normal(EndTrace - StartTrace));
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
 
 	// Predicted Disc Boost: correct the thrower's disc if this missed it.

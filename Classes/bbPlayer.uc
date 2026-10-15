@@ -6275,7 +6275,12 @@ function xxReplicateMove(
 			// Predicted self-knockback: a rocket shot also starts its move, so
 			// the server's step location is this frame's start, like the client's.
 			// Push-Safe Aim: the server reads the shot origin off the previous move.
-			if (bDetLocalShot && ((bLocalEightball && IGPlus_PredictedSelfKnockback) || IGPlus_PushSafeAim))
+			// Client-side shock balls: the ball and the beam leave from this
+			// frame's start on the server too (a merged move's step starts at
+			// the move's start), or the client's own ball and the server's fly
+			// apart by however far it moved in the merged frames.
+			if (bDetLocalShot && ((bLocalEightball && IGPlus_PredictedSelfKnockback) || IGPlus_PushSafeAim
+				|| (ST_ShockRifle(DetLocalWeapon) != none && ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)))
 				bForcePacketSplit = true;
 			// Send the replayed tap as this frame's press: the move then carries
 			// the force bit and ends here, and the server fires it on this step.
