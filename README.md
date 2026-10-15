@@ -1963,14 +1963,14 @@ If True, the push from your own rockets, flak slug, shock ball, ripper alt-fire 
 **Type: bool**  
 **Default: True**  
 
-If True, translocator throws, recalls and translocations follow the same rules on client and server at the same timestamp, and you see your own disc from the moment you throw it. Works with or without TranslocatorCompensatePing. Requires bEnableInputReplication to be False.
+If True, translocator throws, recalls and translocations follow the same rules on client and server at the same timestamp, and you see your own disc from the moment you throw it. The server's disc follows your own moves, so TranslocatorCompensatePing is not used while this is on. Requires bEnableInputReplication to be False.
 
 ## bEnablePredictedTranslocation
 
 **Type: bool**  
 **Default: True**  
 
-If True, translocating moves you to the disc on your screen the moment you press, instead of a round trip later. The server translocates you at the same timestamp. Requires TranslocatorCompensatePing and bEnableInputReplication to be False.
+If True, translocating moves you to the disc on your screen the moment you press, instead of a round trip later. The server translocates you at the same timestamp. Only for the stock translocator: [bEnableDeterministicTranslocator](#benabledeterministictranslocator) already does this itself. Requires TranslocatorCompensatePing and bEnableInputReplication to be False.
 
 ## bEnablePredictedDiscBoost
 

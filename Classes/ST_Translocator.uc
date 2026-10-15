@@ -324,8 +324,11 @@ function ThrowTarget()
 
 		ServerTimeSinceTargetSpawn = 0.0;
 		
-		// Apply ping compensation with position history
-		if (bbP != none && GetWeaponSettings().TranslocatorCompensatePing) {
+		// Apply ping compensation with position history. Not for the
+		// deterministic translocator: its disc already follows the thrower's
+		// own moves, and a fast-forward would put the server's disc a ping
+		// ahead of the thrower's (others see it pop out ahead, it lands early).
+		if (bbP != none && GetWeaponSettings().TranslocatorCompensatePing && IGPlus_IsDetMode() == false) {
 			// Cast to ST_TranslocatorTarget to access history functions
 			ST_TranslocatorTarget(TTarget).SimulateWithHistory(WImp, bbP.PingAverage);
 		}
