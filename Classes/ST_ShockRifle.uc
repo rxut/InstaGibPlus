@@ -517,6 +517,12 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		
 	PendingSmokeLocation = SmokeLocation;
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+
+	// Predicted Disc Boost: correct the thrower's disc if this missed it.
+	if (bbPlayer(PawnOwner) != None && bbPlayer(PawnOwner).IGPlus_PredictedDiscBoost
+		&& ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator')) != None)
+		ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator')).IGPlus_DetBoostMissCheck(
+			bbPlayer(PawnOwner), Other, StartTrace, HitLocation, vector(AdjustedAim));
 }
 
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)

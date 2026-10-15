@@ -113,7 +113,6 @@ var bool IGPlus_PushSafeAim;            // server setting, replicated to the own
 var bool IGPlus_DetTranslocator;        // server setting, replicated to the owner
 var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
-var ST_TranslocatorTarget IGPlus_DetOwnShotDisc; // server: own disc tested by this move's own hitscan
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
 var Weapon IGPlus_PSFrom;
@@ -3766,15 +3765,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	if (IGPlus_SKQueueCount > 0)
 		IGPlus_SKApplyDue(CurrentTimeStamp, none);
-
-	if (IGPlus_DetOwnShotDisc != none) {
-		if (IGPlus_DetOwnShotDisc.bDeleteMe == false && IGPlus_DetOwnShotDisc.IGPlus_OwnShotFrame == Level.TimeSeconds) {
-			IGPlus_DetOwnShotDisc.IGPlus_OwnShotFrame = 0.0;
-			if (IGPlus_PredictedDiscBoost && ST_Translocator(IGPlus_DetOwnShotDisc.Master) != none)
-				ST_Translocator(IGPlus_DetOwnShotDisc.Master).IGPlus_DetServerDiscChanged(IGPlus_DetOwnShotDisc);
-		}
-		IGPlus_DetOwnShotDisc = none;
-	}
 
 	IGPlus_PSALastClientLoc = SM.ClientLocation;
 	if (SM.ClientBase != none)

@@ -52,12 +52,13 @@ var vector IGPlus_DetKnockLoc, IGPlus_DetKnockVel;
 var bool IGPlus_bDetKnockLanded;
 var float IGPlus_DetKnockAge;
 var float IGPlus_DetLastActionTS;              // client: move time of our last action
-var float IGPlus_DetLastActionTime;            // client: when it was taken (for the safety net)
 var int IGPlus_DetLatchedPress;                // client: 1 fire, 2 alt pressed during bring-up
 var float IGPlus_DetLatchTS;
-// Server: throw time of the disc that is out, 0 if none. The client's safety
-// net matches it once none of its own actions can still be in flight.
+// Server: throw time of the disc that is out (0 if none), and the last move
+// it processed. Once that move is past the client's last action, the client
+// matches the disc state (its safety net).
 var float IGPlus_DetServerDiscTS;
+var float IGPlus_DetServerMoveTS;
 
 replication
 {
@@ -65,7 +66,7 @@ replication
     unreliable if( Role==ROLE_Authority )
         ServerTimeSinceLastFire, ServerTimeSinceTargetSpawn;
     reliable if (bNetOwner && Role == ROLE_Authority)
-        IGPlus_DiscRepl, IGPlus_DetServerDiscTS;
+        IGPlus_DiscRepl, IGPlus_DetServerDiscTS, IGPlus_DetServerMoveTS;
     reliable if (Role == ROLE_Authority)
         IGPlus_ClientDetSync, IGPlus_ClientDetKnock;
 }
@@ -121,6 +122,8 @@ function Tick(float DeltaTime)
             IGPlus_DetServerDiscTS = 0.0;
         else
             IGPlus_DetServerDiscTS = IGPlus_ThrowTS;
+        if (bbPlayer(Owner) != None)
+            IGPlus_DetServerMoveTS = bbPlayer(Owner).CurrentTimeStamp;
     }
 }
 
@@ -502,6 +505,7 @@ function Fire( float Value )
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
+	IGPlus_DetLatchedPress = 0;
 	if ( bTTargetOut )
 		TweenAnim('ThrownFrame', GetWeaponSettings().TranslocatorOutSelectTime);
 	else
@@ -619,7 +623,7 @@ function bool IGPlus_GibIfDisrupted() {
 
 // Server: deterministic for remote players only; a listen server's own or an
 // offline player has no moves and keeps the stock translocator.
-simulated function bool IGPlus_IsDetMode() {
+function bool IGPlus_IsDetMode() {
 	return bbPlayer(Owner) != None && bbPlayer(Owner).IGPlus_DetTranslocator
 		&& Owner.RemoteRole == ROLE_AutonomousProxy && Class == class'ST_Translocator';
 }
@@ -674,7 +678,6 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 
 	if (Action != 0) {
 		IGPlus_DetLastActionTS = TS;
-		IGPlus_DetLastActionTime = Level.TimeSeconds;
 	}
 	if (Action == IGPLUS_DETTLOC_THROW) {
 		IGPlus_DetClientThrow(P, TS);
@@ -712,8 +715,8 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 		// Then collide like the server's disc, so lifts and doors stop it too
 		// (its Touch ignores everything; nothing here may shoot it).
 		IGPlus_DetLocalDisc.bCollideWorld = true;
-		IGPlus_DetLocalDisc.SetCollision(true, false, false);
 		IGPlus_DetLocalDisc.bProjTarget = false;
+		IGPlus_DetLocalDisc.SetCollision(true, false, false);
 	}
 
 	PlayFiring();
@@ -746,31 +749,15 @@ simulated function IGPlus_DetClientTick() {
 
 	S = IGPlus_DiscRepl;
 	if (S != None && S.bDeleteMe == false) {
-		S.bHidden = (IGPlus_bDetShowServerDisc == false);
-		if (S.Glow != None)
-			S.Glow.bHidden = S.bHidden;
-		if (S.bHidden) {
-			if (S.Shadow != None) {
-				S.Shadow.Destroy();
-				S.Shadow = None;
-			}
-			// Nothing on our screen may hit, hear or stop at the hidden copy.
-			if (S.bCollideActors)
-				S.SetCollision(false, false, false);
-			S.bProjTarget = false;
-			S.AmbientSound = None;
-			S.ImpactSound = None;
-		}
+		IGPlus_DetSetCopyHidden(S, IGPlus_bDetShowServerDisc == false);
 	}
 
 	if (IGPlus_bDetKnockPending && Level.TimeSeconds - IGPlus_DetThrowTS >= IGPlus_DetKnockAge)
 		IGPlus_DetApplyKnock();
 
-	// Safety net for lost actions and missed syncs: once nothing of ours can
-	// still be in flight (a round trip plus replication), match the server.
-	if (bbPlayer(Owner) != None && Level.TimeSeconds - IGPlus_DetLastActionTime
-		> bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.3
-	) {
+	// Safety net for lost actions and missed syncs: once the server has
+	// processed past our last action, its disc state is the truth.
+	if (IGPlus_DetServerMoveTS > IGPlus_DetLastActionTS) {
 		if (IGPlus_DetServerDiscTS == 0.0) {
 			if (IGPlus_bDetOut)
 				IGPlus_DetClientDiscGone();
@@ -780,6 +767,31 @@ simulated function IGPlus_DetClientTick() {
 			IGPlus_DetThrowTS = IGPlus_DetServerDiscTS;
 			IGPlus_bDetShowServerDisc = true;
 		}
+	}
+}
+
+// Client: the server's copy of our disc, hidden (inert: nothing here may hit,
+// hear or stop at it) or shown as it normally is.
+static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
+	if (S.Glow != None)
+		S.Glow.bHidden = bHide;
+	if (S.bHidden == bHide)
+		return;
+	S.bHidden = bHide;
+	if (bHide) {
+		if (S.Shadow != None) {
+			S.Shadow.Destroy();
+			S.Shadow = None;
+		}
+		S.SetCollision(false, false, false);
+		S.bProjTarget = false;
+		S.AmbientSound = None;
+		S.ImpactSound = None;
+	} else {
+		S.SetCollision(S.default.bCollideActors, S.default.bBlockActors, S.default.bBlockPlayers);
+		S.bProjTarget = S.default.bProjTarget;
+		S.AmbientSound = S.default.AmbientSound;
+		S.ImpactSound = S.default.ImpactSound;
 	}
 }
 
@@ -962,15 +974,42 @@ simulated function IGPlus_DetMarkDisrupted() {
 // processed (its own age since the throw), for its own hitscan; marks the
 // disc so a hit there pushes it at that age.
 function vector IGPlus_DetOwnShotLocation(ST_TranslocatorTarget T, bbPlayer P) {
-	local byte bLanded;
+	T.IGPlus_OwnShotAge = IGPlus_DetSeenAge(P);
+	T.IGPlus_OwnShotFrame = Level.TimeSeconds;
+	return IGPlus_DetSeenLocation(T, P);
+}
 
-	T.IGPlus_OwnShotAge = FMax(0.0, FClamp(
+// Server: the disc's age and spot on the thrower's screen for the move
+// being processed.
+function float IGPlus_DetSeenAge(bbPlayer P) {
+	return FMax(0.0, FClamp(
 		P.CurrentTimeStamp - IGPlus_ThrowTS,
 		ServerTimeSinceTargetSpawn - 0.2,
 		ServerTimeSinceTargetSpawn + 0.2));
-	T.IGPlus_OwnShotFrame = Level.TimeSeconds;
-	P.IGPlus_DetOwnShotDisc = T;
-	return T.IGPlus_GetHistoryAt(T.IGPlus_OwnShotAge, bLanded);
+}
+
+function vector IGPlus_DetSeenLocation(ST_TranslocatorTarget T, bbPlayer P) {
+	local byte bLanded;
+	return T.IGPlus_GetHistoryAt(IGPlus_DetSeenAge(P), bLanded);
+}
+
+// Server, after the thrower's own shock beam: if it missed the disc but
+// passed close enough for the client to have shown a boost (Predicted Disc
+// Boost), send the disc's real state so the client's copy follows it.
+function IGPlus_DetBoostMissCheck(bbPlayer P, Actor Other, vector Start, vector HitLocation, vector Dir) {
+	local ST_TranslocatorTarget T;
+
+	if (P.IGPlus_PredictedDiscBoost == false || IGPlus_IsDetMode() == false)
+		return;
+	T = ST_TranslocatorTarget(TTarget);
+	if (T == None || Other == T || T.bIGPlusFullHistory == false)
+		return;
+	if (Other == None)
+		HitLocation = Start + 10000.0 * Dir;
+	// ponytail: 4uu margin for the two simulations drifting apart
+	if (IGPlus_RayHitsCylinder(Start, Dir, VSize(HitLocation - Start), IGPlus_DetSeenLocation(T, P),
+		T.CollisionRadius + 4.0, T.CollisionHeight + 4.0))
+		IGPlus_DetServerDiscChanged(T);
 }
 
 // Server: the thrower's own hitscan pushed its disc at Age (its screen).

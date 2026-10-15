@@ -90,10 +90,10 @@ simulated function PostNetBeginPlay()
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
 
-		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator) {
+		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator && Level.NetMode == NM_Client) {
 			// Deterministic translocator: the thrower watches its own disc;
 			// ST_Translocator.IGPlus_DetClientTick keeps this copy hidden.
-			bHidden = true;
+			class'ST_Translocator'.static.IGPlus_DetSetCopyHidden(self, true);
 			return;
 		}
 
@@ -231,8 +231,9 @@ function vector IGPlus_GetHistoryAt(float Age, out byte bLanded) {
         }
     }
 
-    // A resting disc records nothing more, but may ride a lift: use it as is.
-    if (Physics == PHYS_None) {
+    // A resting disc records nothing more, but may ride a lift: use it as is
+    // (Location is still the rest spot right after a hit sets it falling).
+    if (SimulationLanded[HistoryCount-1] != 0) {
         bLanded = 1;
         return Location;
     }
