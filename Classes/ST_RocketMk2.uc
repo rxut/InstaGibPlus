@@ -11,19 +11,10 @@ var int RocketIndex;
 var float IGPlus_FireTS;
 var vector IGPlus_SpawnLoc;
 var float IGPlus_Speed;
-// Server, Push-Safe Aim from a moving lift: the rocket left from where the
-// shooter's screen had them. That screen has the lift a round trip of travel
-// behind, so near it the rocket meets the lift there instead.
-var Mover IGPlus_OwnLift;
-var ST_MoverDummy IGPlus_OwnLiftMD;
-var float IGPlus_OwnLiftLagMs;  // how far behind, after the fast-forward
-var float IGPlus_OwnLiftUntil;
-var bool IGPlus_bHeld;
-var vector IGPlus_HeldVelocity; // also tells clients its speed (sent held still)
-var vector IGPlus_HeldAcceleration;
-var bool IGPlus_bOwnLiftMoving;     // inside IGPlus_OwnLiftMove
-var bool IGPlus_bOwnLiftHitNow;     // the hit on the shooter's lift itself
-var vector IGPlus_OwnLiftMoveEnd;
+// Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
+// near the lift; clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
 var bool IGPlus_bTookOver;      // client: carries on from our own copy
 
 replication
@@ -84,20 +75,19 @@ simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
 
-	if (IGPlus_OwnLift != None) {
-		IGPlus_OwnLiftStep(Delta);
-		return;
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
+	// with it. Here, after the net code has set what it received: fly it.
+	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
+		if (Velocity == vect(0,0,0)) {
+			Velocity = IGPlus_HeldVelocity;
+			Acceleration = Normal(Velocity) * 50; // Flying.BeginState
+			if (IGPlus_bTookOver && InstigatingPlayer != None)
+				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		}
+		IGPlus_HeldVelocity = vect(0,0,0);
+		if (bCollideActors == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
 	}
-	// The server held a lift rocket still when it was sent (IGPlus_OwnLiftHold).
-	// Here, after the net code has set what it received: fly it.
-	if (Role < ROLE_Authority && Velocity == vect(0,0,0) && IGPlus_HeldVelocity != vect(0,0,0)) {
-		Velocity = IGPlus_HeldVelocity;
-		Acceleration = Normal(Velocity) * 50; // Flying.BeginState
-		if (IGPlus_bTookOver && InstigatingPlayer != None)
-			ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
-	}
-	if (Role < ROLE_Authority && bCollideActors == false)
-		SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
 
     if (InstigatingPlayer == none)
         return;
@@ -162,11 +152,8 @@ auto state Flying
 			return;
 		}
 
-		// The real lift is ahead of the one the shooter's screen has.
-		if (Wall != None && Wall == IGPlus_OwnLift && IGPlus_bOwnLiftMoving && IGPlus_bOwnLiftHitNow == false) {
-			IGPlus_OwnLiftPassThrough();
+		if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
 			return;
-		}
 
 		if ( (Mover(Wall) != None) && Mover(Wall).bDamageTriggered )
 			Wall.TakeDamage( Damage, instigator, Location, MomentumTransfer * Normal(Velocity), '');
@@ -239,123 +226,6 @@ auto state Flying
 
 		MakeNoise(1.0);
 	}
-}
-
-// Server: P fired this from a moving lift with Push-Safe Aim.
-function IGPlus_OwnLiftStart(bbPlayer P) {
-	IGPlus_OwnLift = Mover(P.Base);
-	if (IGPlus_OwnLift == None || P.zzUTPure == None)
-		return;
-	IGPlus_OwnLiftMD = P.zzUTPure.FindMoverDummy(IGPlus_OwnLift);
-	IGPlus_OwnLiftLagMs = P.IGPlus_OwnLiftLagMs();
-	// ponytail: 0.5s covers clearing the lift; past that the live lift counts
-	IGPlus_OwnLiftUntil = Level.TimeSeconds + 0.5;
-}
-
-// Server: Delta of flight (AheadMs further along than the lag, in the
-// fast-forward) against our lift where the shooter's screen has it. That is
-// the real lift moved back by D: the move moved forward by D is tested
-// against the real one (bbPlayer.IGPlus_TraceMover), and the real one is
-// gone through (IGPlus_OwnLiftPassThrough).
-function IGPlus_OwnLiftMove(float Delta, float AheadMs) {
-	local vector D, S, E, HL, HN;
-	local float LagMs, Frac;
-	local bool bHit;
-
-	LagMs = IGPlus_OwnLiftLagMs - AheadMs;
-	if (LagMs >= 1.0 && IGPlus_OwnLiftMD != None)
-		D = IGPlus_OwnLift.Location - IGPlus_OwnLiftMD.GetHistoricalLocation(Level.TimeSeconds - LagMs * 0.001 * Level.TimeDilation);
-	S = Location;
-	E = S + (Velocity + Acceleration * Delta) * Delta;
-	if (D != vect(0,0,0) && bbPlayer(Instigator) != None)
-		bHit = bbPlayer(Instigator).IGPlus_TraceMover(IGPlus_OwnLift, S + D, E + D, HL, HN);
-	Frac = 1.0;
-	if (bHit)
-		Frac = FClamp(VSize(HL - D - S) / FMax(VSize(E - S), 0.001), 0.0, 1.0);
-
-	IGPlus_bOwnLiftMoving = true;
-	IGPlus_OwnLiftMoveEnd = S + (E - S) * Frac;
-	if (Frac > 0.0)
-		AutonomousPhysics(Delta * Frac);
-	IGPlus_bOwnLiftMoving = false;
-
-	if (bHit && bDeleteMe == false) {
-		// The same spot of the real lift, so a rocket jump off it pushes as it
-		// did on the shooter's screen.
-		IGPlus_SpawnLoc += D; // same travel for the self-knockback timing
-		SetLocation(HL + 2.0 * HN);
-		IGPlus_bOwnLiftHitNow = true;
-		IGPlus_bOwnLiftMoving = true;
-		HitWall(HN, IGPlus_OwnLift);
-		IGPlus_bOwnLiftMoving = false;
-		IGPlus_bOwnLiftHitNow = false;
-	}
-}
-
-// Server: through the real lift, on to where this move ends; anything else
-// in the way is hit.
-function IGPlus_OwnLiftPassThrough() {
-	local Actor A;
-	local vector HL, HN;
-	local bool bOldCollideWorld;
-
-	bOldCollideWorld = bCollideWorld;
-	foreach TraceActors(class'Actor', A, HL, HN, IGPlus_OwnLiftMoveEnd, Location) {
-		if (A == IGPlus_OwnLift || A == Instigator || A == self)
-			continue;
-		if (A == Level || Mover(A) != None) {
-			bCollideWorld = false;
-			SetLocation(HL + 2.0 * HN);
-			bCollideWorld = bOldCollideWorld;
-			IGPlus_bOwnLiftMoving = false;
-			HitWall(HN, A);
-			return;
-		}
-	}
-	bCollideWorld = false;
-	SetLocation(IGPlus_OwnLiftMoveEnd);
-	bCollideWorld = bOldCollideWorld;
-}
-
-// Server: one tick of flight against our lift where the shooter's screen has
-// it. Between these the rocket holds still for the engine (IGPlus_OwnLiftHold).
-function IGPlus_OwnLiftStep(float Delta) {
-	IGPlus_OwnLiftUnhold();
-	if (Level.TimeSeconds > IGPlus_OwnLiftUntil || IGPlus_OwnLiftLagMs < 1.0
-		|| IGPlus_OwnLift.bDeleteMe || IGPlus_OwnLiftMD == None
-	) {
-		IGPlus_OwnLift = None;
-		if (bbPlayer(Instigator) != None && bbPlayer(Instigator).bDrawDebugData)
-			bbPlayer(Instigator).ClientDebugMessage("Rocket (server) flies on its own at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
-		return;
-	}
-	IGPlus_OwnLiftMove(Delta, 0.0);
-	if (bDeleteMe == false)
-		IGPlus_OwnLiftHold();
-}
-
-// Server: nothing for the engine to move (SetPhysics(PHYS_None) would wipe
-// the speed), and no collision, so the real lift (ahead of the one this
-// rocket meets) never runs into it: a lift returns when it does. Clients
-// fly it again (Tick).
-function IGPlus_OwnLiftHold() {
-	if (IGPlus_OwnLift == None || IGPlus_bHeld)
-		return;
-	IGPlus_HeldVelocity = Velocity;
-	IGPlus_HeldAcceleration = Acceleration;
-	Velocity = vect(0,0,0);
-	Acceleration = vect(0,0,0);
-	SetCollision(false, false, false);
-	IGPlus_bHeld = true;
-}
-
-function IGPlus_OwnLiftUnhold() {
-	if (IGPlus_bHeld == false)
-		return;
-	Velocity = IGPlus_HeldVelocity;
-	Acceleration = IGPlus_HeldAcceleration;
-	SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
-	IGPlus_bHeld = false;
 }
 
 defaultproperties {

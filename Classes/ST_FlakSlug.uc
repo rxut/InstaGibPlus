@@ -9,6 +9,17 @@ var PlayerPawn InstigatingPlayer;
 
 var vector ExtrapolationDelta;
 
+// Push-Safe Aim from a moving lift (IGPlus_LiftShot): server, the flight
+// near the lift; clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
+
+replication
+{
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		IGPlus_HeldVelocity;
+}
+
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
     local WeaponSettingsRepl S;
 
@@ -66,7 +77,7 @@ simulated function PostNetBeginPlay()
 				ExtrapolationDelta = (Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping));
 			}
 		}
-	} else {
+	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {
 		Disable('Tick');
 	}
 }
@@ -74,6 +85,19 @@ simulated function PostNetBeginPlay()
 simulated event Tick(float Delta) {
     local vector NewXPolDelta;
     super.Tick(Delta);
+
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came
+	// with it. Here, after the net code has set what it received: fly it.
+	if (IGPlus_HeldVelocity != vect(0,0,0) && Role < ROLE_Authority) {
+		if (Velocity == vect(0,0,0) && Physics != PHYS_None) {
+			Velocity = IGPlus_HeldVelocity;
+			if (InstigatingPlayer != None)
+				ExtrapolationDelta = Velocity * (0.0005 * Level.TimeDilation * InstigatingPlayer.PlayerReplicationInfo.Ping);
+		}
+		IGPlus_HeldVelocity = vect(0,0,0);
+		if (bCollideActors == false && bClientVisualOnly == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	}
 
     if (InstigatingPlayer == none)
         return;
@@ -114,6 +138,9 @@ simulated function Landed( vector HitNormal )
 {
 	local DirectionalBlast D;
 
+	if (IGPlus_Lift != None && IGPlus_Lift.PassLanded(HitNormal))
+		return;
+
 	if (bClientVisualOnly)
 		{
 			bHidden = true;
@@ -133,6 +160,9 @@ simulated function Landed( vector HitNormal )
 simulated function HitWall (vector HitNormal, actor Wall)
 {
 	local DirectionalBlast D;
+
+	if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
+		return;
 
 	if (bClientVisualOnly)
 		{

@@ -1187,10 +1187,13 @@ function SimulateProjectile(Projectile P, int Ping) {
   local float SimPing;
   local float InterpMs;
   local UTPure PureRef;
+  local IGPlus_LiftShot LS;
+  local float TotalMs;
 
   // Early exit if the projectile is already destroyed
   if (P == None || P.bDeleteMe)
     return;
+  LS = class'IGPlus_LiftShot'.static.Of(P);
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
@@ -1210,17 +1213,25 @@ function SimulateProjectile(Projectile P, int Ping) {
 
   if (DeltaTime <= 0.0)
     return;
-  
+
+  TotalMs = SimPing;
   while (SimPing > 0.0) {
     if (P == None || P.bDeleteMe) {
         break;
       }
 
     PureRef.CompensateFor(int(SimPing), P.Instigator);
-    P.AutonomousPhysics(DeltaTime);
+    // From a moving lift (Push-Safe Aim): against the shooter's lift where
+    // the shooter's screen has it.
+    if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
+      LS.Fly(DeltaTime, TotalMs - SimPing);
+    else
+      P.AutonomousPhysics(DeltaTime);
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
+  if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
+    LS.FastForwarded(TotalMs);
 }
 
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping) {
@@ -1270,10 +1281,10 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
     PureRef.CompensateFor(int(SimPing), Projectiles[0].Instigator);
     for (i = 0; i < NumProjectiles; i++) {
       if (Projectiles[i] != None && !Projectiles[i].bDeleteMe) {
-        // Rockets from a moving lift (Push-Safe Aim) meet the shooter's lift
+        // From a moving lift (Push-Safe Aim): against the shooter's lift
         // where the shooter's screen has it.
-        if (ST_RocketMk2(Projectiles[i]) != None && ST_RocketMk2(Projectiles[i]).IGPlus_OwnLift != None)
-          ST_RocketMk2(Projectiles[i]).IGPlus_OwnLiftMove(DeltaTime, TotalMs - SimPing);
+        if (class'IGPlus_LiftShot'.static.Of(Projectiles[i]) != None)
+          class'IGPlus_LiftShot'.static.Of(Projectiles[i]).Fly(DeltaTime, TotalMs - SimPing);
         else
           Projectiles[i].AutonomousPhysics(DeltaTime);
       }
@@ -1284,8 +1295,8 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   }
 
   for (i = 0; i < NumProjectiles; i++)
-    if (ST_RocketMk2(Projectiles[i]) != None)
-      ST_RocketMk2(Projectiles[i]).IGPlus_OwnLiftLagMs -= TotalMs;
+    if (Projectiles[i] != None && class'IGPlus_LiftShot'.static.Of(Projectiles[i]) != None)
+      class'IGPlus_LiftShot'.static.Of(Projectiles[i]).FastForwarded(TotalMs);
 }
 
 simulated function Actor TraceShotInternal(

@@ -3209,6 +3209,19 @@ function vector IGPlus_OwnLiftLead() {
 	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(IGPlus_OwnLiftLagMs()) * 0.001 * Level.TimeDilation);
 }
 
+// Server, Push-Safe Aim: on a moving lift our projectile shots leave from
+// where our screen has us, this far behind (IGPlus_LiftShot). Zero otherwise.
+function vector IGPlus_LiftAimLead() {
+	local vector Lead;
+
+	if (IGPlus_PushSafeAim == false || GetWeaponSettings() == None || GetWeaponSettings().bEnablePingCompensation == false)
+		return vect(0,0,0);
+	Lead = IGPlus_OwnLiftLead();
+	if (VSize(Lead) <= 2.0)
+		return vect(0,0,0);
+	return Lead;
+}
+
 // Server: how long ago our screen's lift was where it is now, capped like the
 // rest of ping compensation.
 function int IGPlus_OwnLiftLagMs() {

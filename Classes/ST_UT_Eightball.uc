@@ -115,8 +115,7 @@ function bool DetPrepareServerFireContext(
 	if (bbPlayer(Owner) != none) {
 		DetServerMoverZ = bbPlayer(Owner).GetMoverFireZOffset();
 		DetServerFireLoc.Z += DetServerMoverZ;
-		if (bbPlayer(Owner).IGPlus_PushSafeAim && IsPingCompEnabled())
-			DetServerLiftLead = bbPlayer(Owner).IGPlus_OwnLiftLead();
+		DetServerLiftLead = bbPlayer(Owner).IGPlus_LiftAimLead();
 	}
 	DetServerFireRot = StepView;
 	bUseDetServerFireData = true;
@@ -1405,8 +1404,8 @@ state FireRockets
 
 		// Push-Safe Aim on a moving lift: rockets leave from where the
 		// shooter's screen had it, and near that lift they meet it where that
-		// screen has it (ST_RocketMk2.IGPlus_OwnLiftStart).
-		bLiftAim = bDetFire && bFireLoad && LockedTarget == None && VSize(DetServerLiftLead) > 2.0;
+		// screen has it (IGPlus_LiftShot).
+		bLiftAim = bDetFire && bFireLoad && LockedTarget == None && DetServerLiftLead != vect(0,0,0);
 		if (bLiftAim)
 			StartLoc -= DetServerLiftLead + DetServerMoverZ * vect(0,0,1);
 		if (bDetFire && bbP != None)
@@ -1450,7 +1449,7 @@ state FireRockets
 					r.NumExtraRockets = DupRockets;
 					r.RocketIndex = i;
 					if (bLiftAim)
-						r.IGPlus_OwnLiftStart(bbP);
+						class'IGPlus_LiftShot'.static.Begin(r, bbP);
 					// Predicted self-knockback anchors the push to this step.
 					if (bDetFire && bbP != none && bbP.IGPlus_PredictedSelfKnockback) {
 						r.IGPlus_FireTS = bbP.CurrentTimeStamp;
@@ -1490,8 +1489,8 @@ state FireRockets
 		}
 		if (bLiftAim)
 			for (i = 0; i < NumSpawnedRockets; i++)
-				if (ST_RocketMk2(SpawnedRockets[i]) != None && SpawnedRockets[i].bDeleteMe == false)
-					ST_RocketMk2(SpawnedRockets[i]).IGPlus_OwnLiftHold();
+				if (class'IGPlus_LiftShot'.static.Of(SpawnedRockets[i]) != None)
+					class'IGPlus_LiftShot'.static.Of(SpawnedRockets[i]).Hold();
 		
 		bTightWad=False;
 		bRotated = false;
