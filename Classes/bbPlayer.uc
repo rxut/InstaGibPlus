@@ -3544,8 +3544,9 @@ simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vect
 	IGPlus_SKPredictedEntry(Start, K, Kind);
 
 	// ponytail: hurt radius + 300uu covers jumps; farther walls correct
+	// With the projectile's size: the shock ball's centre stops 12uu off.
 	End = Start + Dir * (K.Radius + 300.0);
-	HitActor = Trace(HitLocation, HitNormal, End, Start, true);
+	HitActor = Trace(HitLocation, HitNormal, End, Start, true, vect(1,1,0) * K.SourceRadius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind));
 	if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
 		return;
 
@@ -3556,6 +3557,15 @@ simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vect
 		HitLocation = Start;
 
 	IGPlus_SKQueuePredicted(Level.TimeSeconds + VSize(HitLocation - Start) / Speed, Kind * 8 + Index, HitLocation, Kind);
+}
+
+simulated function float IGPlus_SKSourceHeight(byte Kind) {
+	switch (Kind) {
+		case IGPLUS_SK_FLAKSLUG:	return class'ST_FlakSlug'.default.CollisionHeight;
+		case IGPLUS_SK_SHOCKBALL:	return class'ST_ShockProj'.default.CollisionHeight;
+		case IGPLUS_SK_RIPPERALT:	return class'ST_Razor2Alt'.default.CollisionHeight;
+	}
+	return class'ST_RocketMk2'.default.CollisionHeight;
 }
 
 // Client: the same for a lobbed shot, stepped along its arc. The server times
@@ -3580,7 +3590,7 @@ simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vecto
 	// ponytail: 1s of flight within hurt radius + 300uu covers jumps
 	for (i = 0; i < 40; i++) {
 		P1 = P0 + V * Dt + 0.5 * G * Dt * Dt;
-		HitActor = Trace(HitLocation, HitNormal, P1, P0, true);
+		HitActor = Trace(HitLocation, HitNormal, P1, P0, true, vect(1,1,0) * K.SourceRadius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind));
 		if (HitActor != none) {
 			if (HitActor != Level && Mover(HitActor) == none)
 				return;
@@ -6395,8 +6405,9 @@ function bool CanMergeMove(IGPlus_SavedMove Pending, vector Accel) {
 		return false;
 	// Held bits are OR-merged, so a release folded into a held move resolves
 	// as still held (primary->alt would fire primary on the server while the
-	// client predicted alt). Det weapons end the move on a release edge.
-	if (IGPlus_FindDetSupportedWeapon(Weapon) != none
+	// client predicted alt). Det weapons end the move on a release edge, and
+	// so does the hammer when its release rides the move (IGPlus_PredictHammer).
+	if ((IGPlus_FindDetSupportedWeapon(Weapon) != none || (ST_ImpactHammer(Weapon) != none && IGPlus_PredictHammer()))
 		&& ((Pending.bFire && bFire == 0 && !bJustFired)
 			|| (Pending.bAltFire && bAltFire == 0 && !bJustAltFired)))
 		return false;

@@ -238,8 +238,13 @@ function Contact(vector HL, vector HN, vector D) {
 	if (Shooter.bDrawDebugData)
 		Shooter.ClientDebugMessage(P.Class.Name$" (server) hit our lift where our screen has it at "
 			$class'ST_ShockProj'.static.IGPlus_Vec(HL - D)$", real lift spot "$class'ST_ShockProj'.static.IGPlus_Vec(HL));
+	// Same travel for the self-knockback timing.
 	if (ST_RocketMk2(P) != None)
-		ST_RocketMk2(P).IGPlus_SpawnLoc += D; // same travel for the self-knockback timing
+		ST_RocketMk2(P).IGPlus_SpawnLoc += D;
+	else if (ST_FlakSlug(P) != None)
+		ST_FlakSlug(P).IGPlus_SpawnLoc += D;
+	else if (ST_Razor2Alt(P) != None)
+		ST_Razor2Alt(P).IGPlus_SpawnLoc += D;
 	P.SetLocation(HL + 2.0 * HN);
 	L = Lift;
 	bContact = true;

@@ -165,8 +165,9 @@ simulated function IGPlus_ClientRelease(float TS) {
 	if ((Other == Level) || (Other != none && Other.IsA('Mover'))) {
 		Push = WS.HammerSelfMomentum * -69000.0 * FClamp(ChargeSize, 1.0, 1.5) * X;
 		P.IGPlus_SKQueueHammer(TS, Push * 0.6 / P.Mass);
-		P.bForcePacketSplit = true;
 	}
+	// Ends here, so the server releases on this very move too.
+	P.bForcePacketSplit = true;
 	PlayFiring();
 	GotoState('ClientFireBlast');
 }
