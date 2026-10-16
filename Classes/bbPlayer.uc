@@ -5946,6 +5946,19 @@ function bool IGPlus_DetTradeAllowed() {
 	return RealTimeDead <= 2 * zzUTPure.Settings.MaxTradeTimeMargin;
 }
 
+// Dead, with fire input on a move: what IGPlus_DetTradeAllowed decided, in
+// the server log (like the NewNet weapons' trades) and our debug lines.
+function IGPlus_DetTradeLog(string What) {
+	local string S;
+
+	S = What@"(all-weapon)"@Weapon@"TradeTimeMargin="$IGPlus_TradeTimeMargin()@"RealTimeDead="$RealTimeDead
+		@"ping="$PlayerReplicationInfo.Ping;
+	if (bbPlayer(LastKiller) != none)
+		S = S@"killer="$LastKiller.PlayerReplicationInfo.PlayerName@"killerPing="$LastKiller.PlayerReplicationInfo.Ping;
+	Log("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@S, 'IGPlus');
+	ClientDebugMessage("Trade (server):"@S);
+}
+
 // Dead: the trade window is over. Drop what our deterministic weapons were
 // in the middle of (a rocket load), or a release after it would still fire.
 function IGPlus_DetCloseTradeWindow() {
@@ -10148,15 +10161,21 @@ state Dying
 	)
 	{
 		local int KeepData, KeepData2;
+		local bool bFireInput;
 
 		KeepData = MiscData & 0xFFFF;      // drop held fire
 		KeepData2 = MiscData2 & 0x3FFFFFFF; // drop force taps too, or Det weapons shoot from the grave
+		bFireInput = (MiscData & 0x03000000) != 0 || (MiscData2 & 0xC0000000) != 0;
 		// A trade (bEnableAllWeaponTrades): this shot was fired before we
 		// died, by the NewNet weapons' rule. Its fire and merge bits stay.
 		if (IGPlus_DetTradeAllowed()) {
 			KeepData = MiscData & 0x03F8FFFF;
 			KeepData2 = MiscData2;
+			if (bFireInput)
+				IGPlus_DetTradeLog("Traded!");
 		} else {
+			if (bFireInput && IGPlus_bDetTradeClosed == false)
+				IGPlus_DetTradeLog("Rejected Trade!");
 			IGPlus_DetCloseTradeWindow();
 		}
 		Global.xxServerMove(
