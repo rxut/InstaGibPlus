@@ -314,10 +314,16 @@ simulated function bool IGPlus_InDemoPlayback() {
 auto state Pickup {
 	simulated function Tick(float DeltaTime) {
 		// Demo playback: the recording player hid this copy of their own disc
-		// and watched their own local one, which the demo doesn't have. Show
-		// this one, as everyone else saw it.
-		if (bHidden && Role < ROLE_Authority && IGPlus_InDemoPlayback())
-			class'ST_Translocator'.static.IGPlus_DetSetCopyHidden(self, false);
+		// and kept it on the disc they watched (ST_Translocator.IGPlus_DetClientTick):
+		// show it, at no size once theirs was gone. Bounce sounds are in the
+		// recording already. Keeps ticking (the stock Tick switches itself off).
+		if (Role < ROLE_Authority && IGPlus_InDemoPlayback()) {
+			bHidden = false;
+			ImpactSound = None;
+			if (Glow != None)
+				Glow.bHidden = DrawScale == 0.0;
+			return;
+		}
 		// The thrower's hidden copy (deterministic translocator): no shadow.
 		if (bHidden && Role < ROLE_Authority) {
 			Disable('Tick');
