@@ -747,6 +747,8 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	{ 
 		AmmoType.UseAmmo(2);
 		Proj.IGPlus_ComboBy = PawnOwner;
+		Proj.IGPlus_ComboAt = HitLocation;
+		Proj.IGPlus_bComboAt = true;
 		Proj.SuperExplosion();
 		return;
 	}

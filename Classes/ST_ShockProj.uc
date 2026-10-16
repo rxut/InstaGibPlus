@@ -24,6 +24,8 @@ var float IGPlus_FireTS;      // server: the owner's move timestamp at the shot
 var float IGPlus_FireTime;    // server: Level.TimeSeconds at the shot
 var vector IGPlus_FireLoc;    // server: where the shot left from
 var vector IGPlus_FireLiftLead; // server: the owner's lift lead at the shot (bbPlayer.IGPlus_OwnLiftLead)
+var vector IGPlus_ComboAt;    // server: where the beam that set off SuperExplosion met the ball
+var bool IGPlus_bComboAt;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -284,6 +286,20 @@ function SuperExplosion() {
 	local float ComboDamage, ComboRadius, ComboMomentum;
 	local IGPlus_OwnerComboRing Ring;
 	local vector OwnerLoc;
+	local bool bOldCollideWorld;
+
+	// Where the beam met the ball: where its shooter saw it, which is where
+	// ping compensation tests beams against balls. The ball itself has flown
+	// on by then (up to the shooter's ping), so a combo there missed players
+	// near the one the shooter saw.
+	if (IGPlus_bComboAt) {
+		IGPlus_bComboAt = false;
+		SetCollision(false, false, false);
+		bOldCollideWorld = bCollideWorld;
+		bCollideWorld = false;
+		SetLocation(IGPlus_ComboAt);
+		bCollideWorld = bOldCollideWorld;
+	}
 
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
