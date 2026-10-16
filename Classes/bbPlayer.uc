@@ -13443,8 +13443,11 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 		return;
 	}
 	// Stock ignores pressing back to the weapon still up during a switch; a
-	// predicted switch treats it as "go back".
+	// predicted switch treats it as "go back". Not in the frame the switch
+	// started: that is the next command of a pipe bind ("getweapon A |
+	// getweapon B" held on B), which stock ignores so the bind toggles.
 	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
+		&& TS > IGPlus_PSTS
 		&& ((Kind == 2 && C != none && Cur.IsA(C.Name)) || (Kind == 1 && Cur.InventoryGroup == F)))
 		Target = Cur;
 	// Nothing to switch to, as far as we know. Just after a respawn or a
