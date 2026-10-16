@@ -319,6 +319,7 @@ var byte DuckFractionRepl; // Replicated to all players
 var float AverageServerDeltaTime;
 var float TimeDead;
 var float RealTimeDead;
+var bool IGPlus_bDetTradeClosed; // dead: no more trades for the deterministic weapons (IGPlus_DetTradeAllowed)
 var Pawn LastKiller;
 var rotator KillCamTargetRotation;
 var float KillCamDelay;
@@ -5271,15 +5272,7 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 	else
 	{
 		if (zzUTPure.Settings.bRestrictTrading && IsInState('Dying')) {
-			if (bbPlayer(LastKiller) != none)
-				TradeTimeMargin = FMin(
-					zzUTPure.Settings.MaxTradeTimeMargin,
-					((AverageServerDeltaTime + TimeBetweenNetUpdates)/Level.TimeDilation +
-					0.0005 * PlayerReplicationInfo.Ping * zzUTPure.Settings.TradePingMargin +
-					0.0005 * (PlayerReplicationInfo.Ping - bbPlayer(LastKiller).PlayerReplicationInfo.Ping))
-				);
-			else
-				TradeTimeMargin = zzUTPure.Settings.MaxTradeTimeMargin;
+			TradeTimeMargin = IGPlus_TradeTimeMargin();
 
 			if (RealTimeDead < TradeTimeMargin) {
 				Log("["$Level.TimeSeconds$"] Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead, 'IGPlus');
@@ -5928,23 +5921,55 @@ function IGPlus_DetFinalizeExpiredPrevWeapon(optional bool bForce) {
 }
 
 // Drop switch-related v4 trust state (called on death and respawn).
-function IGPlus_DetClearSwitchTrustState() {
-	local Inventory Item;
+// How long after dying (server, real time) a shot may still count: the dead
+// player fired first if he is late by no more than his one-way delay is
+// longer than his killer's, plus an allowance for ping uncertainty.
+function float IGPlus_TradeTimeMargin() {
+	if (bbPlayer(LastKiller) != none)
+		return FMin(
+			zzUTPure.Settings.MaxTradeTimeMargin,
+			((AverageServerDeltaTime + TimeBetweenNetUpdates)/Level.TimeDilation +
+			0.0005 * PlayerReplicationInfo.Ping * zzUTPure.Settings.TradePingMargin +
+			0.0005 * (PlayerReplicationInfo.Ping - bbPlayer(LastKiller).PlayerReplicationInfo.Ping))
+		);
+	return zzUTPure.Settings.MaxTradeTimeMargin;
+}
 
-	IGPlus_DetPrevWeapon = none;
-	IGPlus_DetPrevWeaponUntilTS = 0;
-	IGPlus_DetPrevWeaponStepTS = 0;
-	IGPlus_DetWeaponGateTS = 0;
-	IGPlus_DetPendingSeen = none;
-	IGPlus_DetPendingSeenTS = 0;
-	IGPlus_LastFireEndHeld = false;
-	IGPlus_LastAltEndHeld = false;
-	IGPlus_DetPendingFireTapTS = 0.0;
-	IGPlus_DetPendingFireTapWeapon = none;
-	IGPlus_DetAutoSwitchPending = none;
-	IGPlus_PSActive = false;
-	IGPlus_DetLastShotTS = 0.0;
-	IGPlus_DetHolsterHoldUntilTS = 0.0;
+// Dead (state Dying): does this move's deterministic shot still count as a
+// trade (bEnableAllWeaponTrades)? The same rule as the NewNet weapons; the
+// weapons stay ours until DiscardInventory at twice MaxTradeTimeMargin.
+function bool IGPlus_DetTradeAllowed() {
+	if (zzUTPure.Settings.bEnableAllWeaponTrades == false || IGPlus_bDetTradeClosed)
+		return false;
+	if (zzUTPure.Settings.bRestrictTrading)
+		return RealTimeDead < IGPlus_TradeTimeMargin();
+	return RealTimeDead <= 2 * zzUTPure.Settings.MaxTradeTimeMargin;
+}
+
+// Dead, with fire input on a move: what IGPlus_DetTradeAllowed decided, in
+// the server log (like the NewNet weapons' trades) and our debug lines.
+function IGPlus_DetTradeLog(string What) {
+	local string S;
+
+	S = What@"(all-weapon)"@Weapon@"TradeTimeMargin="$IGPlus_TradeTimeMargin()@"RealTimeDead="$RealTimeDead
+		@"ping="$PlayerReplicationInfo.Ping;
+	if (bbPlayer(LastKiller) != none)
+		S = S@"killer="$LastKiller.PlayerReplicationInfo.PlayerName@"killerPing="$LastKiller.PlayerReplicationInfo.Ping;
+	Log("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@S, 'IGPlus');
+	ClientDebugMessage("Trade (server):"@S);
+}
+
+// Dead: the trade window is over. Drop what our deterministic weapons were
+// in the middle of (a rocket load), or a release after it would still fire.
+function IGPlus_DetCloseTradeWindow() {
+	if (IGPlus_bDetTradeClosed)
+		return;
+	IGPlus_bDetTradeClosed = true;
+	IGPlus_DetResetWeaponStates();
+}
+
+function IGPlus_DetResetWeaponStates() {
+	local Inventory Item;
 
 	for (Item = Inventory; Item != none; Item = Item.Inventory) {
 		if (ST_ShockRifle(Item) != none)
@@ -5960,6 +5985,28 @@ function IGPlus_DetClearSwitchTrustState() {
 		else if (ST_SniperRifle(Item) != none)
 			ST_SniperRifle(Item).DetResetDeterministicState();
 	}
+}
+
+// bKeepWeapons (dying with bEnableAllWeaponTrades): the weapons keep what
+// they were doing for a trade; IGPlus_DetCloseTradeWindow drops it later.
+function IGPlus_DetClearSwitchTrustState(optional bool bKeepWeapons) {
+	IGPlus_DetPrevWeapon = none;
+	IGPlus_DetPrevWeaponUntilTS = 0;
+	IGPlus_DetPrevWeaponStepTS = 0;
+	IGPlus_DetWeaponGateTS = 0;
+	IGPlus_DetPendingSeen = none;
+	IGPlus_DetPendingSeenTS = 0;
+	IGPlus_LastFireEndHeld = false;
+	IGPlus_LastAltEndHeld = false;
+	IGPlus_DetPendingFireTapTS = 0.0;
+	IGPlus_DetPendingFireTapWeapon = none;
+	IGPlus_DetAutoSwitchPending = none;
+	IGPlus_PSActive = false;
+	IGPlus_DetLastShotTS = 0.0;
+	IGPlus_DetHolsterHoldUntilTS = 0.0;
+
+	if (bKeepWeapons == false)
+		IGPlus_DetResetWeaponStates();
 }
 
 // Observe PendingWeapon transitions from move processing.
@@ -8748,7 +8795,8 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 			A.Trigger( Self, Killer );
 	if (Weapon.IsA('TournamentWeapon'))
 		TournamentWeapon(Weapon).bCanClientFire = false;
-	IGPlus_DetClearSwitchTrustState();
+	IGPlus_DetClearSwitchTrustState(zzUTPure.Settings.bEnableAllWeaponTrades);
+	IGPlus_bDetTradeClosed = zzUTPure.Settings.bEnableAllWeaponTrades == false;
 	Velocity.Z *= 1.3;
 	if (Gibbed(DamageType)) {
 		SpawnGibbedCarcass();
@@ -9918,6 +9966,7 @@ state Dying
 			// see DeathMatchPlus.PlayTeleportEffect()
 		}
 
+		IGPlus_DetCloseTradeWindow();
 		Level.Game.DiscardInventory(self); // last possible place to rid ourselves of old inventory
 		Result = Level.Game.RestartPlayer(self);
 
@@ -9963,8 +10012,10 @@ state Dying
 
 		global.ServerTick(DeltaTime);
 
-		if (RealTimeDead > 2*zzUTPure.Settings.MaxTradeTimeMargin)
+		if (RealTimeDead > 2*zzUTPure.Settings.MaxTradeTimeMargin) {
+			IGPlus_DetCloseTradeWindow();
 			Level.Game.DiscardInventory(self);
+		}
 	}
 
 	event PlayerTick( float DeltaTime )
@@ -10109,6 +10160,24 @@ state Dying
 		optional int OldMoveData2
 	)
 	{
+		local int KeepData, KeepData2;
+		local bool bFireInput;
+
+		KeepData = MiscData & 0xFFFF;      // drop held fire
+		KeepData2 = MiscData2 & 0x3FFFFFFF; // drop force taps too, or Det weapons shoot from the grave
+		bFireInput = (MiscData & 0x03000000) != 0 || (MiscData2 & 0xC0000000) != 0;
+		// A trade (bEnableAllWeaponTrades): this shot was fired before we
+		// died, by the NewNet weapons' rule. Its fire and merge bits stay.
+		if (IGPlus_DetTradeAllowed()) {
+			KeepData = MiscData & 0x03F8FFFF;
+			KeepData2 = MiscData2;
+			if (bFireInput)
+				IGPlus_DetTradeLog("Traded!");
+		} else {
+			if (bFireInput && IGPlus_bDetTradeClosed == false)
+				IGPlus_DetTradeLog("Rejected Trade!");
+			IGPlus_DetCloseTradeWindow();
+		}
 		Global.xxServerMove(
 			TimeStamp,
 			MoveDeltaTime,
@@ -10117,8 +10186,8 @@ state Dying
 			ClientLocY,
 			ClientLocZ,
 			ClientVel,
-			MiscData & 0xFFFF,      // drop held fire
-			MiscData2 & 0x3FFFFFFF, // drop force taps too, or Det weapons shoot from the grave
+			KeepData,
+			KeepData2,
 			View,
 			ClientBase,
 			OldMoveData1,
@@ -13373,15 +13442,22 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 			xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
 		return;
 	}
-	// Stock SwitchWeapon's two WeaponChange passes print the no-ammo messages.
-	if (Kind == 1 && Inventory != none
-		&& !(Cur != none && Cur.Inventory != none && IGPlus_PSGroupWalk(Cur.Inventory, F)))
-		IGPlus_PSGroupWalk(Inventory, F);
 	// Stock ignores pressing back to the weapon still up during a switch; a
 	// predicted switch treats it as "go back".
 	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
 		&& ((Kind == 2 && C != none && Cur.IsA(C.Name)) || (Kind == 1 && Cur.InventoryGroup == F)))
 		Target = Cur;
+	// Nothing to switch to, as far as we know. Just after a respawn or a
+	// pickup our new weapons or their ammo may not have reached us yet: the
+	// server decides, as stock does (its exec prints any no-ammo message).
+	if (Target == none && bEquipped) {
+		xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
+		return;
+	}
+	// Stock SwitchWeapon's two WeaponChange passes print the no-ammo messages.
+	if (Kind == 1 && Inventory != none
+		&& !(Cur != none && Cur.Inventory != none && IGPlus_PSGroupWalk(Cur.Inventory, F)))
+		IGPlus_PSGroupWalk(Inventory, F);
 	if (Target == none) {
 		if (Kind == 2)
 			IGPlus_PSNoAmmoMessage(Cur, C);
@@ -15768,6 +15844,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bRestrictTrading");
 	IGPlus_ServerSendSetting("MaxTradeTimeMargin");
 	IGPlus_ServerSendSetting("TradePingMargin");
+	IGPlus_ServerSendSetting("bEnableAllWeaponTrades");
 	IGPlus_ServerSendSetting("KillCamDelay");
 	IGPlus_ServerSendSetting("KillCamDuration");
 
@@ -16000,6 +16077,7 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("ShockComboDamage");
 	IGPlus_WeaponSendSetting("ShockComboMomentum");
 	IGPlus_WeaponSendSetting("ShockComboHurtRadius");
+	IGPlus_WeaponSendSetting("ShockComboRewindMax");
 	IGPlus_WeaponSendSetting("BioSelectTime");
 	IGPlus_WeaponSendSetting("BioDownTime");
 	IGPlus_WeaponSendSetting("BioDamage");

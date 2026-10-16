@@ -1059,6 +1059,7 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bRestrictTrading") return "bRestrictTrading";
 	if (Key ~= "MaxTradeTimeMargin") return "MaxTradeTimeMargin";
 	if (Key ~= "TradePingMargin") return "TradePingMargin";
+	if (Key ~= "bEnableAllWeaponTrades") return "bEnableAllWeaponTrades";
 	if (Key ~= "KillCamDelay") return "KillCamDelay";
 	if (Key ~= "KillCamDuration") return "KillCamDuration";
 	if (Key ~= "bWarmup") return "bWarmup";
@@ -1317,6 +1318,7 @@ function string IGPlus_NormalizeWeaponSettingKey(string Key) {
 	if (Key ~= "ShockComboDamage") return "ShockComboDamage";
 	if (Key ~= "ShockComboMomentum") return "ShockComboMomentum";
 	if (Key ~= "ShockComboHurtRadius") return "ShockComboHurtRadius";
+	if (Key ~= "ShockComboRewindMax") return "ShockComboRewindMax";
 	if (Key ~= "BioSelectTime") return "BioSelectTime";
 	if (Key ~= "BioDownTime") return "BioDownTime";
 	if (Key ~= "BioDamage") return "BioDamage";

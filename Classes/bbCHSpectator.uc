@@ -1070,6 +1070,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bRestrictTrading");
 	IGPlus_ServerSendSetting("MaxTradeTimeMargin");
 	IGPlus_ServerSendSetting("TradePingMargin");
+	IGPlus_ServerSendSetting("bEnableAllWeaponTrades");
 	IGPlus_ServerSendSetting("KillCamDelay");
 	IGPlus_ServerSendSetting("KillCamDuration");
 
@@ -1302,6 +1303,7 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("ShockComboDamage");
 	IGPlus_WeaponSendSetting("ShockComboMomentum");
 	IGPlus_WeaponSendSetting("ShockComboHurtRadius");
+	IGPlus_WeaponSendSetting("ShockComboRewindMax");
 	IGPlus_WeaponSendSetting("BioSelectTime");
 	IGPlus_WeaponSendSetting("BioDownTime");
 	IGPlus_WeaponSendSetting("BioDamage");

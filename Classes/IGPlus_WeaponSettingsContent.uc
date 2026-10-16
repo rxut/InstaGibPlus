@@ -397,6 +397,9 @@ var localized string ShockComboMomentumHelp;
 var IGPlus_EditControl Edit_ShockComboHurtRadius;
 var localized string ShockComboHurtRadiusText;
 var localized string ShockComboHurtRadiusHelp;
+var IGPlus_EditControl Edit_ShockComboRewindMax;
+var localized string ShockComboRewindMaxText;
+var localized string ShockComboRewindMaxHelp;
 
 var UWindowLabelControl Lbl_Bio;
 var localized string BioText;
@@ -973,6 +976,7 @@ function SaveWeaponSettings() {
 	SaveWeaponSettingIfChanged(S, "ShockComboDamage", Edit_ShockComboDamage.GetValue());
 	SaveWeaponSettingIfChanged(S, "ShockComboMomentum", Edit_ShockComboMomentum.GetValue());
 	SaveWeaponSettingIfChanged(S, "ShockComboHurtRadius", Edit_ShockComboHurtRadius.GetValue());
+	SaveWeaponSettingIfChanged(S, "ShockComboRewindMax", Edit_ShockComboRewindMax.GetValue());
 	SaveWeaponSettingIfChanged(S, "BioSelectTime", Edit_BioSelectTime.GetValue());
 	SaveWeaponSettingIfChanged(S, "BioDownTime", Edit_BioDownTime.GetValue());
 	SaveWeaponSettingIfChanged(S, "BioDamage", Edit_BioDamage.GetValue());
@@ -1427,6 +1431,7 @@ function ConfigureResponsiveWeaponControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_ShockComboDamage, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_ShockComboMomentum, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_ShockComboHurtRadius, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_ShockComboRewindMax, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_BioSelectTime, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_BioDownTime, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_BioDamage, C, ControlWidth, 80);
@@ -1581,6 +1586,7 @@ function LoadWeaponSettings() {
 	Edit_ShockComboDamage.SetValue(string(S.ShockComboDamage));
 	Edit_ShockComboMomentum.SetValue(string(S.ShockComboMomentum));
 	Edit_ShockComboHurtRadius.SetValue(string(S.ShockComboHurtRadius));
+	Edit_ShockComboRewindMax.SetValue(string(S.ShockComboRewindMax));
 	Edit_BioSelectTime.SetValue(string(S.BioSelectTime));
 	Edit_BioDownTime.SetValue(string(S.BioDownTime));
 	Edit_BioDamage.SetValue(string(S.BioDamage));
@@ -1782,6 +1788,7 @@ function Created() {
 	Edit_ShockComboDamage = CreateEdit(ECT_Real, ShockComboDamageText, ShockComboDamageHelp, 16, 80);
 	Edit_ShockComboMomentum = CreateEdit(ECT_Real, ShockComboMomentumText, ShockComboMomentumHelp, 16, 80);
 	Edit_ShockComboHurtRadius = CreateEdit(ECT_Real, ShockComboHurtRadiusText, ShockComboHurtRadiusHelp, 16, 80);
+	Edit_ShockComboRewindMax = CreateEdit(ECT_Integer, ShockComboRewindMaxText, ShockComboRewindMaxHelp, 8, 80);
 
 	Lbl_Bio = CreateSeparator(BioText);
 	Edit_BioSelectTime = CreateEdit(ECT_Real, BioSelectTimeText, BioSelectTimeHelp, 16, 80);
@@ -2015,6 +2022,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_ShockComboDamage, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_ShockComboMomentum, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_ShockComboHurtRadius, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_ShockComboRewindMax, bShowSettings, WndWidth, Top);
 
 	LayoutControl(Lbl_Bio, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_BioSelectTime, bShowSettings, WndWidth, Top);
@@ -2392,6 +2400,8 @@ defaultproperties
 	ShockComboMomentumHelp="Weapon setting: Shock Combo Momentum"
 	ShockComboHurtRadiusText="Shock Combo Hurt Radius"
 	ShockComboHurtRadiusHelp="Weapon setting: Shock Combo Hurt Radius"
+	ShockComboRewindMaxText="Shock Combo Rewind Max"
+	ShockComboRewindMaxHelp="Milliseconds: a combo on your own ball hurts players where you saw them, at most this far back (and never past Ping Compensation Max). 0 hurts them where they are now"
 
 	BioText="Bio"
 	BioSelectTimeText="Bio Select Time"

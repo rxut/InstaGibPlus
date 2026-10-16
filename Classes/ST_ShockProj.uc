@@ -280,10 +280,27 @@ function bool IGPlus_OwnerMayDrawCombo() {
 		&& P.IGPlus_PredictiveShockCombos();
 }
 
+// Server: a combo on its owner's own ball goes off where the owner saw the
+// ball already (no fast-forward, the same moves). Players are hurt where the
+// owner saw them, rewound by the owner's ping up to ShockComboRewindMax (and
+// PingCompensationMax). 0: where they are now.
+function int IGPlus_ComboRewindMs() {
+	local bbPlayer P;
+
+	P = bbPlayer(Instigator);
+	if (P == None || IGPlus_ComboBy != P || P.RemoteRole != ROLE_AutonomousProxy || P.zzUTPure == None
+		|| WImp.WeaponSettings.bEnablePingCompensation == false || WImp.WeaponSettings.ShockComboRewindMax <= 0)
+		return 0;
+	return Min(int(IGPlus_WeaponImplementationBase(WImp).IGPlus_GetHitscanRewindMs(P)), WImp.WeaponSettings.ShockComboRewindMax);
+}
+
 function SuperExplosion() {
 	local float ComboDamage, ComboRadius, ComboMomentum;
 	local IGPlus_OwnerComboRing Ring;
 	local vector OwnerLoc;
+	local int RewindMs;
+	local UTPure PureRef;
+	local ST_ProjectileDummy PD;
 
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
@@ -297,6 +314,20 @@ function SuperExplosion() {
 		ComboMomentum,
 		Instigator
 	);
+
+	// Each combo rewinds on its own and is undone before anything else runs:
+	// combos going off together are each judged from their own owner's view.
+	RewindMs = IGPlus_ComboRewindMs();
+	if (RewindMs > 0) {
+		PureRef = bbPlayer(Instigator).zzUTPure;
+		PureRef.CompensateFor(RewindMs, Instigator, true);
+		// This ball's own stand-in is here too: not a victim of its own blast.
+		for (PD = PureRef.ProjDummies; PD != None; PD = PD.Next)
+			if (PD.Actual == self) {
+				PD.SetCollision(false, false, false);
+				PD.bProjTarget = false;
+			}
+	}
 
 	if (WImp.WeaponSettings.bEnableEnhancedSplashShockCombo) {
 		WImp.EnhancedHurtRadius(
@@ -314,6 +345,9 @@ function SuperExplosion() {
 			ComboMomentum,
 			Location);
 	}
+
+	if (RewindMs > 0)
+		PureRef.EndCompensation();
 
 	if (IGPlus_OwnerMayDrawCombo()) {
 		// The owner's client plays the sound itself if it didn't draw this one.
