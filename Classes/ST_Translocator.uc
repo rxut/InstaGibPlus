@@ -770,7 +770,23 @@ simulated function IGPlus_DetClientTick() {
 
 	S = IGPlus_DiscRepl;
 	if (S != None && S.bDeleteMe == false) {
-		IGPlus_DetSetCopyHidden(S, IGPlus_bDetShowServerDisc == false);
+		// Not in demo playback: the disc shows itself there (ST_TranslocatorTarget).
+		if (S.IGPlus_InDemoPlayback() == false)
+			IGPlus_DetSetCopyHidden(S, IGPlus_bDetShowServerDisc == false);
+		// Recording a demo: this hidden copy is all the demo has of our disc.
+		// Keep it on our own disc, so the demo shows it where we saw it, and
+		// at no size once ours is gone (translocated, recalled): only the
+		// demo sees that on a hidden copy.
+		if (S.bHidden && bbPlayer(Owner) != None && bbPlayer(Owner).zzbDemoRecording) {
+			if (IGPlus_DetLocalDisc != None && IGPlus_DetLocalDisc.bDeleteMe == false) {
+				S.SetLocation(IGPlus_DetLocalDisc.Location);
+				S.SetRotation(IGPlus_DetLocalDisc.Rotation);
+				S.Velocity = IGPlus_DetLocalDisc.Velocity;
+				S.DrawScale = S.default.DrawScale;
+			} else {
+				S.DrawScale = 0.0;
+			}
+		}
 	}
 
 	if (IGPlus_bDetKnockPending && Level.TimeSeconds - IGPlus_DetThrowTS >= IGPlus_DetKnockAge)
@@ -800,6 +816,9 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 		return;
 	S.bHidden = bHide;
 	if (bHide) {
+		// Still recorded by a client demo, hidden: playback shows it
+		// (ST_TranslocatorTarget's Pickup.Tick). Only our demo recorder reads this here.
+		S.bAlwaysRelevant = true;
 		if (S.Shadow != None) {
 			S.Shadow.Destroy();
 			S.Shadow = None;
@@ -809,6 +828,7 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 		S.AmbientSound = None;
 		S.ImpactSound = None;
 	} else {
+		S.DrawScale = S.default.DrawScale;
 		S.SetCollision(S.default.bCollideActors, S.default.bBlockActors, S.default.bBlockPlayers);
 		S.bProjTarget = S.default.bProjTarget;
 		S.AmbientSound = S.default.AmbientSound;

@@ -90,7 +90,8 @@ simulated function PostNetBeginPlay()
 		if (In != none && Viewport(In.Player) != none)
 			InstigatingPlayer = In;
 
-		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator && Level.NetMode == NM_Client) {
+		if (InstigatingPlayer != none && bbP.IGPlus_DetTranslocator && Level.NetMode == NM_Client
+			&& IGPlus_InDemoPlayback() == false) {
 			// Deterministic translocator: the thrower watches its own disc;
 			// ST_Translocator.IGPlus_DetClientTick keeps this copy hidden.
 			class'ST_Translocator'.static.IGPlus_DetSetCopyHidden(self, true);
@@ -295,8 +296,34 @@ function vector GetHistoricalPosition(float RequestTime) {
     return Location;
 }
 
+// Demo playback: udemo's spectator, or UT's own playback through the
+// recorder's eyes (bbPlayer.IGPlus_InDemoPlayback knows both).
+simulated function bool IGPlus_InDemoPlayback() {
+	local Pawn P;
+
+	if (Level.NetMode != NM_Client)
+		return false;
+	if (bbPlayer(Instigator) != None && bbPlayer(Instigator).IGPlus_InDemoPlayback())
+		return true;
+	for (P = Level.PawnList; P != None; P = P.NextPawn)
+		if (P.IsA('DemoPlaybackSpec'))
+			return true;
+	return false;
+}
+
 auto state Pickup {
 	simulated function Tick(float DeltaTime) {
+		// Demo playback: the recording player hid this copy of their own disc
+		// and kept it on the disc they watched (ST_Translocator.IGPlus_DetClientTick):
+		// show it, at no size once theirs was gone. Bounce sounds are in the
+		// recording already. Keeps ticking (the stock Tick switches itself off).
+		if (Role < ROLE_Authority && IGPlus_InDemoPlayback()) {
+			bHidden = false;
+			ImpactSound = None;
+			if (Glow != None)
+				Glow.bHidden = DrawScale == 0.0;
+			return;
+		}
 		// The thrower's hidden copy (deterministic translocator): no shadow.
 		if (bHidden && Role < ROLE_Authority) {
 			Disable('Tick');
