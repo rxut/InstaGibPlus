@@ -726,6 +726,9 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 				HitNormal = -vector(AdjustedAim);
 			}
 		}
+		// The verdict is about this beam only: a combo it sets off must
+		// still find the disc (its rewind places the disc the same way).
+		bbP.IGPlus_DetOwnBeamMode = 0;
 	}
 
 	PendingSmokeLocation = SmokeLocation;
