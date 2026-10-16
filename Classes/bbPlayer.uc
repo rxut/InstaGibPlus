@@ -11957,15 +11957,22 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 			xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
 		return;
 	}
-	// Stock SwitchWeapon's two WeaponChange passes print the no-ammo messages.
-	if (Kind == 1 && Inventory != none
-		&& !(Cur != none && Cur.Inventory != none && IGPlus_PSGroupWalk(Cur.Inventory, F)))
-		IGPlus_PSGroupWalk(Inventory, F);
 	// Stock ignores pressing back to the weapon still up during a switch; a
 	// predicted switch treats it as "go back".
 	if (Target == none && Pend != none && Cur != none && IGPlus_WeaponHasAmmo(Cur)
 		&& ((Kind == 2 && C != none && Cur.IsA(C.Name)) || (Kind == 1 && Cur.InventoryGroup == F)))
 		Target = Cur;
+	// Nothing to switch to, as far as we know. Just after a respawn or a
+	// pickup our new weapons or their ammo may not have reached us yet: the
+	// server decides, as stock does (its exec prints any no-ammo message).
+	if (Target == none && bEquipped) {
+		xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
+		return;
+	}
+	// Stock SwitchWeapon's two WeaponChange passes print the no-ammo messages.
+	if (Kind == 1 && Inventory != none
+		&& !(Cur != none && Cur.Inventory != none && IGPlus_PSGroupWalk(Cur.Inventory, F)))
+		IGPlus_PSGroupWalk(Inventory, F);
 	if (Target == none) {
 		if (Kind == 2)
 			IGPlus_PSNoAmmoMessage(Cur, C);
