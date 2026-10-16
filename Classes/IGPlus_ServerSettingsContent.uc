@@ -64,6 +64,9 @@ var localized string MaxTradeTimeMarginHelp;
 var IGPlus_EditControl Edit_TradePingMargin;
 var localized string TradePingMarginText;
 var localized string TradePingMarginHelp;
+var UWindowCheckbox Chk_bEnableAllWeaponTrades;
+var localized string bEnableAllWeaponTradesText;
+var localized string bEnableAllWeaponTradesHelp;
 var IGPlus_EditControl Edit_KillCamDelay;
 var localized string KillCamDelayText;
 var localized string KillCamDelayHelp;
@@ -638,6 +641,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bRestrictTrading", BoolToString(Chk_bRestrictTrading.bChecked));
 	SaveServerSettingIfChanged(S, "MaxTradeTimeMargin", Edit_MaxTradeTimeMargin.GetValue());
 	SaveServerSettingIfChanged(S, "TradePingMargin", Edit_TradePingMargin.GetValue());
+	SaveServerSettingIfChanged(S, "bEnableAllWeaponTrades", BoolToString(Chk_bEnableAllWeaponTrades.bChecked));
 	SaveServerSettingIfChanged(S, "KillCamDelay", Edit_KillCamDelay.GetValue());
 	SaveServerSettingIfChanged(S, "KillCamDuration", Edit_KillCamDuration.GetValue());
 	SaveServerSettingIfChanged(S, "BrightskinMode", string(Cmb_BrightskinMode.GetSelectedIndex()));
@@ -1061,6 +1065,7 @@ function LoadServerSettings() {
 	Chk_bRestrictTrading.bChecked = S.bRestrictTrading;
 	Edit_MaxTradeTimeMargin.SetValue(string(S.MaxTradeTimeMargin));
 	Edit_TradePingMargin.SetValue(string(S.TradePingMargin));
+	Chk_bEnableAllWeaponTrades.bChecked = S.bEnableAllWeaponTrades;
 	Edit_KillCamDelay.SetValue(string(S.KillCamDelay));
 	Edit_KillCamDuration.SetValue(string(S.KillCamDuration));
 	Cmb_BrightskinMode.SetSelectedIndex(Clamp(int(S.BrightskinMode), 0, 1));
@@ -1159,6 +1164,7 @@ function Created() {
 	Chk_bRestrictTrading = CreateCheckbox(bRestrictTradingText, bRestrictTradingHelp);
 	Edit_MaxTradeTimeMargin = CreateEdit(ECT_Real, MaxTradeTimeMarginText, MaxTradeTimeMarginHelp, 16, 80);
 	Edit_TradePingMargin = CreateEdit(ECT_Real, TradePingMarginText, TradePingMarginHelp, 16, 80);
+	Chk_bEnableAllWeaponTrades = CreateCheckbox(bEnableAllWeaponTradesText, bEnableAllWeaponTradesHelp);
 	Edit_KillCamDelay = CreateEdit(ECT_Real, KillCamDelayText, KillCamDelayHelp, 16, 80);
 	Edit_KillCamDuration = CreateEdit(ECT_Real, KillCamDurationText, KillCamDurationHelp, 16, 80);
 	Cmb_BrightskinMode = CreateComboBox(BrightskinModeText, BrightskinModeHelp, false, 180);
@@ -1302,6 +1308,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_bRestrictTrading, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxTradeTimeMargin, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_TradePingMargin, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnableAllWeaponTrades, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_KillCamDelay, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_KillCamDuration, bShowSettings, WndWidth, Top);
 	LayoutControl(Cmb_BrightskinMode, bShowSettings, WndWidth, Top);
@@ -1475,6 +1482,8 @@ defaultproperties
 	MaxTradeTimeMarginHelp="Maximum allowed trade window in seconds"
 	TradePingMarginText="Trade Ping Margin"
 	TradePingMarginHelp="Additional trade allowance scaled by player ping"
+	bEnableAllWeaponTradesText="All-Weapon Trades"
+	bEnableAllWeaponTradesHelp="If checked, a shot fired just before dying also counts with the IG+ shock rifle, rocket launcher, flak, bio, ripper and sniper, by the same trade rule as the NewNet weapons"
 	KillCamDelayText="Kill Cam Delay"
 	KillCamDelayHelp="Delay in seconds before kill cam starts"
 	KillCamDurationText="Kill Cam Duration"

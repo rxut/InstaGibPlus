@@ -1259,6 +1259,7 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [ThrowVelocity](#throwvelocity)
 1. [bForceDemo](#bforcedemo)
 1. [bRestrictTrading](#brestricttrading)
+1. [bEnableAllWeaponTrades](#benableallweapontrades)
 1. [MaxTradeTimeMargin](#maxtradetimemargin)
 1. [TradePingMargin](#tradepingmargin)
 1. [KillCamDelay](#killcamdelay)
@@ -1685,7 +1686,7 @@ If False, any shot made while alive on your client counts.
 **Default: 0.1**  
 **Unit: s**  
 
-Maximum time after death (on server) that players can still fire their weapons. Only applies if [bRestrictTrading](#brestricttrading) is True. A negative value rejects every shot fired after death, which disables trading. This window applies to NewNet weapons only; ST_ weapons never fire after death.
+Maximum time after death (on server) that players can still fire their weapons. Only applies if [bRestrictTrading](#brestricttrading) is True. A negative value rejects every shot fired after death, which disables trading. This window applies to NewNet weapons, and to the IG+ shock rifle, rocket launcher, flak, bio, ripper and sniper when [bEnableAllWeaponTrades](#benableallweapontrades) is True.
 
 ## TradePingMargin
 
@@ -1693,6 +1694,13 @@ Maximum time after death (on server) that players can still fire their weapons. 
 **Default: 0.5**  
 
 Trade uncertainty relative to shooters ping. Reasonable values range from 0 to 1. Higher values lead to more trades.
+
+## bEnableAllWeaponTrades
+
+**Type: bool**  
+**Default: False**  
+
+If True, trades also work with the IG+ shock rifle (beam and combo), rocket launcher, flak cannon, bio rifle, ripper and sniper rifle, not only the NewNet weapons. A shot that reaches the server just after its shooter died still counts if, by the same rule as the NewNet weapons ([bRestrictTrading](#brestricttrading), [MaxTradeTimeMargin](#maxtradetimemargin), [TradePingMargin](#tradepingmargin)), he fired it first. Rockets he was loading are kept for that window, so a release just after death still fires them; once the window is over, the load is dropped. Needs the weapon's bEnablePingCompensation.
 
 ## bEnableInputReplication
 

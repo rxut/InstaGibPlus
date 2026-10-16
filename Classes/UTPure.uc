@@ -1059,6 +1059,7 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bRestrictTrading") return "bRestrictTrading";
 	if (Key ~= "MaxTradeTimeMargin") return "MaxTradeTimeMargin";
 	if (Key ~= "TradePingMargin") return "TradePingMargin";
+	if (Key ~= "bEnableAllWeaponTrades") return "bEnableAllWeaponTrades";
 	if (Key ~= "KillCamDelay") return "KillCamDelay";
 	if (Key ~= "KillCamDuration") return "KillCamDuration";
 	if (Key ~= "bWarmup") return "bWarmup";

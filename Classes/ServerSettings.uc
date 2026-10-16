@@ -49,6 +49,7 @@ var config bool  bForceDemo;		// Forces clients to do demos.
 var config bool  bRestrictTrading;
 var config float MaxTradeTimeMargin; // Only relevant when bRestrictTrading is true
 var config float TradePingMargin;
+var config bool  bEnableAllWeaponTrades; // trades for the deterministic weapons too
 var config float KillCamDelay;
 var config float KillCamDuration;
 var config bool  bJumpingPreservesMomentum;
@@ -157,6 +158,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bRestrictTrading");
 	DumpSetting(P, "MaxTradeTimeMargin");
 	DumpSetting(P, "TradePingMargin");
+	DumpSetting(P, "bEnableAllWeaponTrades");
 	DumpSetting(P, "KillCamDelay");
 	DumpSetting(P, "KillCamDuration");
 	DumpSetting(P, "bWarmup");
@@ -259,6 +261,7 @@ defaultproperties
 	bRestrictTrading=True
 	MaxTradeTimeMargin=0.1
 	TradePingMargin=0.5
+	bEnableAllWeaponTrades=False
 	KillCamDelay=0.0
 	KillCamDuration=2.0
 	bJumpingPreservesMomentum=False

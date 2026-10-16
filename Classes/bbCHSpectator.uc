@@ -1070,6 +1070,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bRestrictTrading");
 	IGPlus_ServerSendSetting("MaxTradeTimeMargin");
 	IGPlus_ServerSendSetting("TradePingMargin");
+	IGPlus_ServerSendSetting("bEnableAllWeaponTrades");
 	IGPlus_ServerSendSetting("KillCamDelay");
 	IGPlus_ServerSendSetting("KillCamDuration");
 
