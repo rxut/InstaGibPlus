@@ -124,6 +124,7 @@ var config float ShockProjectileHealth;
 var config float ShockComboDamage;
 var config float ShockComboMomentum;
 var config float ShockComboHurtRadius;
+var config int   ShockComboRewindMax;
 
 var config float BioSelectTime;
 var config float BioDownTime;
@@ -315,6 +316,7 @@ defaultproperties
 	ShockProjectileHealth=30
 	ShockComboDamage=165
 	ShockComboHurtRadius=250
+	ShockComboRewindMax=0
 	ShockComboMomentum=1.0
 
 	BioSelectTime=0.488889

@@ -1998,6 +1998,14 @@ If enabled, hitscan shots are tested against where targets were on the shooter's
 
 Upper bound on the rewind. Players above this ping are compensated as if they had this ping.
 
+## ShockComboRewindMax
+
+**Type: int**  
+**Default: 0**  
+**Unit: ms**  
+
+A shock combo on its owner's own ball goes off where the owner saw the ball. If this is above 0, the players it hurts are also rewound to where the owner saw them, by the owner's ping but at most this long (and never past PingCompensationMax), like a beam hit. 0 hurts them where they are now. Combos on someone else's ball are never rewound. Needs bEnablePingCompensation.
+
 ## bEnableSubTickCompensation
 
 **Type: bool**  

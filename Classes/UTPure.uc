@@ -1317,6 +1317,7 @@ function string IGPlus_NormalizeWeaponSettingKey(string Key) {
 	if (Key ~= "ShockComboDamage") return "ShockComboDamage";
 	if (Key ~= "ShockComboMomentum") return "ShockComboMomentum";
 	if (Key ~= "ShockComboHurtRadius") return "ShockComboHurtRadius";
+	if (Key ~= "ShockComboRewindMax") return "ShockComboRewindMax";
 	if (Key ~= "BioSelectTime") return "BioSelectTime";
 	if (Key ~= "BioDownTime") return "BioDownTime";
 	if (Key ~= "BioDamage") return "BioDamage";

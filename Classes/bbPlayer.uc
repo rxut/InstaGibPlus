@@ -16000,6 +16000,7 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("ShockComboDamage");
 	IGPlus_WeaponSendSetting("ShockComboMomentum");
 	IGPlus_WeaponSendSetting("ShockComboHurtRadius");
+	IGPlus_WeaponSendSetting("ShockComboRewindMax");
 	IGPlus_WeaponSendSetting("BioSelectTime");
 	IGPlus_WeaponSendSetting("BioDownTime");
 	IGPlus_WeaponSendSetting("BioDamage");
