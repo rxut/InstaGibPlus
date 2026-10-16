@@ -5920,7 +5920,10 @@ function xxClientDetEntryGate(float GateTS, optional Weapon W) {
 	IGPlus_DetClientEntryGateTS = FMax(IGPlus_DetClientEntryGateTS, GateTS);
 	// A late tag for the weapon we already switched away from must not
 	// overwrite the tag our predicted switch set.
-	if (W != none && !(IGPlus_PSActive && W != IGPlus_PSTarget))
+	// W arrives as none when the server equipped a weapon this client has no
+	// copy of yet (a pickup spawned this tick). Clear the tag then, as after a
+	// respawn: keeping the previous weapon's tag blocks the new one for good.
+	if (!(IGPlus_PSActive && W != IGPlus_PSTarget))
 		IGPlus_DetClientGateWeapon = W;
 }
 
