@@ -14,6 +14,7 @@ var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
 
 var float NextDetFireTS;
+var vector IGPlus_OwnDiscBeamEnd; // client: our own disc, where this beam met it
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -127,6 +128,7 @@ simulated function bool DetProcessStep(
 
 simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local bbPlayer BP;
+	local bool bOwnDisc;
 
 	BP = bbPlayer(Owner);
 
@@ -144,33 +146,45 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		BP.IGPlus_SKPredictShockBall(IGPlus_ShotStart(StepView, StepLoc), StepView);
 	} else {
 		PlayFiring();
+		bOwnDisc = IGPlus_OwnDiscOnBeam(BP, StepView, StepLoc);
 		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
-			ClientTraceFire(true, StepView, StepLoc);
-		if (BP.IGPlus_PredictedDiscBoost && BP.IGPlus_DetTranslocator && BP.IGPlus_DetTloc != None)
-			IGPlus_PredictOwnDiscBoost(BP, StepView, StepLoc);
+			ClientTraceFire(true, StepView, StepLoc, bOwnDisc);
+		if (bOwnDisc && BP.IGPlus_PredictedDiscBoost)
+			BP.IGPlus_DetTloc.IGPlus_DetPredictBoost(GetWeaponSettings().ShockBeamMomentum * 60000.0 * vector(StepView));
 	}
 }
 
-// Predicted Disc Boost: the beam, as ClientTraceFire draws it, against our own
-// disc; the server tests the same disc at the same age for this move.
-simulated function IGPlus_PredictOwnDiscBoost(bbPlayer BP, rotator AimRot, vector AimLoc) {
-	local vector X, Y, Z, StartTrace, EndTrace, HitLocation, HitNormal;
+// Deterministic translocator: does this beam meet our own disc on our screen?
+// The shot's move carries the verdict (bbPlayer.IGPlus_DetOwnBeamMode) and
+// the server follows it, so the beam ends at the disc and the disc is pushed
+// on both machines or on neither.
+simulated function bool IGPlus_OwnDiscOnBeam(bbPlayer BP, rotator AimRot, vector AimLoc) {
+	local vector X, Y, Z, StartTrace;
 	local float MaxDist;
-	local WeaponSettingsRepl WS;
+	local ST_TranslocatorTarget D;
 
-	WS = GetWeaponSettings();
-	if (WS == None)
-		return;
+	if (BP.IGPlus_DetTranslocator == false || BP.IGPlus_DetTloc == None)
+		return false;
+	D = BP.IGPlus_DetTloc.IGPlus_DetLocalDisc;
+	if (D == None || D.bDeleteMe)
+		return false;
 
 	yModInit();
 	GetAxes(AimRot, X, Y, Z);
 	StartTrace = AimLoc + CDO + yMod * Y + FireOffset.Z * Z;
-	EndTrace = StartTrace + 10000.0 * X;
-	MaxDist = 10000.0;
-	if (Trace(HitLocation, HitNormal, EndTrace, StartTrace, true) != None)
-		MaxDist = VSize(HitLocation - StartTrace);
+	MaxDist = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
+	BP.IGPlus_DetOwnBeamMode = 1;
+	if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(StartTrace, X, MaxDist, D.Location,
+			D.CollisionRadius, D.CollisionHeight) == false)
+		return false;
+	// Our own ball in front takes the beam (ClientTraceFire's combo).
+	if (BP.IGPlus_PredictiveShockCombos() && BP.IGPlus_OnMovingLift() == false
+		&& IGPlus_OwnBallOnBeam(StartTrace, X, (D.Location - StartTrace) dot X) != None)
+		return false;
 
-	BP.IGPlus_DetTloc.IGPlus_DetPredictBoost(StartTrace, X, MaxDist, WS.ShockBeamMomentum * 60000.0 * X);
+	BP.IGPlus_DetOwnBeamMode = 2;
+	IGPlus_OwnDiscBeamEnd = D.Location;
+	return true;
 }
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
@@ -274,7 +288,8 @@ simulated function bool ClientFire(float Value) {
 simulated function ClientTraceFire(
 	optional bool bUseShotData,
 	optional rotator ShotView,
-	optional vector ShotLoc
+	optional vector ShotLoc,
+	optional bool bToOwnDisc // the beam met our own disc (IGPlus_OwnDiscOnBeam)
 ) {
     local vector HitLocation, HitNormal, StartTrace, EndTrace, X, Y, Z;
     local actor Other;
@@ -336,6 +351,10 @@ simulated function ClientTraceFire(
 		HitLocation = EndTrace;
 	}
 
+	// Our own disc stops the beam, as on the server.
+	if (bToOwnDisc && VSize(IGPlus_OwnDiscBeamEnd - StartTrace) < VSize(HitLocation - StartTrace))
+		HitLocation = IGPlus_OwnDiscBeamEnd;
+
 	// Our own ball on the beam (client-side shock balls): the combo is here and
 	// now, and the server's ring for it is dropped (IGPlus_OwnerComboRing).
 	// Only where the server is sure to agree: a combo shown that didn't happen
@@ -345,6 +364,8 @@ simulated function ClientTraceFire(
 		&& (bbP.IGPlus_PredictiveShockCombos() || bbP.bDrawDebugData)
 	) {
 		Reach = IGPlus_BeamReach(StartTrace, StartTrace + 10000.0 * X);
+		if (bToOwnDisc)
+			Reach = FMin(Reach, VSize(IGPlus_OwnDiscBeamEnd - StartTrace));
 		IGPlus_DebugBeam("client", StartTrace, X, Reach);
 		if (bbP.IGPlus_PredictiveShockCombos() && bbP.IGPlus_OnMovingLift() == false)
 			Ball = IGPlus_OwnBallOnBeam(StartTrace, X, Reach);
@@ -630,6 +651,8 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	local bbPlayer bbP;
 	local vector LiftHitLoc, LiftHitNormal;
 	local bool bLiftHit;
+	local ST_Translocator TL;
+	local Actor OwnDisc;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -693,15 +716,21 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		}
 	}
 
+	// Our own deterministic disc: as our screen had it (ST_Translocator.IGPlus_DetOwnBeam).
+	if (bbP != None && bbP.IGPlus_DetOwnBeamMode != 0) {
+		TL = ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator'));
+		if (TL != None) {
+			OwnDisc = TL.IGPlus_DetOwnBeam(bbP, Other, StartTrace, HitLocation, vector(AdjustedAim));
+			if (OwnDisc != Other) {
+				Other = OwnDisc;
+				HitNormal = -vector(AdjustedAim);
+			}
+		}
+	}
+
 	PendingSmokeLocation = SmokeLocation;
 	IGPlus_DebugBeam("server", StartTrace, Normal(EndTrace - StartTrace));
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
-
-	// Predicted Disc Boost: correct the thrower's disc if this missed it.
-	if (bbPlayer(PawnOwner) != None && bbPlayer(PawnOwner).IGPlus_PredictedDiscBoost
-		&& ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator')) != None)
-		ST_Translocator(PawnOwner.FindInventoryType(class'ST_Translocator')).IGPlus_DetBoostMissCheck(
-			bbPlayer(PawnOwner), Other, StartTrace, HitLocation, vector(AdjustedAim));
 }
 
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)

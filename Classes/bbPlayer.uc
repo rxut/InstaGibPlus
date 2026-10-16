@@ -116,6 +116,11 @@ var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the own
 var float IGPlus_PredComboTS;           // client: our last drawn shock combo (IGPlus_OwnerComboRing)
 var vector IGPlus_PredComboLoc;
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
+// A shock beam's verdict on our own deterministic disc, as our screen had
+// it: 0 none, 1 missed, 2 hit. The client sets it on the shot and the
+// shot's move carries it (DetChargeData); the server follows it
+// (ST_Translocator.IGPlus_DetOwnBeam).
+var int IGPlus_DetOwnBeamMode;
 var bool IGPlus_PSActive;
 var int IGPlus_PSSerial;
 var Weapon IGPlus_PSFrom;
@@ -763,6 +768,7 @@ replication
 	reliable if ( Role < ROLE_Authority )
 		xxServerWeaponCommand,
 		xxServerPredictedSwitch,
+		IGPlus_ServerDetDiscSync,
 		DropFlag,
 		Go,
 		Hold,
@@ -3976,6 +3982,16 @@ simulated function IGPlus_TlocHideDisc(ST_TranslocatorTarget Disc) {
 	IGPlus_TlocHiddenUntil = Level.TimeSeconds + PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.25;
 }
 
+// Server: our deterministic disc bounced or landed on our screen
+// (ST_Translocator.IGPlus_DetLocalDiscBounced).
+function IGPlus_ServerDetDiscSync(float DiscTS, float Age) {
+	local ST_Translocator TL;
+
+	TL = ST_Translocator(FindInventoryType(class'ST_Translocator'));
+	if (TL != None)
+		TL.IGPlus_DetSyncAfter(DiscTS, Age);
+}
+
 function IGPlus_BeforeTranslocate() {
 	TlocPrevLocation = Location;
 }
@@ -4220,6 +4236,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 
 	if (bDetWholeMove) {
+		// A shock move's charge data is the client's verdict on its own disc.
+		if (ST_ShockRifle(DetWeapon) != none)
+			IGPlus_DetOwnBeamMode = SM.DetChargeData;
 		IGPlus_DetProcessStep(
 			DetWeapon,
 			SM.TimeStamp,
@@ -4235,6 +4254,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			false,
 			false
 		);
+		IGPlus_DetOwnBeamMode = 0;
 		// Deterministic weapons execute shots directly from step processing.
 		// Keep fire latches cleared to avoid legacy state-machine refire.
 		bFire = 0;
@@ -6909,11 +6929,13 @@ function xxReplicateMove(
 			// frame's start on the server too (a merged move's step starts at
 			// the move's start), or the client's own ball and the server's fly
 			// apart by however far it moved in the merged frames.
+			// A beam with a verdict on our own disc: the verdict rides its own move.
 			if (bDetLocalShot && ((IGPlus_PredictedSelfKnockback && (bLocalEightball
 					|| ST_UT_FlakCannon(DetLocalWeapon) != none || ST_ripper(DetLocalWeapon) != none
 					|| ST_ShockRifle(DetLocalWeapon) != none))
 				|| IGPlus_PushSafeAim
-				|| (ST_ShockRifle(DetLocalWeapon) != none && IGPlus_PredictiveShockCombos())))
+				|| (ST_ShockRifle(DetLocalWeapon) != none && IGPlus_PredictiveShockCombos())
+				|| IGPlus_DetOwnBeamMode != 0))
 				bForcePacketSplit = true;
 			// Send the replayed tap as this frame's press: the move then carries
 			// the force bit and ends here, and the server fires it on this step.
@@ -7043,6 +7065,11 @@ function xxReplicateMove(
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
 			ST_Translocator(Weapon).IGPlus_DetClientDiscGone();
 		}
+	}
+	// The shot's verdict on our own disc (shock moves carry no other charge).
+	if (IGPlus_DetOwnBeamMode != 0) {
+		NewMove.DetChargeData = IGPlus_DetOwnBeamMode;
+		IGPlus_DetOwnBeamMode = 0;
 	}
 
 	bJustFired = false;

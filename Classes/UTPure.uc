@@ -627,6 +627,11 @@ function bool IGPlus_CompOwnDisc(ST_ProjectileDummy PD, Pawn Instigator) {
 		return false;
 
 	PD.CompSwapAt(TL.IGPlus_DetOwnShotLocation(T, P));
+	// Its shock beam missed the disc on its screen: leave the disc out.
+	if (P.IGPlus_DetOwnBeamMode == 1) {
+		PD.SetCollision(false, false, false);
+		PD.bProjTarget = false;
+	}
 	return true;
 }
 

@@ -50,8 +50,11 @@ var bool IGPlus_bDetShowServerDisc;           // client: no own disc, show the s
 var bool IGPlus_bDetKnockPending;
 var vector IGPlus_DetKnockLoc, IGPlus_DetKnockVel;
 var bool IGPlus_bDetKnockLanded;
+var bool IGPlus_bDetKnockBounce, IGPlus_bDetKnockHit; // its bBounce, bAlreadyHit (bounces left)
 var float IGPlus_DetKnockAge;
 var float IGPlus_DetLastActionTS;              // client: move time of our last action
+var float IGPlus_DetLastSyncAskTS;             // client: last time our disc's bounce asked for the server's
+var float IGPlus_DetPredictTS;                 // client: move time of our last predicted disc boost
 var int IGPlus_DetLatchedPress;                // client: 1 fire, 2 alt pressed during bring-up
 var float IGPlus_DetLatchTS;
 // Server: throw time of the disc that is out (0 if none), and the last move
@@ -768,6 +771,12 @@ simulated function ST_TranslocatorTarget IGPlus_DetClientDisc() {
 simulated function IGPlus_DetClientTick() {
 	local ST_TranslocatorTarget S;
 
+	// A disc out but ours gone some other way (not through DiscGone):
+	// show the server's rather than nothing.
+	if (IGPlus_bDetOut && IGPlus_bDetShowServerDisc == false
+		&& (IGPlus_DetLocalDisc == None || IGPlus_DetLocalDisc.bDeleteMe))
+		IGPlus_bDetShowServerDisc = true;
+
 	S = IGPlus_DiscRepl;
 	if (S != None && S.bDeleteMe == false) {
 		// Not in demo playback: the disc shows itself there (ST_TranslocatorTarget).
@@ -941,29 +950,71 @@ simulated function IGPlus_ClientDetSync(bool bOut, float DiscTS, float ActionTS)
 
 // Server: something the client can't see moved our disc (a shot, sticking
 // to a player). Its state now, at its age since the throw.
-function IGPlus_DetServerDiscChanged(ST_TranslocatorTarget STTarget) {
-	local float Age;
+// Age: when the caller knows it better (the disc's Tick, before this frame's
+// physics), else its age at the end of this frame. bAtRest: the disc has
+// come to rest (from Landed).
+function IGPlus_DetServerDiscChanged(ST_TranslocatorTarget STTarget, optional float Age, optional bool bAtRest) {
+	local vector Vel;
 
 	if (IGPlus_IsDetMode() == false || STTarget != TTarget || STTarget.bIGPlusFullHistory == false)
 		return;
 
-	Age = STTarget.TotalSimulationTime;
-	if (STTarget.IGPlus_HistoryAnchor != 0.0)
-		Age += Level.TimeSeconds - STTarget.IGPlus_HistoryAnchor;
-	IGPlus_ClientDetKnock(STTarget.Location, STTarget.Velocity, STTarget.Physics == PHYS_None, Age, IGPlus_ThrowTS, STTarget.Disrupted());
+	if (Age <= 0.0) {
+		Age = STTarget.TotalSimulationTime;
+		if (STTarget.IGPlus_HistoryAnchor != 0.0)
+			Age += Level.TimeSeconds - STTarget.IGPlus_HistoryAnchor;
+	}
+	if (bAtRest == false)
+		Vel = STTarget.Velocity;
+	// Location as floats, exact: the disc may be right against a window frame.
+	IGPlus_ClientDetKnock(STTarget.Location.X, STTarget.Location.Y, STTarget.Location.Z, Vel,
+		STTarget.Physics == PHYS_None || bAtRest, Age, IGPlus_ThrowTS, STTarget.Disrupted(),
+		STTarget.bBounce, STTarget.bAlreadyHit, bbPlayer(Owner).CurrentTimeStamp);
 }
 
-simulated function IGPlus_ClientDetKnock(vector Loc, vector Vel, bool bLanded, float Age, float DiscTS, bool bDisrupted) {
+// Server: the thrower's disc bounced or landed at Age on its screen. An edge
+// (a window frame) can stop one disc and not the other: send ours once it is
+// that old, so the thrower's follows it from there.
+function IGPlus_DetSyncAfter(float DiscTS, float Age) {
+	local ST_TranslocatorTarget T;
+
+	T = ST_TranslocatorTarget(TTarget);
+	if (IGPlus_IsDetMode() == false || T == None || T.bIGPlusFullHistory == false || DiscTS != IGPlus_ThrowTS)
+		return;
+	if (T.Physics == PHYS_None || T.IGPlus_CurrentAge() >= Age)
+		IGPlus_DetServerDiscChanged(T);
+	else // ponytail: waits at most 0.2s for a client clock running ahead
+		T.IGPlus_SyncAge = FMax(T.IGPlus_SyncAge, FMin(Age, T.IGPlus_CurrentAge() + 0.2));
+}
+
+// Client: our disc bounced or landed (ST_TranslocatorTarget.IGPlus_PathEvent).
+simulated function IGPlus_DetLocalDiscBounced() {
+	// ponytail: one ask per 50ms, a disc grinding along a ledge bounces every frame
+	if (bbPlayer(Owner) == None || Level.TimeSeconds - IGPlus_DetLastSyncAskTS < 0.05)
+		return;
+	IGPlus_DetLastSyncAskTS = Level.TimeSeconds;
+	bbPlayer(Owner).IGPlus_ServerDetDiscSync(IGPlus_DetThrowTS, Level.TimeSeconds - IGPlus_DetThrowTS);
+}
+
+simulated function IGPlus_ClientDetKnock(float LocX, float LocY, float LocZ, vector Vel, bool bLanded, float Age, float DiscTS,
+	bool bDisrupted, bool bBounce, bool bAlreadyHit, float MoveTS) {
 	if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != DiscTS)
 		return;
 	// Disruption is a state, not a path: show it now, so the player sees the
 	// warning (and isn't moved onto a disc that gibs them).
 	if (bDisrupted)
 		IGPlus_DetMarkDisrupted();
+	// Sent before the server had our last predicted boost: that boost is newer.
+	if (MoveTS < IGPlus_DetPredictTS)
+		return;
 	IGPlus_bDetKnockPending = true;
-	IGPlus_DetKnockLoc = Loc;
+	IGPlus_DetKnockLoc.X = LocX;
+	IGPlus_DetKnockLoc.Y = LocY;
+	IGPlus_DetKnockLoc.Z = LocZ;
 	IGPlus_DetKnockVel = Vel;
 	IGPlus_bDetKnockLanded = bLanded;
+	IGPlus_bDetKnockBounce = bBounce;
+	IGPlus_bDetKnockHit = bAlreadyHit;
 	IGPlus_DetKnockAge = Age;
 	if (Level.TimeSeconds - IGPlus_DetThrowTS >= Age)
 		IGPlus_DetApplyKnock();
@@ -984,17 +1035,26 @@ simulated function IGPlus_DetApplyKnock() {
 	D.SetLocation(IGPlus_DetKnockLoc);
 	D.bCollideWorld = true;
 	D.Velocity = IGPlus_DetKnockVel;
+	D.bBounce = IGPlus_bDetKnockBounce;
+	D.bAlreadyHit = IGPlus_bDetKnockHit;
 	if (IGPlus_bDetKnockLanded) {
 		D.SetPhysics(PHYS_None);
 		return;
 	}
 	D.SetPhysics(PHYS_Falling);
 
+	// Bounces in the catch-up are in the past: no sound, no asking the server.
+	D.ImpactSound = None;
+	D.IGPlus_bRebasing = true;
 	Remaining = (Level.TimeSeconds - IGPlus_DetThrowTS) - IGPlus_DetKnockAge;
 	while (Remaining > 0.0 && D != None && D.bDeleteMe == false && D.Physics != PHYS_None) {
 		Step = FMin(Remaining, 0.02);
 		D.AutonomousPhysics(Step);
 		Remaining -= Step;
+	}
+	if (D != None && D.bDeleteMe == false) {
+		D.ImpactSound = D.default.ImpactSound;
+		D.IGPlus_bRebasing = false;
 	}
 }
 
@@ -1034,23 +1094,36 @@ function vector IGPlus_DetSeenLocation(ST_TranslocatorTarget T, bbPlayer P) {
 	return T.IGPlus_GetHistoryAt(IGPlus_DetSeenAge(P), bLanded);
 }
 
-// Server, after the thrower's own shock beam: if it missed the disc but
-// passed close enough for the client to have shown a boost (Predicted Disc
-// Boost), send the disc's real state so the client's copy follows it.
-function IGPlus_DetBoostMissCheck(bbPlayer P, Actor Other, vector Start, vector HitLocation, vector Dir) {
+// Server, the thrower's own shock beam, before it hits anything: what the
+// beam met, following the thrower's own verdict on its disc (its move's
+// IGPlus_DetOwnBeamMode). A miss already left the disc out of the trace. A
+// hit our trace missed by a few units (its predicted position and ours, each
+// machine's frame rate) still hits, where its screen had the disc. Otherwise
+// the client is told where the disc really is.
+function Actor IGPlus_DetOwnBeam(bbPlayer P, Actor Other, vector Start, out vector HitLocation, vector Dir) {
 	local ST_TranslocatorTarget T;
+	local vector SeenLoc;
+	local float MaxDist;
 
-	if (P.IGPlus_PredictedDiscBoost == false || IGPlus_IsDetMode() == false)
-		return;
 	T = ST_TranslocatorTarget(TTarget);
-	if (T == None || Other == T || T.bIGPlusFullHistory == false)
-		return;
-	if (Other == None)
-		HitLocation = Start + 10000.0 * Dir;
-	// ponytail: 4uu margin for the two simulations drifting apart
-	if (IGPlus_RayHitsCylinder(Start, Dir, VSize(HitLocation - Start), IGPlus_DetSeenLocation(T, P),
-		T.CollisionRadius + 4.0, T.CollisionHeight + 4.0))
+	if (P.IGPlus_DetOwnBeamMode != 2 || IGPlus_IsDetMode() == false || T == None || Other == T
+		|| T.bIGPlusFullHistory == false)
+		return Other;
+
+	MaxDist = 10000.0;
+	if (Other != None)
+		MaxDist = VSize(HitLocation - Start);
+	SeenLoc = IGPlus_DetSeenLocation(T, P);
+	// ponytail: 8uu of slack around the disc, so a cheat gains 8uu on its own disc only
+	if (IGPlus_RayHitsCylinder(Start, Dir, MaxDist, SeenLoc, T.CollisionRadius + 8.0, T.CollisionHeight + 8.0)) {
+		T.IGPlus_OwnShotAge = IGPlus_DetSeenAge(P);
+		T.IGPlus_OwnShotFrame = Level.TimeSeconds;
+		HitLocation = SeenLoc;
+		return T;
+	}
+	if (P.IGPlus_PredictedDiscBoost)
 		IGPlus_DetServerDiscChanged(T);
+	return Other;
 }
 
 // Server: the thrower's own hitscan pushed its disc at Age (its screen).
@@ -1095,18 +1168,19 @@ function IGPlus_DetRebaseDisc(ST_TranslocatorTarget T, float Age) {
 		T.SetCollision(bColActors, bBlkActors, bBlkPlayers);
 }
 
-// Client, Predicted Disc Boost: our own hitscan through our own disc pushes
-// it now, as TranslocatorTarget.TakeDamage will on the server for this move.
-simulated function IGPlus_DetPredictBoost(vector Start, vector Dir, float MaxDist, vector Momentum) {
+// Client, Predicted Disc Boost: our own beam met our own disc, push it now,
+// as TranslocatorTarget.TakeDamage will on the server for this move.
+simulated function IGPlus_DetPredictBoost(vector Momentum) {
 	local ST_TranslocatorTarget D;
 	local vector V;
 
 	D = IGPlus_DetLocalDisc;
 	if (D == None || D.bDeleteMe || D.Mass <= 0.0)
 		return;
-	if (IGPlus_RayHitsCylinder(Start, Dir, MaxDist, D.Location, D.CollisionRadius, D.CollisionHeight) == false)
-		return;
 
+	// A knock still waiting for our age predates this boost.
+	IGPlus_DetPredictTS = Level.TimeSeconds;
+	IGPlus_bDetKnockPending = false;
 	V = Momentum / D.Mass;
 	V.Z = FMax(V.Z, 0.7 * VSize(V));
 	D.SetPhysics(PHYS_Falling);

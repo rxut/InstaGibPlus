@@ -20,8 +20,10 @@ var float IGPlus_AgeBias;       // fast-forward shortfall when ping exceeded Pin
 var float IGPlus_OwnShotFrame;
 var float IGPlus_OwnShotAge;
 var bool IGPlus_bChangedEarly;  // shot/stuck/bounced before full history (fast-forward)
-var bool IGPlus_bRebasing;      // re-flying after the thrower's own hit
+var bool IGPlus_bRebasing;      // re-flying: server after the thrower's own hit, client catching up to a knock
 var bool IGPlus_bLocalDisc;     // client: the thrower's own deterministic disc
+var float IGPlus_SyncAge;       // server: send our state to the thrower once this old (0: none)
+var float IGPlus_LastSyncAge;   // server: age of the last state sent from Tick
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -144,7 +146,8 @@ function SimulateWithHistory(IGPlus_WeaponImplementation WImpl, int Ping)
 }
 
 // Server: append the current position at Age (seconds since the throw).
-function IGPlus_RecordHistory(float Age) {
+// bAtRest: the disc has come to rest (from Landed).
+function IGPlus_RecordHistory(float Age, optional bool bAtRest) {
     local int i;
     local byte bLanded;
 
@@ -155,7 +158,7 @@ function IGPlus_RecordHistory(float Age) {
     if (Age <= SimulationTimes[i])
         return;
 
-    bLanded = byte(Physics == PHYS_None);
+    bLanded = byte(Physics == PHYS_None || bAtRest);
     // A resting disc adds nothing: the first tick after a knock records the
     // rest spot (not landed) at the right age. 10ms spacing while flying.
     if (bLanded == SimulationLanded[i]
@@ -311,8 +314,32 @@ simulated function bool IGPlus_InDemoPlayback() {
 	return false;
 }
 
+// A bounce, a landing or a door pushing the disc. An edge (a window frame)
+// can stop the thrower's disc and not the server's, and a door can move
+// differently on the client than on the server. The server's disc tells the
+// thrower what it did, the thrower's asks the server what its own did.
+simulated function IGPlus_PathEvent(bool bLanded) {
+	if (IGPlus_bRebasing || ST_Translocator(Master) == None)
+		return;
+	if (IGPlus_bLocalDisc)
+		ST_Translocator(Master).IGPlus_DetLocalDiscBounced();
+	else if (bIGPlusFullHistory && Role == ROLE_Authority) {
+		if (bLanded) { // at rest: where it ends this frame
+			IGPlus_SyncAge = 0.0;
+			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self, 0.0, true);
+		}
+		else { // where it ends this frame, from the next Tick
+			// ponytail: 50ms apart, a disc rattling in a corner bounces every frame
+			IGPlus_SyncAge = FMax(IGPlus_SyncAge, FMax(IGPlus_CurrentAge(), IGPlus_LastSyncAge + 0.05));
+			Enable('Tick'); // a resting disc pushed by a door: Landed switched it off
+		}
+	}
+}
+
 auto state Pickup {
 	simulated function Tick(float DeltaTime) {
+		local float Age;
+
 		// Demo playback: the recording player hid this copy of their own disc
 		// and kept it on the disc they watched (ST_Translocator.IGPlus_DetClientTick):
 		// show it, at no size once theirs was gone. Bounce sounds are in the
@@ -336,7 +363,15 @@ auto state Pickup {
 			// Level.TimeSeconds - DeltaTime.
 			if (IGPlus_HistoryAnchor == 0.0)
 				IGPlus_HistoryAnchor = Level.TimeSeconds - DeltaTime;
-			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - DeltaTime - IGPlus_HistoryAnchor));
+			Age = TotalSimulationTime + (Level.TimeSeconds - DeltaTime - IGPlus_HistoryAnchor);
+			IGPlus_RecordHistory(Age);
+			// ponytail: 1ms for float error in the summed frame times
+			if (IGPlus_SyncAge > 0.0 && Age >= IGPlus_SyncAge - 0.001) {
+				IGPlus_SyncAge = 0.0;
+				IGPlus_LastSyncAge = Age;
+				if (ST_Translocator(Master) != None)
+					ST_Translocator(Master).IGPlus_DetServerDiscChanged(self, Age);
+			}
 			if (DesiredTarget == None || Master == None)
 				return;
 		}
@@ -349,7 +384,23 @@ auto state Pickup {
 		// Record where it came to rest (Landed switched Tick off). A re-fly
 		// records its own steps.
 		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0 && IGPlus_bRebasing == false)
-			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor));
+			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor), true);
+		IGPlus_PathEvent(true);
+	}
+
+	// A door (a mover) pushed the disc, or ran over it.
+	simulated event EncroachedBy(actor Other) {
+		IGPlus_PathEvent(false);
+	}
+
+	simulated function HitWall(vector HitNormal, actor Wall) {
+		local bool bBounced;
+
+		// Stock bounces off the first hits only.
+		bBounced = bAlreadyHit == false;
+		super.HitWall(HitNormal, Wall);
+		if (bBounced)
+			IGPlus_PathEvent(false);
 	}
 
 	event TakeDamage( int Damage, Pawn EventInstigator, vector HitLocation, vector Momentum, name DamageType) {
