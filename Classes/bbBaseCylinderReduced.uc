@@ -1,4 +1,4 @@
-﻿class bbBaseCylinderReduced extends BaseCylinder2;
+﻿class bbBaseCylinderReduced extends Actor;
 
 var Pawn PawnRef;
 var PlayerPawn CachedLocalPlayerPawn;
@@ -135,6 +135,11 @@ simulated event PostNetBeginPlay() {
 
 defaultproperties
 {
+	DrawType=DT_Mesh
+	Mesh=Mesh'IGPlus_BaseCylinderReduced'
+	Texture=Texture'CylinderRed'
+	DrawScale=0.625
+	bUnlit=True
 	RemoteRole=ROLE_SimulatedProxy
     bAlwaysRelevant=true
     bOwnerNoSee=True
