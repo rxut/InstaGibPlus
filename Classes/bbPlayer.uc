@@ -768,6 +768,7 @@ replication
 	reliable if ( Role < ROLE_Authority )
 		xxServerWeaponCommand,
 		xxServerPredictedSwitch,
+		xxServerPSCommand,
 		IGPlus_ServerDetDiscSync,
 		DropFlag,
 		Go,
@@ -13470,6 +13471,8 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 		// prediction is running, which the stock exec would fight.
 		if (bEquipped)
 			xxServerWeaponCommand(Kind, F, C, false, none, Weapon, none);
+		else
+			xxServerPSCommand(IGPlus_PSSerial, Kind, F, C, TS);
 		return;
 	}
 	// Stock ignores pressing back to the weapon still up during a switch; a
@@ -13494,6 +13497,9 @@ simulated function IGPlus_PSClientCommand(byte Kind, byte F, class<Weapon> C) {
 	if (Target == none) {
 		if (Kind == 2)
 			IGPlus_PSNoAmmoMessage(Cur, C);
+		// Same as above mid-switch ("SwitchWeapon 2 | SwitchWeapon 4" just
+		// after picking up a shock): the server may know a later target.
+		xxServerPSCommand(IGPlus_PSSerial, Kind, F, C, TS);
 		return;
 	}
 
@@ -13787,12 +13793,7 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 			IGPlus_PSBringBack(Serial, TS, ClientHolsterTS);
 			return;
 		}
-		IGPlus_PSTarget = Target;
-		IGPlus_PSGate = IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(Target);
-		if (bPSHolsterStarted) {
-			PendingWeapon = Target;
-			IGPlus_DetPendingSeen = Target; // no announcement; the client did this
-		}
+		IGPlus_PSServerRetarget(Target);
 		return;
 	}
 
@@ -13844,6 +13845,36 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 	IGPlus_DetAutoSwitchPending = none;
 	if (IGPlus_PSHolsterTS > ClientHolsterTS + 0.001)
 		xxClientPSTimes(Serial, IGPlus_PSHolsterTS);
+}
+
+function IGPlus_PSServerRetarget(Weapon Target) {
+	IGPlus_PSTarget = Target;
+	IGPlus_PSGate = IGPlus_PSEquipTS + IGPlus_DetSelectTimeFor(Target);
+	if (bPSHolsterStarted) {
+		PendingWeapon = Target;
+		IGPlus_DetPendingSeen = Target; // no announcement; the client did this
+	}
+}
+
+// Server: a press the client resolved to nothing during its predicted switch.
+// Its copy of a just-picked-up weapon (or its ammo) may not have arrived yet:
+// resolve it here, as stock would, and send the client to the new target.
+// Back to From is never taken here (stock ignores it; the client knows From).
+function xxServerPSCommand(int Serial, byte Kind, byte F, class<Weapon> C, float TS) {
+	local Weapon Target;
+
+	if (Role < ROLE_Authority)
+		return; // demo playback (see xxServerPredictedSwitch)
+	if (!IGPlus_PSActive || Serial != IGPlus_PSSerial || TS > IGPlus_PSEquipTS
+		|| IsInState('Dying') || IsInState('FeigningDeath') || Level.Game.bGameEnded || Level.Pauser != "")
+		return;
+	if (!IGPlus_ResolveWeaponCommand(Kind, F, C, IGPlus_PSFrom, IGPlus_PSTarget, Target))
+		return;
+	if (Target == none || Target == IGPlus_PSFrom || Target == IGPlus_PSTarget || !IGPlus_PSValidTarget(Target))
+		return;
+	IGPlus_PSServerRetarget(Target);
+	xxClientPSResume(Serial, Target, IGPlus_PSGate);
+	IGPlus_PSLog("server-resolved target="$Target);
 }
 
 // Server: the client went back to From before the equip point, deciding
