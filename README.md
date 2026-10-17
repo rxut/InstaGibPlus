@@ -1164,7 +1164,7 @@ Remove any mention in your ServerPackages and ServerActors of TimTim's NewNet or
 Add the following lines to your server's **UnrealTournament.ini** under **[Engine.GameEngine]**:
 
 **ServerPackages=InstaGibPlus_11**
-**ServerPackages=InstaGibPlusAssets_v2**
+**ServerPackages=InstaGibPlusAssets_v3**
 
 InstaGibPlus is a collection of mutators.
 

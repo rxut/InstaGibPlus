@@ -1,4 +1,4 @@
-﻿class bbHeadCylinder extends HeadCylinder;
+﻿class bbHeadCylinder extends Actor;
 
 var Pawn PawnRef;
 var PlayerPawn CachedLocalPlayerPawn;
@@ -165,8 +165,12 @@ simulated event PostNetBeginPlay() {
 
 defaultproperties
 {
+	DrawType=DT_Mesh
+	Mesh=Mesh'IGPlus_HeadCylinder'
+	Texture=Texture'CylinderWhite'
+	DrawScale=0.625
+	bUnlit=True
 	RemoteRole=ROLE_SimulatedProxy
     bAlwaysRelevant=true
     bOwnerNoSee=True
-    Texture=Texture'HeadCylinder.Colors.White'
 }
