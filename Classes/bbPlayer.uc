@@ -1801,6 +1801,8 @@ function IGPlus_PrepareNextTrans() {
 	IGPlus_NextTrans.Instigator = self;
 	IGPlus_NextTrans.BecomeItem();
 	IGPlus_NextTrans.GotoState('');
+	// Its timers wait for the respawn, as fresh as the game's would be.
+	IGPlus_NextTrans.Disable('Tick');
 }
 
 // Server, right after the respawn handed out our weapons: the game's new
@@ -1830,11 +1832,7 @@ function IGPlus_UseNextTrans() {
 	AddInventory(N);
 	N.GiveAmmo(self);
 	N.SetSwitchPriority(self);
-	// As fresh as the game's: its timers ran through the respawn delay.
-	if (ST_Translocator(N) != none) {
-		ST_Translocator(N).ServerTimeSinceLastFire = 0.0;
-		ST_Translocator(N).ServerTimeSinceTargetSpawn = 0.0;
-	}
+	N.Enable('Tick');
 }
 
 function IGPlus_ClientReStart(EPhysics phys, vector NewLocation, rotator NewRotation) {
@@ -14640,6 +14638,10 @@ simulated function bool IGPlus_ResolveWeaponCommand(byte Kind, byte F, class<Wea
 				Target = W;
 			}
 		}
+		// Base isn't in our chain yet (the rest of a new chain arrives behind
+		// its head, a weapon we just got): the server knows the order.
+		if (!bFound)
+			return false;
 		bFound = false;
 		Group = Base.InventoryGroup;
 		Guard = 0;
@@ -14690,6 +14692,10 @@ simulated function bool IGPlus_ResolveWeaponCommand(byte Kind, byte F, class<Wea
 				Target = W;
 			}
 		}
+		// Base isn't in our chain yet (the rest of a new chain arrives behind
+		// its head, a weapon we just got): the server knows the order.
+		if (!bFound)
+			return false;
 		bFound = false;
 		Group = Base.InventoryGroup;
 		Guard = 0;
