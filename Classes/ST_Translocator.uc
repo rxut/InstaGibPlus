@@ -72,9 +72,9 @@ struct IGPlus_DetServerState {
 var IGPlus_DetServerState IGPlus_DetServer;
 
 // Client: a translocate we didn't make ourselves (no prediction): our disc
-// stays in view until the server's teleport reaches us.
+// stays in view, and presses wait, until the server's teleport reaches us.
 var ST_TranslocatorTarget IGPlus_DetLingerDisc;
-var float IGPlus_DetLingerUntil;
+var float IGPlus_DetLingerUntil;              // 0: none on its way
 var int IGPlus_DetLingerTloc;
 
 replication
@@ -673,7 +673,10 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	if (P.Weapon != self || P.ClientPending != None || IsInState('ClientDown'))
 		return 0;
 	// Stock remembers a click during bring-up (bForceFire) and fires once up.
-	if (IsInState('ClientActive')) {
+	// We hold one the same way while a translocate we didn't make ourselves
+	// is on its way: the server has us at the disc, we still stand here, and
+	// a throw would leave from here on our screen, from the disc on its.
+	if (IsInState('ClientActive') || IGPlus_DetTlocPending()) {
 		// Stock's bring-up keeps both and fires first (bForceFire wins).
 		if (bFirePress || (bAltPress && IGPlus_DetLatchedPress != 1)) {
 			if (bFirePress)
@@ -778,20 +781,33 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 }
 
 // Client: we pressed translocate. bMoved: we teleported ourselves (predicted
-// translocation). Else our disc stays in view until the server's teleport
-// reaches us (its correction changes our translocate count), a ping and a bit
-// at most, instead of vanishing a ping before we move.
+// translocation). Else the server's teleport is on its way (its correction
+// changes our translocate count), a ping and a bit at most: our disc stays in
+// view until then, instead of vanishing a ping before we move.
 simulated function IGPlus_DetClientTranslocated(bool bMoved) {
 	IGPlus_DetEndLinger();
-	if (bMoved == false && bbPlayer(Owner) != None
-		&& IGPlus_DetLocalDisc != None && IGPlus_DetLocalDisc.bDeleteMe == false) {
-		IGPlus_DetLingerDisc = IGPlus_DetLocalDisc;
-		IGPlus_DetLocalDisc = None;
+	IGPlus_DetLingerUntil = 0.0;
+	if (bMoved == false && bbPlayer(Owner) != None) {
 		IGPlus_DetLingerTloc = bbPlayer(Owner).TlocCounter;
 		IGPlus_DetLingerUntil = Level.TimeSeconds
 			+ bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.15;
+		if (IGPlus_DetLocalDisc != None && IGPlus_DetLocalDisc.bDeleteMe == false) {
+			IGPlus_DetLingerDisc = IGPlus_DetLocalDisc;
+			IGPlus_DetLocalDisc = None;
+			// Gone by then even if we are (killed before the teleport came):
+			// our tick ends it otherwise, and a dead translocator has none.
+			IGPlus_DetLingerDisc.LifeSpan = IGPlus_DetLingerUntil - Level.TimeSeconds;
+		}
 	}
 	IGPlus_DetClientDiscGone();
+}
+
+// Client: the server's teleport for a translocate we didn't make ourselves
+// hasn't reached us yet. Not once the server shows us its disc again (it
+// kept it, refused).
+simulated function bool IGPlus_DetTlocPending() {
+	return Level.TimeSeconds <= IGPlus_DetLingerUntil && IGPlus_bDetShowServerDisc == false
+		&& bbPlayer(Owner) != None && bbPlayer(Owner).TlocCounter == IGPlus_DetLingerTloc;
 }
 
 simulated function IGPlus_DetEndLinger() {
@@ -825,8 +841,7 @@ simulated function ST_TranslocatorTarget IGPlus_DetClientDisc() {
 simulated function IGPlus_DetClientTick() {
 	local ST_TranslocatorTarget S;
 
-	if (IGPlus_DetLingerDisc != None && (Level.TimeSeconds > IGPlus_DetLingerUntil
-		|| bbPlayer(Owner) == None || bbPlayer(Owner).TlocCounter != IGPlus_DetLingerTloc))
+	if (IGPlus_DetLingerDisc != None && IGPlus_DetTlocPending() == false)
 		IGPlus_DetEndLinger();
 
 	// A disc out but ours gone some other way (not through DiscGone):
