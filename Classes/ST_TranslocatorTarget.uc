@@ -345,6 +345,35 @@ simulated function IGPlus_PathEvent(bool bLanded) {
 	}
 }
 
+// Client, our own disc hit a door moving on our screen. The server's disc
+// meets that door a round trip further along (we see it half a ping late,
+// and the server's disc gets there half a ping after ours). Will the spot we
+// hit be clear of it by then? A door moved by Delta covers what it covers
+// now shifted by Delta: look for it now, Delta back from our spot. Sliding
+// doors only: a turning one has no Delta (IGPlus_LiftAhead), so it never clears.
+simulated function bool IGPlus_DetDoorClearsInTime(Mover M, vector HitNormal) {
+	local float D;
+	local vector Delta, VelLead, Start, End, HitLoc, HitNorm, Extent;
+	local Mover A;
+	local bbPlayer P;
+
+	P = bbPlayer(Instigator);
+	if (P == None || P.IGPlus_LiftAhead(M, float(P.PingAverage) * 0.001 * Level.TimeDilation, Delta, VelLead) == false)
+		return false;
+	D = Delta dot HitNormal;
+	if (D > 0.0)
+		return false; // coming at us: it blocks sooner, not later
+	Extent.X = CollisionRadius;
+	Extent.Y = CollisionRadius;
+	Extent.Z = CollisionHeight;
+	Start = Location - Delta + HitNormal * 4.0;
+	End = Start - HitNormal * (20.0 - D);
+	foreach TraceActors(class'Mover', A, HitLoc, HitNorm, End, Start, Extent)
+		if (A == M)
+			return false;
+	return true;
+}
+
 // Server: did our disc bounce, land or get pushed within Slack of Age?
 function bool IGPlus_DetHadPathEventNear(float Age, float Slack) {
 	local int i;
@@ -462,6 +491,15 @@ auto state Pickup {
 
 	simulated function HitWall(vector HitNormal, actor Wall) {
 		local bool bBounced;
+
+		// Our own disc, against a door that is out of the way by the time
+		// the server's disc gets there: fly on through our door and let the
+		// server's disc decide, as when a door pushes ours.
+		if (IGPlus_bLocalDisc && ST_Translocator(Master) != None && ST_Translocator(Master).IGPlus_DetLocalDisc == self
+			&& IGPlus_DetDoorClearsInTime(Mover(Wall), HitNormal)) {
+			ST_Translocator(Master).IGPlus_DetIgnoreOurMovers(self, "door clears in a round trip:"@Wall.Name);
+			return;
+		}
 
 		// Stock bounces off the first hits only.
 		bBounced = bAlreadyHit == false;
