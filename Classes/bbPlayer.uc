@@ -302,6 +302,19 @@ var float IGPlus_DetLastLossTS;       // Level.TimeSeconds of the last gap
 var bool IGPlus_bDetTlocMismatch;     // translocate counts differ (logged once)
 var bool IGPlus_bDetTlocCheckLanding; // compare the client's spot after our translocate
 var string IGPlus_DetTlocInfo;        // the last translocate's disc details
+// Deterministic translocator actions survive a lost move: the client sends
+// its last action again with the next moves until the server is past it.
+var int IGPlus_DetRedoAction;         // client: last action (0: none to resend)
+var float IGPlus_DetRedoTS;           // client: its move's time stamp
+var int IGPlus_DetRedoView;           // client: its move's view (a throw aims with it)
+var ST_Translocator IGPlus_DetRedoTloc;
+var float IGPlus_DetLastActionSeenTS; // server: newest action handled
+// Server: actions from moves we didn't run (paused, warp fix), oldest first.
+var int IGPlus_DetHeldCount;
+var int IGPlus_DetHeldAction[4];
+var float IGPlus_DetHeldTS[4];
+var byte IGPlus_DetHeldFlags[4];      // 4: held by the warp fix (else a pause)
+var int IGPlus_DetHeldView[4];
 var bool IGPlus_WantCAP;
 var bool IGPlus_SkipMovesUntilNextTick;
 
@@ -4037,6 +4050,105 @@ function IGPlus_DetTlocLog(string Event, string Details) {
 		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp, 'IGPlus');
 }
 
+// Server: a deterministic translocator action from a lost or held-back move,
+// once, on the client's timeline: at its move's time stamp, aimed with that
+// move's view (packed like xxServerMove's View). MoveTS: the move we are
+// running now; the action is that much late. bHeld: from the held queue
+// (checked once already when held).
+function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optional bool bHeld) {
+	local float SavedTS;
+	local rotator SavedView;
+	local ST_Translocator TL;
+
+	if (Action < 1 || Action > 3 || (bHeld == false && TS <= IGPlus_DetLastActionSeenTS) || IsInState('Dying'))
+		return;
+	IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, TS);
+	TL = ST_Translocator(Weapon);
+	if (TL == none || TL.IGPlus_IsDetMode() == false)
+		return;
+	IGPlus_DetTlocLog("resent", class'ST_Translocator'.static.IGPlus_DetActionName(Action)@"late="$(MoveTS - TS));
+	SavedTS = CurrentTimeStamp;
+	SavedView = ViewRotation;
+	CurrentTimeStamp = TS; // the throw time, the disc's age at a translocate
+	ViewRotation.Pitch = View >>> 16;
+	ViewRotation.Yaw = View & 0xFFFF;
+	ViewRotation.Roll = 0;
+	TL.IGPlus_DetServerStep(self, TS, Action, false, false, MoveTS - TS);
+	CurrentTimeStamp = SavedTS;
+	ViewRotation = SavedView;
+}
+
+function IGPlus_DetRunHeld(float MoveTS) {
+	local int i, N;
+
+	N = IGPlus_DetHeldCount;
+	IGPlus_DetHeldCount = 0;
+	// Held through a pause: no time passed for our disc meanwhile, none is late.
+	for (i = 0; i < N; i++) {
+		if ((IGPlus_DetHeldFlags[i] & 4) != 0)
+			IGPlus_DetRunAction(IGPlus_DetHeldAction[i], IGPlus_DetHeldTS[i], IGPlus_DetHeldView[i], MoveTS, true);
+		else
+			IGPlus_DetRunAction(IGPlus_DetHeldAction[i], IGPlus_DetHeldTS[i], IGPlus_DetHeldView[i], IGPlus_DetHeldTS[i], true);
+	}
+}
+
+// bWarp: the warp fix skips this move, and the client is put back to where we
+// have it: a throw from there would not be the one it made, so refuse it now.
+function IGPlus_DetHoldAction(int Action, float TS, int View, bool bWarp) {
+	local int i;
+
+	if (Action < 1 || Action > 3 || TS <= IGPlus_DetLastActionSeenTS)
+		return;
+	for (i = 0; i < IGPlus_DetHeldCount; i++)
+		if (IGPlus_DetHeldTS[i] >= TS)
+			return; // held already (or older than what is)
+	IGPlus_DetTlocLog("held", class'ST_Translocator'.static.IGPlus_DetActionName(Action)@"warp="$bWarp);
+	// (No resend can bring it back: this move put us past it.)
+	if (bWarp && Action == 1) {
+		if (ST_Translocator(Weapon) != none)
+			ST_Translocator(Weapon).IGPlus_ClientDetSync(false, TS, TS);
+		return;
+	}
+	// ponytail: 4 held actions (0.4s of them); a longer stall loses the newest
+	if (IGPlus_DetHeldCount >= ArrayCount(IGPlus_DetHeldAction))
+		return;
+	i = IGPlus_DetHeldCount++;
+	IGPlus_DetHeldAction[i] = Action;
+	IGPlus_DetHeldTS[i] = TS;
+	IGPlus_DetHeldFlags[i] = 0;
+	if (bWarp)
+		IGPlus_DetHeldFlags[i] = 4;
+	IGPlus_DetHeldView[i] = View;
+}
+
+// Server: the time stamp of the old move this move carries (0: none).
+static final function float IGPlus_OldMoveTimeStamp(float TimeStamp, int OldMoveData1) {
+	local int Offset;
+
+	Offset = OldMoveData1 & 0x3FF;
+	if (Offset == 0 || Offset == 0x3FF)
+		return 0.0;
+	return TimeStamp - float(Offset) * 0.001;
+}
+
+// Server: will the time margin check below throttle this move (DeltaTime 0)?
+// MoveDelta: the move's own length (after a pause the check uses no more).
+function bool IGPlus_DetWouldThrottle(float MoveTS, float ServerDeltaTime, float StartTS, float MoveDelta) {
+	local float Delta;
+
+	if (ServerTimeStamp <= 0.0)
+		return false;
+	Delta = MoveTS - StartTS;
+	if (bWasPaused)
+		Delta = FMin(Delta, MoveDelta);
+	return TimeMargin + Delta - 1.01 * ServerDeltaTime > MaxTimeMargin;
+}
+
+// The resent action's view, 12 bits each (DetRedoData bits 8-19 yaw, 20-31 pitch).
+static final function int IGPlus_DetUnpackRedoView(int RedoData) {
+	return ((((RedoData >>> 20) & 0xFFF) << 4) << 16) | (((RedoData >>> 8) & 0xFFF) << 4);
+}
+
 // Server, at each client error check: did the client translocate when we
 // did, and land where we did?
 function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError) {
@@ -4122,6 +4234,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local Weapon DetWeapon;
 	local bool bDetMoveAcceptedForFire;
 	local float PSAPrevTS;
+	local int RedoAction;
+	local float OldTS;
 
 	debugServerMoveCallsReceived += 1;
 
@@ -4187,12 +4301,43 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		IGPlus_SkipMovesUntilNextTick = true;
 	}
 
+	// Deterministic translocator: an action whose own move was lost (or that
+	// we held back), at its own time and where the client did it, in time
+	// order with the old move below (the gap's movement after both). Only for
+	// a move we run: a throttled one (too far ahead) loses its actions.
+	RedoAction = 0;
+	if (IGPlus_DetTranslocator) {
+		// A resend is for a move between the last one we had and this one.
+		if ((SM.DetRedoData & 3) != 0 && SM.DetRedoTS > CurrentTimeStamp && SM.DetRedoTS < SM.TimeStamp)
+			RedoAction = SM.DetRedoData & 3;
+		OldTS = IGPlus_OldMoveTimeStamp(SM.TimeStamp, SM.OldMoveData1);
+		if (RedoAction != 0 || IGPlus_DetHeldCount > 0) {
+			if (Level.Pauser != "" || IGPlus_SkipMovesUntilNextTick) {
+				if (RedoAction != 0)
+					IGPlus_DetHoldAction(RedoAction, SM.DetRedoTS, IGPlus_DetUnpackRedoView(SM.DetRedoData), Level.Pauser == "");
+				RedoAction = 0;
+			} else if (IGPlus_DetWouldThrottle(SM.TimeStamp, ServerDeltaTime, FMax(CurrentTimeStamp, OldTS), SM.MoveDeltaTime)) {
+				RedoAction = 0;
+			} else {
+				UndoExtrapolation();
+				IGPlus_DetRunHeld(SM.TimeStamp);
+				if (RedoAction != 0 && (OldTS <= CurrentTimeStamp || SM.DetRedoTS < OldTS)) {
+					IGPlus_DetRunAction(RedoAction, SM.DetRedoTS, IGPlus_DetUnpackRedoView(SM.DetRedoData), SM.TimeStamp);
+					RedoAction = 0;
+				}
+			}
+		}
+	}
+
 	if (bWasPaused == false && IGPlus_SkipMovesUntilNextTick == false) {
 		if (IGPlus_OldServerMove(SM.TimeStamp, SM.OldMoveData1, SM.OldMoveData2)) {
 			xxFakeCAP(CurrentTimeStamp);
 			LastCAPTime = Level.TimeSeconds;
 		}
 	}
+	// The resent action came after the old move: now.
+	if (RedoAction != 0)
+		IGPlus_DetRunAction(RedoAction, SM.DetRedoTS, IGPlus_DetUnpackRedoView(SM.DetRedoData), SM.TimeStamp);
 
 	if (ServerTimeStamp == 0.0) {
 		DeltaTime = SM.MoveDeltaTime;
@@ -4330,16 +4475,19 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// Deterministic translocator: the client's action, before this move's
 	// movement like on the client.
+	// A move we don't run keeps its action for the next one we do (paused,
+	// warp fix); a throttled one (too far ahead) loses it, as before.
 	if (bDetMoveAcceptedForFire == false && SM.DetChargeData >= 1 && SM.DetChargeData <= 3
-		&& IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
-		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()) {
-		if (Level.Pauser != "")
-			IGPlus_DetTlocLog("dropped", class'ST_Translocator'.static.IGPlus_DetActionName(SM.DetChargeData)@"reason=paused");
-		else if (IGPlus_SkipMovesUntilNextTick)
-			IGPlus_DetTlocLog("dropped", class'ST_Translocator'.static.IGPlus_DetActionName(SM.DetChargeData)@"reason=warp-fix-skip");
+		&& IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None) {
+		if (Level.Pauser != "" || IGPlus_SkipMovesUntilNextTick)
+			IGPlus_DetHoldAction(SM.DetChargeData, SM.TimeStamp, SM.View, Level.Pauser == "");
 		else
 			IGPlus_DetTlocLog("dropped", class'ST_Translocator'.static.IGPlus_DetActionName(SM.DetChargeData)@"reason=time-margin");
 	}
+	// Handled here (or not, on another weapon) like before: never again from a resend.
+	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
+		&& SM.DetChargeData >= 1 && SM.DetChargeData <= 3)
+		IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, SM.TimeStamp);
 	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
 		ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
@@ -4691,7 +4839,9 @@ function xxServerMove(
 	int View,
 	Actor ClientBase,
 	optional int OldMoveData1,
-	optional int OldMoveData2
+	optional int OldMoveData2,
+	optional float DetRedoTS,
+	optional int DetRedoData
 ) {
 	local IGPlus_ServerMove SM;
 
@@ -4713,6 +4863,8 @@ function xxServerMove(
 	SM.ClientBase = ClientBase;
 	SM.OldMoveData1 = OldMoveData1;
 	SM.OldMoveData2 = OldMoveData2;
+	SM.DetRedoTS = DetRedoTS;
+	SM.DetRedoData = DetRedoData;
 
 	IGPlus_ApplyServerMove(SM);
 	IGPlus_DestroyServerMove(SM);
@@ -7263,6 +7415,8 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local vector RelLoc;
 	local int OldMoveData1, OldMoveData2;
 	local int ViewPacked;
+	local float RedoTS;
+	local int RedoData;
 
 	if (Move.bPressedJump) bJumpStatus = !bJumpStatus;
 
@@ -7312,6 +7466,27 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogSavedMove(Move);
 
+	// Deterministic translocator: a lost packet must not lose a throw, recall
+	// or translocate the client already showed. The last action rides along
+	// again until the server is past its move (it runs each action once).
+	// DetRedoData: bits 0-1 the action, 8-31 its move's view (12 bits each).
+	if (IGPlus_DetRedoAction != 0 && (IGPlus_DetRedoTloc == none || IGPlus_DetRedoTloc.bDeleteMe
+		|| IGPlus_DetRedoTloc.IGPlus_DetServerMoveTS >= IGPlus_DetRedoTS || Move.TimeStamp - IGPlus_DetRedoTS > 1.0))
+		IGPlus_DetRedoAction = 0;
+	if (IGPlus_DetRedoAction != 0 && IGPlus_DetRedoTS < Move.TimeStamp) {
+		RedoTS = IGPlus_DetRedoTS;
+		RedoData = IGPlus_DetRedoAction
+			| (((IGPlus_DetRedoView & 0xFFFF) >>> 4) << 8)
+			| ((((IGPlus_DetRedoView >>> 16) & 0xFFFF) >>> 4) << 20);
+	}
+	if (Move.DetChargeData >= 1 && Move.DetChargeData <= 3 && Move.DetWeaponIndex == IGPLUS_DetWEAPON_None
+		&& ST_Translocator(Move.IGPlus_SavedWeapon) != none) {
+		IGPlus_DetRedoAction = Move.DetChargeData;
+		IGPlus_DetRedoTS = Move.TimeStamp;
+		IGPlus_DetRedoTloc = ST_Translocator(Move.IGPlus_SavedWeapon);
+		IGPlus_DetRedoView = ViewPacked;
+	}
+
 	xxServerMove(
 		Move.TimeStamp,
 		MoveDeltaTime,
@@ -7325,7 +7500,9 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		ViewPacked,
 		Base,
 		OldMoveData1,
-		OldMoveData2
+		OldMoveData2,
+		RedoTS,
+		RedoData
 	);
 
 	debugServerMoveCallsSent += 1;
@@ -9138,7 +9315,9 @@ state FeigningDeath
 		int View,
 		Actor ClientBase,
 		optional int OldMoveData1,
-		optional int OldMoveData2
+		optional int OldMoveData2,
+		optional float DetRedoTS,
+		optional int DetRedoData
 	)
 	{
 		Global.xxServerMove(
@@ -9154,7 +9333,9 @@ state FeigningDeath
 			((Rotation.Pitch & 0xFFFF) << 16) | (Rotation.Yaw & 0xFFFF),
 			ClientBase,
 			OldMoveData1,
-			OldMoveData2);
+			OldMoveData2,
+			DetRedoTS,
+			DetRedoData);
 	}
 
 	function PlayerMove( float DeltaTime)
@@ -10266,10 +10447,12 @@ state Dying
 		int View,
 		Actor ClientBase,
 		optional int OldMoveData1,
-		optional int OldMoveData2
+		optional int OldMoveData2,
+		optional float DetRedoTS,
+		optional int DetRedoData
 	)
 	{
-		local int KeepData, KeepData2;
+		local int KeepData, KeepData2, KeepDelta;
 		local bool bFireInput;
 
 		KeepData = MiscData & 0xFFFF;      // drop held fire
@@ -10287,9 +10470,15 @@ state Dying
 				IGPlus_DetTradeLog("Rejected Trade!");
 			IGPlus_DetCloseTradeWindow();
 		}
+		// No translocator actions from the dead (their translocator is still
+		// held for a while): not this move's, nor a resent or held one.
+		KeepDelta = MoveDeltaTime;
+		if ((MoveDeltaTime & 0x0E) == 0)
+			KeepDelta = MoveDeltaTime & ~0xF0;
+		IGPlus_DetHeldCount = 0;
 		Global.xxServerMove(
 			TimeStamp,
-			MoveDeltaTime,
+			KeepDelta,
 			Accel,
 			ClientLocX,
 			ClientLocY,
@@ -10300,7 +10489,9 @@ state Dying
 			View,
 			ClientBase,
 			OldMoveData1,
-			OldMoveData2);
+			OldMoveData2,
+			0.0,
+			0);
 	}
 
 	function FindGoodView()
@@ -10416,7 +10607,9 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 		int View,
 		Actor ClientBase,
 		optional int OldMoveData1,
-		optional int OldMoveData2
+		optional int OldMoveData2,
+		optional float DetRedoTS,
+		optional int DetRedoData
 	)
 	{
 		Global.xxServerMove(
@@ -10432,7 +10625,9 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 			((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF),
 			ClientBase,
 			OldMoveData1,
-			OldMoveData2);
+			OldMoveData2,
+			DetRedoTS,
+			DetRedoData);
 	}
 
 	function FindGoodView()

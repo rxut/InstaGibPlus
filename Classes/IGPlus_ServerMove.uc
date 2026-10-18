@@ -15,6 +15,10 @@ var int OldMoveData2;
 var bool bDetReady;
 var int DetWeaponIndex;
 var int DetChargeData;
+// Deterministic translocator: the last action again (its move may be lost),
+// see bbPlayer.SendSavedMove.
+var float DetRedoTS;
+var int DetRedoData;
 var IGPlus_ServerMove Next;
 
 defaultproperties {

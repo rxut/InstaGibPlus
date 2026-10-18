@@ -125,8 +125,13 @@ function Tick(float DeltaTime)
             IGPlus_DetServerDiscTS = 0.0;
         else
             IGPlus_DetServerDiscTS = IGPlus_ThrowTS;
-        if (bbPlayer(Owner) != None)
+        if (bbPlayer(Owner) != None) {
             IGPlus_DetServerMoveTS = bbPlayer(Owner).CurrentTimeStamp;
+            // An action held back (pause, warp fix) is not past yet: the
+            // client's safety net must not take our disc state for its answer.
+            if (bbPlayer(Owner).IGPlus_DetHeldCount > 0)
+                IGPlus_DetServerMoveTS = FMin(IGPlus_DetServerMoveTS, bbPlayer(Owner).IGPlus_DetHeldTS[0] - 0.0001);
+        }
     }
 }
 
@@ -565,7 +570,8 @@ simulated function vector CalcDrawOffsetClient() {
 // Server, predicted translocation: move the disc to where it was at this
 // move's age since the throw, in the client's own timeline (what its screen
 // showed). Translocate() restores it if the disc survives.
-function IGPlus_MoveDiscToSeenAge(ST_TranslocatorTarget STTarget, bbPlayer bbP) {
+// Late: how late a resent translocate runs (our disc is that much older now).
+function IGPlus_MoveDiscToSeenAge(ST_TranslocatorTarget STTarget, bbPlayer bbP, optional float Late) {
 	local float TimeSinceThrow;
 	local vector HistoricalLocation;
 	local byte HistoricalLanded;
@@ -573,8 +579,8 @@ function IGPlus_MoveDiscToSeenAge(ST_TranslocatorTarget STTarget, bbPlayer bbP) 
 	// ponytail: +-0.2s bounds how far a client clock can move the lookup
 	TimeSinceThrow = FClamp(
 		bbP.CurrentTimeStamp - IGPlus_ThrowTS,
-		ServerTimeSinceTargetSpawn - 0.2,
-		ServerTimeSinceTargetSpawn + 0.2);
+		ServerTimeSinceTargetSpawn - Late - 0.2,
+		ServerTimeSinceTargetSpawn - Late + 0.2);
 	if (IGPlus_IsDetMode()) {
 		bbP.IGPlus_DetTlocInfo = "clientAge="$(bbP.CurrentTimeStamp - IGPlus_ThrowTS)
 			@"usedAge="$TimeSinceThrow@"discAge="$STTarget.IGPlus_CurrentAge()@STTarget.IGPlus_DetPathSummary();
@@ -856,7 +862,8 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 
 // Server, on the move's step (before its movement): repeat the client's
 // action if our state allows it, else tell the client how things are.
-function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, bool bAltHeld) {
+// Late: how late a resent action runs (its move was lost).
+function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, bool bAltHeld, optional float Late) {
 	local ST_TranslocatorTarget STTarget;
 	local string Reason;
 
@@ -899,6 +906,9 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 		PlayFiring(); // others hear it (PlayOwnedSound skips the thrower)
 		ThrowTarget();
 		ServerTimeSinceLastFire = 0.0;
+		// A late throw: our disc is as old as the thrower's, as if on time.
+		if (Late > 0.005 && ST_TranslocatorTarget(TTarget) != None)
+			IGPlus_DetFlyAhead(ST_TranslocatorTarget(TTarget), Late);
 		if (TTarget == None) {
 			IGPlus_DetLog("reject", "throw spawn-failed");
 			IGPlus_ClientDetSync(false, TS, TS);
@@ -937,7 +947,7 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	// Translocate
 	STTarget = ST_TranslocatorTarget(TTarget);
 	if (STTarget != None && STTarget.bIGPlusFullHistory)
-		IGPlus_MoveDiscToSeenAge(STTarget, P);
+		IGPlus_MoveDiscToSeenAge(STTarget, P, Late);
 	if (TTarget != None && TTarget.Disrupted())
 		IGPlus_DetLog("gib", "translocate to a disrupted disc");
 	if (TTarget == None || IGPlus_GibIfDisrupted())
@@ -966,6 +976,36 @@ static function string IGPlus_DetActionName(int Action) {
 		case IGPLUS_DETTLOC_TRANSLOCATE: return "translocate";
 	}
 	return "action"$Action;
+}
+
+// Server: a disc thrown Late seconds late (its move was lost) flies on to
+// the age the thrower's has, as IGPlus_DetRebaseDisc flies (world only).
+function IGPlus_DetFlyAhead(ST_TranslocatorTarget T, float Late) {
+	local float Done, Step;
+	local bool bColActors, bBlkActors, bBlkPlayers;
+
+	// ponytail: 0.5s at most, the resend's own limit is 1s
+	Late = FMin(Late, 0.5);
+	bColActors = T.bCollideActors;
+	bBlkActors = T.bBlockActors;
+	bBlkPlayers = T.bBlockPlayers;
+	T.SetCollision(false, false, false);
+	T.IGPlus_bRebasing = true;
+	while (Done < Late && T.bDeleteMe == false && T.Physics != PHYS_None) {
+		Step = FMin(Late - Done, 0.02);
+		T.AutonomousPhysics(Step);
+		Done += Step;
+		T.IGPlus_RecordHistory(Done);
+	}
+	if (T.bDeleteMe)
+		return;
+	T.IGPlus_bRebasing = false;
+	T.SetCollision(bColActors, bBlkActors, bBlkPlayers);
+	T.TotalSimulationTime = Late;
+	// Landed on the way: Tick is off, so its age counts from now.
+	if (T.Physics == PHYS_None)
+		T.IGPlus_HistoryAnchor = Level.TimeSeconds;
+	ServerTimeSinceTargetSpawn = Late;
 }
 
 // Server: a [DET-TLOC] line about our disc (see bbPlayer.IGPlus_DetTlocLog).
