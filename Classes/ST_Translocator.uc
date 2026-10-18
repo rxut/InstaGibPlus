@@ -167,7 +167,8 @@ simulated function bool ClientFire(float Value)
 	if (bbP.IGPlus_DetTranslocator && Role < ROLE_Authority)
 		return true;
 
-	PingCompensation = bbP.PingAverage * 0.001;
+	// PingAverage is real time; the timer runs in game time.
+	PingCompensation = bbP.PingAverage * 0.001 * Level.TimeDilation;
 	CompensatedTime = ServerTimeSinceLastFire + PingCompensation;
 
 	// A predicted translocation already used the disc up; the server's
