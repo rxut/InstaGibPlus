@@ -820,9 +820,15 @@ simulated function IGPlus_DetClientTick() {
 	// processed past our last action, its disc state is the truth.
 	if (IGPlus_DetServerMoveTS > IGPlus_DetLastActionTS) {
 		if (IGPlus_DetServerDiscTS == 0.0) {
-			if (IGPlus_bDetOut)
+			if (IGPlus_bDetOut) {
+				if (bbPlayer(Owner) != None)
+					bbPlayer(Owner).ClientDebugMessage("Tloc safety net: the server has no disc out");
 				IGPlus_DetClientDiscGone();
+			}
 		} else if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != IGPlus_DetServerDiscTS) {
+			if (bbPlayer(Owner) != None)
+				bbPlayer(Owner).ClientDebugMessage("Tloc safety net: showing the server's disc (ours out="$IGPlus_bDetOut
+					@"throw="$IGPlus_DetThrowTS@"server's="$IGPlus_DetServerDiscTS$")");
 			IGPlus_DetClientDiscGone();
 			IGPlus_bDetOut = true;
 			IGPlus_DetThrowTS = IGPlus_DetServerDiscTS;
@@ -1084,6 +1090,19 @@ function IGPlus_DetSyncAfter(float DiscTS, float Age) {
 		T.IGPlus_SyncAge = FMax(T.IGPlus_SyncAge, FMin(Age, T.IGPlus_CurrentAge() + 0.2));
 }
 
+// Client: stop flying this throw ourselves and show the server's copy of it
+// for the rest of its life (its spot is the server's, half a ping late).
+simulated function IGPlus_DetHandToServerDisc(string Why) {
+	if (IGPlus_DetLocalDisc == None)
+		return;
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).ClientDebugMessage("Tloc disc shown from the server:"@Why@"age="$(Level.TimeSeconds - IGPlus_DetThrowTS));
+	IGPlus_DetLocalDisc.Destroy();
+	IGPlus_DetLocalDisc = None;
+	IGPlus_bDetKnockPending = false;
+	IGPlus_bDetShowServerDisc = true;
+}
+
 // Client: our disc bounced or landed (ST_TranslocatorTarget.IGPlus_PathEvent).
 simulated function IGPlus_DetLocalDiscBounced() {
 	// ponytail: one ask per 50ms, a disc grinding along a ledge bounces every frame
@@ -1127,6 +1146,9 @@ simulated function IGPlus_DetApplyKnock() {
 	D = IGPlus_DetLocalDisc;
 	if (D == None || D.bDeleteMe)
 		return;
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).ClientDebugMessage("Tloc disc knocked to the server's: age="$IGPlus_DetKnockAge
+			@"moved="$int(VSize(IGPlus_DetKnockLoc - D.Location)));
 
 	D.bCollideWorld = false;
 	D.SetLocation(IGPlus_DetKnockLoc);

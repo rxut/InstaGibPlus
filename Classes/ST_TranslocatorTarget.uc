@@ -439,6 +439,19 @@ auto state Pickup {
 
 	// A door (a mover) pushed the disc, or ran over it.
 	simulated event EncroachedBy(actor Other) {
+		// Our own disc, and our copy of a door moved into it: doors are the
+		// server's, and ours may be half a ping off (a door that reversed on
+		// the server's disc keeps closing here until we hear). It would
+		// push our disc into a wall or close over it, out of sight. Show the
+		// server's copy, where the server's door left it.
+		if (IGPlus_bLocalDisc) {
+			if (Mover(Other) != None && ST_Translocator(Master) != None) {
+				ST_Translocator(Master).IGPlus_DetHandToServerDisc("pushed by"@Other.Name);
+				return;
+			}
+			IGPlus_PathEvent(false);
+			return;
+		}
 		if (Other != IGPlus_DetLastEncroacher) {
 			IGPlus_DetLastEncroacher = Other;
 			IGPlus_DetLogTouch("pushed-by-mover", Other);
