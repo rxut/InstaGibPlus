@@ -60,8 +60,15 @@ var float IGPlus_DetLatchTS;
 // Server: throw time of the disc that is out (0 if none), and the last move
 // it processed. Once that move is past the client's last action, the client
 // matches the disc state (its safety net).
-var float IGPlus_DetServerDiscTS;
-var float IGPlus_DetServerMoveTS;
+// One struct, so both always arrive together: a lone property lost in a
+// packet is resent about a round trip later, while the move time (new every
+// tick) keeps arriving. The client then saw "server is past my throw, no disc
+// out", dropped its disc, and showed the server's a moment later.
+struct IGPlus_DetServerState {
+	var float DiscTS;
+	var float MoveTS;
+};
+var IGPlus_DetServerState IGPlus_DetServer;
 
 replication
 {
@@ -69,7 +76,7 @@ replication
     unreliable if( Role==ROLE_Authority )
         ServerTimeSinceLastFire, ServerTimeSinceTargetSpawn;
     reliable if (bNetOwner && Role == ROLE_Authority)
-        IGPlus_DiscRepl, IGPlus_DetServerDiscTS, IGPlus_DetServerMoveTS;
+        IGPlus_DiscRepl, IGPlus_DetServer;
     reliable if (Role == ROLE_Authority)
         IGPlus_ClientDetSync, IGPlus_ClientDetKnock;
 }
@@ -122,15 +129,15 @@ function Tick(float DeltaTime)
         }
 
         if (TTarget == None || ST_TranslocatorTarget(TTarget) == None || ST_TranslocatorTarget(TTarget).bIGPlusFullHistory == false)
-            IGPlus_DetServerDiscTS = 0.0;
+            IGPlus_DetServer.DiscTS = 0.0;
         else
-            IGPlus_DetServerDiscTS = IGPlus_ThrowTS;
+            IGPlus_DetServer.DiscTS = IGPlus_ThrowTS;
         if (bbPlayer(Owner) != None) {
-            IGPlus_DetServerMoveTS = bbPlayer(Owner).CurrentTimeStamp;
+            IGPlus_DetServer.MoveTS = bbPlayer(Owner).CurrentTimeStamp;
             // An action held back (pause, warp fix) is not past yet: the
             // client's safety net must not take our disc state for its answer.
             if (bbPlayer(Owner).IGPlus_DetHeldCount > 0)
-                IGPlus_DetServerMoveTS = FMin(IGPlus_DetServerMoveTS, bbPlayer(Owner).IGPlus_DetHeldTS[0] - 0.0001);
+                IGPlus_DetServer.MoveTS = FMin(IGPlus_DetServer.MoveTS, bbPlayer(Owner).IGPlus_DetHeldTS[0] - 0.0001);
         }
     }
 }
@@ -818,20 +825,20 @@ simulated function IGPlus_DetClientTick() {
 
 	// Safety net for lost actions and missed syncs: once the server has
 	// processed past our last action, its disc state is the truth.
-	if (IGPlus_DetServerMoveTS > IGPlus_DetLastActionTS) {
-		if (IGPlus_DetServerDiscTS == 0.0) {
+	if (IGPlus_DetServer.MoveTS > IGPlus_DetLastActionTS) {
+		if (IGPlus_DetServer.DiscTS == 0.0) {
 			if (IGPlus_bDetOut) {
 				if (bbPlayer(Owner) != None)
 					bbPlayer(Owner).ClientDebugMessage("Tloc safety net: the server has no disc out");
 				IGPlus_DetClientDiscGone();
 			}
-		} else if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != IGPlus_DetServerDiscTS) {
+		} else if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != IGPlus_DetServer.DiscTS) {
 			if (bbPlayer(Owner) != None)
 				bbPlayer(Owner).ClientDebugMessage("Tloc safety net: showing the server's disc (ours out="$IGPlus_bDetOut
-					@"throw="$IGPlus_DetThrowTS@"server's="$IGPlus_DetServerDiscTS$")");
+					@"throw="$IGPlus_DetThrowTS@"server's="$IGPlus_DetServer.DiscTS$")");
 			IGPlus_DetClientDiscGone();
 			IGPlus_bDetOut = true;
-			IGPlus_DetThrowTS = IGPlus_DetServerDiscTS;
+			IGPlus_DetThrowTS = IGPlus_DetServer.DiscTS;
 			IGPlus_bDetShowServerDisc = true;
 		}
 	}

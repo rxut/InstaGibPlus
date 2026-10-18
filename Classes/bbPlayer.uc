@@ -7471,7 +7471,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	// again until the server is past its move (it runs each action once).
 	// DetRedoData: bits 0-1 the action, 8-31 its move's view (12 bits each).
 	if (IGPlus_DetRedoAction != 0 && (IGPlus_DetRedoTloc == none || IGPlus_DetRedoTloc.bDeleteMe
-		|| IGPlus_DetRedoTloc.IGPlus_DetServerMoveTS >= IGPlus_DetRedoTS || Move.TimeStamp - IGPlus_DetRedoTS > 1.0))
+		|| IGPlus_DetRedoTloc.IGPlus_DetServer.MoveTS >= IGPlus_DetRedoTS || Move.TimeStamp - IGPlus_DetRedoTS > 1.0))
 		IGPlus_DetRedoAction = 0;
 	if (IGPlus_DetRedoAction != 0 && IGPlus_DetRedoTS < Move.TimeStamp) {
 		RedoTS = IGPlus_DetRedoTS;
