@@ -7162,7 +7162,7 @@ function IGPlus_ReplicateInput(float Delta) {
 	}
 
 	// Not in demo playback: the recording holds our weapon's anims and sounds.
-	if (!IGPlus_InDemoPlayback() && (Weapon != None) && !Weapon.IsAnimating())
+	if (!IGPlus_InDemoPlayback() && IGPlus_ClientWeaponSettled())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
@@ -7188,6 +7188,17 @@ function IGPlus_ReplicateInput(float Delta) {
 		}
 	}
 	OldClientWeapon = Weapon;
+}
+
+// Client: our weapon may be brought up (or stood still) by the stock check
+// in ReplicateMove, which waits for its animation to end. A weapon still on
+// its world pickup state can't wait: a dropped one keeps the last looping
+// anim its dead owner's copy replicated, so it never ends and the weapon
+// never came up (stuck unable to fire, Pickup state, until a switch).
+simulated function bool IGPlus_ClientWeaponSettled() {
+	if (Weapon == None)
+		return false;
+	return !Weapon.IsAnimating() || (Weapon != OldClientWeapon && Weapon.IsInState('Pickup'));
 }
 
 function xxReplicateMove(
@@ -7517,7 +7528,7 @@ function xxReplicateMove(
 	SendSavedMove(NewMove, OldMove);
 
 	// Not in demo playback: the recording holds our weapon's anims and sounds.
-	if (!IGPlus_InDemoPlayback() && (Weapon != None) && !Weapon.IsAnimating())
+	if (!IGPlus_InDemoPlayback() && IGPlus_ClientWeaponSettled())
 	{
 		if ( (Weapon == ClientPending) || (Weapon != OldClientWeapon) )
 		{
