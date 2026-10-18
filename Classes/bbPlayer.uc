@@ -294,6 +294,14 @@ var float IGPlus_TlocLastPressTS;       // last translocator fire/alt press (mov
 var float IGPlus_TlocPredictTS;         // when a predicted translocation used the disc up
 var bool IGPlus_DidTranslocate;
 var bool IGPlus_NotifiedTranslocate;
+// Server: [DET-TLOC] log lines (deterministic translocator disagreements).
+var float IGPlus_DetTlocLogWindowTS;
+var int IGPlus_DetTlocLogCount;
+var int IGPlus_DetLostMoves;          // moves that never arrived (time gaps), this map
+var float IGPlus_DetLastLossTS;       // Level.TimeSeconds of the last gap
+var bool IGPlus_bDetTlocMismatch;     // translocate counts differ (logged once)
+var bool IGPlus_bDetTlocCheckLanding; // compare the client's spot after our translocate
+var string IGPlus_DetTlocInfo;        // the last translocate's disc details
 var bool IGPlus_WantCAP;
 var bool IGPlus_SkipMovesUntilNextTick;
 
@@ -4004,7 +4012,59 @@ function IGPlus_AfterTranslocate() {
 		IgnoreZChangeTicks = 2;
 		ExtrapolationDiscardData();
 		IGPlus_NotifiedTranslocate = false;
+		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
+			IGPlus_bDetTlocCheckLanding = true;
 	}
+}
+
+// Server: one [DET-TLOC] line, each a way the thrower's screen and the server
+// parted. At most 8 a second per player.
+function IGPlus_DetTlocLog(string Event, string Details) {
+	local string LossAgo;
+
+	if (Level.TimeSeconds - IGPlus_DetTlocLogWindowTS > 1.0) {
+		IGPlus_DetTlocLogWindowTS = Level.TimeSeconds;
+		IGPlus_DetTlocLogCount = 0;
+	}
+	if (IGPlus_DetTlocLogCount >= 8)
+		return;
+	IGPlus_DetTlocLogCount++;
+	LossAgo = "never";
+	if (IGPlus_DetLastLossTS > 0.0)
+		LossAgo = string(Level.TimeSeconds - IGPlus_DetLastLossTS);
+	Log("[DET-TLOC]"@Event@PlayerReplicationInfo.PlayerName@Details
+		@"ping="$PlayerReplicationInfo.Ping@"lostMoves="$IGPlus_DetLostMoves
+		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp, 'IGPlus');
+}
+
+// Server, at each client error check: did the client translocate when we
+// did, and land where we did?
+function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError) {
+	local int Diff;
+
+	if (IGPlus_DetTranslocator == false)
+		return;
+	Diff = (ClientTlocCounter - TlocCounter) & 3;
+	if (Diff == 0) {
+		if (IGPlus_bDetTlocCheckLanding && ClientLocError > 64.0)
+			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@IGPlus_DetTlocInfo);
+		IGPlus_bDetTlocCheckLanding = false;
+		IGPlus_bDetTlocMismatch = false;
+		return;
+	}
+	IGPlus_bDetTlocCheckLanding = false;
+	if (IGPlus_bDetTlocMismatch)
+		return; // still the same one: the client hasn't had our correction yet
+	IGPlus_bDetTlocMismatch = true;
+	if (Diff == 1)
+		IGPlus_DetTlocLog("client-only-translocate", "dist="$int(Sqrt(ClientLocError)));
+	else if (Diff == 3) {
+		// Without predicted translocation the client always waits for us.
+		if (IGPlus_PredictedTranslocation)
+			IGPlus_DetTlocLog("server-only-translocate", "dist="$int(Sqrt(ClientLocError))@IGPlus_DetTlocInfo);
+	}
+	else
+		IGPlus_DetTlocLog("translocate-count-mismatch", "diff=2");
 }
 
 function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
@@ -4082,6 +4142,12 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (CurrentTimeStamp >= SM.TimeStamp) {
 		ClientDebugMessage("Reject Outdated Move:"@CurrentTimeStamp@SM.TimeStamp);
 		return;
+	}
+	// A gap before this move: moves that never arrived, with any throw or
+	// translocate in them. Context for the [DET-TLOC] lines.
+	if (ServerTimeStamp > 0.0 && SM.TimeStamp - SM.MoveDeltaTime > CurrentTimeStamp + 0.003) {
+		IGPlus_DetLostMoves++;
+		IGPlus_DetLastLossTS = Level.TimeSeconds;
 	}
 
 	ClientTlocCounter =          (SM.MiscData & 0x0C000000) >> 26;
@@ -4264,6 +4330,16 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// Deterministic translocator: the client's action, before this move's
 	// movement like on the client.
+	if (bDetMoveAcceptedForFire == false && SM.DetChargeData >= 1 && SM.DetChargeData <= 3
+		&& IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
+		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()) {
+		if (Level.Pauser != "")
+			IGPlus_DetTlocLog("dropped", class'ST_Translocator'.static.IGPlus_DetActionName(SM.DetChargeData)@"reason=paused");
+		else if (IGPlus_SkipMovesUntilNextTick)
+			IGPlus_DetTlocLog("dropped", class'ST_Translocator'.static.IGPlus_DetActionName(SM.DetChargeData)@"reason=warp-fix-skip");
+		else
+			IGPlus_DetTlocLog("dropped", class'ST_Translocator'.static.IGPlus_DetActionName(SM.DetChargeData)@"reason=time-margin");
+	}
 	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
 		ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
@@ -4408,6 +4484,7 @@ function IGPlus_CheckClientError() {
 	LocDelta = Location - ClientLocAbs;
 	ClientLocError = LocDelta Dot LocDelta;
 	debugClientLocError = ClientLocError;
+	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError);
 
 	// Calculate how far off we allow the client to be from the predicted position
 	MaxLocError = 3.0;

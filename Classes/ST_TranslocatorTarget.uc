@@ -24,6 +24,13 @@ var bool IGPlus_bRebasing;      // re-flying: server after the thrower's own hit
 var bool IGPlus_bLocalDisc;     // client: the thrower's own deterministic disc
 var float IGPlus_SyncAge;       // server: send our state to the thrower once this old (0: none)
 var float IGPlus_LastSyncAge;   // server: age of the last state sent from Tick
+// Server, for the [DET-TLOC] log: our bounces/landings/door pushes, and the
+// thrower's (from its sync asks).
+var float IGPlus_DetPathAges[4];
+var int IGPlus_DetServerPathEvents;
+var int IGPlus_DetClientPathEvents;
+var Actor IGPlus_DetLastEncroacher;
+var string IGPlus_DetLastTouch;
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -324,6 +331,8 @@ simulated function IGPlus_PathEvent(bool bLanded) {
 	if (IGPlus_bLocalDisc)
 		ST_Translocator(Master).IGPlus_DetLocalDiscBounced();
 	else if (bIGPlusFullHistory && Role == ROLE_Authority) {
+		IGPlus_DetPathAges[IGPlus_DetServerPathEvents % ArrayCount(IGPlus_DetPathAges)] = IGPlus_CurrentAge();
+		IGPlus_DetServerPathEvents++;
 		if (bLanded) { // at rest: where it ends this frame
 			IGPlus_SyncAge = 0.0;
 			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self, 0.0, true);
@@ -334,6 +343,46 @@ simulated function IGPlus_PathEvent(bool bLanded) {
 			Enable('Tick'); // a resting disc pushed by a door: Landed switched it off
 		}
 	}
+}
+
+// Server: did our disc bounce, land or get pushed within Slack of Age?
+function bool IGPlus_DetHadPathEventNear(float Age, float Slack) {
+	local int i;
+
+	for (i = 0; i < ArrayCount(IGPlus_DetPathAges) && i < IGPlus_DetServerPathEvents; i++)
+		if (Abs(IGPlus_DetPathAges[i] - Age) <= Slack)
+			return true;
+	return false;
+}
+
+function string IGPlus_DetPathSummary() {
+	local string Touched;
+
+	Touched = IGPlus_DetLastTouch;
+	if (Touched == "")
+		Touched = "none";
+	return "bounces(server/client)="$IGPlus_DetServerPathEvents$"/"$IGPlus_DetClientPathEvents@"lastTouch="$Touched;
+}
+
+// Server: a [DET-TLOC] line about something only our copy met (the
+// thrower's disc touches nothing).
+function IGPlus_DetLogTouch(string Event, Actor Other) {
+	local string By;
+
+	if (Level.NetMode == NM_Client || IGPlus_bLocalDisc || bIGPlusFullHistory == false || ST_Translocator(Master) == None)
+		return;
+	By = string(Other.Class.Name);
+	if (Pawn(Other) != None && Pawn(Other).PlayerReplicationInfo != None) {
+		By = Pawn(Other).PlayerReplicationInfo.PlayerName;
+		if (Level.Game.bTeamGame && Instigator != None && Instigator.PlayerReplicationInfo != None) {
+			if (Pawn(Other).PlayerReplicationInfo.Team == Instigator.PlayerReplicationInfo.Team)
+				By = By$"(team)";
+			else
+				By = By$"(enemy)";
+		}
+	}
+	IGPlus_DetLastTouch = Event$":"$By;
+	ST_Translocator(Master).IGPlus_DetLog(Event, "by="$By);
 }
 
 auto state Pickup {
@@ -390,6 +439,10 @@ auto state Pickup {
 
 	// A door (a mover) pushed the disc, or ran over it.
 	simulated event EncroachedBy(actor Other) {
+		if (Other != IGPlus_DetLastEncroacher) {
+			IGPlus_DetLastEncroacher = Other;
+			IGPlus_DetLogTouch("pushed-by-mover", Other);
+		}
 		IGPlus_PathEvent(false);
 	}
 
@@ -457,6 +510,7 @@ auto state Pickup {
 				
 				if (Physics == PHYS_None) {
 					if (bMasterTouch) {
+						IGPlus_DetLogTouch("picked-up-by-thrower", ActualPawn);
 						PlaySound(Sound'Botpack.Pickups.AmmoPick',,2.0);
 						Master.TTarget = None;
 						Master.bTTargetOut = false;
@@ -475,6 +529,7 @@ auto state Pickup {
 				NewPos.Z = Location.Z;
 				SetLocation(NewPos);
 				Velocity = vect(0,0,0);
+				IGPlus_DetLogTouch("stopped-by-rewound-player", ActualPawn);
 				IGPlus_NoteChanged();
 				
 				// Check team game rules
@@ -494,9 +549,16 @@ auto state Pickup {
 		
 		// Original touch handling for non-dummy actors
 		super.Touch(Other);
+		if (bDeleteMe && Other == Instigator)
+			IGPlus_DetLogTouch("picked-up-by-thrower", Other);
 		// Stock sticks the disc to pawns and bounces it off other actors.
-		if (bDeleteMe == false && Velocity != OldVelocity)
+		if (bDeleteMe == false && Velocity != OldVelocity) {
+			if (Other.bIsPawn)
+				IGPlus_DetLogTouch("stopped-by-player", Other);
+			else
+				IGPlus_DetLogTouch("bounced-off-actor", Other);
 			IGPlus_NoteChanged();
+		}
 	}
 }
 

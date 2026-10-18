@@ -575,6 +575,15 @@ function IGPlus_MoveDiscToSeenAge(ST_TranslocatorTarget STTarget, bbPlayer bbP) 
 		bbP.CurrentTimeStamp - IGPlus_ThrowTS,
 		ServerTimeSinceTargetSpawn - 0.2,
 		ServerTimeSinceTargetSpawn + 0.2);
+	if (IGPlus_IsDetMode()) {
+		bbP.IGPlus_DetTlocInfo = "clientAge="$(bbP.CurrentTimeStamp - IGPlus_ThrowTS)
+			@"usedAge="$TimeSinceThrow@"discAge="$STTarget.IGPlus_CurrentAge()@STTarget.IGPlus_DetPathSummary();
+		// The disc is younger here than on the thrower's screen past what the
+		// lookup flies it on (50ms): the throw's move came in late.
+		if (TimeSinceThrow != bbP.CurrentTimeStamp - IGPlus_ThrowTS
+			|| TimeSinceThrow - STTarget.IGPlus_AgeBias > STTarget.IGPlus_CurrentAge() + 0.05)
+			IGPlus_DetLog("translocate-age", bbP.IGPlus_DetTlocInfo);
+	}
 	HistoricalLocation = STTarget.IGPlus_GetHistoryAt(FMax(TimeSinceThrow - STTarget.IGPlus_AgeBias, 0.0), HistoricalLanded);
 
 	STTarget.PreTranslocateLocation = STTarget.Location;
@@ -849,6 +858,7 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 // action if our state allows it, else tell the client how things are.
 function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, bool bAltHeld) {
 	local ST_TranslocatorTarget STTarget;
+	local string Reason;
 
 	if (bFireHeld && bAltHeld && P.IGPlus_EnableDualButtonSwitch) {
 		// Stock two-button shortcut (NormalFire's check).
@@ -862,13 +872,23 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	// The client's attempt clock never lags ours (we only see its actions),
 	// so these checks are never stricter than its own. 1ms for float noise.
 	if (P.Weapon != self || IsInState('DownWeapon') || TS - IGPlus_DetLastAttemptTS < 0.099) {
-		IGPlus_DetReject(Action, TS);
+		if (P.Weapon != self)
+			Reason = "not-held";
+		else if (IsInState('DownWeapon'))
+			Reason = "holstering";
+		else
+			Reason = "0.1s-lockout";
+		IGPlus_DetReject(Action, TS, Reason);
 		return;
 	}
 
 	if (Action == IGPLUS_DETTLOC_THROW) {
 		if (TTarget != None || TS - IGPlus_DetLastFireTS < 0.499) {
-			IGPlus_DetReject(Action, TS);
+			if (TTarget != None)
+				Reason = "disc-already-out";
+			else
+				Reason = "0.5s-throw-timer";
+			IGPlus_DetReject(Action, TS, Reason);
 			return;
 		}
 		IGPlus_DetLastAttemptTS = TS;
@@ -880,6 +900,7 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 		ThrowTarget();
 		ServerTimeSinceLastFire = 0.0;
 		if (TTarget == None) {
+			IGPlus_DetLog("reject", "throw spawn-failed");
 			IGPlus_ClientDetSync(false, TS, TS);
 			return;
 		}
@@ -888,7 +909,11 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	}
 
 	if (TTarget == None || (Action == IGPLUS_DETTLOC_RECALL && TS - IGPlus_ThrowTS < 0.799)) {
-		IGPlus_DetReject(Action, TS);
+		if (TTarget == None)
+			Reason = "no-disc";
+		else
+			Reason = "0.8s-recall-timer";
+		IGPlus_DetReject(Action, TS, Reason);
 		return;
 	}
 	IGPlus_DetLastAttemptTS = TS;
@@ -896,6 +921,8 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 
 	if (Action == IGPLUS_DETTLOC_RECALL) {
 		IGPlus_DetLastFireTS = TS;
+		if (TTarget.Disrupted())
+			IGPlus_DetLog("gib", "recall of a disrupted disc");
 		if (IGPlus_GibIfDisrupted())
 			return;
 		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
@@ -911,21 +938,46 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	STTarget = ST_TranslocatorTarget(TTarget);
 	if (STTarget != None && STTarget.bIGPlusFullHistory)
 		IGPlus_MoveDiscToSeenAge(STTarget, P);
+	if (TTarget != None && TTarget.Disrupted())
+		IGPlus_DetLog("gib", "translocate to a disrupted disc");
 	if (TTarget == None || IGPlus_GibIfDisrupted())
 		return;
 	Translocate();
 	// Refused (AllowTranslocation): the disc stays out, show it again.
 	if (TTarget != None) {
+		IGPlus_DetLog("reject", "translocate refused");
 		IGPlus_bDetExpectOut = true;
 		IGPlus_ClientDetSync(true, IGPlus_ThrowTS, TS);
 	}
 }
 
-function IGPlus_DetReject(int Action, float TS) {
+function IGPlus_DetReject(int Action, float TS, string Reason) {
+	IGPlus_DetLog("reject", IGPlus_DetActionName(Action)@Reason);
 	if (Action == IGPLUS_DETTLOC_THROW)
 		IGPlus_ClientDetSync(false, TS, TS); // the disc it threw doesn't exist
 	if (TTarget != None)
 		IGPlus_ClientDetSync(true, IGPlus_ThrowTS, TS); // ours is still out
+}
+
+static function string IGPlus_DetActionName(int Action) {
+	switch (Action) {
+		case IGPLUS_DETTLOC_THROW: return "throw";
+		case IGPLUS_DETTLOC_RECALL: return "recall";
+		case IGPLUS_DETTLOC_TRANSLOCATE: return "translocate";
+	}
+	return "action"$Action;
+}
+
+// Server: a [DET-TLOC] line about our disc (see bbPlayer.IGPlus_DetTlocLog).
+function IGPlus_DetLog(string Event, string Details) {
+	local ST_TranslocatorTarget T;
+
+	if (bbPlayer(Owner) == None || IGPlus_IsDetMode() == false)
+		return;
+	T = ST_TranslocatorTarget(TTarget);
+	if (T != None && T.bIGPlusFullHistory)
+		Details = Details@"discAge="$T.IGPlus_CurrentAge()@T.IGPlus_DetPathSummary();
+	bbPlayer(Owner).IGPlus_DetTlocLog(Event, Details);
 }
 
 // Client: the server's truth about our disc. DiscTS names the throw it means,
@@ -981,6 +1033,11 @@ function IGPlus_DetSyncAfter(float DiscTS, float Age) {
 	T = ST_TranslocatorTarget(TTarget);
 	if (IGPlus_IsDetMode() == false || T == None || T.bIGPlusFullHistory == false || DiscTS != IGPlus_ThrowTS)
 		return;
+	T.IGPlus_DetClientPathEvents++;
+	// Our disc is past that age and met nothing then: the thrower's hit an
+	// edge (a window frame) ours missed.
+	if (T.Physics != PHYS_None && T.IGPlus_CurrentAge() >= Age + 0.05 && T.IGPlus_DetHadPathEventNear(Age, 0.05) == false)
+		IGPlus_DetLog("client-only-bounce", "clientBounceAge="$Age);
 	if (T.Physics == PHYS_None || T.IGPlus_CurrentAge() >= Age)
 		IGPlus_DetServerDiscChanged(T);
 	else // ponytail: waits at most 0.2s for a client clock running ahead
