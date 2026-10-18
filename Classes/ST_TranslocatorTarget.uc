@@ -500,6 +500,9 @@ auto state Pickup {
 			ST_Translocator(Master).IGPlus_DetIgnoreOurMovers(self, "door clears in a round trip:"@Wall.Name);
 			return;
 		}
+		if (IGPlus_bLocalDisc && Mover(Wall) != None && Wall.bInterpolating && bbPlayer(Instigator) != None)
+			bbPlayer(Instigator).ClientDebugMessage("Tloc disc bounces off a moving door:"@Wall.Name
+				@"age="$(Level.TimeSeconds - ST_Translocator(Master).IGPlus_DetThrowTS));
 
 		// Stock bounces off the first hits only.
 		bBounced = bAlreadyHit == false;
