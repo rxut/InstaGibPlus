@@ -137,6 +137,7 @@ var Weapon IGPlus_PSFiltFrom[8];      // client: server ClientPutDowns to drop (
 var Weapon IGPlus_PSFiltT1[8];
 var Weapon IGPlus_PSFiltT2[8];
 var float IGPlus_PSFiltUntil[8];
+var Weapon IGPlus_NextTrans;          // server: next life's translocator, already on our client (IGPlus_PrepareNextTrans)
 // Predicted switching, phase 1 (server, log only): client predictions vs outcome.
 var int IGPlus_PredSwitchTotal;
 var int IGPlus_PredSwitchClientMatch;
@@ -961,6 +962,8 @@ simulated event Destroyed() {
 	if (Role == ROLE_Authority && zzUTPure != none) {
 		zzUTPure.ModifyLogout(self);
 	}
+	if (Role == ROLE_Authority && IGPlus_NextTrans != none)
+		IGPlus_NextTrans.Destroy();
 	if ((Level.NetMode == NM_Client && Role == ROLE_AutonomousProxy) || Role == ROLE_Authority) {
 		IGPlus_ForcedSettingsRestore();
 	}
@@ -1768,6 +1771,67 @@ function ClientSetLocation( vector zzNewLocation, rotator zzNewRotation )
 		M.NextMove = FreeMoves;
 		M.Clear2();
 		FreeMoves = M;
+	}
+}
+
+// Server, on death: a fresh translocator of the kind we hold, owned by us but
+// outside the inventory chain, so it reaches our client during the respawn
+// delay. A respawn's translocator heads the chain, and a held weapon that
+// isn't the current one replicates at most 4 times a second (469
+// AInventory::UpdateFrequency): the client knew none of its new weapons for
+// up to 0.25s and its switch presses went to the server, a round trip late.
+function IGPlus_PrepareNextTrans() {
+	local Inventory Inv;
+	local int Guard;
+
+	if (RemoteRole != ROLE_AutonomousProxy || IGPlus_NextTrans != none)
+		return;
+	for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		if (Translocator(Inv) != none)
+			break;
+	}
+	if (Inv == none)
+		return;
+	IGPlus_NextTrans = Spawn(class<Weapon>(Inv.Class), self);
+	if (IGPlus_NextTrans == none)
+		return;
+	IGPlus_NextTrans.Instigator = self;
+	IGPlus_NextTrans.BecomeItem();
+	IGPlus_NextTrans.GotoState('');
+}
+
+// Server, right after the respawn handed out our weapons: the game's new
+// translocator (added last, so the head of the chain) gives way to the one
+// our client already has. Anything else at the head (no translocator this
+// life, another kind, the spawn weapon itself) keeps the game's.
+function IGPlus_UseNextTrans() {
+	local Weapon N, T;
+
+	N = IGPlus_NextTrans;
+	IGPlus_NextTrans = none;
+	if (N == none || N.bDeleteMe)
+		return;
+	T = Weapon(Inventory);
+	if (T == none || T.Class != N.Class || T == Weapon) {
+		N.Destroy();
+		return;
+	}
+	N.bHeldItem = T.bHeldItem;
+	N.RespawnTime = T.RespawnTime;
+	N.PickupAmmoCount = T.PickupAmmoCount;
+	N.Tag = T.Tag;
+	N.Event = T.Event;
+	if (PendingWeapon == T)
+		PendingWeapon = N; // the stock auto-switch to it (WeaponSet)
+	T.Destroy(); // spawned this tick: never sent to anyone
+	AddInventory(N);
+	N.GiveAmmo(self);
+	N.SetSwitchPriority(self);
+	// As fresh as the game's: its timers ran through the respawn delay.
+	if (ST_Translocator(N) != none) {
+		ST_Translocator(N).ServerTimeSinceLastFire = 0.0;
+		ST_Translocator(N).ServerTimeSinceTargetSpawn = 0.0;
 	}
 }
 
@@ -10320,6 +10384,8 @@ state Dying
 		IGPlus_DetCloseTradeWindow();
 		Level.Game.DiscardInventory(self); // last possible place to rid ourselves of old inventory
 		Result = Level.Game.RestartPlayer(self);
+		if (Result)
+			IGPlus_UseNextTrans();
 
 		if (RemoteRole == ROLE_AutonomousProxy && zzUTPure.Settings.bEnablePingCompensatedSpawn)
 			Level.Game.bDeathMatch = bDeathMatchSave;
@@ -10347,6 +10413,11 @@ state Dying
 
 			IGPlus_DetClearSwitchTrustState();
 			ChangedWeapon();
+			// Our client gets the spawn weapon with the respawn, not up to
+			// 0.1s later (default 10 updates a second): until then it has no
+			// weapon to switch from and its presses go to the server.
+			if (Weapon != none)
+				Weapon.NetUpdateFrequency = FMax(Weapon.NetUpdateFrequency, 200);
 			zzSpawnedTime = Level.TimeSeconds;
 		}
 		else
@@ -10427,6 +10498,8 @@ state Dying
 			else
 				Destroy();
 		}
+		if (Role == ROLE_Authority)
+			IGPlus_PrepareNextTrans();
 		SetTimer(RespawnDelay, false);
 
 		// clean out saved moves
@@ -13966,6 +14039,15 @@ simulated function IGPlus_PSClientHolster(Weapon Next) {
 	local Weapon Old;
 
 	Old = Weapon;
+	// A weapon that just reached us (the spawn weapon) isn't up yet: still
+	// on its pickup mesh, its holster wouldn't animate and the move code
+	// (ReplicateMove) would then bring it up, dropping ClientPending. Set it
+	// up as ClientActive.BeginState does and count it as the current one.
+	if (Old != OldClientWeapon) {
+		if (Old.Mesh == Old.default.Mesh && Old.Mesh != Old.PlayerViewMesh)
+			Old.Mesh = Old.PlayerViewMesh;
+		OldClientWeapon = Old;
+	}
 	TournamentWeapon(Old).ClientPutDown(Next);
 	if (!IGPlus_UseFastWeaponSwitch || Next == none)
 		return;
@@ -13992,7 +14074,11 @@ simulated function IGPlus_PSClientTick() {
 		if (Weapon == IGPlus_PSFrom && TournamentWeapon(Weapon) != none)
 			IGPlus_PSClientHolster(IGPlus_PSTarget);
 	}
-	if (bPSHolsterStarted && Weapon == IGPlus_PSTarget)
+	// The local swap (ClientDown.AnimEnd, after this in the frame) puts the
+	// target in ClientActive: hold it from then on, even if an echo already
+	// replaced Weapon (the spawn weapon's is resent until its channel is acked).
+	if (bPSHolsterStarted && (Weapon == IGPlus_PSTarget
+		|| (IGPlus_PSTarget != none && IGPlus_PSTarget.IsInState('ClientActive'))))
 		IGPlus_PSKeep = IGPlus_PSTarget;
 	if (IGPlus_PSKeep != none && Weapon != IGPlus_PSKeep
 		&& IGPlus_PSKeep.Owner == self && !IGPlus_PSKeep.bDeleteMe)
