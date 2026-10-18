@@ -13524,6 +13524,13 @@ exec function ToggleInstantRocket()
 	ClientMessage("Instant Rockets :"@bInstantRocket);
 }
 
+exec function ToggleSmoothDiscCorrections()
+{
+	Settings.bSmoothDiscCorrections = !Settings.bSmoothDiscCorrections;
+	IGPlus_SaveSettings();
+	ClientMessage("Smooth Disc Corrections:"@Settings.bSmoothDiscCorrections, 'IGPlus');
+}
+
 exec function NeverSwitchOnPickup( bool B )
 {
 	bNeverAutoSwitch = B;

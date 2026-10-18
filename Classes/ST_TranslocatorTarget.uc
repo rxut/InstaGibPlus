@@ -22,6 +22,8 @@ var float IGPlus_OwnShotAge;
 var bool IGPlus_bChangedEarly;  // shot/stuck/bounced before full history (fast-forward)
 var bool IGPlus_bRebasing;      // re-flying: server after the thrower's own hit, client catching up to a knock
 var bool IGPlus_bLocalDisc;     // client: the thrower's own deterministic disc
+var vector IGPlus_EaseFrom;     // client: draw offset a server correction left (bSmoothDiscCorrections)
+var float IGPlus_EaseStart;
 var float IGPlus_SyncAge;       // server: send our state to the thrower once this old (0: none)
 var float IGPlus_LastSyncAge;   // server: age of the last state sent from Tick
 // Server, for the [DET-TLOC] log: our bounces/landings/door pushes, and the
@@ -372,6 +374,28 @@ simulated function bool IGPlus_DetDoorClearsInTime(Mover M, vector HitNormal) {
 		if (A == M)
 			return false;
 	return true;
+}
+
+// Client, our own disc was put where the server's is: draw it where it was
+// (Drawn) and glide it there over 0.1s. A short way only: a long glide
+// would cross the air or a door, worse than the jump.
+simulated function IGPlus_EaseFromSpot(vector Drawn) {
+	IGPlus_EaseFrom = Drawn - Location;
+	if (VSize(IGPlus_EaseFrom) > 64.0)
+		IGPlus_EaseFrom = vect(0,0,0);
+	IGPlus_EaseStart = Level.TimeSeconds;
+	PrePivot = default.PrePivot + IGPlus_EaseFrom;
+}
+
+simulated function IGPlus_EaseStep() {
+	local float A;
+
+	if (IGPlus_EaseFrom == vect(0,0,0))
+		return;
+	A = (Level.TimeSeconds - IGPlus_EaseStart) / 0.1;
+	if (A >= 1.0)
+		IGPlus_EaseFrom = vect(0,0,0);
+	PrePivot = default.PrePivot + IGPlus_EaseFrom * (1.0 - FMin(A, 1.0));
 }
 
 // Server: did our disc bounce, land or get pushed within Slack of Age?

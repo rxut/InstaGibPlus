@@ -843,6 +843,10 @@ simulated function IGPlus_DetClientTick() {
 
 	if (IGPlus_DetLingerDisc != None && IGPlus_DetTlocPending() == false)
 		IGPlus_DetEndLinger();
+	if (IGPlus_DetLocalDisc != None)
+		IGPlus_DetLocalDisc.IGPlus_EaseStep();
+	if (IGPlus_DetLingerDisc != None)
+		IGPlus_DetLingerDisc.IGPlus_EaseStep();
 
 	// A disc out but ours gone some other way (not through DiscGone):
 	// show the server's rather than nothing.
@@ -1227,13 +1231,14 @@ simulated function IGPlus_ClientDetKnock(float LocX, float LocY, float LocZ, vec
 simulated function IGPlus_DetApplyKnock() {
 	local ST_TranslocatorTarget D;
 	local float Remaining, Step;
-	local vector OldLoc;
+	local vector OldLoc, Drawn;
 
 	IGPlus_bDetKnockPending = false;
 	D = IGPlus_DetLocalDisc;
 	if (D == None || D.bDeleteMe)
 		return;
 	OldLoc = D.Location;
+	Drawn = D.Location + D.PrePivot - D.default.PrePivot;
 
 	D.bCollideWorld = false;
 	D.SetLocation(IGPlus_DetKnockLoc);
@@ -1243,6 +1248,7 @@ simulated function IGPlus_DetApplyKnock() {
 	D.bAlreadyHit = IGPlus_bDetKnockHit;
 	if (IGPlus_bDetKnockLanded) {
 		D.SetPhysics(PHYS_None);
+		IGPlus_DetEaseKnock(D, Drawn);
 		IGPlus_DetLogKnock(D, OldLoc);
 		D.SetCollision(true, false, false);
 		return;
@@ -1261,10 +1267,17 @@ simulated function IGPlus_DetApplyKnock() {
 	if (D != None && D.bDeleteMe == false) {
 		D.ImpactSound = D.default.ImpactSound;
 		D.IGPlus_bRebasing = false;
+		IGPlus_DetEaseKnock(D, Drawn);
 		IGPlus_DetLogKnock(D, OldLoc);
 		// On the server's state now: our movers may stop it again (lifts).
 		D.SetCollision(true, false, false);
 	}
+}
+
+// Client: Smooth Disc Corrections eases a short knock on screen.
+simulated function IGPlus_DetEaseKnock(ST_TranslocatorTarget D, vector Drawn) {
+	if (bbPlayer(Owner) != None && bbPlayer(Owner).Settings != None && bbPlayer(Owner).Settings.bSmoothDiscCorrections)
+		D.IGPlus_EaseFromSpot(Drawn);
 }
 
 // Client debug line: how far the knock moved our disc on screen, both spots
