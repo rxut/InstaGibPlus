@@ -7076,6 +7076,7 @@ function xxReplicateMove(
 	eDodgeDir DodgeMove,
 	rotator DeltaRot
 ) {
+	local int TlocBefore;
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
 	local EPhysics OldPhys;
 	local Mover ExitLift;
@@ -7297,18 +7298,17 @@ function xxReplicateMove(
 		NewMove.DetChargeData = TlocAction;
 		if (TlocAction == 3) { // translocate
 			TlocDisc = ST_Translocator(Weapon).IGPlus_DetClientDisc();
+			TlocBefore = TlocCounter;
 			// The server gibs us where we stand on a disrupted disc.
 			if (IGPlus_PredictedTranslocation && TlocDisc != none
 				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold)
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
-			else if (IGPlus_PredictedTranslocation == false)
-				ClientDebugMessage("Tloc not predicted: Predicted Translocation is off");
-			else if (TlocDisc == none)
+			else if (IGPlus_PredictedTranslocation && TlocDisc == none)
 				ClientDebugMessage("Tloc not predicted: no disc here (ours out="$ST_Translocator(Weapon).IGPlus_bDetOut
 					@"local="$ST_Translocator(Weapon).IGPlus_DetLocalDisc@"server's="$ST_Translocator(Weapon).IGPlus_DiscRepl$")");
-			else
+			else if (IGPlus_PredictedTranslocation)
 				ClientDebugMessage("Tloc not predicted: disc disrupted");
-			ST_Translocator(Weapon).IGPlus_DetClientDiscGone();
+			ST_Translocator(Weapon).IGPlus_DetClientTranslocated(TlocCounter != TlocBefore);
 		}
 	}
 	// The shot's verdict on our own disc (shock moves carry no other charge).

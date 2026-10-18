@@ -70,6 +70,12 @@ struct IGPlus_DetServerState {
 };
 var IGPlus_DetServerState IGPlus_DetServer;
 
+// Client: a translocate we didn't make ourselves (no prediction): our disc
+// stays in view until the server's teleport reaches us.
+var ST_TranslocatorTarget IGPlus_DetLingerDisc;
+var float IGPlus_DetLingerUntil;
+var int IGPlus_DetLingerTloc;
+
 replication
 {
     // Replicate server timing for synchronization
@@ -739,6 +745,7 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 	local vector Start;
 
 	IGPlus_DetClientDiscGone();
+	IGPlus_DetEndLinger();
 	IGPlus_bDetOut = true;
 	IGPlus_DetThrowTS = TS;
 	IGPlus_DetLastFireTS = TS;
@@ -768,6 +775,29 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 	PlayFiring();
 }
 
+// Client: we pressed translocate. bMoved: we teleported ourselves (predicted
+// translocation). Else our disc stays in view until the server's teleport
+// reaches us (its correction changes our translocate count), a ping and a bit
+// at most, instead of vanishing a ping before we move.
+simulated function IGPlus_DetClientTranslocated(bool bMoved) {
+	IGPlus_DetEndLinger();
+	if (bMoved == false && bbPlayer(Owner) != None
+		&& IGPlus_DetLocalDisc != None && IGPlus_DetLocalDisc.bDeleteMe == false) {
+		IGPlus_DetLingerDisc = IGPlus_DetLocalDisc;
+		IGPlus_DetLocalDisc = None;
+		IGPlus_DetLingerTloc = bbPlayer(Owner).TlocCounter;
+		IGPlus_DetLingerUntil = Level.TimeSeconds
+			+ bbPlayer(Owner).PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.15;
+	}
+	IGPlus_DetClientDiscGone();
+}
+
+simulated function IGPlus_DetEndLinger() {
+	if (IGPlus_DetLingerDisc != None && IGPlus_DetLingerDisc.bDeleteMe == false)
+		IGPlus_DetLingerDisc.Destroy();
+	IGPlus_DetLingerDisc = None;
+}
+
 // Client: our disc is no more (recall, translocate, the server said so).
 simulated function IGPlus_DetClientDiscGone() {
 	IGPlus_bDetOut = false;
@@ -792,6 +822,10 @@ simulated function ST_TranslocatorTarget IGPlus_DetClientDisc() {
 // is the only one we have), and apply a knock once our disc reaches its age.
 simulated function IGPlus_DetClientTick() {
 	local ST_TranslocatorTarget S;
+
+	if (IGPlus_DetLingerDisc != None && (Level.TimeSeconds > IGPlus_DetLingerUntil
+		|| bbPlayer(Owner) == None || bbPlayer(Owner).TlocCounter != IGPlus_DetLingerTloc))
+		IGPlus_DetEndLinger();
 
 	// A disc out but ours gone some other way (not through DiscGone):
 	// show the server's rather than nothing.
