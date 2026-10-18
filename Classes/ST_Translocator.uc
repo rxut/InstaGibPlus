@@ -1097,17 +1097,18 @@ function IGPlus_DetSyncAfter(float DiscTS, float Age) {
 		T.IGPlus_SyncAge = FMax(T.IGPlus_SyncAge, FMin(Age, T.IGPlus_CurrentAge() + 0.2));
 }
 
-// Client: stop flying this throw ourselves and show the server's copy of it
-// for the rest of its life (its spot is the server's, half a ping late).
-simulated function IGPlus_DetHandToServerDisc(string Why) {
-	if (IGPlus_DetLocalDisc == None)
+// Client: our mover moved into our disc. Our movers stop touching it (it
+// still hits the world) and we ask the server for its disc's state now: the
+// knock puts ours there (pushed by the server's door, or not at all), and
+// IGPlus_DetApplyKnock lets our movers touch it again.
+simulated function IGPlus_DetIgnoreOurMovers(ST_TranslocatorTarget D, string Why) {
+	if (D == None || D != IGPlus_DetLocalDisc || D.bCollideActors == false)
 		return;
 	if (bbPlayer(Owner) != None)
-		bbPlayer(Owner).ClientDebugMessage("Tloc disc shown from the server:"@Why@"age="$(Level.TimeSeconds - IGPlus_DetThrowTS));
-	IGPlus_DetLocalDisc.Destroy();
-	IGPlus_DetLocalDisc = None;
-	IGPlus_bDetKnockPending = false;
-	IGPlus_bDetShowServerDisc = true;
+		bbPlayer(Owner).ClientDebugMessage("Tloc disc ignores our movers:"@Why@"age="$(Level.TimeSeconds - IGPlus_DetThrowTS));
+	D.SetCollision(false, false, false);
+	IGPlus_DetLastSyncAskTS = 0.0; // now, not 50ms after the last ask
+	IGPlus_DetLocalDiscBounced();
 }
 
 // Client: our disc bounced or landed (ST_TranslocatorTarget.IGPlus_PathEvent).
@@ -1165,6 +1166,7 @@ simulated function IGPlus_DetApplyKnock() {
 	if (IGPlus_bDetKnockLanded) {
 		D.SetPhysics(PHYS_None);
 		IGPlus_DetLogKnock(D, OldLoc);
+		D.SetCollision(true, false, false);
 		return;
 	}
 	D.SetPhysics(PHYS_Falling);
@@ -1182,6 +1184,8 @@ simulated function IGPlus_DetApplyKnock() {
 		D.ImpactSound = D.default.ImpactSound;
 		D.IGPlus_bRebasing = false;
 		IGPlus_DetLogKnock(D, OldLoc);
+		// On the server's state now: our movers may stop it again (lifts).
+		D.SetCollision(true, false, false);
 	}
 }
 
