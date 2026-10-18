@@ -9853,13 +9853,14 @@ function GiveMeWeapons()
 		}
 	}
 
-	if (!bNewNet)
-		SwitchToBestWeapon();
-	else if (Best != None)
-	{
-		PendingWeapon = Best;
-		ChangedWeapon();
-	}
+	// GiveWeapon and WeaponSet leave every weapon in state '', the current one
+	// too, where PutDown only sets bChangeWeapon and a switch hangs. Raise the
+	// pick through ChangedWeapon, which skips the raise if PendingWeapon is
+	// already the current weapon: then clear it, so the current one comes up.
+	PendingWeapon = Best;
+	if (PendingWeapon == Weapon)
+		PendingWeapon = none;
+	ChangedWeapon();
 }
 
 state PlayerWarmup extends PlayerWalking
