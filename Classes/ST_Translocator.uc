@@ -38,6 +38,7 @@ var ST_TranslocatorTarget IGPlus_DiscRepl;
 const IGPLUS_DETTLOC_THROW = 1;
 const IGPLUS_DETTLOC_RECALL = 2;
 const IGPLUS_DETTLOC_TRANSLOCATE = 3;
+const IGPLUS_DETTLOC_REFUSED = 4; // with TRANSLOCATE: the thrower didn't fit at its disc
 
 var float IGPlus_DetLastAttemptTS;
 var float IGPlus_DetLastFireTS;               // last throw or recall
@@ -913,6 +914,11 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, bool bAltHeld, optional float Late) {
 	local ST_TranslocatorTarget STTarget;
 	local string Reason;
+	local bool bRefused;
+	local vector Dest;
+
+	bRefused = (Action & IGPLUS_DETTLOC_REFUSED) != 0;
+	Action = Action & 3;
 
 	if (bFireHeld && bAltHeld && P.IGPlus_EnableDualButtonSwitch) {
 		// Stock two-button shortcut (NormalFire's check).
@@ -999,6 +1005,28 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 		IGPlus_DetLog("gib", "translocate to a disrupted disc");
 	if (TTarget == None || IGPlus_GibIfDisrupted())
 		return;
+	// The thrower didn't fit at its disc (Predicted Translocation), so it
+	// fails here too, as stock fails: refusing only ever costs the thrower.
+	if (bRefused) {
+		// Stock asks the game first (a CTF flag carrier drops the flag even
+		// when it then doesn't fit).
+		Dest = TTarget.Location;
+		if (TTarget.Physics == PHYS_None)
+			Dest += vect(0,0,40);
+		if (DeathMatchPlus(Level.Game) != None && DeathMatchPlus(Level.Game).AllowTranslocation(Pawn(Owner), Dest) == false) {
+			IGPlus_DetLog("reject", "translocate refused");
+			IGPlus_bDetExpectOut = true;
+			IGPlus_ClientDetSync(true, IGPlus_ThrowTS, TS);
+			return;
+		}
+		IGPlus_DetLog("client-refused", "");
+		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		bTTargetOut = false;
+		TTarget.Destroy();
+		TTarget = None;
+		bPointing = true;
+		return;
+	}
 	Translocate();
 	// Refused (AllowTranslocation): the disc stays out, show it again.
 	if (TTarget != None) {
@@ -1017,7 +1045,7 @@ function IGPlus_DetReject(int Action, float TS, string Reason) {
 }
 
 static function string IGPlus_DetActionName(int Action) {
-	switch (Action) {
+	switch (Action & 3) {
 		case IGPLUS_DETTLOC_THROW: return "throw";
 		case IGPLUS_DETTLOC_RECALL: return "recall";
 		case IGPLUS_DETTLOC_TRANSLOCATE: return "translocate";

@@ -4065,7 +4065,7 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 	local rotator SavedView;
 	local ST_Translocator TL;
 
-	if (Action < 1 || Action > 3 || (bHeld == false && TS <= IGPlus_DetLastActionSeenTS) || IsInState('Dying'))
+	if ((Action & 3) == 0 || Action > 7 || (bHeld == false && TS <= IGPlus_DetLastActionSeenTS) || IsInState('Dying'))
 		return;
 	IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, TS);
 	TL = ST_Translocator(Weapon);
@@ -4102,7 +4102,7 @@ function IGPlus_DetRunHeld(float MoveTS) {
 function IGPlus_DetHoldAction(int Action, float TS, int View, bool bWarp) {
 	local int i;
 
-	if (Action < 1 || Action > 3 || TS <= IGPlus_DetLastActionSeenTS)
+	if ((Action & 3) == 0 || Action > 7 || TS <= IGPlus_DetLastActionSeenTS)
 		return;
 	for (i = 0; i < IGPlus_DetHeldCount; i++)
 		if (IGPlus_DetHeldTS[i] >= TS)
@@ -4156,7 +4156,7 @@ static final function int IGPlus_DetUnpackRedoView(int RedoData) {
 
 // Server, at each client error check: did the client translocate when we
 // did, and land where we did?
-function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError) {
+function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool bLandingTaken) {
 	local int Diff;
 
 	if (IGPlus_DetTranslocator == false)
@@ -4164,7 +4164,7 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError) {
 	Diff = (ClientTlocCounter - TlocCounter) & 3;
 	if (Diff == 0) {
 		if (IGPlus_bDetTlocCheckLanding && ClientLocError > 64.0)
-			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@IGPlus_DetTlocInfo);
+			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@"taken="$bLandingTaken@IGPlus_DetTlocInfo);
 		IGPlus_bDetTlocCheckLanding = false;
 		IGPlus_bDetTlocMismatch = false;
 		return;
@@ -4182,6 +4182,25 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError) {
 	}
 	else
 		IGPlus_DetTlocLog("translocate-count-mismatch", "diff=2");
+}
+
+// Server: right after a translocate both sides made, the client's spot stands
+// if it is within 16uu and we can move there from ours (the discs a few uu
+// apart, not worth a correction). Like movement: within a small bubble, on
+// our map.
+function bool IGPlus_DetTakeClientLanding(int ClientTlocCounter, EPhysics ClientPhysics, vector ClientLocAbs, float ClientLocError) {
+	local vector OldLoc;
+
+	if (IGPlus_bDetTlocCheckLanding == false || ClientTlocCounter != TlocCounter || ClientPhysics != Physics
+		|| ClientLocError <= 3.0 || ClientLocError > 256.0)
+		return false;
+	// A swept move: never through a wall or a player.
+	OldLoc = Location;
+	Move(ClientLocAbs - Location);
+	if (VSize(Location - ClientLocAbs) < 0.5)
+		return true;
+	SetLocation(OldLoc);
+	return false;
 }
 
 function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
@@ -4314,7 +4333,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (IGPlus_DetTranslocator) {
 		// A resend is for a move between the last one we had and this one.
 		if ((SM.DetRedoData & 3) != 0 && SM.DetRedoTS > CurrentTimeStamp && SM.DetRedoTS < SM.TimeStamp)
-			RedoAction = SM.DetRedoData & 3;
+			RedoAction = SM.DetRedoData & 7;
 		OldTS = IGPlus_OldMoveTimeStamp(SM.TimeStamp, SM.OldMoveData1);
 		if (RedoAction != 0 || IGPlus_DetHeldCount > 0) {
 			if (Level.Pauser != "" || IGPlus_SkipMovesUntilNextTick) {
@@ -4482,7 +4501,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// movement like on the client.
 	// A move we don't run keeps its action for the next one we do (paused,
 	// warp fix); a throttled one (too far ahead) loses it, as before.
-	if (bDetMoveAcceptedForFire == false && SM.DetChargeData >= 1 && SM.DetChargeData <= 3
+	if (bDetMoveAcceptedForFire == false && SM.DetChargeData <= 7 && (SM.DetChargeData & 3) != 0
 		&& IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None) {
 		if (Level.Pauser != "" || IGPlus_SkipMovesUntilNextTick)
 			IGPlus_DetHoldAction(SM.DetChargeData, SM.TimeStamp, SM.View, Level.Pauser == "");
@@ -4491,7 +4510,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 	// Handled here (or not, on another weapon) like before: never again from a resend.
 	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
-		&& SM.DetChargeData >= 1 && SM.DetChargeData <= 3)
+		&& SM.DetChargeData <= 7 && (SM.DetChargeData & 3) != 0)
 		IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, SM.TimeStamp);
 	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
@@ -4623,6 +4642,7 @@ function IGPlus_CheckClientError() {
 	local float ClientLocError;
 	local float MaxLocError;
 	local bool bForceUpdate;
+	local bool bLandingTaken;
 
 	if (bHaveReceivedServerMove == false)
 		return;
@@ -4637,7 +4657,10 @@ function IGPlus_CheckClientError() {
 	LocDelta = Location - ClientLocAbs;
 	ClientLocError = LocDelta Dot LocDelta;
 	debugClientLocError = ClientLocError;
-	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError);
+	bLandingTaken = IGPlus_DetTakeClientLanding(ClientTlocCounter, ClientPhysics, ClientLocAbs, ClientLocError);
+	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken);
+	if (bLandingTaken)
+		ClientLocError = 0.0;
 
 	// Calculate how far off we allow the client to be from the predicted position
 	MaxLocError = 3.0;
@@ -7301,14 +7324,18 @@ function xxReplicateMove(
 			TlocBefore = TlocCounter;
 			// The server gibs us where we stand on a disrupted disc.
 			if (IGPlus_PredictedTranslocation && TlocDisc != none
-				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold)
+				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold) {
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
-			else if (IGPlus_PredictedTranslocation && TlocDisc == none)
+				// We didn't fit at the disc: the server fails it too (stock's
+				// failed translocate, the disc gone on both sides).
+				if (TlocCounter == TlocBefore)
+					NewMove.DetChargeData = TlocAction | 4;
+			} else if (IGPlus_PredictedTranslocation && TlocDisc == none)
 				ClientDebugMessage("Tloc not predicted: no disc here (ours out="$ST_Translocator(Weapon).IGPlus_bDetOut
 					@"local="$ST_Translocator(Weapon).IGPlus_DetLocalDisc@"server's="$ST_Translocator(Weapon).IGPlus_DiscRepl$")");
 			else if (IGPlus_PredictedTranslocation)
 				ClientDebugMessage("Tloc not predicted: disc disrupted");
-			ST_Translocator(Weapon).IGPlus_DetClientTranslocated(TlocCounter != TlocBefore);
+			ST_Translocator(Weapon).IGPlus_DetClientTranslocated(TlocCounter != TlocBefore || NewMove.DetChargeData != TlocAction);
 		}
 	}
 	// The shot's verdict on our own disc (shock moves carry no other charge).
@@ -7481,7 +7508,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	// Deterministic translocator: a lost packet must not lose a throw, recall
 	// or translocate the client already showed. The last action rides along
 	// again until the server is past its move (it runs each action once).
-	// DetRedoData: bits 0-1 the action, 8-31 its move's view (12 bits each).
+	// DetRedoData: bits 0-2 the action (bit 2: refused), 8-31 its move's view (12 bits each).
 	if (IGPlus_DetRedoAction != 0 && (IGPlus_DetRedoTloc == none || IGPlus_DetRedoTloc.bDeleteMe
 		|| IGPlus_DetRedoTloc.IGPlus_DetServer.MoveTS >= IGPlus_DetRedoTS || Move.TimeStamp - IGPlus_DetRedoTS > 1.0))
 		IGPlus_DetRedoAction = 0;
@@ -7491,7 +7518,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 			| (((IGPlus_DetRedoView & 0xFFFF) >>> 4) << 8)
 			| ((((IGPlus_DetRedoView >>> 16) & 0xFFFF) >>> 4) << 20);
 	}
-	if (Move.DetChargeData >= 1 && Move.DetChargeData <= 3 && Move.DetWeaponIndex == IGPLUS_DetWEAPON_None
+	if (Move.DetChargeData <= 7 && (Move.DetChargeData & 3) != 0 && Move.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& ST_Translocator(Move.IGPlus_SavedWeapon) != none) {
 		IGPlus_DetRedoAction = Move.DetChargeData;
 		IGPlus_DetRedoTS = Move.TimeStamp;
