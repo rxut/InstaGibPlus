@@ -66,6 +66,9 @@ var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent 
 var config bool   bCameraCorrectionSmoothing; // Apply corrections to the simulation at once, ease only the camera
 var config float  CameraCorrectionSmoothingTime; // Seconds until ~95% of a correction is gone from the camera
 var config bool   bSmoothLiftJump; // Leaving a moving lift: move to the server's spot at once, camera eased
+var config bool   bPredictedSwitching;     // Our own say on the server's predictions (the server's setting must allow them too)
+var config bool   bPredictedTranslocation;
+var config bool   bPredictedDiscBoost;
 var config float  MinDodgeClickTime; // Minimum time between two presses of the same direction for them to count as a dodge
 var config bool   bUseOldMouseInput;
 var config PIDControllerSettings SmoothVRController;
@@ -385,6 +388,9 @@ simulated function string DumpSettings() {
 		GetSetting("bCameraCorrectionSmoothing")$
 		GetSetting("CameraCorrectionSmoothingTime")$
 		GetSetting("bSmoothLiftJump")$
+		GetSetting("bPredictedSwitching")$
+		GetSetting("bPredictedTranslocation")$
+		GetSetting("bPredictedDiscBoost")$
 		GetSetting("MinDodgeClickTime")$
 		GetSetting("bUseOldMouseInput")$
 		GetSetting("SmoothVRController")$
@@ -493,6 +499,9 @@ defaultproperties
 	bCameraCorrectionSmoothing=False
 	CameraCorrectionSmoothingTime=0.1
 	bSmoothLiftJump=True
+	bPredictedSwitching=True
+	bPredictedTranslocation=True
+	bPredictedDiscBoost=True
 	MinDodgeClickTime=0
 	bUseOldMouseInput=False
 	SmoothVRController=(p=0.09,i=0.05,d=0.00)

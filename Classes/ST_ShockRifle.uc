@@ -149,7 +149,7 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		bOwnDisc = IGPlus_OwnDiscOnBeam(BP, StepView, StepLoc);
 		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire(true, StepView, StepLoc, bOwnDisc);
-		if (bOwnDisc && BP.IGPlus_PredictedDiscBoost)
+		if (bOwnDisc && BP.IGPlus_PredictsDiscBoost())
 			BP.IGPlus_DetTloc.IGPlus_DetPredictBoost(GetWeaponSettings().ShockBeamMomentum * 60000.0 * vector(StepView));
 	}
 }

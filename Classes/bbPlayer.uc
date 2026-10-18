@@ -632,6 +632,11 @@ struct ClientWeaponSettings {
 	var bool bRocketUseClientSideAnimations;
 	var bool bSniperUseClientSideAnimations;
 	var bool bTranslocatorUseClientSideAnimations;
+	// Predictions the player turned off (ClientSettings.bPredicted*). Negated,
+	// so the server's copy allows them until the client's arrives.
+	var bool bNoPredictedSwitching;
+	var bool bNoPredictedTranslocation;
+	var bool bNoPredictedDiscBoost;
 };
 
 var ClientWeaponSettings ClientWeaponSettingsData;
@@ -1385,6 +1390,9 @@ simulated event PostNetBeginPlay()
 	ClientWeaponSettingsData.bRocketUseClientSideAnimations = Settings.bRocketUseClientSideAnimations;
 	ClientWeaponSettingsData.bSniperUseClientSideAnimations = Settings.bSniperUseClientSideAnimations;
 	ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = Settings.bTranslocatorUseClientSideAnimations;
+	ClientWeaponSettingsData.bNoPredictedSwitching = !Settings.bPredictedSwitching;
+	ClientWeaponSettingsData.bNoPredictedTranslocation = !Settings.bPredictedTranslocation;
+	ClientWeaponSettingsData.bNoPredictedDiscBoost = !Settings.bPredictedDiscBoost;
 
 	if ( Role != ROLE_SimulatedProxy )	// Other players are Simulated, local player is Autonomous or Authority (if listen server which pure doesn't support anyway :P)
 	{
@@ -2884,7 +2892,7 @@ function ClientUpdatePosition()
 
 		// Replay redid predicted translocations: only a counter that still
 		// differs means the shown and corrected states are a teleport apart.
-		if (IGPlus_PredictedTranslocation)
+		if (IGPlus_PredictsTranslocation())
 			IGPlus_AdjustLocationOverride = (TlocCounter != IGPlus_PreAdjustTlocCounter);
 
 		if (IGPlus_InLiftExitWindow() && IGPlus_AdjustLocationOverride == false
@@ -4259,7 +4267,7 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool b
 		IGPlus_DetTlocLog("client-only-translocate", "dist="$int(Sqrt(ClientLocError)));
 	else if (Diff == 3) {
 		// Without predicted translocation the client always waits for us.
-		if (IGPlus_PredictedTranslocation)
+		if (IGPlus_PredictsTranslocation())
 			IGPlus_DetTlocLog("server-only-translocate", "dist="$int(Sqrt(ClientLocError))@IGPlus_DetTlocInfo);
 	}
 	else
@@ -7388,7 +7396,7 @@ function xxReplicateMove(
 
 			IGPlus_DetFillMoveBinding(NewMove);
 
-			if (bForceAltTap && IGPlus_PredictedTranslocation && IGPlus_DetTranslocator == false)
+			if (bForceAltTap && IGPlus_PredictsTranslocation() && IGPlus_DetTranslocator == false)
 				IGPlus_PredictTranslocate(NewMove);
 			if ((bForceFireTap || bForceAltTap) && ST_Translocator(Weapon) != none)
 				IGPlus_TlocLastPressTS = Level.TimeSeconds;
@@ -7409,17 +7417,17 @@ function xxReplicateMove(
 			TlocDisc = ST_Translocator(Weapon).IGPlus_DetClientDisc();
 			TlocBefore = TlocCounter;
 			// The server gibs us where we stand on a disrupted disc.
-			if (IGPlus_PredictedTranslocation && TlocDisc != none
+			if (IGPlus_PredictsTranslocation() && TlocDisc != none
 				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold) {
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
 				// We didn't fit at the disc: the server fails it too (stock's
 				// failed translocate, the disc gone on both sides).
 				if (TlocCounter == TlocBefore)
 					NewMove.DetChargeData = TlocAction | 4;
-			} else if (IGPlus_PredictedTranslocation && TlocDisc == none)
+			} else if (IGPlus_PredictsTranslocation() && TlocDisc == none)
 				ClientDebugMessage("Tloc not predicted: no disc here (ours out="$ST_Translocator(Weapon).IGPlus_bDetOut
 					@"local="$ST_Translocator(Weapon).IGPlus_DetLocalDisc@"server's="$ST_Translocator(Weapon).IGPlus_DiscRepl$")");
-			else if (IGPlus_PredictedTranslocation)
+			else if (IGPlus_PredictsTranslocation())
 				ClientDebugMessage("Tloc not predicted: disc disrupted");
 			ST_Translocator(Weapon).IGPlus_DetClientTranslocated(TlocCounter != TlocBefore || NewMove.DetChargeData != TlocAction);
 		}
@@ -8134,7 +8142,27 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bSniperUseClientSideAnimations = bValue;
     } else if (Key ~= "bTranslocatorUseClientSideAnimations") {
         ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations = bValue;
+    } else if (Key ~= "bPredictedSwitching") {
+        ClientWeaponSettingsData.bNoPredictedSwitching = !bValue;
+    } else if (Key ~= "bPredictedTranslocation") {
+        ClientWeaponSettingsData.bNoPredictedTranslocation = !bValue;
+    } else if (Key ~= "bPredictedDiscBoost") {
+        ClientWeaponSettingsData.bNoPredictedDiscBoost = !bValue;
     }
+}
+
+// Predictions the server allows and the player didn't turn off. The same
+// answer on both machines (ClientWeaponSettingsData reaches the server).
+simulated function bool IGPlus_PredictsSwitching() {
+	return IGPlus_PredictedSwitching && !ClientWeaponSettingsData.bNoPredictedSwitching;
+}
+
+simulated function bool IGPlus_PredictsTranslocation() {
+	return IGPlus_PredictedTranslocation && !ClientWeaponSettingsData.bNoPredictedTranslocation;
+}
+
+simulated function bool IGPlus_PredictsDiscBoost() {
+	return IGPlus_PredictedDiscBoost && !ClientWeaponSettingsData.bNoPredictedDiscBoost;
 }
 
 simulated function string GetForcedSettingValue(string Key) {
@@ -13807,7 +13835,7 @@ simulated function bool IGPlus_PSSpawnSelectRunning() {
 }
 
 simulated function bool IGPlus_PSClientCanPredict() {
-	if (!IGPlus_PredictedSwitching || Level.NetMode != NM_Client)
+	if (!IGPlus_PredictsSwitching() || Level.NetMode != NM_Client)
 		return false;
 	if (Weapon == none || TournamentWeapon(Weapon) == none)
 		return false;
@@ -14208,7 +14236,7 @@ function xxServerPredictedSwitch(int Serial, Weapon Target, Weapon From, float T
 	if (Role < ROLE_Authority)
 		return;
 
-	if (!IGPlus_PredictedSwitching || IsInState('Dying') || IsInState('FeigningDeath')
+	if (!IGPlus_PredictsSwitching() || IsInState('Dying') || IsInState('FeigningDeath')
 		|| Level.Game.bGameEnded || Level.Pauser != "") {
 		IGPlus_PSReject(Serial, "state", Weapon);
 		return;

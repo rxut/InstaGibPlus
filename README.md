@@ -72,6 +72,9 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bCameraCorrectionSmoothing](#bcameracorrectionsmoothing)
 1. [CameraCorrectionSmoothingTime](#cameracorrectionsmoothingtime)
 1. [bSmoothLiftJump](#bsmoothliftjump)
+1. [bPredictedSwitching](#bpredictedswitching)
+1. [bPredictedTranslocation](#bpredictedtranslocation)
+1. [bPredictedDiscBoost](#bpredicteddiscboost)
 1. [bNoSmoothing](#bnosmoothing)
 1. [bLogClientMessages](#blogclientmessages)
 1. [bDemoShowClientMessages](#bdemoshowclientmessages)
@@ -451,6 +454,24 @@ How long the camera takes to ease out a correction (about 95% of it is gone afte
 **Default: True**  
 
 If set to `True`, when you jump or step off a moving lift, you move straight to where the server has you and your view eases there, instead of snapping there a ping later.
+
+## bPredictedSwitching
+**Type: bool**  
+**Default: True**  
+
+If set to `True`, your weapon switches start the moment you press, where the server's [bEnablePredictedSwitching](#benablepredictedswitching) allows it. If set to `False`, your switches start when the server answers, a ping later.
+
+## bPredictedTranslocation
+**Type: bool**  
+**Default: True**  
+
+If set to `True`, translocating moves you the moment you press, where the server's [bEnablePredictedTranslocation](#benablepredictedtranslocation) allows it. If set to `False`, you move when the server's teleport arrives, a ping later, and your disc stays in view until then.
+
+## bPredictedDiscBoost
+**Type: bool**  
+**Default: True**  
+
+If set to `True`, your own shock beam pushes your own translocator disc on your screen right away, where the server's [bEnablePredictedDiscBoost](#benablepredicteddiscboost) allows it. If set to `False`, the push shows when the server's arrives, a ping later.
 
 ## bNoSmoothing
 **Type: bool**  
@@ -1950,7 +1971,7 @@ Stops clients whose clock runs fast, such as speed hacks, from firing determinis
 **Type: bool**  
 **Default: True**  
 
-If True, weapon switches start on the client the moment the key is pressed instead of one round trip later, and the server applies them at the same timestamp: the holster, the swap and the moment the new weapon may fire land on the same instants on both sides. The server validates every switch and rolls the client back if it can't honour one. Requires bEnableInputReplication to be False, works with or without bUseFastWeaponSwitch, and IG+'s own HUD on the client. Switches the server makes itself (out of ammo, pickups, respawn) are unchanged.
+If True, weapon switches start on the client the moment the key is pressed instead of one round trip later, and the server applies them at the same timestamp: the holster, the swap and the moment the new weapon may fire land on the same instants on both sides. The server validates every switch and rolls the client back if it can't honour one. Requires bEnableInputReplication to be False, works with or without bUseFastWeaponSwitch, and IG+'s own HUD on the client. Switches the server makes itself (out of ammo, pickups, respawn) are unchanged. Players can turn it off for themselves with [bPredictedSwitching](#bpredictedswitching).
 
 ## bEnablePushSafeAim
 
@@ -1978,14 +1999,14 @@ If True, translocator throws, recalls and translocations follow the same rules o
 **Type: bool**  
 **Default: True**  
 
-If True, translocating moves you to the disc on your screen the moment you press, instead of a round trip later. The server translocates you at the same timestamp. Only for the stock translocator: [bEnableDeterministicTranslocator](#benabledeterministictranslocator) already does this itself. Requires TranslocatorCompensatePing and bEnableInputReplication to be False.
+If True, translocating moves you to the disc on your screen the moment you press, instead of a round trip later. The server translocates you at the same timestamp. Works with the stock translocator and with [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The stock translocator also needs TranslocatorCompensatePing. Requires bEnableInputReplication to be False. Players can turn it off for themselves with [bPredictedTranslocation](#bpredictedtranslocation).
 
 ## bEnablePredictedDiscBoost
 
 **Type: bool**  
 **Default: True**  
 
-If True, shooting your own translocator disc with the shock beam pushes it on your screen right away, the same way the server does at the same timestamp. Requires [bEnableDeterministicTranslocator](#benabledeterministictranslocator).
+If True, shooting your own translocator disc with the shock beam pushes it on your screen right away, the same way the server does at the same timestamp. Requires [bEnableDeterministicTranslocator](#benabledeterministictranslocator). Players can turn it off for themselves with [bPredictedDiscBoost](#bpredicteddiscboost).
 
 # Weapon Settings
 

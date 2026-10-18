@@ -84,6 +84,18 @@ var localized string MoreInformationText;
 	var localized string SmoothLiftJumpText;
 	var localized string SmoothLiftJumpHelp;
 
+	var UWindowCheckbox Chk_PredictedSwitching;
+	var localized string PredictedSwitchingText;
+	var localized string PredictedSwitchingHelp;
+
+	var UWindowCheckbox Chk_PredictedTranslocation;
+	var localized string PredictedTranslocationText;
+	var localized string PredictedTranslocationHelp;
+
+	var UWindowCheckbox Chk_PredictedDiscBoost;
+	var localized string PredictedDiscBoostText;
+	var localized string PredictedDiscBoostHelp;
+
 // Advanced
 	var UWindowLabelControl Lbl_Advanced;
 	var localized string AdvancedText;
@@ -903,6 +915,9 @@ function Created() {
 	Chk_CameraCorrectionSmoothing = CreateCheckbox(CameraCorrectionSmoothingText, CameraCorrectionSmoothingHelp);
 	Edit_CameraCorrectionSmoothingTime = CreateEdit(ECT_Real, CameraCorrectionSmoothingTimeText, CameraCorrectionSmoothingTimeHelp, , 64);
 	Chk_SmoothLiftJump = CreateCheckbox(SmoothLiftJumpText, SmoothLiftJumpHelp);
+	Chk_PredictedSwitching = CreateCheckbox(PredictedSwitchingText, PredictedSwitchingHelp);
+	Chk_PredictedTranslocation = CreateCheckbox(PredictedTranslocationText, PredictedTranslocationHelp);
+	Chk_PredictedDiscBoost = CreateCheckbox(PredictedDiscBoostText, PredictedDiscBoostHelp);
 
 	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
@@ -1094,6 +1109,9 @@ function Load() {
 	Chk_CameraCorrectionSmoothing.bChecked = Settings.bCameraCorrectionSmoothing;
 	Edit_CameraCorrectionSmoothingTime.SetValue(string(Settings.CameraCorrectionSmoothingTime));
 	Chk_SmoothLiftJump.bChecked = Settings.bSmoothLiftJump;
+	Chk_PredictedSwitching.bChecked = Settings.bPredictedSwitching;
+	Chk_PredictedTranslocation.bChecked = Settings.bPredictedTranslocation;
+	Chk_PredictedDiscBoost.bChecked = Settings.bPredictedDiscBoost;
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
@@ -1222,6 +1240,9 @@ function Save() {
 	Settings.bCameraCorrectionSmoothing = Chk_CameraCorrectionSmoothing.bChecked;
 	Settings.CameraCorrectionSmoothingTime = FMax(0.0, float(Edit_CameraCorrectionSmoothingTime.GetValue()));
 	Settings.bSmoothLiftJump = Chk_SmoothLiftJump.bChecked;
+	Settings.bPredictedSwitching = Chk_PredictedSwitching.bChecked;
+	Settings.bPredictedTranslocation = Chk_PredictedTranslocation.bChecked;
+	Settings.bPredictedDiscBoost = Chk_PredictedDiscBoost.bChecked;
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
@@ -1332,6 +1353,9 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bRocketUseClientSideAnimations", Chk_RocketUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bSniperUseClientSideAnimations", Chk_SniperUseClientSideAnimations.bChecked);
 		P.UpdateReplicatedWeaponSetting("bTranslocatorUseClientSideAnimations", Chk_TranslocatorUseClientSideAnimations.bChecked);
+		P.UpdateReplicatedWeaponSetting("bPredictedSwitching", Chk_PredictedSwitching.bChecked);
+		P.UpdateReplicatedWeaponSetting("bPredictedTranslocation", Chk_PredictedTranslocation.bChecked);
+		P.UpdateReplicatedWeaponSetting("bPredictedDiscBoost", Chk_PredictedDiscBoost.bChecked);
 	}
 
 	Settings.SaveConfig();
@@ -1408,6 +1432,12 @@ defaultproperties
 		CameraCorrectionSmoothingHelp="Experimental. If checked, server corrections move you at once and only the camera eases to the new spot"
 		SmoothLiftJumpText="Smooth Lift Jump"
 		SmoothLiftJumpHelp="Experimental. When you jump or step off a moving lift, your view glides to where the server has you instead of snapping there a ping later"
+		PredictedSwitchingText="Predicted Weapon Switch"
+		PredictedSwitchingHelp="If checked, your weapon switches start the moment you press, where the server allows it. Off: switches start when the server answers, a ping later"
+		PredictedTranslocationText="Predicted Translocation"
+		PredictedTranslocationHelp="If checked, translocating moves you the moment you press, where the server allows it. Off: you move when the server's teleport arrives, a ping later"
+		PredictedDiscBoostText="Predicted Disc Boost"
+		PredictedDiscBoostHelp="If checked, your own shock beam pushes your own disc on your screen right away, where the server allows it. Off: the push shows when the server's arrives, a ping later"
 
 		CameraCorrectionSmoothingTimeText="Camera Smoothing Time"
 		CameraCorrectionSmoothingTimeHelp="Seconds until a correction is (nearly) gone from the camera"

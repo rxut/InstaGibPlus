@@ -254,11 +254,11 @@ simulated function ClientThrowTarget()
 		// Predicted translocation lands on this disc until the server's arrives,
 		// so it must bounce off the world like the server's does. Only after
 		// Throw: its SetLocation must not fail on world collision (eaf4d45).
-		TTarget_Client.bCollideWorld = bbP.IGPlus_PredictedTranslocation;
+		TTarget_Client.bCollideWorld = bbP.IGPlus_PredictsTranslocation();
 
 		// Backup removal of client disc
 		TTarget_Client.LifeSpan = Pawn(Owner).PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
-		if (bbP.IGPlus_PredictedTranslocation)
+		if (bbP.IGPlus_PredictsTranslocation())
 			TTarget_Client.LifeSpan = FMax(TTarget_Client.LifeSpan, Pawn(Owner).PlayerReplicationInfo.Ping * 0.002 * Level.TimeDilation + 0.1);
 	}
 }
@@ -364,7 +364,7 @@ function ThrowTarget()
 
 		if (bbP != none && (GetWeaponSettings().TranslocatorCompensatePing || IGPlus_IsDetMode())) {
 			// Fragger's Translocate() has no restore path: stock lookup only.
-			if ((bbP.IGPlus_PredictedTranslocation || IGPlus_IsDetMode())
+			if ((bbP.IGPlus_PredictsTranslocation() || IGPlus_IsDetMode())
 				&& TTarget != None && Class == class'ST_Translocator') {
 				IGPlus_ThrowTS = bbP.CurrentTimeStamp;
 				IGPlus_DiscRepl = ST_TranslocatorTarget(TTarget);
@@ -1325,7 +1325,7 @@ function Actor IGPlus_DetOwnBeam(bbPlayer P, Actor Other, vector Start, out vect
 		HitLocation = SeenLoc;
 		return T;
 	}
-	if (P.IGPlus_PredictedDiscBoost)
+	if (P.IGPlus_PredictsDiscBoost())
 		IGPlus_DetServerDiscChanged(T);
 	return Other;
 }

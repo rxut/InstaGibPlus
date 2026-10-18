@@ -92,7 +92,7 @@ simulated function PostNetBeginPlay()
 	super.PostNetBeginPlay();
 
 	if (bbP != none && (bbP.IGPlus_DetTranslocator || (GetWeaponSettings().TranslocatorCompensatePing
-		&& (bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations || bbP.IGPlus_PredictedTranslocation)))) {
+		&& (bbP.ClientWeaponSettingsData.bTranslocatorUseClientSideAnimations || bbP.IGPlus_PredictsTranslocation())))) {
 
 		In = PlayerPawn(Instigator);
 
