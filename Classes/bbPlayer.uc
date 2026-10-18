@@ -132,6 +132,7 @@ var float IGPlus_PSGate;
 var float IGPlus_PSPrevGate;          // client: From's gate, restored on cancel
 var bool bPSHolsterStarted;
 var bool bPSForcing;                  // server: the timeline's own ChangedWeapon
+var float IGPlus_PSSpawnTS;           // client: our timestamp the server had reached when it respawned us
 var Weapon IGPlus_PSKeep;             // client: weapon the timeline put up (vs stale echoes)
 var Weapon IGPlus_PSFiltFrom[8];      // client: server ClientPutDowns to drop (see IGPlus_PSFilterDrops)
 var Weapon IGPlus_PSFiltT1[8];
@@ -743,6 +744,7 @@ replication
 		xxClientPSResume,
 		xxClientPSTimes,
 		xxClientPSFilterDone,
+		xxClientPSSpawn,
 		xxClientDetEntryGate,
 		xxSetTeleRadius,
 		xxSetTimes,
@@ -10410,6 +10412,7 @@ state Dying
 				PlaySpawn();
 
 			IGPlus_ClientReStart(Physics, Location, Rotation);
+			xxClientPSSpawn(CurrentTimeStamp);
 
 			IGPlus_DetClearSwitchTrustState();
 			ChangedWeapon();
@@ -13783,6 +13786,28 @@ simulated function bool IGPlus_PSRunning() {
 	return IGPlus_PSActive && Level.TimeSeconds <= IGPlus_PSEquipTS;
 }
 
+// Server -> client, with the respawn: our timestamp the server had reached
+// when it respawned us. The spawn weapon's select started there.
+simulated function xxClientPSSpawn(float TS) {
+	IGPlus_PSSpawnTS = TS;
+}
+
+// Client: the spawn Enforcer is still in its select, here and on the server.
+// The server's select started a round trip before ours (IGPlus_PSSpawnTS)
+// and fires a held respawn click when it ends, so a switch is only safe if
+// the press gets there first: before the anim's last frame (27 of 28), with
+// 0.05 s for the press's trip. Any later select of it started later still.
+simulated function bool IGPlus_PSSpawnSelectRunning() {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == none || ST_enforcer(Weapon) == none
+		|| !Weapon.IsInState('ClientActive') || Weapon.bWeaponUp)
+		return false;
+	return Level.TimeSeconds + 0.05 < IGPlus_PSSpawnTS
+		+ IGPlus_DetEffectiveAnimTime(WS.EnforcerSelectTime, WS.default.EnforcerSelectTime) * 27.0 / 28.0;
+}
+
 simulated function bool IGPlus_PSClientCanPredict() {
 	if (!IGPlus_PredictedSwitching || Level.NetMode != NM_Client)
 		return false;
@@ -13798,12 +13823,13 @@ simulated function bool IGPlus_PSClientCanPredict() {
 		|| (IGPlus_DetClientSwitchPending != none && IGPlus_DetClientSwitchPending != Weapon))
 		return false;
 	// Legacy weapons mid-fire hold the holster on their server fire state, and
-	// the warhead may be guiding: keep stock timing for those.
+	// the warhead may be guiding: keep stock timing for those. A respawn click
+	// still held on the spawn Enforcer's select hasn't fired yet.
 	if (ST_WarheadLauncher(Weapon) != none)
 		return false;
 	if (!IGPlus_IsDetActiveWeapon(Weapon) && (bFire != 0 || bAltFire != 0
 		|| Weapon.IsInState('ClientFiring') || Weapon.IsInState('ClientAltFiring')))
-		return false;
+		return IGPlus_PSSpawnSelectRunning();
 	return true;
 }
 
@@ -15008,16 +15034,28 @@ function ClientWeaponEvent(name EventType)
 
 function SendClientFire(Weapon W, int N)
 {
-	if (IGPlus_InDemoPlayback())
+	if (IGPlus_InDemoPlayback() || IGPlus_PSDropsSelectFire(W, N))
 		return;
 	Super.SendClientFire(W, N);
 }
 
 function SendClientAltFire(Weapon W, int N)
 {
-	if (IGPlus_InDemoPlayback())
+	if (IGPlus_InDemoPlayback() || IGPlus_PSDropsSelectFire(W, N))
 		return;
 	Super.SendClientAltFire(W, N);
+}
+
+// The server's select of the weapon our predicted switch is putting down
+// ended with fire held before our press got there (a late press packet), and
+// fired there. Stock would fire whatever we hold now, mid-holster or already
+// the new weapon. The server takes the switch on; keep showing it.
+function bool IGPlus_PSDropsSelectFire(Weapon W, int N) {
+	if (!IGPlus_PSActive || W != IGPlus_PSFrom)
+		return false;
+	if (N > WeaponUpdate)
+		WeaponUpdate = N;
+	return true;
 }
 
 // Stock: the server's select-end "this weapon is really up". During a predicted
