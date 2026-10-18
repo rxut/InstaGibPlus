@@ -75,6 +75,7 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bPredictedSwitching](#bpredictedswitching)
 1. [bPredictedTranslocation](#bpredictedtranslocation)
 1. [bPredictedDiscBoost](#bpredicteddiscboost)
+1. [bSmoothDiscCorrections](#bsmoothdisccorrections)
 1. [bNoSmoothing](#bnosmoothing)
 1. [bLogClientMessages](#blogclientmessages)
 1. [bDemoShowClientMessages](#bdemoshowclientmessages)
@@ -473,6 +474,12 @@ If set to `True`, translocating moves you the moment you press, where the server
 
 If set to `True`, your own shock beam pushes your own translocator disc on your screen right away, where the server's [bEnablePredictedDiscBoost](#benablepredicteddiscboost) allows it. If set to `False`, the push shows when the server's arrives, a ping later.
 
+## bSmoothDiscCorrections
+**Type: bool**  
+**Default: False**  
+
+Experimental. If set to `True`, when the server moves your own translocator disc a little (up to 64 units), the disc glides there on your screen in a tenth of a second instead of jumping. Bigger corrections still jump. Only the drawing changes: where the disc is and where you translocate to stay the same. Only used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The settings menu grays it out on servers without it. Console: [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections).
+
 ## bNoSmoothing
 **Type: bool**  
 **Default: True**  
@@ -862,7 +869,7 @@ Enable client-side animation timing for Sniper ping-compensated logic.
 **Type: bool**  
 **Default: False**  
 
-Enable client-side animation timing for Translocator ping-compensated logic.
+Enable client-side animation timing for Translocator ping-compensated logic. Not used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator), which always shows your own disc the moment you throw. The settings menu grays it out there.
 
 # Client Commands
 The following commands are additions by IG+ to the standard set of commands.
@@ -919,6 +926,7 @@ Parameters marked `optional` do not have to be supplied.
 1. [RocketClientSideAnimations](#rocketclientsideanimations)
 1. [SniperClientSideAnimations](#sniperclientsideanimations)
 1. [TranslocatorClientSideAnimations](#translocatorclientsideanimations)
+1. [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections)
 1. [NetcodeHelp](#netcodehelp)
 1. [bEnableInputReplication](#benableinputreplication-command)
 1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation-command)
@@ -1114,6 +1122,9 @@ Enable/disable client-side animations for Sniper behavior.
 **Parameters: (bool b)**
 
 Enable/disable client-side animations for Translocator behavior.
+
+## ToggleSmoothDiscCorrections
+Turns [bSmoothDiscCorrections](#bsmoothdisccorrections) on or off and says which.
 
 ## NetcodeHelp
 Prints netcode runtime settings and available netcode debug commands.

@@ -1,6 +1,23 @@
 class IGPlus_Checkbox extends UWindowCheckbox;
 
 var UWindowDialogControl NextSettingControl;
+var color EnabledTextColor;
+
+// Grayed out (UWindowCheckbox ignores clicks while disabled, and draws its
+// disabled box), text too.
+function SetDisabled(bool bNewDisabled) {
+	if (bNewDisabled == bDisabled)
+		return;
+	if (bNewDisabled) {
+		EnabledTextColor = TextColor;
+		TextColor.R = 128;
+		TextColor.G = 128;
+		TextColor.B = 128;
+	} else {
+		TextColor = EnabledTextColor;
+	}
+	bDisabled = bNewDisabled;
+}
 
 function MouseLeave() {
 	super(UWindowDialogControl).MouseLeave();

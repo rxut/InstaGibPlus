@@ -96,6 +96,13 @@ var localized string MoreInformationText;
 	var localized string PredictedDiscBoostText;
 	var localized string PredictedDiscBoostHelp;
 
+	var UWindowCheckbox Chk_SmoothDiscCorrections;
+	var localized string SmoothDiscCorrectionsText;
+	var localized string SmoothDiscCorrectionsHelp;
+	var UWindowLabelControl Lbl_SmoothDiscCorrectionsNote;
+	var localized string SmoothDiscCorrectionsNoteText;
+	var localized string SmoothDiscCorrectionsNoteHelp;
+
 // Advanced
 	var UWindowLabelControl Lbl_Advanced;
 	var localized string AdvancedText;
@@ -497,6 +504,9 @@ var localized string MoreInformationText;
 	var UWindowCheckbox Chk_TranslocatorUseClientSideAnimations;
 	var localized string TranslocatorUseClientSideAnimationsText;
 	var localized string TranslocatorUseClientSideAnimationsHelp;
+	var UWindowLabelControl Lbl_TranslocatorUseClientSideAnimationsNote;
+	var localized string TranslocatorUseClientSideAnimationsNoteText;
+	var localized string TranslocatorUseClientSideAnimationsNoteHelp;
 
 var float PaddingX;
 var float PaddingY;
@@ -918,6 +928,8 @@ function Created() {
 	Chk_PredictedSwitching = CreateCheckbox(PredictedSwitchingText, PredictedSwitchingHelp);
 	Chk_PredictedTranslocation = CreateCheckbox(PredictedTranslocationText, PredictedTranslocationHelp);
 	Chk_PredictedDiscBoost = CreateCheckbox(PredictedDiscBoostText, PredictedDiscBoostHelp);
+	Chk_SmoothDiscCorrections = CreateCheckbox(SmoothDiscCorrectionsText, SmoothDiscCorrectionsHelp);
+	Lbl_SmoothDiscCorrectionsNote = CreateLabel("", SmoothDiscCorrectionsNoteHelp);
 
 	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
@@ -930,6 +942,7 @@ function Created() {
 	Chk_RocketUseClientSideAnimations = CreateCheckbox(RocketUseClientSideAnimationsText, RocketUseClientSideAnimationsHelp);
 	Chk_SniperUseClientSideAnimations = CreateCheckbox(SniperUseClientSideAnimationsText, SniperUseClientSideAnimationsHelp);
 	Chk_TranslocatorUseClientSideAnimations = CreateCheckbox(TranslocatorUseClientSideAnimationsText, TranslocatorUseClientSideAnimationsHelp);
+	Lbl_TranslocatorUseClientSideAnimationsNote = CreateLabel("", TranslocatorUseClientSideAnimationsNoteHelp);
 
 	Lbl_Advanced = CreateSeparator(AdvancedText);
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
@@ -1112,6 +1125,7 @@ function Load() {
 	Chk_PredictedSwitching.bChecked = Settings.bPredictedSwitching;
 	Chk_PredictedTranslocation.bChecked = Settings.bPredictedTranslocation;
 	Chk_PredictedDiscBoost.bChecked = Settings.bPredictedDiscBoost;
+	Chk_SmoothDiscCorrections.bChecked = Settings.bSmoothDiscCorrections;
 
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
@@ -1208,7 +1222,32 @@ function Load() {
 	Chk_SniperUseClientSideAnimations.bChecked = Settings.bSniperUseClientSideAnimations;
 	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
 
+	LoadDeterministicTranslocator();
+
 	bLoadSucceeded = true;
+}
+
+// On a server, gray out what its translocator doesn't use, with the reason
+// under it. Elsewhere (menu, offline) nothing is known: all stay open.
+function LoadDeterministicTranslocator() {
+	local bbPlayer P;
+	local bool bDet, bNoDet;
+
+	P = bbPlayer(GetPlayerOwner());
+	if (P != None && P.Level.NetMode == NM_Client) {
+		bDet = P.IGPlus_DetTranslocator;
+		bNoDet = !bDet;
+	}
+
+	IGPlus_Checkbox(Chk_TranslocatorUseClientSideAnimations).SetDisabled(bDet);
+	Lbl_TranslocatorUseClientSideAnimationsNote.SetText("");
+	if (bDet)
+		Lbl_TranslocatorUseClientSideAnimationsNote.SetText(TranslocatorUseClientSideAnimationsNoteText);
+
+	IGPlus_Checkbox(Chk_SmoothDiscCorrections).SetDisabled(bNoDet);
+	Lbl_SmoothDiscCorrectionsNote.SetText("");
+	if (bNoDet)
+		Lbl_SmoothDiscCorrectionsNote.SetText(SmoothDiscCorrectionsNoteText);
 }
 
 function Save() {
@@ -1243,6 +1282,7 @@ function Save() {
 	Settings.bPredictedSwitching = Chk_PredictedSwitching.bChecked;
 	Settings.bPredictedTranslocation = Chk_PredictedTranslocation.bChecked;
 	Settings.bPredictedDiscBoost = Chk_PredictedDiscBoost.bChecked;
+	Settings.bSmoothDiscCorrections = Chk_SmoothDiscCorrections.bChecked;
 
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
@@ -1438,6 +1478,10 @@ defaultproperties
 		PredictedTranslocationHelp="If checked, translocating moves you the moment you press, where the server allows it. Off: you move when the server's teleport arrives, a ping later"
 		PredictedDiscBoostText="Predicted Disc Boost"
 		PredictedDiscBoostHelp="If checked, your own shock beam pushes your own disc on your screen right away, where the server allows it. Off: the push shows when the server's arrives, a ping later"
+		SmoothDiscCorrectionsText="Smooth Disc Corrections"
+		SmoothDiscCorrectionsHelp="Experimental. If checked, when the server moves your own disc a little (up to 64 units), it glides there in a tenth of a second instead of jumping. Only with the Deterministic Translocator"
+		SmoothDiscCorrectionsNoteText="Grayed out: needs the server's Deterministic Translocator"
+		SmoothDiscCorrectionsNoteHelp="Only the Deterministic Translocator has the server correct your own disc. This server doesn't use it, so there is nothing to smooth"
 
 		CameraCorrectionSmoothingTimeText="Camera Smoothing Time"
 		CameraCorrectionSmoothingTimeHelp="Seconds until a correction is (nearly) gone from the camera"
@@ -1738,6 +1782,8 @@ defaultproperties
 
 		TranslocatorUseClientSideAnimationsText="Client-Side Animations Translocator"
 		TranslocatorUseClientSideAnimationsHelp="If checked, use client-side animations for Translocator"
+		TranslocatorUseClientSideAnimationsNoteText="Grayed out: the server uses the Deterministic Translocator"
+		TranslocatorUseClientSideAnimationsNoteHelp="The Deterministic Translocator always shows your own disc the moment you throw, so this setting changes nothing on this server"
 
 	PaddingX=20
 	PaddingY=20
