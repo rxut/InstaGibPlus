@@ -20,6 +20,10 @@ var bool IGPlus_bQueuePush;
 // its select end (IGPlus_MoveEnd).
 var float IGPlus_ReadyTS;
 var bool IGPlus_bPressQueued;
+// Fire was held on our last move. Set at the bring-up's start: fire still
+// held from the weapon before is no press (stock charges it only if still
+// held at the select end, a tap during the bring-up goes off).
+var bool IGPlus_bHeldBefore;
 
 replication
 {
@@ -87,6 +91,7 @@ function BringUp() {
 		return;
 	IGPlus_ReadyTS = bbPlayer(Owner).CurrentTimeStamp + IGPlus_SelectTime();
 	IGPlus_bPressQueued = false;
+	IGPlus_bHeldBefore = true;
 	if (bbPlayer(Owner).RemoteRole == ROLE_AutonomousProxy)
 		IGPlus_ClientReadyAt(IGPlus_ReadyTS);
 }
@@ -125,10 +130,14 @@ simulated function bool IGPlus_Idle() {
 // fire as the move carries it: a bring-up charges from IGPlus_ReadyTS if fire
 // was held during it, and a let-go releases.
 simulated function IGPlus_MoveEnd(float TS, bool bHeld) {
+	local bool bPress;
+
 	if (IGPlus_OnMoves() == false)
 		return;
+	bPress = bHeld && IGPlus_bHeldBefore == false;
+	IGPlus_bHeldBefore = bHeld;
 	if (TS < IGPlus_ReadyTS) {
-		if (bHeld)
+		if (bPress)
 			IGPlus_bPressQueued = true;
 		return;
 	}
@@ -159,6 +168,7 @@ state ClientActive
 		if (IGPlus_ReadyTS <= Level.TimeSeconds)
 			IGPlus_ReadyTS = Level.TimeSeconds + IGPlus_SelectTime();
 		IGPlus_bPressQueued = false;
+		IGPlus_bHeldBefore = true;
 	}
 }
 
