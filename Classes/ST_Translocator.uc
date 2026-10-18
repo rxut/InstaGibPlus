@@ -1141,14 +1141,13 @@ simulated function IGPlus_ClientDetKnock(float LocX, float LocY, float LocZ, vec
 simulated function IGPlus_DetApplyKnock() {
 	local ST_TranslocatorTarget D;
 	local float Remaining, Step;
+	local vector OldLoc;
 
 	IGPlus_bDetKnockPending = false;
 	D = IGPlus_DetLocalDisc;
 	if (D == None || D.bDeleteMe)
 		return;
-	if (bbPlayer(Owner) != None)
-		bbPlayer(Owner).ClientDebugMessage("Tloc disc knocked to the server's: age="$IGPlus_DetKnockAge
-			@"moved="$int(VSize(IGPlus_DetKnockLoc - D.Location)));
+	OldLoc = D.Location;
 
 	D.bCollideWorld = false;
 	D.SetLocation(IGPlus_DetKnockLoc);
@@ -1158,6 +1157,7 @@ simulated function IGPlus_DetApplyKnock() {
 	D.bAlreadyHit = IGPlus_bDetKnockHit;
 	if (IGPlus_bDetKnockLanded) {
 		D.SetPhysics(PHYS_None);
+		IGPlus_DetLogKnock(D, OldLoc);
 		return;
 	}
 	D.SetPhysics(PHYS_Falling);
@@ -1174,7 +1174,18 @@ simulated function IGPlus_DetApplyKnock() {
 	if (D != None && D.bDeleteMe == false) {
 		D.ImpactSound = D.default.ImpactSound;
 		D.IGPlus_bRebasing = false;
+		IGPlus_DetLogKnock(D, OldLoc);
 	}
+}
+
+// Client debug line: how far the knock moved our disc on screen, both spots
+// at our disc's age now (the server's state flown on from the knock's age).
+simulated function IGPlus_DetLogKnock(ST_TranslocatorTarget D, vector OldLoc) {
+	if (bbPlayer(Owner) == None)
+		return;
+	bbPlayer(Owner).ClientDebugMessage("Tloc disc knocked to the server's: jump="$int(VSize(D.Location - OldLoc))
+		@"knockAge="$IGPlus_DetKnockAge@"late="$(Level.TimeSeconds - IGPlus_DetThrowTS - IGPlus_DetKnockAge)
+		@"landed="$IGPlus_bDetKnockLanded);
 }
 
 // Client: our disc sparks like the server's (its stock Timer does the effect).
