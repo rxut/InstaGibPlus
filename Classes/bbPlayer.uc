@@ -3963,12 +3963,17 @@ function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move)
 		Dest += vect(0,0,40);
 
 	Start = Location;
-	if (SetLocation(Dest) == false)
+	if (SetLocation(Dest) == false) {
+		ClientDebugMessage("Tloc not predicted: we don't fit at the disc"@Dest@"landed="$(Disc.Physics == PHYS_None)
+			@"server's="$(Disc != ST_Translocator(Weapon).IGPlus_DetLocalDisc));
 		return;
+	}
 	if (Region.Zone.bWaterZone == false && Physics != PHYS_Flying)
 		SetPhysics(PHYS_Falling);
 	if (FastTrace(Location, Disc.Location) == false) {
 		// The server puts us back too, keeping the falling physics.
+		ClientDebugMessage("Tloc not predicted: no line from the spot to the disc"@Disc.Location
+			@"server's="$(Disc != ST_Translocator(Weapon).IGPlus_DetLocalDisc));
 		SetLocation(Start);
 		return;
 	}
@@ -7296,6 +7301,13 @@ function xxReplicateMove(
 			if (IGPlus_PredictedTranslocation && TlocDisc != none
 				&& TlocDisc.Disruption <= TlocDisc.DisruptionThreshold)
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
+			else if (IGPlus_PredictedTranslocation == false)
+				ClientDebugMessage("Tloc not predicted: Predicted Translocation is off");
+			else if (TlocDisc == none)
+				ClientDebugMessage("Tloc not predicted: no disc here (ours out="$ST_Translocator(Weapon).IGPlus_bDetOut
+					@"local="$ST_Translocator(Weapon).IGPlus_DetLocalDisc@"server's="$ST_Translocator(Weapon).IGPlus_DiscRepl$")");
+			else
+				ClientDebugMessage("Tloc not predicted: disc disrupted");
 			ST_Translocator(Weapon).IGPlus_DetClientDiscGone();
 		}
 	}
