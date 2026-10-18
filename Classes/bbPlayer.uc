@@ -301,6 +301,10 @@ var int IGPlus_DetLostMoves;          // moves that never arrived (time gaps), t
 var float IGPlus_DetLastLossTS;       // Level.TimeSeconds of the last gap
 var bool IGPlus_bDetTlocMismatch;     // translocate counts differ (logged once)
 var bool IGPlus_bDetTlocCheckLanding; // compare the client's spot after our translocate
+var vector IGPlus_DetClientVel, IGPlus_DetPrevClientVel; // server: the client's velocity after its last two moves
+var byte IGPlus_DetClientPhys, IGPlus_DetPrevClientPhys;
+var float IGPlus_DetTlocPreVZ, IGPlus_DetTlocPreClientVZ;  // server: fall speeds going into our last translocate
+var byte IGPlus_DetTlocPrePhys, IGPlus_DetTlocPreClientPhys;
 var string IGPlus_DetTlocInfo;        // the last translocate's disc details
 // Deterministic translocator actions survive a lost move: the client sends
 // its last action again with the next moves until the server is past it.
@@ -4021,6 +4025,11 @@ function IGPlus_ServerDetDiscSync(float DiscTS, float Age) {
 
 function IGPlus_BeforeTranslocate() {
 	TlocPrevLocation = Location;
+	// The client's side is its move before this one (it translocates first thing in this one).
+	IGPlus_DetTlocPreVZ = Velocity.Z;
+	IGPlus_DetTlocPrePhys = Physics;
+	IGPlus_DetTlocPreClientVZ = IGPlus_DetPrevClientVel.Z;
+	IGPlus_DetTlocPreClientPhys = IGPlus_DetPrevClientPhys;
 }
 
 function IGPlus_AfterTranslocate() {
@@ -4165,6 +4174,15 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool b
 	if (Diff == 0) {
 		if (IGPlus_bDetTlocCheckLanding && ClientLocError > 64.0)
 			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@"taken="$bLandingTaken@IGPlus_DetTlocInfo);
+		// Speeds (server/client) after the translocate and going into it: a
+		// fall speed one side carried in and the other didn't widens the gap.
+		if (IGPlus_bDetTlocCheckLanding && Abs(Velocity.Z - IGPlus_DetClientVel.Z) > 50.0)
+			IGPlus_DetTlocLog("velocity-apart", "vz="$int(Velocity.Z)$"/"$int(IGPlus_DetClientVel.Z)
+				@"vxy="$int(VSize((Velocity - IGPlus_DetClientVel) * vect(1,1,0)))
+				@"beforeVz="$int(IGPlus_DetTlocPreVZ)$"/"$int(IGPlus_DetTlocPreClientVZ)
+				@"beforePhys="$IGPlus_DetTlocPrePhys$"/"$IGPlus_DetTlocPreClientPhys
+				@"phys="$int(Physics)$"/"$IGPlus_DetClientPhys
+				@"dist="$int(Sqrt(ClientLocError))@"taken="$bLandingTaken);
 		IGPlus_bDetTlocCheckLanding = false;
 		IGPlus_bDetTlocMismatch = false;
 		return;
@@ -4396,6 +4414,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	LastServerMoveParams.Base = SM.ClientBase;
 	LastServerMoveParams.Physics = ClientPhysics;
 	LastServerMoveParams.TlocCounter = ClientTlocCounter;
+	IGPlus_DetPrevClientVel = IGPlus_DetClientVel;
+	IGPlus_DetPrevClientPhys = IGPlus_DetClientPhys;
+	IGPlus_DetClientVel = SM.ClientVelocity;
+	IGPlus_DetClientPhys = ClientPhysics;
 
 	// View components
 	ViewPitch = (SM.View >>> 16);
