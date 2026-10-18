@@ -83,6 +83,9 @@ var Weapon IGPlus_DetClientPendingSeen;
 // apart from stock ClientPending: stock ClientActive/ClientDown self-holster
 // on that field, which must only happen once the server sends ClientPutDown.
 var Weapon IGPlus_DetClientSwitchPending;
+// Client: a switch away from the deterministic translocator went to the
+// server unpredicted; its translocator is going down when that arrives.
+var float IGPlus_DetTlocSwitchSentUntil;
 // Bring-up entry gate replicated from the server (move-timestamp domain,
 // which is the client's own clock). Client prediction may not fire before it.
 var float IGPlus_DetClientEntryGateTS;
@@ -14508,6 +14511,13 @@ simulated function IGPlus_ClientWeaponCommand(byte Kind, byte F, class<Weapon> C
 	if (ClientPend == none)
 		ClientPend = IGPlus_DetClientSwitchPending;
 	bKnown = IGPlus_ResolveWeaponCommand(Kind, F, C, Weapon, ClientPend, Predicted);
+	// The server puts the translocator down as this arrives and refuses its
+	// actions from then: take none either until our switch comes back (a
+	// translocate held back by the 0.1s lockout would land, then be undone).
+	if (IGPlus_DetTranslocator && ST_Translocator(Weapon) != none
+		&& !(bKnown && (Predicted == none || Predicted == Weapon)))
+		IGPlus_DetTlocSwitchSentUntil = Level.TimeSeconds
+			+ PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.25;
 	xxServerWeaponCommand(Kind, F, C, bKnown, Predicted, Weapon, ClientPend);
 }
 

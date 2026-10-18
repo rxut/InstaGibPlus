@@ -670,7 +670,8 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	local bool bFireIn, bAltIn;
 	local int Action;
 
-	if (P.Weapon != self || P.ClientPending != None || IsInState('ClientDown'))
+	if (P.Weapon != self || P.ClientPending != None || IsInState('ClientDown')
+		|| Level.TimeSeconds < P.IGPlus_DetTlocSwitchSentUntil)
 		return 0;
 	// Stock remembers a click during bring-up (bForceFire) and fires once up.
 	// We hold one the same way while a translocate we didn't make ourselves
