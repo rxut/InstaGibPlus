@@ -250,7 +250,7 @@ simulated function ClientThrowTarget()
 
 	GetAxes(bbP.ViewRotation,X,Y,Z);
 
-	TTarget_Client = Spawn(class'ST_TranslocatorTarget', Owner,, Start, IGPlus_ClientDiscRotation());
+	TTarget_Client = Spawn(class'ST_TranslocatorTarget', Owner,, Start, IGPlus_DiscRotation());
 
 	LastClientDiscSpawnTime = Level.TimeSeconds;
 
@@ -344,7 +344,7 @@ function ThrowTarget()
 	Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	Pawn(Owner).ViewRotation = Pawn(Owner).AdjustToss(TossForce, Start, 0, true, true);
 	GetAxes(Pawn(owner).ViewRotation,X,Y,Z);
-	TTarget = Spawn(class'ST_TranslocatorTarget',,, Start);
+	TTarget = Spawn(class'ST_TranslocatorTarget',,, Start, IGPlus_DiscRotation());
 
 	if (TTarget!=None)
 	{
@@ -744,10 +744,12 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	return Action;
 }
 
-// Client: a disc spawns with our rotation, which here is the first-person
-// weapon's (view pitch and weapon roll, set each frame by RenderOverlays).
-// The server's disc gets the server weapon's level one: fly flat like it.
-simulated function rotator IGPlus_ClientDiscRotation() {
+// Both sides: a disc spawns with our rotation unless told otherwise. On a
+// client that is the first-person weapon's (view pitch and weapon roll, set
+// each frame by RenderOverlays). On the server nothing levels it: the next
+// life's translocator spawns from the dying player (IGPlus_PrepareNextTrans)
+// and keeps the body's pitch and roll all life. Discs fly flat on both.
+simulated function rotator IGPlus_DiscRotation() {
 	local rotator R;
 
 	R = Rotation;
@@ -771,7 +773,7 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 	Start = Owner.Location + CalcDrawOffsetClient();
 	P.ViewRotation = P.AdjustToss(TossForce, Start, 0, true, true);
 
-	IGPlus_DetLocalDisc = Spawn(class'ST_TranslocatorTarget', Owner,, Start, IGPlus_ClientDiscRotation());
+	IGPlus_DetLocalDisc = Spawn(class'ST_TranslocatorTarget', Owner,, Start, IGPlus_DiscRotation());
 	if (IGPlus_DetLocalDisc != None) {
 		IGPlus_DetLocalDisc.IGPlus_bLocalDisc = true;
 		IGPlus_DetLocalDisc.Instigator = P;
