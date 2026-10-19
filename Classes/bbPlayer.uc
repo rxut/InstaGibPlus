@@ -372,6 +372,9 @@ var float AverageServerDeltaTime;
 var float TimeDead;
 var float RealTimeDead;
 var bool IGPlus_bDetTradeClosed; // dead: no more trades for the deterministic weapons (IGPlus_DetTradeAllowed)
+var vector IGPlus_TradeLoc;      // dead: where we died, the last move we had then and our speed
+var float IGPlus_TradeTS;        // before the killing push (IGPlus_TradeShotOrigin)
+var float IGPlus_TradeSpeed;
 var Pawn LastKiller;
 var rotator KillCamTargetRotation;
 var float KillCamDelay;
@@ -2800,12 +2803,14 @@ simulated function bool IGPlus_PSAClear(vector A, vector B) {
 // the start of this (single-frame) move. Use that when the gap to our
 // position is the drift of pushes it hadn't seen (each push's speed change
 // times its age), and the line between both bodies and eyes is clear.
+// Dead (a trade), always: IGPlus_TradeShotOrigin.
 function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int MergeCount) {
 	local vector ClientStart, Gap, Expected;
 	local float ShotTS, Age, MaxAge, Drift, Window, Slack;
 	local int i;
 
-	if (IGPlus_PushSafeAim == false || MergeCount != 0 || Mover(SM.ClientBase) != none)
+	if ((IGPlus_PushSafeAim == false && IsInState('Dying') == false)
+		|| MergeCount != 0 || Mover(SM.ClientBase) != none)
 		return Location;
 
 	ClientStart = SM.ClientLocation - SM.ClientVelocity * SM.MoveDeltaTime;
@@ -2816,6 +2821,9 @@ function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int Mer
 		&& Abs(SM.TimeStamp - PrevTS - SM.MoveDeltaTime) < 0.5 * SM.MoveDeltaTime
 		&& VSize(IGPlus_PSALastClientLoc - ClientStart) < 4.0)
 		ClientStart = IGPlus_PSALastClientLoc;
+
+	if (IsInState('Dying'))
+		return IGPlus_TradeShotOrigin(SM, ClientStart);
 
 	Gap = Location - ClientStart;
 	if (VSize(Gap) < 0.5)
@@ -2847,6 +2855,42 @@ function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int Mer
 		return Location;
 
 	return ClientStart;
+}
+
+// A trade (bEnableAllWeaponTrades), server: the dead client fired from where
+// its screen had it. Our body stopped following it when we died: it took the
+// killing push and no dodge or jump since (Dying has no ProcessMove). So the
+// shot leaves from the client's spot, if it could have got there from where
+// we died, in a clear line. Else from our body.
+function vector IGPlus_TradeShotOrigin(IGPlus_ServerMove SM, vector ClientStart) {
+	local float DT, Reach, Dist;
+	local bool bFireInput;
+
+	// Client time since then, no more than the server's (plus jitter).
+	DT = FClamp(SM.TimeStamp - SM.MoveDeltaTime - IGPlus_TradeTS, 0.0, (RealTimeDead + 0.1) * Level.TimeDilation);
+	Reach = IGPlus_TradeReach(IGPlus_TradeSpeed, FMax(DodgeSpeedXY, GroundSpeed), FMax(DodgeSpeedZ, JumpZ),
+		AccelRate, VSize(Region.Zone.ZoneGravity), DT);
+	Dist = VSize(ClientStart - IGPlus_TradeLoc);
+	// Debug lines only for moves with fire (Dying.xxServerMove kept it for a trade).
+	bFireInput = (SM.MiscData & 0x03000000) != 0 || (SM.MiscData2 & 0xC0000000) != 0;
+	if (Dist > Reach
+		|| IGPlus_PSAClear(ClientStart, IGPlus_TradeLoc) == false
+		|| IGPlus_PSAClear(ClientStart + BaseEyeHeight * vect(0,0,1), IGPlus_TradeLoc + BaseEyeHeight * vect(0,0,1)) == false
+	) {
+		if (bFireInput)
+			ClientDebugMessage("Trade shot (server): from our body, the client's spot is"@int(Dist)$"uu from where we died (reach"@int(Reach)$"uu, or blocked)");
+		return Location;
+	}
+	if (bFireInput)
+		ClientDebugMessage("Trade shot (server): from the client's spot,"@int(Dist)$"uu from where we died, our body"@int(VSize(Location - ClientStart))$"uu off");
+	return ClientStart;
+}
+
+// How far a player can get in DT: his speed plus a full dodge and jump,
+// with acceleration and gravity on top, plus 16uu.
+// ponytail: adds the speeds up, a cheat gets that much room for after-death shots
+static function float IGPlus_TradeReach(float Speed, float DodgeXY, float JumpUp, float Accel, float Gravity, float DT) {
+	return (Speed + DodgeXY + JumpUp) * DT + 0.5 * (Accel + Gravity) * DT * DT + 16.0;
 }
 
 // PlayerViewOffset change that moves the first-person weapon by WorldOffset.
@@ -9526,6 +9570,10 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 		TournamentWeapon(Weapon).bCanClientFire = false;
 	IGPlus_DetClearSwitchTrustState(zzUTPure.Settings.bEnableAllWeaponTrades);
 	IGPlus_bDetTradeClosed = zzUTPure.Settings.bEnableAllWeaponTrades == false;
+	// Velocity has the killing push, which our client never saw.
+	IGPlus_TradeLoc = Location;
+	IGPlus_TradeTS = CurrentTimeStamp;
+	IGPlus_TradeSpeed = FMin(VSize(IGPlus_DetClientVel), VSize(Velocity));
 	Velocity.Z *= 1.3;
 	if (Gibbed(DamageType)) {
 		SpawnGibbedCarcass();

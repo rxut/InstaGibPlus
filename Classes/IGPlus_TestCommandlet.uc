@@ -191,11 +191,24 @@ function TestPreciseRewindTimeReport() {
 		"PRT_report_is_always_marked");
 }
 
+// A traded shot leaves from the client's spot only within this reach of
+// where we died (stock speeds: dodge 600, JumpZ 325, accel 2048, gravity 950).
+function TestTradeReach() {
+	LogTestResult(class'bbPlayer'.static.IGPlus_TradeReach(440, 600, 325, 2048, 950, 0.0) == 16.0,
+		"TradeReach_no_time_allows_16uu");
+	// Running at 440, dodging sideways for 0.15s: about 113uu.
+	LogTestResult(class'bbPlayer'.static.IGPlus_TradeReach(440, 600, 325, 2048, 950, 0.15) > 113.0,
+		"TradeReach_covers_a_dodge_while_running");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TradeReach(0, 600, 325, 2048, 950, 0.1) < 150.0,
+		"TradeReach_standing_still_stays_under_150uu_in_0.1s");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
 	TestTranslocatorFireMerging();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
+	TestTradeReach();
 	return 0;
 }

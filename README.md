@@ -1732,7 +1732,7 @@ Trade uncertainty relative to shooters ping. Reasonable values range from 0 to 1
 **Type: bool**  
 **Default: False**  
 
-If True, trades also work with the IG+ shock rifle (beam and combo), rocket launcher, flak cannon, bio rifle, ripper and sniper rifle, not only the NewNet weapons. A shot that reaches the server just after its shooter died still counts if, by the same rule as the NewNet weapons ([bRestrictTrading](#brestricttrading), [MaxTradeTimeMargin](#maxtradetimemargin), [TradePingMargin](#tradepingmargin)), he fired it first. Rockets he was loading are kept for that window, so a release just after death still fires them; once the window is over, the load is dropped. Needs the weapon's bEnablePingCompensation.
+If True, trades also work with the IG+ shock rifle (beam and combo), rocket launcher, flak cannon, bio rifle, ripper and sniper rifle, not only the NewNet weapons. A shot that reaches the server just after its shooter died still counts if, by the same rule as the NewNet weapons ([bRestrictTrading](#brestricttrading), [MaxTradeTimeMargin](#maxtradetimemargin), [TradePingMargin](#tradepingmargin)), he fired it first. Rockets he was loading are kept for that window, so a release just after death still fires them; once the window is over, the load is dropped. A traded shot leaves from where his screen had him when he fired, as long as he could have got there since he died. Needs the weapon's bEnablePingCompensation.
 
 ## bEnableInputReplication
 
