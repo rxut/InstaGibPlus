@@ -3776,6 +3776,9 @@ simulated function Actor IGPlus_SKTrace(byte Kind, vector Start, vector End, flo
 	foreach TraceActors(class'Actor', A, HitLocation, HitNormal, End, Start, vect(1,1,0) * Radius + vect(0,0,1) * IGPlus_SKSourceHeight(Kind)) {
 		if (A == self)
 			continue;
+		// A rocket flies through projectiles, a disc too (ST_RocketMk2.ProcessTouch).
+		if (Kind == IGPLUS_SK_ROCKET && Projectile(A) != none)
+			continue;
 		if (A == Level || Mover(A) != none || Pawn(A) != none || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
 			return A;
 		// Our own disc: nothing here may shoot it (bProjTarget off), but the
