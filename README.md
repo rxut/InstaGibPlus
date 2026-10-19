@@ -472,13 +472,13 @@ If set to `True`, translocating moves you the moment you press, where the server
 **Type: bool**  
 **Default: True**  
 
-If set to `True`, your own shock beam pushes your own translocator disc on your screen right away, where the server's [bEnablePredictedDiscBoost](#benablepredicteddiscboost) allows it. If set to `False`, the push shows when the server's arrives, a ping later.
+If set to `True`, your own shock beam, shock combo, shock ball, rocket, flak slug and ripper alt blade push your own translocator disc on your screen right away, where the server's [bEnablePredictedDiscBoost](#benablepredicteddiscboost) allows it. If set to `False`, the push shows when the server's arrives, a ping later.
 
 ## bSmoothDiscCorrections
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
-Experimental. If set to `True`, when the server moves your own translocator disc a little (up to 64 units), the disc glides there on your screen in a tenth of a second instead of jumping. Bigger corrections still jump. Only the drawing changes: where the disc is and where you translocate to stay the same. Only used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The settings menu grays it out on servers without it. Console: [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections).
+If set to `True`, when the server moves your own translocator disc a little (up to 64 units), the disc glides there on your screen in a tenth of a second instead of jumping. After something hits your disc, its corrections glide up to 256 units until it lands: the hit reaches you a ping late, so the disc launches from where your screen had it. Bigger corrections, and any with a wall or door in the way, still jump. Only the drawing changes: where the disc is and where you translocate to stay the same. Only used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The settings menu grays it out on servers without it. Console: [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections).
 
 ## bNoSmoothing
 **Type: bool**  
@@ -2017,7 +2017,7 @@ If True, translocating moves you to the disc on your screen the moment you press
 **Type: bool**  
 **Default: True**  
 
-If True, shooting your own translocator disc with the shock beam pushes it on your screen right away, the same way the server does at the same timestamp. Requires [bEnableDeterministicTranslocator](#benabledeterministictranslocator). Players can turn it off for themselves with [bPredictedDiscBoost](#bpredicteddiscboost).
+If True, shooting your own translocator disc with the shock beam or a shock combo pushes it on your screen right away, the same way the server does at the same timestamp. With [bEnablePredictedSelfKnockback](#benablepredictedselfknockback) also on, so do your own shock balls, rockets, flak slugs and ripper alt blades going off near it: the server pushes your disc on your moves, as it pushes you, so other players see it pushed when you are pushed by the same explosion. A projectile that hits something you didn't see (a player, mostly) is corrected a moment later. Requires [bEnableDeterministicTranslocator](#benabledeterministictranslocator). Players can turn it off for themselves with [bPredictedDiscBoost](#bpredicteddiscboost).
 
 # Weapon Settings
 

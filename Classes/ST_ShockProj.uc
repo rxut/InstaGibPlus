@@ -223,6 +223,7 @@ simulated function IGPlus_PredictCombo() {
 		bbPlayer(Instigator).IGPlus_PredComboTS = Level.TimeSeconds;
 		bbPlayer(Instigator).IGPlus_PredComboLoc = Location;
 		bbPlayer(Instigator).ClientDebugMessage("Shock combo: drawn on the beam's frame");
+		bbPlayer(Instigator).IGPlus_SKPredictComboOnDisc(self);
 	}
 }
 
@@ -297,10 +298,11 @@ function int IGPlus_ComboRewindMs() {
 function SuperExplosion() {
 	local float ComboDamage, ComboRadius, ComboMomentum;
 	local IGPlus_OwnerComboRing Ring;
-	local vector OwnerLoc;
+	local vector OwnerLoc, DiscBlast;
 	local int RewindMs;
 	local UTPure PureRef;
 	local ST_ProjectileDummy PD;
+	local bbPlayer DiscOwner;
 
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
@@ -329,6 +331,18 @@ function SuperExplosion() {
 			}
 	}
 
+	// The owner's own combo by its own deterministic disc: the blast here only
+	// damages that disc. Its push comes after, from where the owner's screen
+	// had the ball, as the owner's client pushed its own disc.
+	DiscOwner = bbPlayer(Instigator);
+	if (DiscOwner != None && IGPlus_ComboBy == DiscOwner && DiscOwner.IGPlus_PredictsDiscBoost()) {
+		if (IGPlus_OwnerSeesBall(DiscOwner, DiscBlast) == false)
+			DiscBlast = Location;
+		DiscOwner.IGPlus_SKComboDisc = true;
+	} else {
+		DiscOwner = None;
+	}
+
 	if (WImp.WeaponSettings.bEnableEnhancedSplashShockCombo) {
 		WImp.EnhancedHurtRadius(
 			self,
@@ -348,6 +362,12 @@ function SuperExplosion() {
 
 	if (RewindMs > 0)
 		PureRef.EndCompensation();
+
+	if (DiscOwner != None) {
+		DiscOwner.IGPlus_SKComboDisc = false;
+		DiscOwner.IGPlus_SKComboOnDisc(DiscBlast, CollisionRadius, ComboRadius, ComboMomentum,
+			WImp.WeaponSettings.bEnableEnhancedSplashShockCombo);
+	}
 
 	if (IGPlus_OwnerMayDrawCombo()) {
 		// The owner's client plays the sound itself if it didn't draw this one.

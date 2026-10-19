@@ -256,7 +256,10 @@ function ProcessTouch (Actor Other, vector HitLocation)
 	if ((Chunk(Other) == None) && ((Physics == PHYS_Falling) || (Other != Instigator))) {
 		speed = VSize(Velocity);
 		if (speed > 200) {
-			if (Role == ROLE_Authority) {
+			// A chunk of our own slug (only the slug's spread at random) on our
+			// own disc: damage only, the slug's push stands.
+			if (Role == ROLE_Authority && (RandomSpread == false || ST_TranslocatorTarget(Other) == None
+				|| ST_TranslocatorTarget(Other).IGPlus_ChunkDamageOnly(CalcDamage(), instigator, HitLocation, MyDamageType) == false)) {
 				Other.TakeDamage(
 					CalcDamage(),
 					instigator,

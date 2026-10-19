@@ -283,6 +283,7 @@ function NewExplode(vector HitLocation, vector HitNormal)
 	CI.RandomSpread = True;
 	
 	// Our chunks hitting us on their fast-forward push us after the slug.
+	// Our own disc they only damage (ST_UTChunk.ProcessTouch).
 	if (bbP != none)
 		bbP.IGPlus_SKBeginCapture();
 	CI.AddChunk(Spawn( class 'ST_UTChunk2',CI, '', Start));

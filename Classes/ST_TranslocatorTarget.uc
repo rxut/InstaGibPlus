@@ -26,6 +26,8 @@ var vector IGPlus_EaseFrom;     // client: draw offset a server correction left 
 var float IGPlus_EaseStart;
 var float IGPlus_SyncAge;       // server: send our state to the thrower once this old (0: none)
 var float IGPlus_LastSyncAge;   // server: age of the last state sent from Tick
+var bool IGPlus_bResyncAfterHit; // server: a hit sent it flying, send our state every 0.05s until it lands
+var bool IGPlus_bDamageOnly;     // server: TakeDamage leaves its speed alone (IGPlus_ChunkDamageOnly)
 // Server, for the [DET-TLOC] log: our bounces/landings/door pushes, and the
 // thrower's (from its sync asks).
 var float IGPlus_DetPathAges[4];
@@ -378,13 +380,21 @@ simulated function bool IGPlus_DetDoorClearsInTime(Mover M, vector HitNormal) {
 
 // Client, our own disc was put where the server's is: draw it where it was
 // (Drawn) and glide it there over 0.1s. A short way only: a long glide
-// would cross the air or a door, worse than the jump.
-simulated function IGPlus_EaseFromSpot(vector Drawn) {
+// would cross the air, worse than the jump. A hit (bShot) really launched
+// the disc a round trip ago: its longer glide follows close to the launch
+// we missed. Never through a wall or door: those jump.
+simulated function IGPlus_EaseFromSpot(vector Drawn, optional bool bShot) {
+	local float MaxGlide;
+	local vector HitLocation, HitNormal;
+
+	MaxGlide = 64.0;
+	if (bShot)
+		MaxGlide = 256.0;
 	IGPlus_EaseFrom = Drawn - Location;
-	if (VSize(IGPlus_EaseFrom) > 64.0)
+	if (VSize(IGPlus_EaseFrom) > MaxGlide || Trace(HitLocation, HitNormal, Drawn, Location, false) != None)
 		IGPlus_EaseFrom = vect(0,0,0);
 	IGPlus_EaseStart = Level.TimeSeconds;
-	PrePivot = default.PrePivot + IGPlus_EaseFrom;
+	IGPlus_DrawAt(IGPlus_EaseFrom);
 }
 
 simulated function IGPlus_EaseStep() {
@@ -395,7 +405,33 @@ simulated function IGPlus_EaseStep() {
 	A = (Level.TimeSeconds - IGPlus_EaseStart) / 0.1;
 	if (A >= 1.0)
 		IGPlus_EaseFrom = vect(0,0,0);
-	PrePivot = default.PrePivot + IGPlus_EaseFrom * (1.0 - FMin(A, 1.0));
+	IGPlus_DrawAt(IGPlus_EaseFrom * (1.0 - FMin(A, 1.0)));
+}
+
+// Draw the disc Offset from where it is. Its glow (a sprite trailing the
+// disc's real spot) goes with it.
+simulated function IGPlus_DrawAt(vector Offset) {
+	PrePivot = default.PrePivot + Offset;
+	if (Glow != None)
+		Glow.PrePivot = Glow.default.PrePivot + Offset;
+}
+
+// Server: a chunk of the thrower's own flak slug hit the thrower's own
+// deterministic disc (Predicted Disc Boost). It damages the disc but leaves
+// its speed to the slug's push, which the thrower's client predicted. In
+// stock a chunk sets the disc's speed to its own small push, so whether the
+// slug's push counts depends on the chunks' random spread. True if handled.
+function bool IGPlus_ChunkDamageOnly(int Damage, Pawn ChunkInstigator, vector HitLocation, name DamageType) {
+	local ST_Translocator TL;
+
+	TL = ST_Translocator(Master);
+	if (ChunkInstigator != Instigator || bbPlayer(Instigator) == None || bbPlayer(Instigator).IGPlus_PredictsDiscBoost() == false
+		|| TL == None || TL.TTarget != self || TL.IGPlus_IsDetMode() == false || bIGPlusFullHistory == false)
+		return false;
+	IGPlus_bDamageOnly = true;
+	TakeDamage(Damage, ChunkInstigator, HitLocation, vect(0,0,0), DamageType);
+	IGPlus_bDamageOnly = false;
+	return true;
 }
 
 // Server: did our disc bounce, land or get pushed within Slack of Age?
@@ -473,6 +509,8 @@ auto state Pickup {
 				IGPlus_LastSyncAge = Age;
 				if (ST_Translocator(Master) != None)
 					ST_Translocator(Master).IGPlus_DetServerDiscChanged(self, Age);
+				if (IGPlus_bResyncAfterHit)
+					IGPlus_SyncAge = Age + 0.05;
 			}
 			if (DesiredTarget == None || Master == None)
 				return;
@@ -487,7 +525,8 @@ auto state Pickup {
 		// records its own steps.
 		if (bIGPlusFullHistory && Role == ROLE_Authority && IGPlus_HistoryAnchor != 0.0 && IGPlus_bRebasing == false)
 			IGPlus_RecordHistory(TotalSimulationTime + (Level.TimeSeconds - IGPlus_HistoryAnchor), true);
-		IGPlus_PathEvent(true);
+		IGPlus_PathEvent(true); // a landing from a hit's flight still glides as far
+		IGPlus_bResyncAfterHit = false;
 	}
 
 	// A door (a mover) pushed the disc, or ran over it.
@@ -537,14 +576,39 @@ auto state Pickup {
 
 	event TakeDamage( int Damage, Pawn EventInstigator, vector HitLocation, vector Momentum, name DamageType) {
 		local float OldDisruption;
+		local EPhysics OldPhysics;
+		local vector OldVelocity;
 
 		OldDisruption = Disruption;
 
+		// The thrower's own rocket, shock ball, flak slug or ripper blade: its
+		// push lands on the thrower's moves, where its client pushes its own
+		// disc (bbPlayer.IGPlus_SKDefersDisc). Only the damage now. Also the
+		// slug's own chunks (IGPlus_ChunkDamageOnly), whose push never lands.
+		if (IGPlus_bDamageOnly
+			|| (EventInstigator == Instigator && bbPlayer(Instigator) != None && bbPlayer(Instigator).IGPlus_SKDefersDisc(self))) {
+			OldPhysics = Physics;
+			OldVelocity = Velocity;
+			super.TakeDamage(Damage, EventInstigator, HitLocation, Momentum, DamageType);
+			SetPhysics(OldPhysics);
+			Velocity = OldVelocity;
+			// Disrupted just now: the thrower sees it (and isn't moved onto it).
+			if (Disrupted() && OldDisruption <= DisruptionThreshold)
+				ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
+			return;
+		}
+
 		super.TakeDamage(Damage, EventInstigator, HitLocation, Momentum, DamageType);
 
-		// Landed() switched Tick off; a knocked disc flies again.
-		if (bIGPlusFullHistory)
+		// Landed() switched Tick off; a knocked disc flies again. Fast, and
+		// often with its bounce used up (no asking at walls): the two copies
+		// can part at any ledge. Tick sends ours every 0.05s until it lands.
+		if (bIGPlusFullHistory) {
 			Enable('Tick');
+			IGPlus_bResyncAfterHit = true;
+			if (IGPlus_SyncAge == 0.0)
+				IGPlus_SyncAge = IGPlus_CurrentAge() + 0.05;
+		}
 		if (bIGPlusFullHistory == false)
 			IGPlus_bChangedEarly = true;
 		if (ST_Translocator(Master) != None) {
@@ -554,7 +618,7 @@ auto state Pickup {
 				IGPlus_OwnShotFrame = 0.0;
 				ST_Translocator(Master).IGPlus_DetRebaseDisc(self, IGPlus_OwnShotAge);
 			}
-			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self);
+			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self, 0.0, false, true);
 		}
 
 		if (Disruption == OldDisruption)

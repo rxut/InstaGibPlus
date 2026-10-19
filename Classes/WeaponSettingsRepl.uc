@@ -31,6 +31,7 @@ var bool  bEnableEnhancedSplashRockets; // predicted self-knockback mirrors the 
 var bool  bEnableEnhancedSplashFlakSlug;
 var bool  bEnableEnhancedSplashShockProjectile;
 var bool  bEnableEnhancedSplashRipperSecondary;
+var bool  bEnableEnhancedSplashShockCombo; // predicted disc push from our own combo
 
 var float FlakSelectTime;
 var float FlakPostSelectTime;
@@ -203,6 +204,7 @@ replication {
 		bEnableEnhancedSplashFlakSlug,
 		bEnableEnhancedSplashShockProjectile,
 		bEnableEnhancedSplashRipperSecondary,
+		bEnableEnhancedSplashShockCombo,
 		FlakSelectTime,
 		FlakPostSelectTime,
 		FlakDownTime,
@@ -567,6 +569,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	bEnableEnhancedSplashFlakSlug = S.bEnableEnhancedSplashFlakSlug;
 	bEnableEnhancedSplashShockProjectile = S.bEnableEnhancedSplashShockProjectile;
 	bEnableEnhancedSplashRipperSecondary = S.bEnableEnhancedSplashRipperSecondary;
+	bEnableEnhancedSplashShockCombo = S.bEnableEnhancedSplashShockCombo;
 
 	FlakSelectTime = S.FlakSelectTime;
 	FlakPostSelectTime = S.FlakPostSelectTime;

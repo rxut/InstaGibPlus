@@ -1477,9 +1477,9 @@ defaultproperties
 		PredictedTranslocationText="Predicted Translocation"
 		PredictedTranslocationHelp="If checked, translocating moves you the moment you press, where the server allows it. Off: you move when the server's teleport arrives, a ping later"
 		PredictedDiscBoostText="Predicted Disc Boost"
-		PredictedDiscBoostHelp="If checked, your own shock beam pushes your own disc on your screen right away, where the server allows it. Off: the push shows when the server's arrives, a ping later"
+		PredictedDiscBoostHelp="If checked, your own shock beam, combos, shock balls, rockets, flak slugs and ripper alt blades push your own disc on your screen right away, where the server allows it. Off: the push shows when the server's arrives, a ping later"
 		SmoothDiscCorrectionsText="Smooth Disc Corrections"
-		SmoothDiscCorrectionsHelp="Experimental. If checked, when the server moves your own disc a little (up to 64 units), it glides there in a tenth of a second instead of jumping. Only with the Deterministic Translocator"
+		SmoothDiscCorrectionsHelp="If checked, when the server moves your own disc a little (up to 64 units, or 256 after a hit), it glides there in a tenth of a second instead of jumping. Not through walls. Only with the Deterministic Translocator"
 		SmoothDiscCorrectionsNoteText="Grayed out: needs the server's Deterministic Translocator"
 		SmoothDiscCorrectionsNoteHelp="Only the Deterministic Translocator has the server correct your own disc. This server doesn't use it, so there is nothing to smooth"
 

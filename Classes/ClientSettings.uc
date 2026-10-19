@@ -69,7 +69,8 @@ var config bool   bSmoothLiftJump; // Leaving a moving lift: move to the server'
 var config bool   bPredictedSwitching;     // Our own say on the server's predictions (the server's setting must allow them too)
 var config bool   bPredictedTranslocation;
 var config bool   bPredictedDiscBoost;
-var config bool   bSmoothDiscCorrections; // Our own deterministic disc: a server correction up to 64uu glides over 0.1s instead of a jump
+var config bool   bSmoothDiscCorrections; // Our own deterministic disc: a server correction up to 64uu (256uu after a hit) glides over 0.1s instead of a jump
+var config bool   bSmoothDiscCorrectionsDefaulted; // bSmoothDiscCorrections was turned on once, when it became the default
 var config float  MinDodgeClickTime; // Minimum time between two presses of the same direction for them to count as a dodge
 var config bool   bUseOldMouseInput;
 var config PIDControllerSettings SmoothVRController;
@@ -211,6 +212,13 @@ simulated function CheckConfig() {
 
 	if (FPSCounterSmoothingStrength <= 0)
 		FPSCounterSmoothingStrength = 1;
+
+	// Smooth Disc Corrections shipped off, and every client saved that. Now
+	// it defaults to on: turn it on once for them too.
+	if (bSmoothDiscCorrectionsDefaulted == false) {
+		bSmoothDiscCorrections = true;
+		bSmoothDiscCorrectionsDefaulted = true;
+	}
 
 	SaveConfig();
 }
@@ -504,7 +512,7 @@ defaultproperties
 	bPredictedSwitching=True
 	bPredictedTranslocation=True
 	bPredictedDiscBoost=True
-	bSmoothDiscCorrections=False
+	bSmoothDiscCorrections=True
 	MinDodgeClickTime=0
 	bUseOldMouseInput=False
 	SmoothVRController=(p=0.09,i=0.05,d=0.00)

@@ -452,11 +452,13 @@ struct IGPlus_SelfKnockback {
 	var bool bHasFallback;
 	var vector FallbackPush; // server: what TakeDamage computed at the explosion; hammer: the push
 	var byte Kind;           // IGPLUS_SK_*
+	var bool bDiscOnly;      // server: only our own disc's push (ours went the stock way)
 };
 var IGPlus_SelfKnockback IGPlus_SKQueue[16];
 var ST_HitTestHelper IGPlus_SKBall; // client: stands in for our own shock ball (IGPlus_SKFly)
 var int IGPlus_SKQueueCount;
 var bool IGPlus_SKCapturing;
+var bool IGPlus_SKComboDisc;        // server: our own combo going off, our disc's push comes after (IGPlus_SKComboOnDisc)
 var bool IGPlus_SKCapturedHit;
 var vector IGPlus_SKCaptured;
 var float IGPlus_DamageEvent_PrevHealth;
@@ -3420,7 +3422,8 @@ simulated function IGPlus_SKQueueAdd(
 	bool bEnhanced,
 	bool bHasFallback,
 	vector FallbackPush,
-	optional byte Kind
+	optional byte Kind,
+	optional bool bDiscOnly
 ) {
 	local int i, j;
 
@@ -3448,6 +3451,7 @@ simulated function IGPlus_SKQueueAdd(
 	IGPlus_SKQueue[i].bHasFallback = bHasFallback;
 	IGPlus_SKQueue[i].FallbackPush = FallbackPush;
 	IGPlus_SKQueue[i].Kind = Kind;
+	IGPlus_SKQueue[i].bDiscOnly = bDiscOnly;
 	IGPlus_SKQueueCount++;
 }
 
@@ -3455,65 +3459,81 @@ simulated function IGPlus_SKQueueAdd(
 // of EnhancedHurtRadius / HurtRadiusWithSelfDamage, then TakeDamage's self
 // scaling. False when the server's wraparound (blocked line) path would decide.
 simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push) {
-	local vector Delta, DeltaXY, Closest, Dir, MomentumDelta;
-	local float Dist, DamageScale, MomentumScale;
-
-	Push = vect(0,0,0);
 	// The hammer pushes us directly (already scaled).
 	if (K.Kind == IGPLUS_SK_HAMMER) {
 		Push = K.FallbackPush;
 		return true;
 	}
-	Delta = Location - K.HitLocation;
+	if (IGPlus_SKSplash(K, Location, CollisionRadius, CollisionHeight, Push) == false)
+		return false;
+
+	// TakeDamage: own momentum is scaled by 0.6, then divided by mass.
+	Push *= 0.6;
+	if (Mass != 0)
+		Push = Push / Mass;
+	return true;
+}
+
+// The momentum an own explosion gives a cylinder of radius R, half height H
+// at Loc: EnhancedHurtRadius / HurtRadiusWithSelfDamage (and stock
+// HurtRadius), before the victim's TakeDamage. Zero out of reach. False when
+// the line from the explosion is blocked: the server's wraparound path
+// decides then, for pawns only.
+simulated function bool IGPlus_SKSplash(IGPlus_SelfKnockback K, vector Loc, float R, float H, out vector Push) {
+	local vector Delta, DeltaXY, Closest, Dir, MomentumDelta;
+	local float Dist, DamageScale, MomentumScale;
+
+	Push = vect(0,0,0);
+	Delta = Loc - K.HitLocation;
 	DeltaXY = Delta * vect(1,1,0);
 
 	if (K.bEnhanced) {
-		// CollChecker (cylinder of Radius at HitLocation) must touch us.
-		if (Abs(Delta.Z) > CollisionHeight + K.Radius || VSize(DeltaXY) > CollisionRadius + K.Radius)
+		// CollChecker (cylinder of Radius at HitLocation) must touch it.
+		if (Abs(Delta.Z) > H + K.Radius || VSize(DeltaXY) > R + K.Radius)
 			return true;
 
 		Dir = Normal(Delta);
-		if (Abs(Delta.Z) <= CollisionHeight) {
-			Closest = K.HitLocation + Normal(DeltaXY) * (VSize(DeltaXY) - CollisionRadius);
-		} else if (VSize(DeltaXY) <= CollisionRadius) {
+		if (Abs(Delta.Z) <= H) {
+			Closest = K.HitLocation + Normal(DeltaXY) * (VSize(DeltaXY) - R);
+		} else if (VSize(DeltaXY) <= R) {
 			if (Delta.Z > 0.0)
-				Closest = K.HitLocation + FMax(Delta.Z - CollisionHeight, 0.0) * vect(0,0,1);
+				Closest = K.HitLocation + FMax(Delta.Z - H, 0.0) * vect(0,0,1);
 			else
-				Closest = K.HitLocation + FMin(Delta.Z + CollisionHeight, 0.0) * vect(0,0,1);
+				Closest = K.HitLocation + FMin(Delta.Z + H, 0.0) * vect(0,0,1);
 		} else {
 			// Same as EnhancedHurtRadius (uses the source's radius here).
-			Closest = Location + Dir * (K.SourceRadius / VSize(Dir * vect(1,1,0)));
+			Closest = Loc + Dir * (K.SourceRadius / VSize(Dir * vect(1,1,0)));
 			if (Delta.Z > 0.0)
-				Closest.Z = Location.Z - CollisionHeight;
+				Closest.Z = Loc.Z - H;
 			else
-				Closest.Z = Location.Z + CollisionHeight;
+				Closest.Z = Loc.Z + H;
 		}
 
 		Dist = VSize(Closest - K.HitLocation);
 		if (Dist > K.Radius)
 			return true;
 
-		if (FastTrace(Location, K.SourceLocation) == false)
+		if (FastTrace(Loc, K.SourceLocation) == false)
 			return false;
 
-		MomentumDelta = Location - K.HitLocation;
+		MomentumDelta = Loc - K.HitLocation;
 		DamageScale = FMin(1.0 - Dist / K.Radius, 1.0);
 		if (DamageScale <= 0.0)
 			return true;
-		MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - CollisionRadius) / K.Radius, 0.0, 1.0);
+		MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - R) / K.Radius, 0.0, 1.0);
 		Dir = Normal(MomentumDelta);
 		// The ripper's alt pushes no steeper than 0.45 up (Razor2Alt.BlowUp).
 		if (K.Kind == IGPLUS_SK_RIPPERALT)
 			Dir.Z = FMin(0.45, Dir.Z);
 		Push = MomentumScale * K.Momentum * Dir;
 	} else {
-		// VisibleCollidingActors: our cylinder within Radius, and visible from
+		// VisibleCollidingActors: the cylinder within Radius, and visible from
 		// HitLocation.
-		if (VSize(Delta) >= K.Radius + CollisionRadius || FastTrace(Location, K.HitLocation) == false)
+		if (VSize(Delta) >= K.Radius + R || FastTrace(Loc, K.HitLocation) == false)
 			return true;
 
 		Dist = FMax(1, VSize(Delta));
-		DamageScale = 1.0 - FMax(0, (Dist - CollisionRadius) / K.Radius);
+		DamageScale = 1.0 - FMax(0, (Dist - R) / K.Radius);
 		if (DamageScale <= 0.0)
 			return true;
 		Dir = Delta / Dist;
@@ -3521,11 +3541,6 @@ simulated function bool IGPlus_SKCompute(IGPlus_SelfKnockback K, out vector Push
 			Dir.Z = FMin(0.45, Dir.Z);
 		Push = DamageScale * K.Momentum * Dir;
 	}
-
-	// TakeDamage: own momentum is scaled by 0.6, then divided by mass.
-	Push *= 0.6;
-	if (Mass != 0)
-		Push = Push / Mass;
 	return true;
 }
 
@@ -3547,13 +3562,14 @@ simulated function IGPlus_SKAddVelocity(vector Push) {
 // replay. Returns true if any push was applied.
 simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
 	local int i;
-	local vector Push;
+	local vector Push, DiscPush;
 	local bool bApplied;
+	local byte DiscKind;
 
 	while (IGPlus_SKQueueCount > 0 && IGPlus_SKQueue[0].TargetTS <= TS) {
 		// ponytail: 0.25s staleness drop covers death/respawn; a move gap that
 		// long just costs a correction
-		if (IGPlus_SKQueue[0].TargetTS >= TS - 0.25) {
+		if (IGPlus_SKQueue[0].TargetTS >= TS - 0.25 && IGPlus_SKQueue[0].bDiscOnly == false) {
 			if (IGPlus_SKCompute(IGPlus_SKQueue[0], Push) == false) {
 				if (IGPlus_SKQueue[0].bHasFallback)
 					Push = IGPlus_SKQueue[0].FallbackPush;
@@ -3574,11 +3590,24 @@ simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
 				}
 			}
 		}
+		// Our own disc, on the same move (its explosion's push was kept back
+		// for this, IGPlus_SKDefersDisc). Not one from before a death.
+		if (IGPlus_SKQueue[0].TargetTS >= TS - 0.25
+			&& IGPlus_SKOwnDiscPush(IGPlus_SKQueue[0], Push) && VSize(Push) > VSize(DiscPush)) {
+			DiscPush = Push;
+			DiscKind = IGPlus_SKQueue[0].Kind;
+		}
 
 		for (i = 1; i < IGPlus_SKQueueCount; i++)
 			IGPlus_SKQueue[i - 1] = IGPlus_SKQueue[i];
 		IGPlus_SKQueueCount--;
 	}
+
+	// A push sets the disc's speed, it doesn't add to it: of several due on
+	// one move, one counts. A rocket volley's land microseconds apart, in a
+	// different order on each machine. The strongest is the same on both.
+	if (DiscPush != vect(0,0,0) && IGPlus_SKApplyOwnDiscPush(DiscPush, IGPlus_SKKindName(DiscKind)))
+		bApplied = true;
 
 	return bApplied;
 }
@@ -3619,6 +3648,9 @@ function IGPlus_SKEndCapture(
 		if (IGPlus_SKCompute(K, Push) && VSize(Push - IGPlus_SKCaptured) > 1.0) {
 			IGPlus_SKDebug("changed by a mod, stock timing, worked out "$class'ST_ShockProj'.static.IGPlus_Vec(Push), K, IGPlus_SKCaptured);
 			ServerAddMomentum(IGPlus_SKCaptured);
+			// Our disc's push still waits for our moves (IGPlus_SKDefersDisc).
+			IGPlus_SKQueueAdd(FMax(TargetTS, CurrentTimeStamp), RocketIndex, HitLocation, SourceLocation,
+				SourceRadius, Radius, Momentum, bEnhanced, false, vect(0,0,0), Kind, true);
 			return;
 		}
 	}
@@ -3661,13 +3693,12 @@ simulated function IGPlus_SKPredictShot(byte Kind, int Index, vector Start, vect
 		return;
 	IGPlus_SKPredictedEntry(Start, K, Kind);
 
-	// ponytail: hurt radius + 300uu covers jumps; farther walls correct
 	if (K.SourceRadius > 0.0) {
 		// With a size (the shock ball): flown like the server's.
-		if (IGPlus_SKFly(Kind, K.SourceRadius, Start, Dir, K.Radius + 300.0, Speed * 0.01, HitLocation) == false)
+		if (IGPlus_SKFly(Kind, K.SourceRadius, Start, Dir, IGPlus_SKReach(K.Radius, Start), Speed * 0.01, HitLocation) == false)
 			return;
 	} else {
-		End = Start + Dir * (K.Radius + 300.0);
+		End = Start + Dir * IGPlus_SKReach(K.Radius, Start);
 		HitActor = IGPlus_SKTrace(Kind, Start, End, K.SourceRadius, HitLocation, HitNormal);
 		if (HitActor == none || (HitActor != Level && Mover(HitActor) == none))
 			return;
@@ -3723,7 +3754,8 @@ simulated function bool IGPlus_SKFly(byte Kind, float Radius, out vector Start, 
 	foreach TraceActors(class'Actor', A, HL, HN, HitLocation, Start, Extent) {
 		if (A == self || A == Level)
 			continue;
-		if (Pawn(A) != none || Mover(A) != none) {
+		// Our own disc too: the server's ball goes off on it.
+		if (Pawn(A) != none || Mover(A) != none || (IGPlus_DetTloc != None && A == IGPlus_DetTloc.IGPlus_DetLocalDisc)) {
 			IGPlus_SKDebugNote("not predicted, "$A$" on its way at "$class'ST_ShockProj'.static.IGPlus_Vec(A.Location));
 			return false;
 		}
@@ -3745,6 +3777,10 @@ simulated function Actor IGPlus_SKTrace(byte Kind, vector Start, vector End, flo
 		if (A == self)
 			continue;
 		if (A == Level || Mover(A) != none || Pawn(A) != none || A.bProjTarget || (A.bBlockActors && A.bBlockPlayers))
+			return A;
+		// Our own disc: nothing here may shoot it (bProjTarget off), but the
+		// server's copy of our shot goes off on the server's disc.
+		if (IGPlus_DetTloc != None && A == IGPlus_DetTloc.IGPlus_DetLocalDisc)
 			return A;
 	}
 	return none;
@@ -3795,8 +3831,8 @@ simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vecto
 	Dt = 0.025;
 	P0 = Start;
 	V = V0;
-	// ponytail: 1s of flight within hurt radius + 300uu covers jumps
-	for (i = 0; i < 40; i++) {
+	// ponytail: 2s of flight within reach covers jumps and most discs
+	for (i = 0; i < 80; i++) {
 		P1 = P0 + V * Dt + 0.5 * G * Dt * Dt;
 		HitActor = IGPlus_SKTrace(Kind, P0, P1, K.SourceRadius, HitLocation, HitNormal);
 		if (HitActor != none) {
@@ -3808,7 +3844,7 @@ simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vecto
 				Kind * 8 + Index, HitLocation, Kind);
 			return;
 		}
-		if (VSize(P1 - Start) > K.Radius + 300.0)
+		if (VSize(P1 - Start) > IGPlus_SKReach(K.Radius, Start))
 			return;
 		P0 = P1;
 		V += G * Dt;
@@ -3885,18 +3921,151 @@ simulated function IGPlus_SKDebug(string What, IGPlus_SelfKnockback K, optional 
 	Side = "server";
 	if (Level.NetMode == NM_Client)
 		Side = "client";
-	switch (K.Kind) {
-		case IGPLUS_SK_FLAKSLUG:	Kind = "flak slug"; break;
-		case IGPLUS_SK_SHOCKBALL:	Kind = "shock ball"; break;
-		case IGPLUS_SK_RIPPERALT:	Kind = "ripper alt"; break;
-		case IGPLUS_SK_HAMMER:		Kind = "hammer/chunks"; break;
-		default:					Kind = "rocket";
-	}
+	Kind = IGPlus_SKKindName(K.Kind);
 	Phys = "falling";
 	if (Physics == PHYS_Walking)
 		Phys = "walking";
 	ClientDebugMessage("Self-push ("$Side$") "$Kind$" "$What$" due "$K.TargetTS$" from "$class'ST_ShockProj'.static.IGPlus_Vec(K.HitLocation)
 		$" push "$class'ST_ShockProj'.static.IGPlus_Vec(Push)$" us "$Phys$" at "$class'ST_ShockProj'.static.IGPlus_Vec(Location));
+}
+
+static function string IGPlus_SKKindName(byte Kind) {
+	switch (Kind) {
+		case IGPLUS_SK_FLAKSLUG:	return "flak slug";
+		case IGPLUS_SK_SHOCKBALL:	return "shock ball";
+		case IGPLUS_SK_RIPPERALT:	return "ripper alt";
+		case IGPLUS_SK_HAMMER:		return "hammer/chunks";
+	}
+	return "rocket";
+}
+
+// How far along an own shot's path its explosion is predicted: near us
+// (hurt radius + 300uu covers jumps, farther walls correct), or as far as our
+// own deterministic disc, which it may push (IGPlus_SKPushOwnDisc).
+simulated function float IGPlus_SKReach(float Radius, vector Start) {
+	local ST_TranslocatorTarget D;
+
+	if (IGPlus_DetTloc != None && IGPlus_PredictsDiscBoost()) {
+		D = IGPlus_DetTloc.IGPlus_DetLocalDisc;
+		if (D != None && D.bDeleteMe == false)
+			return Radius + 300.0 + VSize(D.Location - Start);
+	}
+	return Radius + 300.0;
+}
+
+// Our own explosion and our own deterministic disc (Predicted Disc Boost):
+// the disc's push lands on the same move as our own push, from where each
+// machine has the disc on that move. The client pushes its own disc, the
+// server its disc where our screen had it, flown again from there
+// (ST_Translocator.IGPlus_DetServerPush). True when the client pushed: that
+// move goes to the server on its own, as for our own push.
+simulated function bool IGPlus_SKPushOwnDisc(IGPlus_SelfKnockback K, optional string What) {
+	local vector Push;
+
+	if (IGPlus_SKOwnDiscPush(K, Push) == false)
+		return false;
+	if (What == "")
+		What = IGPlus_SKKindName(K.Kind);
+	return IGPlus_SKApplyOwnDiscPush(Push, What);
+}
+
+// The momentum our own explosion K gives our own deterministic disc, where
+// this machine has the disc on this move. False when it doesn't reach it.
+simulated function bool IGPlus_SKOwnDiscPush(IGPlus_SelfKnockback K, out vector Push) {
+	local ST_Translocator TL;
+	local ST_TranslocatorTarget D;
+	local vector Loc;
+
+	if (K.Kind == IGPLUS_SK_HAMMER || IGPlus_PredictsDiscBoost() == false)
+		return false;
+	if (Level.NetMode == NM_Client) {
+		TL = IGPlus_DetTloc;
+		if (IGPlus_DetTranslocator == false || TL == None || TL.bDeleteMe)
+			return false;
+		D = TL.IGPlus_DetLocalDisc;
+		if (D == None || D.bDeleteMe)
+			return false;
+		Loc = D.Location;
+	} else {
+		TL = ST_Translocator(FindInventoryType(class'ST_Translocator'));
+		if (TL == None || TL.IGPlus_IsDetMode() == false)
+			return false;
+		D = ST_TranslocatorTarget(TL.TTarget);
+		if (D == None || D.bIGPlusFullHistory == false)
+			return false;
+		Loc = TL.IGPlus_DetSeenLocation(D, self);
+	}
+	return IGPlus_SKSplash(K, Loc, D.CollisionRadius, D.CollisionHeight, Push) && Push != vect(0,0,0);
+}
+
+simulated function bool IGPlus_SKApplyOwnDiscPush(vector Push, string What) {
+	local ST_Translocator TL;
+	local ST_TranslocatorTarget D;
+
+	if (Level.NetMode == NM_Client) {
+		TL = IGPlus_DetTloc;
+		ClientDebugMessage("Tloc disc pushed by our own "$What$" (predicted) age="$(Level.TimeSeconds - TL.IGPlus_DetThrowTS));
+		TL.IGPlus_DetPredictBoost(Push);
+		TL.IGPlus_DetConfirmAfterPush();
+		return true;
+	}
+	TL = ST_Translocator(FindInventoryType(class'ST_Translocator'));
+	if (TL != None && TL.IGPlus_IsDetMode())
+		D = ST_TranslocatorTarget(TL.TTarget);
+	if (D != None && D.bIGPlusFullHistory)
+		TL.IGPlus_DetServerPush(D, self, Push);
+	return false;
+}
+
+// Server: our own rocket, shock ball, flak slug or ripper blade going off
+// (IGPlus_SKBeginCapture) by our own deterministic disc. Our projectile runs
+// on our screen's time, our disc a ping behind it: its push waits for our
+// moves (IGPlus_SKPushOwnDisc), as our own push does, so it lands where our
+// client pushed its own disc.
+function bool IGPlus_SKDefersDisc(ST_TranslocatorTarget D) {
+	local ST_Translocator TL;
+
+	TL = ST_Translocator(D.Master);
+	return (IGPlus_SKCapturing || IGPlus_SKComboDisc)
+		&& IGPlus_PredictsDiscBoost() && TL != None && TL.TTarget == D
+		&& TL.IGPlus_IsDetMode() && D.bIGPlusFullHistory;
+}
+
+// Server: our own combo (ST_ShockProj.SuperExplosion) pushes our own disc
+// from where our screen had the ball, as our client worked it out
+// (IGPlus_SKPredictComboOnDisc). The server's ball is up to a server frame
+// of packet timing off that spot, which turned the disc's push by a few degrees.
+function IGPlus_SKComboOnDisc(vector Blast, float BallRadius, float Radius, float Momentum, bool bEnhanced) {
+	local IGPlus_SelfKnockback K;
+
+	K.HitLocation = Blast;
+	K.SourceLocation = Blast;
+	K.SourceRadius = BallRadius;
+	K.Radius = Radius;
+	K.Momentum = Momentum;
+	K.bEnhanced = bEnhanced;
+	K.Kind = IGPLUS_SK_SHOCKBALL;
+	IGPlus_SKPushOwnDisc(K);
+}
+
+// Client: our own predicted combo (ST_ShockProj.IGPlus_PredictCombo) pushes
+// our own disc on the beam's move, as the server's combo pushes its disc
+// where our screen had it.
+simulated function IGPlus_SKPredictComboOnDisc(ST_ShockProj Ball) {
+	local IGPlus_SelfKnockback K;
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == None)
+		return;
+	K.HitLocation = Ball.Location;
+	K.SourceLocation = Ball.Location;
+	K.SourceRadius = Ball.CollisionRadius;
+	K.Radius = WS.ShockComboHurtRadius;
+	K.Momentum = WS.ShockComboMomentum * Ball.MomentumTransfer * 2;
+	K.bEnhanced = WS.bEnableEnhancedSplashShockCombo;
+	K.Kind = IGPLUS_SK_SHOCKBALL;
+	IGPlus_SKPushOwnDisc(K, "combo");
 }
 
 // Client: our own flak slug, shock ball and ripper alt blade.
@@ -4089,13 +4258,14 @@ simulated function IGPlus_TlocHideDisc(ST_TranslocatorTarget Disc) {
 }
 
 // Server: our deterministic disc bounced or landed on our screen
-// (ST_Translocator.IGPlus_DetLocalDiscBounced).
-function IGPlus_ServerDetDiscSync(float DiscTS, float Age) {
+// (ST_Translocator.IGPlus_DetLocalDiscBounced). bConfirm: our client pushed
+// its own disc and wants ours once it is Age old (IGPlus_DetConfirmAfterPush).
+function IGPlus_ServerDetDiscSync(float DiscTS, float Age, optional bool bConfirm) {
 	local ST_Translocator TL;
 
 	TL = ST_Translocator(FindInventoryType(class'ST_Translocator'));
 	if (TL != None)
-		TL.IGPlus_DetSyncAfter(DiscTS, Age);
+		TL.IGPlus_DetSyncAfter(DiscTS, Age, bConfirm);
 }
 
 function IGPlus_BeforeTranslocate() {
