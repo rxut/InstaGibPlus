@@ -1479,7 +1479,7 @@ defaultproperties
 		PredictedDiscBoostText="Predicted Disc Boost"
 		PredictedDiscBoostHelp="If checked, your own shock beam, combos, shock balls, rockets, flak slugs and ripper alt blades push your own disc on your screen right away, where the server allows it. Off: the push shows when the server's arrives, a ping later"
 		SmoothDiscCorrectionsText="Smooth Disc Corrections"
-		SmoothDiscCorrectionsHelp="If checked, when the server moves your own disc a little (up to 64 units, or 256 after a hit), it glides there in a tenth of a second instead of jumping. Not through walls. Only with the Deterministic Translocator"
+		SmoothDiscCorrectionsHelp="If checked, when the server moves your own disc a little (up to 64 units, or 320 after a hit), it glides there in a tenth of a second instead of jumping. Not through walls. Only with the Deterministic Translocator"
 		SmoothDiscCorrectionsNoteText="Grayed out: needs the server's Deterministic Translocator"
 		SmoothDiscCorrectionsNoteHelp="Only the Deterministic Translocator has the server correct your own disc. This server doesn't use it, so there is nothing to smooth"
 

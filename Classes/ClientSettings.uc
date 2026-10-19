@@ -69,7 +69,7 @@ var config bool   bSmoothLiftJump; // Leaving a moving lift: move to the server'
 var config bool   bPredictedSwitching;     // Our own say on the server's predictions (the server's setting must allow them too)
 var config bool   bPredictedTranslocation;
 var config bool   bPredictedDiscBoost;
-var config bool   bSmoothDiscCorrections; // Our own deterministic disc: a server correction up to 64uu (256uu after a hit) glides over 0.1s instead of a jump
+var config bool   bSmoothDiscCorrections; // Our own deterministic disc: a server correction up to 64uu (320uu after a hit) glides over 0.1s instead of a jump
 var config bool   bSmoothDiscCorrectionsDefaulted; // bSmoothDiscCorrections was turned on once, when it became the default
 var config float  MinDodgeClickTime; // Minimum time between two presses of the same direction for them to count as a dodge
 var config bool   bUseOldMouseInput;

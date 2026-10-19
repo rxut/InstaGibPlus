@@ -389,7 +389,7 @@ simulated function IGPlus_EaseFromSpot(vector Drawn, optional bool bShot) {
 
 	MaxGlide = 64.0;
 	if (bShot)
-		MaxGlide = 256.0;
+		MaxGlide = 320.0; // ponytail: direct hits at ~150 ping correct 170-300uu
 	IGPlus_EaseFrom = Drawn - Location;
 	if (VSize(IGPlus_EaseFrom) > MaxGlide || Trace(HitLocation, HitNormal, Drawn, Location, false) != None)
 		IGPlus_EaseFrom = vect(0,0,0);

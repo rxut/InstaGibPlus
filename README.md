@@ -478,7 +478,7 @@ If set to `True`, your own shock beam, shock combo, shock ball, rocket, flak slu
 **Type: bool**  
 **Default: True**  
 
-If set to `True`, when the server moves your own translocator disc a little (up to 64 units), the disc glides there on your screen in a tenth of a second instead of jumping. After something hits your disc, its corrections glide up to 256 units until it lands: the hit reaches you a ping late, so the disc launches from where your screen had it. Bigger corrections, and any with a wall or door in the way, still jump. Only the drawing changes: where the disc is and where you translocate to stay the same. Only used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The settings menu grays it out on servers without it. Console: [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections).
+If set to `True`, when the server moves your own translocator disc a little (up to 64 units), the disc glides there on your screen in a tenth of a second instead of jumping. After something hits your disc, its corrections glide up to 320 units until it lands: the hit reaches you a ping late, so the disc launches from where your screen had it. Bigger corrections, and any with a wall or door in the way, still jump. Only the drawing changes: where the disc is and where you translocate to stay the same. Only used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The settings menu grays it out on servers without it. Console: [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections).
 
 ## bNoSmoothing
 **Type: bool**  
