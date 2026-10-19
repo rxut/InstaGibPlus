@@ -223,14 +223,22 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	local Mover BaseMover;
 	local vector HistoricalMoverLoc;
 	local float SnapshotMoverZ;
+	local float XpolTime;
 
 	if (Actual == None || Actual.bDeleteMe || SnapA == None || bCompActive)
 		return;
 
 	// Compute position/velocity based on compensation mode
 	if (Alpha == -1.0) {
-		// Extrapolation from SnapA
-		TargetLoc = SnapA.Loc + SnapA.Vel * (TargetTimeStamp - SnapA.ServerTimeStamp);
+		// Extrapolation from SnapA. Capped: a player whose packets stall has
+		// no newer snapshot, and an uncapped velocity carries them through walls.
+		// With warp fix on, clients hold a player stalled that long at this
+		// snapshot (bbPlayer.IGPlus_ApplyWarpFix): so do we.
+		XpolTime = FClamp(TargetTimeStamp - SnapA.ServerTimeStamp, -0.2, 0.2);
+		BP = bbPlayer(Actual);
+		if (BP != None && BP.IGPlus_EnableWarpFix && TargetTimeStamp - SnapA.ServerTimeStamp > BP.IGPlus_WarpFixDelay)
+			XpolTime = 0;
+		TargetLoc = SnapA.Loc + SnapA.Vel * XpolTime;
 		TargetVel = SnapA.Vel;
 	} else if (SnapB != None) {
 		// Interpolation between SnapA and SnapB
