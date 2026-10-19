@@ -534,8 +534,26 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
     local Pawn DActual;
+	local bbPlayer PRT, PRTDebug;
+	local int OldPing;
+	local vector OldLoc;
+	local float Moved, MostMoved;
+	local string MostMovedName;
 
 	bCompensationIsActive = true;
+
+	// Precise Rewind Time: a hitscan shot's players where the shooter's
+	// screen drew them. Only on its own rewind (a capped combo rewind isn't).
+	if (bHitscan && bbPlayer(Instigator) != none && bbPlayer(Instigator).GetWeaponSettings() != none
+		&& bbPlayer(Instigator).GetWeaponSettings().bEnablePreciseRewindTime) {
+		PRT = bbPlayer(Instigator);
+		if (PRT.bDrawDebugData)
+			PRTDebug = PRT;
+		if (PRT.IGPlus_PRTUsable() == false || int(PRT.IGPlus_PRTLagMs) != Ping)
+			PRT = none;
+		else if (PRTDebug != none)
+			OldPing = int(PRTDebug.IGPlus_GetWeaponImplementationBase().IGPlus_GetAveragePingRewindMs(PRTDebug));
+	}
 
     for (D = CompDummies; D != none; D = D.Next) {
         DActual = D.Actual;
@@ -568,8 +586,40 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 				MD.CompStart(Ping);
 		}
 
-        D.CompStart(Ping);
+		if (PRT == none) {
+			D.CompStart(Ping);
+			continue;
+		}
+		// Debug: how far this moves them from the average-ping rewind.
+		if (PRTDebug != none) {
+			D.CompStart(OldPing);
+			OldLoc = D.Location;
+			Moved = -1;
+			if (D.bCompActive)
+				Moved = 0;
+			D.CompEnd();
+		}
+		D.CompStartSeen(PRT.IGPlus_PRTSeenTime, PRT.IGPlus_PRTViewTimeNow());
+		if (PRTDebug != none && Moved == 0 && D.bCompActive) {
+			Moved = VSize(D.Location - OldLoc);
+			if (Moved > MostMoved) {
+				MostMoved = Moved;
+				MostMovedName = DActual.PlayerReplicationInfo.PlayerName;
+			}
+		}
     }
+
+	if (PRTDebug != none) {
+		if (PRT != none)
+			PRTDebug.ClientDebugMessage("Precise rewind (server):"@int(PRT.IGPlus_PRTLagMs)@"ms, average-ping rewind"@OldPing@"ms, server ping"@int(PRT.IGPlus_PRTServerPing)@"ms, screen"
+				@int(1000.0 * (PRT.IGPlus_PRTViewTimeNow() - PRT.IGPlus_PRTSeenTime) / Level.TimeDilation)@"ms past its update, players moved up to"@int(MostMoved)@"uu"@MostMovedName);
+		else if (PRTDebug.IGPlus_PRTFresh() == false)
+			PRTDebug.ClientDebugMessage("Precise rewind (server): not used, no report this tick, rewind"@Ping@"ms");
+		else if (PRTDebug.IGPlus_PRTReason != "")
+			PRTDebug.ClientDebugMessage("Precise rewind (server): not used,"@PRTDebug.IGPlus_PRTReason$", rewind"@Ping@"ms");
+		else
+			PRTDebug.ClientDebugMessage("Precise rewind (server): not used, rewind capped to"@Ping@"ms");
+	}
 
 	for (PD = ProjDummies; PD != none; PD = PD.Next) {
 		if (PD.Actual != none && !PD.Actual.bDeleteMe) {
@@ -1227,6 +1277,8 @@ function string IGPlus_NormalizeWeaponSettingKey(string Key) {
 	if (Key ~= "HeadRadius") return "HeadRadius";
 	if (Key ~= "bEnablePingCompensation") return "bEnablePingCompensation";
 	if (Key ~= "bEnableSubTickCompensation") return "bEnableSubTickCompensation";
+	if (Key ~= "bEnablePreciseRewindTime") return "bEnablePreciseRewindTime";
+	if (Key ~= "PreciseRewindTimeMaxDeviationMs") return "PreciseRewindTimeMaxDeviationMs";
 	if (Key ~= "PingCompensationMax") return "PingCompensationMax";
 	if (Key ~= "bEnableAnimationAdaptiveHeadHitbox") return "bEnableAnimationAdaptiveHeadHitbox";
 	if (Key ~= "InvisibilityDuration") return "InvisibilityDuration";

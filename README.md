@@ -2053,6 +2053,21 @@ A shock combo on its owner's own ball goes off where the owner saw the ball. If 
 
 If enabled, the rewound position is interpolated between the two snapshots around the target time instead of snapping to the older one.
 
+## bEnablePreciseRewindTime
+
+**Type: bool**  
+**Default: False**  
+
+If enabled, a hitscan shot rewinds the other players to the moment the shooter's screen showed them, instead of guessing from the shooter's average ping. The server tells each player the server time of every update it sends. A shot then carries the update the shooter's screen showed and how long the screen had been moving players forward past it. The server places every player the same way: at their snapshot from that update, carried forward by their velocity for the same time. Network jitter, the wait for the server's next tick and ping changes stop moving the rewound players. It doesn't need bEnableSubTickCompensation. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them. Shots traced later in the tick than the moves arrive (minigun, pulse beam, enforcer refire) use the same report. If the shot's rewind is above PingCompensationMax, or differs from the server's own ping measurement by more than PreciseRewindTimeMaxDeviationMs, the shot uses the old rewind. Needs bEnablePingCompensation and bEnableInputReplication off. Not used for a player with snapshot interpolation. Console `enableDebugData 1` shows a line per hitscan shot: the rewind used, the old rewind and how far the change moved the players.
+
+## PreciseRewindTimeMaxDeviationMs
+
+**Type: int**  
+**Default: 60**  
+**Unit: ms**  
+
+How far a shot's [bEnablePreciseRewindTime](#benablepreciserewindtime) rewind may differ from the server's own ping measurement before the server falls back to the old rewind. Limits how much extra rewind a modified client can claim.
+
 ## RocketCompensatePing
 
 **Type: bool**  

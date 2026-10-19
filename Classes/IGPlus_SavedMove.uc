@@ -28,6 +28,8 @@ var bool bIGPlusTloc;
 var vector IGPlusTlocDest;
 var vector IGPlus_LiftExitShift; // left a moving lift: moved to the server's spot after the move
 var float IGPlus_LiftExitVelZ;
+// Precise Rewind Time: what our last frame showed (bbPlayer.SendSavedMove).
+var int IGPlus_PRTData;
 
 function Clear2() {
     Clear();

@@ -19,6 +19,8 @@ var int DetChargeData;
 // see bbPlayer.SendSavedMove.
 var float DetRedoTS;
 var int DetRedoData;
+// Precise Rewind Time: what the shooter's screen showed (bbPlayer.IGPlus_PRTNote).
+var int PRTData;
 var IGPlus_ServerMove Next;
 
 defaultproperties {

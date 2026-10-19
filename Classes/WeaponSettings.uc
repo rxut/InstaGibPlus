@@ -177,6 +177,9 @@ var config bool  bEnablePingCompensation;
 
 var config bool  bEnableSubTickCompensation;
 
+var config bool  bEnablePreciseRewindTime;
+var config int   PreciseRewindTimeMaxDeviationMs;
+
 var config int   PingCompensationMax;
 
 var config bool  bEnableAnimationAdaptiveHeadHitbox;
@@ -378,6 +381,9 @@ defaultproperties
 	bEnablePingCompensation=False
 
 	bEnableSubTickCompensation=False
+
+	bEnablePreciseRewindTime=False
+	PreciseRewindTimeMaxDeviationMs=60
 	
 	PingCompensationMax=200
 

@@ -201,6 +201,32 @@ function CompStart(int Ping)
     }
 }
 
+// Precise Rewind Time: the shooter's screen showed the update the server
+// sent at SeenTime and kept moving players forward from it until ViewTime.
+// Same here: the newest snapshot the shooter had, carried to ViewTime.
+function CompStartSeen(float SeenTime, float ViewTime) {
+	local int Idx, Scans;
+	local UTPlusSnapshot Snap, Oldest;
+
+	if (Actual == none || Actual.bDeleteMe || Actual.Health <= 0)
+		return;
+
+	Idx = DataIndex;
+	for (Scans = 0; Scans < arraycount(Data); Scans++) {
+		Idx = (Idx - 1 + arraycount(Data)) % arraycount(Data);
+		Snap = Data[Idx];
+		if (Snap == None || Snap.ServerTimeStamp <= 0)
+			continue;
+		if (Snap.ServerTimeStamp <= SeenTime) {
+			CompSwap(Snap, None, -1.0, ViewTime);
+			return;
+		}
+		Oldest = Snap;
+	}
+	if (Oldest != None)
+		CompSwap(Oldest, None, -1.0, ViewTime);
+}
+
 function TakeDamage(
     int Damage,
     Pawn InstigatedBy,

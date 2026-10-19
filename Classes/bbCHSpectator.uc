@@ -1207,6 +1207,8 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("HeadRadius");
 	IGPlus_WeaponSendSetting("bEnablePingCompensation");
 	IGPlus_WeaponSendSetting("bEnableSubTickCompensation");
+	IGPlus_WeaponSendSetting("bEnablePreciseRewindTime");
+	IGPlus_WeaponSendSetting("PreciseRewindTimeMaxDeviationMs");
 	IGPlus_WeaponSendSetting("PingCompensationMax");
 	IGPlus_WeaponSendSetting("bEnableAnimationAdaptiveHeadHitbox");
 	IGPlus_WeaponSendSetting("InvisibilityDuration");

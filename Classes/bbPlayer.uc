@@ -240,6 +240,23 @@ var int PingAverage;
 var int PingCurrentAveragingSecond;
 var float PingRunningAverage;
 var int PingRunningAverageCount;
+
+// Precise Rewind Time (WeaponSettings.bEnablePreciseRewindTime): a hitscan
+// shot rewinds players to what the shooter's screen showed.
+var int IGPlus_PRTServerTick;        // server: counts ticks, sent to our client
+var float IGPlus_PRTTickTime[64];    // server: the time of each recent tick
+var int IGPlus_PRTSeenTick;          // client: the newest tick we got
+var float IGPlus_PRTSeenAt;          // client: our time when it arrived
+var int IGPlus_PRTShownTick;         // client: the update our last frame showed
+var float IGPlus_PRTShownAge;        // client: how far past it that frame was
+var float IGPlus_PRTNoteTS;          // server: when the last shot's report arrived
+var int IGPlus_PRTNoteTick;          // server: our tick count then
+var float IGPlus_PRTSeenTime;        // server: the update the shooter's screen showed
+var float IGPlus_PRTViewTime;        // server: carried forward to this time
+var float IGPlus_PRTLagMs;           // server: now minus ViewTime, real ms
+var string IGPlus_PRTReason;         // server: why the report isn't used ("" = used)
+var float IGPlus_PRTServerPing;      // server: our own ping measurement (GETPING)
+var float IGPlus_PRTPingReadTS;
 var float FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
 var float ExtrapolationDelta;
 var bool bExtrapolatedLastUpdate;
@@ -674,6 +691,7 @@ replication
 		IGPlus_PushSafeAim,
 		IGPlus_DetTranslocator,
 		IGPlus_PredictedDiscBoost,
+		IGPlus_PRTServerTick,
 		KillCamDelay,
 		KillCamDuration,
 		LastKiller,
@@ -3045,6 +3063,74 @@ function UpdatePing() {
 	}
 }
 
+// Precise Rewind Time report, one int on a move: bits 0-14 the tick of the
+// update our screen showed, bit 15 set, bits 16-31 how far past it, in 0.1 ms.
+static function int IGPlus_PRTPack(int Tick, float Age) {
+	return (Tick & 0x7FFF) | 0x8000 | (Clamp(int(Age * 10000.0), 0, 0xFFFF) << 16);
+}
+
+// How many of our ticks ago the report's update was sent (the newest tick
+// with those low bits). 0x7FFF-ish for a tick we haven't sent yet.
+static function int IGPlus_PRTTicksBack(int ServerTick, int Data) {
+	return (ServerTick - (Data & 0x7FFF)) & 0x7FFF;
+}
+
+static function float IGPlus_PRTAge(int Data) {
+	return 0.0001 * (Data >>> 16);
+}
+
+// Precise Rewind Time: a move's report of what its shots saw, checked
+// against our own clock and ping. A failed check leaves its shots on the
+// average-ping rewind. Reason says why.
+function IGPlus_PRTNote(int Data) {
+	local WeaponSettingsRepl WS;
+	local int Back;
+
+	WS = GetWeaponSettings();
+	// We keep the times of our last 64 ticks.
+	Back = IGPlus_PRTTicksBack(IGPlus_PRTServerTick, Data);
+	IGPlus_PRTNoteTS = Level.TimeSeconds;
+	IGPlus_PRTNoteTick = IGPlus_PRTServerTick;
+	IGPlus_PRTSeenTime = IGPlus_PRTTickTime[(IGPlus_PRTServerTick - Back) & 63];
+	IGPlus_PRTViewTime = IGPlus_PRTSeenTime + IGPlus_PRTAge(Data);
+	IGPlus_PRTLagMs = 1000.0 * (Level.TimeSeconds - IGPlus_PRTViewTime) / Level.TimeDilation;
+	IGPlus_PRTReason = "";
+	if (WS == none || WS.bEnablePreciseRewindTime == false)
+		IGPlus_PRTReason = "off";
+	else if (IGPlus_EnableSnapshotInterpolation)
+		IGPlus_PRTReason = "snapshot interpolation";
+	else if (Back >= 64 || IGPlus_PRTSeenTime <= 0)
+		IGPlus_PRTReason = "update too old";
+	// On a LAN a frame can reach us before our next tick: a little ahead is fine.
+	else if (IGPlus_PRTLagMs < -20)
+		IGPlus_PRTReason = "report ahead of our clock";
+	else if (IGPlus_PRTLagMs > WS.PingCompensationMax)
+		IGPlus_PRTReason = "above PingCompensationMax";
+	else if (IGPlus_PRTServerPing > 0
+		&& Abs(IGPlus_PRTLagMs - IGPlus_PRTServerPing) > WS.PreciseRewindTimeMaxDeviationMs)
+		IGPlus_PRTReason = "server ping"@int(IGPlus_PRTServerPing)@"ms";
+	IGPlus_PRTLagMs = FMax(0, IGPlus_PRTLagMs);
+}
+
+// A report from a move this tick. Shots traced later in the tick than the
+// moves arrive (minigun, pulse beam, enforcer refire) use it too.
+function bool IGPlus_PRTFresh() {
+	return IGPlus_PRTNoteTS > 0 && IGPlus_PRTServerTick - IGPlus_PRTNoteTick <= 1
+		&& Level.TimeSeconds - IGPlus_PRTNoteTS < 0.1;
+}
+
+// Does a hitscan shot now use Precise Rewind Time? Only with a fresh,
+// checked report.
+function bool IGPlus_PRTUsable() {
+	return IGPlus_PRTFresh() && IGPlus_PRTReason == "";
+}
+
+// The report's view time for a shot traced now: as far past it as the
+// tick has run since the report arrived (the rewind stays the same).
+function float IGPlus_PRTViewTimeNow() {
+	return IGPlus_PRTViewTime + (Level.TimeSeconds - IGPlus_PRTNoteTS);
+}
+
 function TakeFallingDamage()
 {
 	if (Velocity.Z < -1.4 * JumpZ)
@@ -4662,6 +4748,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	LastServerMoveParams.Base = SM.ClientBase;
 	LastServerMoveParams.Physics = ClientPhysics;
 	LastServerMoveParams.TlocCounter = ClientTlocCounter;
+	// Precise Rewind Time: when this move's shots saw the other players.
+	if ((SM.PRTData & 0x8000) != 0)
+		IGPlus_PRTNote(SM.PRTData);
 	IGPlus_DetPrevClientVel = IGPlus_DetClientVel;
 	IGPlus_DetPrevClientPhys = IGPlus_DetClientPhys;
 	IGPlus_DetClientVel = SM.ClientVelocity;
@@ -5139,7 +5228,8 @@ function xxServerMove(
 	optional int OldMoveData1,
 	optional int OldMoveData2,
 	optional float DetRedoTS,
-	optional int DetRedoData
+	optional int DetRedoData,
+	optional int PRTData
 ) {
 	local IGPlus_ServerMove SM;
 
@@ -5163,6 +5253,7 @@ function xxServerMove(
 	SM.OldMoveData2 = OldMoveData2;
 	SM.DetRedoTS = DetRedoTS;
 	SM.DetRedoData = DetRedoData;
+	SM.PRTData = PRTData;
 
 	IGPlus_ApplyServerMove(SM);
 	IGPlus_DestroyServerMove(SM);
@@ -7661,6 +7752,10 @@ function xxReplicateMove(
 
 	NewMove.SetRotation( Rotation );
 	NewMove.IGPlus_SavedViewRotation = ViewRotation;
+	// Precise Rewind Time: what our last frame showed of the others.
+	NewMove.IGPlus_PRTData = 0;
+	if (IGPlus_PRTSeenAt > 0 && IGPlus_PRTShownTick != 0)
+		NewMove.IGPlus_PRTData = IGPlus_PRTPack(IGPlus_PRTShownTick, IGPlus_PRTShownAge);
 	// Only the shot frame's move (a single frame) carries the aimed view, so
 	// nothing else (dodges, other weapons) sees it.
 	if (bPSAAimFix && bDetLocalShot)
@@ -7737,6 +7832,8 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	local int ViewPacked;
 	local float RedoTS;
 	local int RedoData;
+	local int PRTData;
+	local WeaponSettingsRepl WS;
 
 	if (Move.bPressedJump) bJumpStatus = !bJumpStatus;
 
@@ -7807,6 +7904,12 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		IGPlus_DetRedoView = ViewPacked;
 	}
 
+	// Precise Rewind Time: only moves that can shoot carry what we saw.
+	WS = GetWeaponSettings();
+	if ((Move.bFire || Move.bAltFire) && WS != none
+		&& WS.bEnablePreciseRewindTime && IGPlus_EnableSnapshotInterpolation == false)
+		PRTData = Move.IGPlus_PRTData;
+
 	xxServerMove(
 		Move.TimeStamp,
 		MoveDeltaTime,
@@ -7822,7 +7925,8 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		OldMoveData1,
 		OldMoveData2,
 		RedoTS,
-		RedoData
+		RedoData,
+		PRTData
 	);
 
 	debugServerMoveCallsSent += 1;
@@ -9455,6 +9559,17 @@ event ServerTick(float DeltaTime) {
 	local float SnapshotInterval;
 
 	AverageServerDeltaTime = (AverageServerDeltaTime*99 + DeltaTime) * 0.01;
+	// Precise Rewind Time: stamp what this tick sends our client, and read
+	// our own measure of its ping to check its reports against.
+	if (RemoteRole == ROLE_AutonomousProxy && GetWeaponSettings() != none
+		&& GetWeaponSettings().bEnablePreciseRewindTime) {
+		IGPlus_PRTServerTick++;
+		IGPlus_PRTTickTime[IGPlus_PRTServerTick & 63] = Level.TimeSeconds;
+		if (Level.TimeSeconds >= IGPlus_PRTPingReadTS) {
+			IGPlus_PRTServerPing = float(ConsoleCommand("GETPING"));
+			IGPlus_PRTPingReadTS = Level.TimeSeconds + 0.5;
+		}
+	}
 	IGPlus_ProcessRemoteMovement();
 	xxRememberPosition();
 	IGPlus_UpdateServerSnapInterpDelayEstimate();
@@ -9657,7 +9772,8 @@ state FeigningDeath
 		optional int OldMoveData1,
 		optional int OldMoveData2,
 		optional float DetRedoTS,
-		optional int DetRedoData
+		optional int DetRedoData,
+		optional int PRTData
 	)
 	{
 		Global.xxServerMove(
@@ -9675,7 +9791,8 @@ state FeigningDeath
 			OldMoveData1,
 			OldMoveData2,
 			DetRedoTS,
-			DetRedoData);
+			DetRedoData,
+			PRTData);
 	}
 
 	function PlayerMove( float DeltaTime)
@@ -10799,7 +10916,8 @@ state Dying
 		optional int OldMoveData1,
 		optional int OldMoveData2,
 		optional float DetRedoTS,
-		optional int DetRedoData
+		optional int DetRedoData,
+		optional int PRTData
 	)
 	{
 		local int KeepData, KeepData2, KeepDelta;
@@ -10841,7 +10959,8 @@ state Dying
 			OldMoveData1,
 			OldMoveData2,
 			0.0,
-			0);
+			0,
+			PRTData);
 	}
 
 	function FindGoodView()
@@ -10959,7 +11078,8 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 		optional int OldMoveData1,
 		optional int OldMoveData2,
 		optional float DetRedoTS,
-		optional int DetRedoData
+		optional int DetRedoData,
+		optional int PRTData
 	)
 	{
 		Global.xxServerMove(
@@ -10977,7 +11097,8 @@ ignores SeePlayer, HearNoise, KilledBy, Bump, HitWall, HeadZoneChange, FootZoneC
 			OldMoveData1,
 			OldMoveData2,
 			DetRedoTS,
-			DetRedoData);
+			DetRedoData,
+			PRTData);
 	}
 
 	function FindGoodView()
@@ -11098,6 +11219,18 @@ function xxPlayerTickEvents(float DeltaTime)
 
 	if (Role == ROLE_AutonomousProxy) {
 		IGPlus_CameraCorrectionDecay(DeltaTime);
+
+		// Precise Rewind Time: what the last frame showed (the one a click
+		// now was aimed at), then this frame's newest update. Players are
+		// drawn from their newest update, carried forward since it arrived.
+		if (IGPlus_PRTSeenAt > 0) {
+			IGPlus_PRTShownTick = IGPlus_PRTSeenTick;
+			IGPlus_PRTShownAge = FMax(0, CurrentTime - DeltaTime - IGPlus_PRTSeenAt);
+		}
+		if (IGPlus_PRTServerTick != IGPlus_PRTSeenTick) {
+			IGPlus_PRTSeenTick = IGPlus_PRTServerTick;
+			IGPlus_PRTSeenAt = CurrentTime;
+		}
 
 		if (IGPlus_DetTloc != none) {
 			if (IGPlus_DetTloc.bDeleteMe)
@@ -16738,6 +16871,8 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("HeadRadius");
 	IGPlus_WeaponSendSetting("bEnablePingCompensation");
 	IGPlus_WeaponSendSetting("bEnableSubTickCompensation");
+	IGPlus_WeaponSendSetting("bEnablePreciseRewindTime");
+	IGPlus_WeaponSendSetting("PreciseRewindTimeMaxDeviationMs");
 	IGPlus_WeaponSendSetting("PingCompensationMax");
 	IGPlus_WeaponSendSetting("bEnableAnimationAdaptiveHeadHitbox");
 	IGPlus_WeaponSendSetting("InvisibilityDuration");

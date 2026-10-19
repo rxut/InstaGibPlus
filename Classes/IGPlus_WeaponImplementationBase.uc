@@ -74,6 +74,16 @@ function float IGPlus_GetOneWayLatencyMs(Pawn Instigator) {
 
 function float IGPlus_GetHitscanRewindMs(Pawn Instigator) {
 	local bbPlayer bbP;
+
+	// Precise Rewind Time: the shooter's report of what the screen showed.
+	bbP = bbPlayer(Instigator);
+	if (bbP != None && bbP.IGPlus_PRTUsable())
+		return bbP.IGPlus_PRTLagMs;
+	return IGPlus_GetAveragePingRewindMs(Instigator);
+}
+
+function float IGPlus_GetAveragePingRewindMs(Pawn Instigator) {
+	local bbPlayer bbP;
 	local float EffectivePing;
 	local float InterpMs;
 	local float BasePingMs;

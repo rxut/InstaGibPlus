@@ -82,6 +82,12 @@ var localized string bEnablePingCompensationHelp;
 var UWindowCheckbox Chk_bEnableSubTickCompensation;
 var localized string bEnableSubTickCompensationText;
 var localized string bEnableSubTickCompensationHelp;
+var UWindowCheckbox Chk_bEnablePreciseRewindTime;
+var localized string bEnablePreciseRewindTimeText;
+var localized string bEnablePreciseRewindTimeHelp;
+var IGPlus_EditControl Edit_PreciseRewindTimeMaxDeviationMs;
+var localized string PreciseRewindTimeMaxDeviationMsText;
+var localized string PreciseRewindTimeMaxDeviationMsHelp;
 var IGPlus_EditControl Edit_PingCompensationMax;
 var localized string PingCompensationMaxText;
 var localized string PingCompensationMaxHelp;
@@ -880,6 +886,8 @@ function SaveWeaponSettings() {
 	SaveWeaponSettingIfChanged(S, "HeadRadius", Edit_HeadRadius.GetValue());
 	SaveWeaponSettingIfChanged(S, "bEnablePingCompensation", BoolToString(Chk_bEnablePingCompensation.bChecked));
 	SaveWeaponSettingIfChanged(S, "bEnableSubTickCompensation", BoolToString(Chk_bEnableSubTickCompensation.bChecked));
+	SaveWeaponSettingIfChanged(S, "bEnablePreciseRewindTime", BoolToString(Chk_bEnablePreciseRewindTime.bChecked));
+	SaveWeaponSettingIfChanged(S, "PreciseRewindTimeMaxDeviationMs", Edit_PreciseRewindTimeMaxDeviationMs.GetValue());
 	SaveWeaponSettingIfChanged(S, "PingCompensationMax", Edit_PingCompensationMax.GetValue());
 	SaveWeaponSettingIfChanged(S, "bEnableAnimationAdaptiveHeadHitbox", BoolToString(Chk_bEnableAnimationAdaptiveHeadHitbox.bChecked));
 	SaveWeaponSettingIfChanged(S, "InvisibilityDuration", Edit_InvisibilityDuration.GetValue());
@@ -1348,6 +1356,7 @@ function ConfigureResponsiveWeaponControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_HeadHalfHeight, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_HeadRadius, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_PingCompensationMax, C, ControlWidth, 80);
+	ConfigureFixedWidthEdit(Edit_PreciseRewindTimeMaxDeviationMs, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_InvisibilityDuration, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_ShieldBeltCharge, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_ArmorCharge, C, ControlWidth, 80);
@@ -1490,6 +1499,8 @@ function LoadWeaponSettings() {
 	Edit_HeadRadius.SetValue(string(S.HeadRadius));
 	Chk_bEnablePingCompensation.bChecked = S.bEnablePingCompensation;
 	Chk_bEnableSubTickCompensation.bChecked = S.bEnableSubTickCompensation;
+	Chk_bEnablePreciseRewindTime.bChecked = S.bEnablePreciseRewindTime;
+	Edit_PreciseRewindTimeMaxDeviationMs.SetValue(string(S.PreciseRewindTimeMaxDeviationMs));
 	Edit_PingCompensationMax.SetValue(string(S.PingCompensationMax));
 	Chk_bEnableAnimationAdaptiveHeadHitbox.bChecked = S.bEnableAnimationAdaptiveHeadHitbox;
 	Edit_InvisibilityDuration.SetValue(string(S.InvisibilityDuration));
@@ -1674,6 +1685,8 @@ function Created() {
 	Edit_HeadRadius = CreateEdit(ECT_Real, HeadRadiusText, HeadRadiusHelp, 16, 80);
 	Chk_bEnablePingCompensation = CreateCheckbox(bEnablePingCompensationText, bEnablePingCompensationHelp);
 	Chk_bEnableSubTickCompensation = CreateCheckbox(bEnableSubTickCompensationText, bEnableSubTickCompensationHelp);
+	Chk_bEnablePreciseRewindTime = CreateCheckbox(bEnablePreciseRewindTimeText, bEnablePreciseRewindTimeHelp);
+	Edit_PreciseRewindTimeMaxDeviationMs = CreateEdit(ECT_Integer, PreciseRewindTimeMaxDeviationMsText, PreciseRewindTimeMaxDeviationMsHelp, 8, 80);
 	Edit_PingCompensationMax = CreateEdit(ECT_Integer, PingCompensationMaxText, PingCompensationMaxHelp, 8, 80);
 	Chk_bEnableAnimationAdaptiveHeadHitbox = CreateCheckbox(bEnableAnimationAdaptiveHeadHitboxText, bEnableAnimationAdaptiveHeadHitboxHelp);
 
@@ -1908,6 +1921,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_HeadRadius, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePingCompensation, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableSubTickCompensation, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bEnablePreciseRewindTime, bShowSettings, WndWidth, Top);
+	LayoutControl(Edit_PreciseRewindTimeMaxDeviationMs, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_PingCompensationMax, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableAnimationAdaptiveHeadHitbox, bShowSettings, WndWidth, Top);
 
@@ -2190,6 +2205,10 @@ defaultproperties
 	bEnablePingCompensationHelp="Weapon setting: Enable Ping Compensation"
 	bEnableSubTickCompensationText="Enable Sub Tick Compensation"
 	bEnableSubTickCompensationHelp="Weapon setting: Enable Sub Tick Compensation"
+	bEnablePreciseRewindTimeText="Enable Precise Rewind Time"
+	bEnablePreciseRewindTimeHelp="Weapon setting: rewind hitscan shots to the moment the shooter's screen showed"
+	PreciseRewindTimeMaxDeviationMsText="Precise Rewind Time Max Deviation"
+	PreciseRewindTimeMaxDeviationMsHelp="Weapon setting: how many ms the client's rewind may differ from the server's own ping before the server uses its old rewind"
 	PingCompensationMaxText="Ping Compensation Max"
 	PingCompensationMaxHelp="Weapon setting: Ping Compensation Max"
 	bEnableAnimationAdaptiveHeadHitboxText="Enable Animation Adaptive Head Hitbox"

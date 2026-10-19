@@ -176,10 +176,26 @@ function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.5, 5.0, 0, 0, 3.0) > 0.5, "FireClockLead_speedhack_exceeds_default_margin_within_2s");
 }
 
+function TestPreciseRewindTimeReport() {
+	LogTestResult(class'bbPlayer'.static.IGPlus_PRTTicksBack(500, class'bbPlayer'.static.IGPlus_PRTPack(497, 0.0123)) == 3,
+		"PRT_report_finds_its_tick");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_PRTAge(class'bbPlayer'.static.IGPlus_PRTPack(497, 0.0123)) - 0.0123) < 0.0001,
+		"PRT_report_keeps_its_age");
+	LogTestResult(class'bbPlayer'.static.IGPlus_PRTTicksBack(32772, class'bbPlayer'.static.IGPlus_PRTPack(32770, 0)) == 2,
+		"PRT_report_tick_survives_wrap");
+	LogTestResult(class'bbPlayer'.static.IGPlus_PRTTicksBack(10, class'bbPlayer'.static.IGPlus_PRTPack(12, 0)) >= 64,
+		"PRT_report_from_the_future_is_too_old");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_PRTAge(class'bbPlayer'.static.IGPlus_PRTPack(5, 9.0)) - 6.5535) < 0.0001,
+		"PRT_report_long_age_clamps_and_stays_positive");
+	LogTestResult((class'bbPlayer'.static.IGPlus_PRTPack(0, 0) & 0x8000) != 0,
+		"PRT_report_is_always_marked");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
 	TestTranslocatorFireMerging();
 	TestDetFireClockLead();
+	TestPreciseRewindTimeReport();
 	return 0;
 }
