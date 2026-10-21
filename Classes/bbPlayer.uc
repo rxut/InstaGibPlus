@@ -148,6 +148,7 @@ var int IGPlus_PredSwitchTotal;
 var int IGPlus_PredSwitchClientMatch;
 var int IGPlus_PredSwitchLogicMatch;
 var float IGPlus_PredSwitchLastLogTS;
+var float IGPlus_PSLastLogTS;         // server: IGPlus_PSLog's own throttle (a pipe bind's next command lands in the same tick)
 // Client: frame timestamp of the latest locally predicted Det shot.
 var float IGPlus_DetClientShotTS;
 var float IGPlus_DetLastShotTS;
@@ -14616,8 +14617,8 @@ simulated function xxClientPSReject(int Serial, Weapon ServerWeapon, float Serve
 }
 
 function IGPlus_PSLog(string What) {
-	if (Level.TimeSeconds - IGPlus_PredSwitchLastLogTS > 0.25) {
-		IGPlus_PredSwitchLastLogTS = Level.TimeSeconds;
+	if (Level.TimeSeconds - IGPlus_PSLastLogTS > 0.25) {
+		IGPlus_PSLastLogTS = Level.TimeSeconds;
 		Log("[PRED-SWITCH]"@What@PlayerReplicationInfo.PlayerName@"serverW="$Weapon@"pending="$PendingWeapon, 'IGPlus');
 	}
 }
