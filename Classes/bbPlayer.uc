@@ -1874,17 +1874,18 @@ function IGPlus_UseNextTrans() {
 // arrives as none (469 holds back only our own Inventory link). A weapon pickup
 // adds the weapon, then its new ammo linked to it: when the ammo arrived first,
 // our client's chain ended at the ammo for up to another 0.25s, so it knew none
-// of its other weapons and every switch key went to the server. A non-weapon
-// added while the head is that new goes to the end instead, where the link was
-// none anyway. Weapons keep stock order.
-// ponytail: 0.5s is a guess at "not on the client yet", and a weapon picked up
-// within 0.5s of another item still links to it. Move such a weapon behind
-// the new items if that shows up in logs.
+// of its other weapons and every switch key went to the server. New ammo added
+// while the head is that new goes to the end instead, where the link was none
+// anyway. Everything else keeps stock order: weapons, and armor, whose ties
+// (body armor and thigh pads) absorb in chain order.
+// ponytail: 0.5s is a guess at "not on the client yet", and an item picked up
+// within 0.5s of another still links to it. Move it behind the new items if
+// that shows up in logs.
 function bool AddInventory(Inventory NewItem) {
 	local Inventory Inv, Last;
 	local int Guard;
 
-	if (NewItem == none || Weapon(NewItem) != none || Inventory == none
+	if (NewItem == none || Ammo(NewItem) == none || Inventory == none
 		|| Level.NetMode == NM_Client || Level.TimeSeconds - IGPlus_InvHeadAddTS > 0.5
 	) {
 		if (!Super.AddInventory(NewItem))
