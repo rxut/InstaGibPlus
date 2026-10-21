@@ -14561,13 +14561,28 @@ simulated function xxClientPSTimes(int Serial, float HolsterTS) {
 	IGPlus_PSFiltUntil[0] = IGPlus_PSEquipTS + 1.0;
 }
 
-// Server -> client: a retarget was refused; the server's switch keeps going to
-// Target. Follow it instead of rolling back.
+// Server -> client: the server's switch keeps going to Target (a retarget it
+// refused, or a press only it could resolve). Follow it instead of rolling back.
 simulated function xxClientPSResume(int Serial, Weapon Target, float Gate) {
-	if (Serial != IGPlus_PSSerial || !IGPlus_PSActive || Target == none)
+	if (Serial != IGPlus_PSSerial || !IGPlus_PSActive)
 		return;
-	if (Target != IGPlus_PSTarget)
+	if (Target == none)
+		IGPlus_PSAwaitServerWeapon(Gate);
+	else if (Target != IGPlus_PSTarget)
 		IGPlus_PSApplyTarget(Target, Gate);
+}
+
+// Client: the server's switch goes to a weapon we don't have yet. A pickup
+// reaches us up to 0.25s after its sound (a held weapon that isn't the current
+// one replicates at most 4 times a second), so it arrives here as none and we
+// can't bring it up. Holding our own target instead left us on another weapon
+// than the server's until the next switch. Stop predicting and put ours down,
+// as for the server's own switch to it: its Weapon brings the new one up once
+// it gets here.
+simulated function IGPlus_PSAwaitServerWeapon(float ServerGate) {
+	ClientPutDown(Weapon, none);
+	IGPlus_DetClientGateWeapon = none;
+	IGPlus_DetClientEntryGateTS = ServerGate;
 }
 
 // Server -> client: the prediction was refused or overtaken; follow the server.
@@ -14582,8 +14597,11 @@ simulated function xxClientPSReject(int Serial, Weapon ServerWeapon, float Serve
 	IGPlus_DetClientSwitchPending = none;
 	IGPlus_DetClientGateWeapon = ServerWeapon;
 	IGPlus_DetClientEntryGateTS = ServerGate;
-	if (ServerWeapon == none)
+	if (ServerWeapon == none) {
+		// A pickup's auto-switch under way on the server, or no weapon there.
+		IGPlus_PSAwaitServerWeapon(ServerGate);
 		return;
+	}
 	if (Weapon != ServerWeapon) {
 		if (ClientPending != ServerWeapon)
 			Super.ClientPutDown(Weapon, ServerWeapon);
