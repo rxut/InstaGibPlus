@@ -143,10 +143,7 @@ var Weapon IGPlus_PSFiltT2[8];
 var float IGPlus_PSFiltUntil[8];
 var Weapon IGPlus_NextTrans;          // server: next life's translocator, already on our client (IGPlus_PrepareNextTrans)
 var float IGPlus_InvHeadAddTS;        // server: when AddInventory last put an item at the head of our chain
-// Predicted switching, phase 1 (server, log only): client predictions vs outcome.
-var int IGPlus_PredSwitchTotal;
-var int IGPlus_PredSwitchClientMatch;
-var int IGPlus_PredSwitchLogicMatch;
+// Predicted switching (server, log only): presses that went to the stock command.
 var float IGPlus_PredSwitchLastLogTS;
 var float IGPlus_PSLastLogTS;         // server: IGPlus_PSLog's own throttle (a pipe bind's next command lands in the same tick)
 // Client: frame timestamp of the latest locally predicted Det shot.
@@ -4607,6 +4604,10 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool b
 	if (IGPlus_bDetTlocMismatch)
 		return; // still the same one: the client hasn't had our correction yet
 	IGPlus_bDetTlocMismatch = true;
+	// Counts apart but both within 16uu: nothing on screen parted (over 90%
+	// of these lines were that).
+	if (Diff != 2 && ClientLocError <= 256.0)
+		return;
 	if (Diff == 1)
 		IGPlus_DetTlocLog("client-only-translocate", "dist="$int(Sqrt(ClientLocError)));
 	else if (Diff == 3) {
@@ -14979,12 +14980,10 @@ function xxServerWeaponCommand(byte Kind, byte F, class<Weapon> C, bool bClientK
 	bClientMatch = bClientKnown && IGPlus_PredSwitchMatches(ClientTarget, ServerTarget, bUnchanged, P0);
 	bLogicMatch = bLogicKnown && IGPlus_PredSwitchMatches(LogicTarget, ServerTarget, bUnchanged, P0);
 
-	IGPlus_PredSwitchTotal++;
-	if (bClientMatch)
-		IGPlus_PredSwitchClientMatch++;
-	if (bLogicMatch)
-		IGPlus_PredSwitchLogicMatch++;
-
+	// A key for the weapon already up, or for one neither side has: nothing to
+	// say (over half of these lines were that).
+	if (bUnchanged && ClientWeapon == W0 && ClientPend == P0)
+		return;
 	if ((!bClientMatch || !bLogicMatch) && Level.TimeSeconds - IGPlus_PredSwitchLastLogTS > 0.25) {
 		IGPlus_PredSwitchLastLogTS = Level.TimeSeconds;
 		Log("[PRED-SWITCH] mismatch"@PlayerReplicationInfo.PlayerName
@@ -14995,11 +14994,6 @@ function xxServerWeaponCommand(byte Kind, byte F, class<Weapon> C, bool bClientK
 			@"clientW="$ClientWeapon@"clientPend="$ClientPend
 			@"serverW="$W0@"serverPend="$P0, 'IGPlus');
 	}
-	if (IGPlus_PredSwitchTotal % 25 == 0)
-		Log("[PRED-SWITCH] summary"@PlayerReplicationInfo.PlayerName
-			@"commands="$IGPlus_PredSwitchTotal
-			@"clientMatch="$IGPlus_PredSwitchClientMatch
-			@"logicMatch="$IGPlus_PredSwitchLogicMatch, 'IGPlus');
 }
 
 // An unchanged outcome also matches predicting the weapon already pending
