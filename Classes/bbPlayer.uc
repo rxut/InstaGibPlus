@@ -142,6 +142,7 @@ var Weapon IGPlus_PSFiltT1[8];
 var Weapon IGPlus_PSFiltT2[8];
 var float IGPlus_PSFiltUntil[8];
 var Weapon IGPlus_NextTrans;          // server: next life's translocator, already on our client (IGPlus_PrepareNextTrans)
+var float IGPlus_InvHeadAddTS;        // server: when AddInventory last put an item at the head of our chain
 // Predicted switching, phase 1 (server, log only): client predictions vs outcome.
 var int IGPlus_PredSwitchTotal;
 var int IGPlus_PredSwitchClientMatch;
@@ -1867,6 +1868,42 @@ function IGPlus_UseNextTrans() {
 	N.GiveAmmo(self);
 	N.SetSwitchPriority(self);
 	N.Enable('Tick');
+}
+
+// Server: stock puts a new item at the head of the chain, linked to the
+// previous head. A held item that isn't the current weapon reaches our client
+// at most 4 times a second, and a link to an item the client doesn't have yet
+// arrives as none (469 holds back only our own Inventory link). A weapon pickup
+// adds the weapon, then its new ammo linked to it: when the ammo arrived first,
+// our client's chain ended at the ammo for up to another 0.25s, so it knew none
+// of its other weapons and every switch key went to the server. A non-weapon
+// added while the head is that new goes to the end instead, where the link was
+// none anyway. Weapons keep stock order.
+// ponytail: 0.5s is a guess at "not on the client yet", and a weapon picked up
+// within 0.5s of another item still links to it. Move such a weapon behind
+// the new items if that shows up in logs.
+function bool AddInventory(Inventory NewItem) {
+	local Inventory Inv, Last;
+	local int Guard;
+
+	if (NewItem == none || Weapon(NewItem) != none || Inventory == none
+		|| Level.NetMode == NM_Client || Level.TimeSeconds - IGPlus_InvHeadAddTS > 0.5
+	) {
+		if (!Super.AddInventory(NewItem))
+			return false;
+		IGPlus_InvHeadAddTS = Level.TimeSeconds;
+		return true;
+	}
+	for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		if (Inv == NewItem)
+			return false;
+		Last = Inv;
+	}
+	NewItem.SetOwner(self);
+	NewItem.Inventory = none;
+	Last.Inventory = NewItem;
+	return true;
 }
 
 function IGPlus_ClientReStart(EPhysics phys, vector NewLocation, rotator NewRotation) {
