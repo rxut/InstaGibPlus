@@ -4,6 +4,7 @@ var Pawn Actual;
 var float LatestClientTimeStamp;
 var float EyeHeight;
 var float BaseEyeHeight;
+var float DuckFraction;
 var bool bHistoryCleared;
 
 var UTPlusSnapshot Data[48];
@@ -45,6 +46,13 @@ function FillData(UTPlusSnapshot D) {
 	D.VR = Actual.ViewRotation;
 	D.BaseEyeHeight = Actual.BaseEyeHeight;
 	D.EyeHeight = Actual.EyeHeight;
+	// Same value the unrewound hit check reads (GetPawnDuckFraction)
+	if (bbPlayer(Actual) != None)
+		D.DuckFraction = bbPlayer(Actual).DuckFraction;
+	else if (Actual.default.BaseEyeHeight > 0.0)
+		D.DuckFraction = FClamp(1.0 - Actual.EyeHeight / Actual.default.BaseEyeHeight, 0.0, 1.0);
+	else
+		D.DuckFraction = 0.0;
 	D.CollisionRadius = Actual.CollisionRadius;
 	D.CollisionHeight = Actual.CollisionHeight;
 	D.bBasedOnMover = Mover(Actual.Base) != None;
@@ -313,6 +321,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	Velocity = TargetVel;
 	EyeHeight = SnapA.EyeHeight;
 	BaseEyeHeight = SnapA.BaseEyeHeight;
+	DuckFraction = SnapA.DuckFraction;
 
 	if (CollisionRadius != SnapA.CollisionRadius || CollisionHeight != SnapA.CollisionHeight)
 		SetCollisionSize(SnapA.CollisionRadius, SnapA.CollisionHeight);
@@ -358,10 +367,11 @@ simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDi
 
 	TraceDir = Normal(TraceDir);
 	HitLocation = HitLocation + 0.5 * CollisionRadius * TraceDir;
-	if (BaseEyeHeight == Actual.Default.BaseEyeHeight)
+	if (DuckFraction <= 0.0)
 		return true;
 
-	maxZ = Location.Z + EyeHeight + 0.25 * CollisionHeight;
+	// Same cut-off as bbPlayer.AdjustHitLocation: the top of the crouching hitbox
+	maxZ = Location.Z + (1.0 - 0.7 * DuckFraction) * CollisionHeight;
 	if (HitLocation.Z > maxZ)	{
 		if (TraceDir.Z >= 0)
 			return false;

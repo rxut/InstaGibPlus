@@ -9691,7 +9691,7 @@ event ServerTick(float DeltaTime) {
 					IGPlus_SnapReplicatedData.AnimSequence = AnimSequence;
 					IGPlus_SnapReplicatedData.AnimFrameByte = byte(FClamp(AnimFrame * 255.0, 0.0, 255.0));
 					SnapshotIntentBits = 0;
-					if (bIsCrouching || DuckFraction > 0.25)
+					if ((bIsCrouching && Physics == PHYS_Walking) || DuckFraction > 0.25)
 						SnapshotIntentBits = SnapshotIntentBits | 1;
 					if (bDodging || DodgeDir == DODGE_Active)
 						SnapshotIntentBits = SnapshotIntentBits | 2;
@@ -9795,7 +9795,9 @@ event ServerTick(float DeltaTime) {
 		}
 	}
 
-	if (bIsCrouching) {
+	// bIsCrouching survives leaving the ground (walking off a ledge, knockback),
+	// but the model plays its in-air animation, so the hitbox goes back to full size like stock
+	if (bIsCrouching && Physics == PHYS_Walking) {
 		DuckFraction = FClamp(DuckFraction + DeltaTime/DuckStartTransitionTime, 0.0, 1.0);
 	} else {
 		DuckFraction = FClamp(DuckFraction - DeltaTime/DuckEndTransitionTime, 0.0, 1.0);

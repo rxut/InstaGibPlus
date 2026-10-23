@@ -550,7 +550,7 @@ final simulated function float GetPawnDuckFraction(Pawn P) {
 }
 
 final simulated function float GetDummyDuckFraction(UTPlusDummy D) {
-	return CalcDuckFraction(D.EyeHeight, D.BaseEyeHeight);
+	return D.DuckFraction;
 }
 
 final simulated function float GetHeadHalfHeight(float DuckFrac) {

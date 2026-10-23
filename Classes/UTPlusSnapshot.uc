@@ -4,6 +4,7 @@ var vector Loc, Vel, Acc;
 var rotator Rot, VR;
 var float BaseEyeHeight;
 var float EyeHeight;
+var float DuckFraction;
 var float CollisionRadius;
 var float CollisionHeight;
 var bool bBasedOnMover;
