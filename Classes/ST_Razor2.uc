@@ -125,6 +125,10 @@ auto state Flying
 			return;
 		}
 
+		// A rewound copy (ping fast-forward) gets the crouch cut-off stock Touch gives real players
+		if (UTPlusDummy(Other) != None && UTPlusDummy(Other).AdjustHitLocation(HitLocation, Velocity) == false)
+			return;
+
 		Dir = Normal(Velocity);
 		if (bCanHitInstigator || (Other != Instigator)) {
 			if (Role == ROLE_Authority) {
