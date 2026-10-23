@@ -205,12 +205,25 @@ function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	// (the client's ClientDown tween is unaffected by its own shot).
 	if (bAlt) {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
-			PlayAltFiring();
+			DetPlayServerFireAnim(true);
 		DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
 	} else {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
-			PlayFiring();
+			DetPlayServerFireAnim(false);
 		DeterministicTraceFire(0.0, StepView, StepLoc);
+	}
+}
+
+// One pass of the fire anim, like ST_ripper.DetPlayFireAnim. The server's weapon
+// stays in Idle (AnimEnd off), so the stock looping Fire1/Fire2 never stopped and
+// other players saw the shock keep firing after a single shot.
+function DetPlayServerFireAnim(bool bAlt) {
+	if (bAlt) {
+		PlayOwnedSound(AltFireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
+		PlayAnim('Fire2', 0.4 + 0.4 * FireAdjust, 0.05);
+	} else {
+		PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
+		PlayAnim('Fire1', 0.30 + 0.30 * FireAdjust, 0.05);
 	}
 }
 
