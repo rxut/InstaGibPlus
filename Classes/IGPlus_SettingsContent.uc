@@ -1396,6 +1396,7 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bPredictedSwitching", Chk_PredictedSwitching.bChecked);
 		P.UpdateReplicatedWeaponSetting("bPredictedTranslocation", Chk_PredictedTranslocation.bChecked);
 		P.UpdateReplicatedWeaponSetting("bPredictedDiscBoost", Chk_PredictedDiscBoost.bChecked);
+		P.UpdateReplicatedWeaponSetting("bReduceEyeHeightInAir", Chk_ReduceEyeHeightInAir.bChecked);
 	}
 
 	Settings.SaveConfig();

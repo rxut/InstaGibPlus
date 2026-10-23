@@ -586,6 +586,7 @@ Minimum time between death and when KillCam starts rotating towards killer.
 
 If `True`, reduces eye height while in air.  
 If `False`, uses normal eye height while in air.
+Your shots leave from the same eye height as your view, so they go where you aim while in air.
 
 ## bAllowWeaponShake
 **Type: bool**  

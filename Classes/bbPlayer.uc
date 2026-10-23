@@ -661,6 +661,8 @@ struct ClientWeaponSettings {
 	var bool bNoPredictedSwitching;
 	var bool bNoPredictedTranslocation;
 	var bool bNoPredictedDiscBoost;
+	// ClientSettings.bReduceEyeHeightInAir: the server fires from the same lowered eye
+	var bool bReduceEyeHeightInAir;
 };
 
 var ClientWeaponSettings ClientWeaponSettingsData;
@@ -1418,6 +1420,7 @@ simulated event PostNetBeginPlay()
 	ClientWeaponSettingsData.bNoPredictedSwitching = !Settings.bPredictedSwitching;
 	ClientWeaponSettingsData.bNoPredictedTranslocation = !Settings.bPredictedTranslocation;
 	ClientWeaponSettingsData.bNoPredictedDiscBoost = !Settings.bPredictedDiscBoost;
+	ClientWeaponSettingsData.bReduceEyeHeightInAir = Settings.bReduceEyeHeightInAir;
 
 	if ( Role != ROLE_SimulatedProxy )	// Other players are Simulated, local player is Autonomous or Authority (if listen server which pure doesn't support anyway :P)
 	{
@@ -8523,6 +8526,8 @@ simulated function UpdateReplicatedWeaponSetting(string Key, bool bValue) {
         ClientWeaponSettingsData.bNoPredictedTranslocation = !bValue;
     } else if (Key ~= "bPredictedDiscBoost") {
         ClientWeaponSettingsData.bNoPredictedDiscBoost = !bValue;
+    } else if (Key ~= "bReduceEyeHeightInAir") {
+        ClientWeaponSettingsData.bReduceEyeHeightInAir = bValue;
     }
 }
 
@@ -16113,7 +16118,7 @@ function PlayInAir() {
 	local vector X,Y,Z, Dir;
 	local float f, TweenTime;
 
-	if (Level.NetMode != NM_DedicatedServer && Settings.bReduceEyeHeightInAir)
+	if (ClientWeaponSettingsData.bReduceEyeHeightInAir)
 		BaseEyeHeight = 0.7 * default.BaseEyeHeight;
 	else
 		BaseEyeHeight = default.BaseEyeHeight;
