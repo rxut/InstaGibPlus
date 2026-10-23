@@ -1223,12 +1223,80 @@ function Load() {
 	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
 
 	LoadDeterministicTranslocator();
+	LoadForcedSettings();
 
 	bLoadSucceeded = true;
 }
 
 // On a server, gray out what its translocator doesn't use, with the reason
 // under it. Elsewhere (menu, offline) nothing is known: all stay open.
+// Gray out what the server forces (mode 1 or 2). Runs after
+// LoadDeterministicTranslocator: its two boxes only get grayed out here, never
+// opened again. The window stays open across servers, so every other box a
+// server doesn't force is opened again.
+function LoadForcedSettings() {
+	local bbPlayer P;
+
+	P = bbPlayer(GetPlayerOwner());
+	LockIfForced(Chk_ShootDead, "bShootDead", P);
+	LockIfForced(Chk_DoEndShot, "bDoEndShot", P);
+	LockIfForced(Chk_UnlitSkins, "bUnlitSkins", P);
+	LockIfForced(Chk_NoOwnFootsteps, "bNoOwnFootsteps", P);
+	LockIfForced(Chk_ReduceEyeHeightInAir, "bReduceEyeHeightInAir", P);
+	LockIfForced(Chk_AllowWeaponShake, "bAllowWeaponShake", P);
+	LockIfForced(Chk_AutoReady, "bAutoReady", P);
+	LockIfForced(Chk_ShowDeathReport, "bShowDeathReport", P);
+	LockIfForced(Chk_SmoothFOVChanges, "bSmoothFOVChanges", P);
+	LockIfForced(Chk_NoSmoothing, "bNoSmoothing", P);
+	LockIfForced(Chk_UseOldMouseInput, "bUseOldMouseInput", P);
+	LockIfForced(Chk_CameraCorrectionSmoothing, "bCameraCorrectionSmoothing", P);
+	LockIfForced(Chk_SmoothLiftJump, "bSmoothLiftJump", P);
+	LockIfForced(Chk_PredictedSwitching, "bPredictedSwitching", P);
+	LockIfForced(Chk_PredictedTranslocation, "bPredictedTranslocation", P);
+	LockIfForced(Chk_PredictedDiscBoost, "bPredictedDiscBoost", P);
+	LockIfForced(Chk_SmoothDiscCorrections, "bSmoothDiscCorrections", P, true);
+	LockIfForced(Chk_LogClientMessages, "bLogClientMessages", P);
+	LockIfForced(Chk_DemoShowClientMessages, "bDemoShowClientMessages", P);
+	LockIfForced(Chk_DebugMovement, "bDebugMovement", P);
+	LockIfForced(Chk_LocationOffsetFix, "bEnableLocationOffsetFix", P);
+	LockIfForced(Chk_EnableNetStats, "bEnableNetStats", P);
+	LockIfForced(Chk_NetStatUnconfirmedTime, "bNetStatsUnconfirmedTime", P);
+	LockIfForced(Chk_NetStatsLocationError, "bNetStatsLocationError", P);
+	LockIfForced(Chk_NetStatsFrameTime, "bNetStatsFrameTime", P);
+	LockIfForced(Chk_AutoDemo, "bAutoDemo", P);
+	LockIfForced(Chk_ForceModels, "bForceModels", P);
+	LockIfForced(Chk_DemoShowRealModels, "bDemoShowRealModels", P);
+	LockIfForced(Chk_HideOwnBeam, "bHideOwnBeam", P);
+	LockIfForced(Chk_BeamEnableLight, "bBeamEnableLight", P);
+	LockIfForced(Chk_EnableHitSounds, "bEnableHitSounds", P);
+	LockIfForced(Chk_HitSoundPitchShift, "bHitSoundPitchShift", P);
+	LockIfForced(Chk_EnableTeamHitSounds, "bEnableTeamHitSounds", P);
+	LockIfForced(Chk_HitSoundTeamPitchShift, "bHitSoundTeamPitchShift", P);
+	LockIfForced(Chk_EnableKillCam, "bEnableKillCam", P);
+	LockIfForced(Chk_EnableKillFeed, "bEnableKillFeed", P);
+	LockIfForced(Chk_EnableHitMarker, "bEnableHitMarker", P);
+	LockIfForced(Chk_EnableTeamHitMarker, "bEnableTeamHitMarker", P);
+	LockIfForced(Chk_UseCrosshairFactory, "bUseCrosshairFactory", P);
+	LockIfForced(Chk_BioUseClientSideAnimations, "bBioUseClientSideAnimations", P);
+	LockIfForced(Chk_ShockBeamUseClientSideAnimations, "bShockBeamUseClientSideAnimations", P);
+	LockIfForced(Chk_ShockProjectileUseClientSideAnimations, "bShockProjectileUseClientSideAnimations", P);
+	LockIfForced(Chk_PredictiveShockCombos, "bPredictiveShockCombos", P);
+	LockIfForced(Chk_PulseUseClientSideAnimations, "bPulseUseClientSideAnimations", P);
+	LockIfForced(Chk_RipperUseClientSideAnimations, "bRipperUseClientSideAnimations", P);
+	LockIfForced(Chk_FlakUseClientSideAnimations, "bFlakUseClientSideAnimations", P);
+	LockIfForced(Chk_RocketUseClientSideAnimations, "bRocketUseClientSideAnimations", P);
+	LockIfForced(Chk_SniperUseClientSideAnimations, "bSniperUseClientSideAnimations", P);
+	LockIfForced(Chk_TranslocatorUseClientSideAnimations, "bTranslocatorUseClientSideAnimations", P, true);
+}
+
+function LockIfForced(UWindowCheckbox Chk, string Key, bbPlayer P, optional bool bOnlyGrayOut) {
+	local bool bForced;
+
+	bForced = P != none && P.IGPlus_IsForcedSetting(Key);
+	if (bForced || bOnlyGrayOut == false)
+		IGPlus_Checkbox(Chk).SetDisabled(bForced);
+}
+
 function LoadDeterministicTranslocator() {
 	local bbPlayer P;
 	local bool bDet, bNoDet;
@@ -1399,7 +1467,12 @@ function Save() {
 		P.UpdateReplicatedWeaponSetting("bReduceEyeHeightInAir", Chk_ReduceEyeHeightInAir.bChecked);
 	}
 
-	Settings.SaveConfig();
+	// Like the console commands: the ini keeps the player's own values and
+	// the server's forced values go back on.
+	if (P != none)
+		P.IGPlus_SaveSettings();
+	else
+		Settings.SaveConfig();
 }
 
 function SaveConfigs() {

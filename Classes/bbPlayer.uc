@@ -450,6 +450,7 @@ var int IGPlus_ForcedSettings_Counter;
 var int IGPlus_ForcedSettings_Index;
 var bool IGPlus_ForcedSettings_Initialized;
 var bool IGPlus_ForcedSettings_Applied;
+var float IGPlus_ForcedSettings_EnforceAt;
 
 var IGPlus_DamageEvent IGPlus_DamageEvent_First;
 var IGPlus_DamageEvent IGPlus_DamageEvent_Latest;
@@ -1746,6 +1747,49 @@ function IGPlus_ForcedSettingsRetry() {
 function IGPlus_ForcedSettingsOK() {
 	IGPlus_ForcedSettings_Applied = true;
 	ClientMessage("Forced Settings applied!", 'IGPlus');
+}
+
+// Mode 1 and 2 lock the setting while connected; mode 0 is only a default.
+function bool IGPlus_IsForcedSetting(string Key) {
+	local int i;
+
+	for (i = 0; i < IGPlus_ForcedSettings_Counter; ++i)
+		if ((IGPlus_ForcedSettings[i].Mode == 1 || IGPlus_ForcedSettings[i].Mode == 2)
+			&& IGPlus_ForcedSettings[i].Key ~= Key)
+			return true;
+	return false;
+}
+
+// Puts the forced values back after a console 'set' or anything else that
+// changed them. OldValue is left alone, so leaving still restores the
+// player's own value.
+function IGPlus_ForcedSettingsEnforce() {
+	local int i;
+	local string Old;
+
+	if (IGPlus_ForcedSettings_Applied == false)
+		return;
+	for (i = 0; i < IGPlus_ForcedSettings_Counter; ++i)
+		if (IGPlus_ForcedSettings[i].Mode == 1 || IGPlus_ForcedSettings[i].Mode == 2) {
+			Old = Settings.GetPropertyText(IGPlus_ForcedSettings[i].Key);
+			Settings.SetPropertyText(IGPlus_ForcedSettings[i].Key, IGPlus_ForcedSettings[i].NewValue);
+			// Only when it actually put a value back (a console 'set'), so no spam.
+			if (Settings.GetPropertyText(IGPlus_ForcedSettings[i].Key) != Old)
+				ClientMessage("Cannot change" @ IGPlus_ForcedSettings[i].Key $ ": Setting is forced by the server to '" $ IGPlus_ForcedSettings[i].NewValue $ "'.", 'IGPlus');
+		}
+}
+
+// Console commands: refuse a setting the server locks (mode 1 or 2).
+function bool IGPlus_RefuseForced(string Key, string Name) {
+	local int i;
+
+	for (i = 0; i < IGPlus_ForcedSettings_Counter; ++i)
+		if ((IGPlus_ForcedSettings[i].Mode == 1 || IGPlus_ForcedSettings[i].Mode == 2)
+			&& IGPlus_ForcedSettings[i].Key ~= Key) {
+			ClientMessage("Cannot change" @ Name $ ": Setting is forced by the server to '" $ IGPlus_ForcedSettings[i].NewValue $ "'.", 'IGPlus');
+			return true;
+		}
+	return false;
 }
 
 function IGPlus_SaveSettings() {
@@ -8138,6 +8182,8 @@ exec function enableDebugData(bool b) {
 }
 
 exec function EnableHitSound(bool b) {
+	if (IGPlus_RefuseForced("bEnableHitSounds", "hit sounds"))
+		return;
 	Settings.bEnableHitSounds = b;
 	IGPlus_SaveSettings();
 	if (b) {
@@ -8148,6 +8194,8 @@ exec function EnableHitSound(bool b) {
 }
 
 exec function EnableTeamHitSound(bool b) {
+	if (IGPlus_RefuseForced("bEnableTeamHitSounds", "team hit sounds"))
+		return;
 	Settings.bEnableTeamHitSounds = b;
 	IGPlus_SaveSettings();
 	if (b) {
@@ -8159,6 +8207,8 @@ exec function EnableTeamHitSound(bool b) {
 
 exec function setForcedSkins(int maleSkin, int femaleSkin) {
 	local bool error;
+	if (IGPlus_RefuseForced("desiredSkin", "forced skins") || IGPlus_RefuseForced("desiredSkinFemale", "forced skins"))
+		return;
 	if (maleSkin < -1 || maleSkin == 0 || maleSkin > 18) {
 		ClientMessage("Invalid maleSkin, please input a value between 1 and 18, or -1 to disable");
 		error = true;
@@ -8181,6 +8231,8 @@ exec function setForcedSkins(int maleSkin, int femaleSkin) {
 
 exec function setForcedTeamSkins(int maleSkin, int femaleSkin) {
 	local bool error;
+	if (IGPlus_RefuseForced("desiredTeamSkin", "forced team skins") || IGPlus_RefuseForced("desiredTeamSkinFemale", "forced team skins"))
+		return;
 	if (maleSkin < -1 || maleSkin == 0 || maleSkin > 18) {
 		ClientMessage("Invalid maleSkin, please input a value between 1 and 18, or -1 to disable");
 		error = true;
@@ -8202,6 +8254,8 @@ exec function setForcedTeamSkins(int maleSkin, int femaleSkin) {
 }
 
 exec function SetHitSound(byte hs) {
+	if (IGPlus_RefuseForced("SelectedHitSound", "hit sound"))
+		return;
 	if (hs >= 0 && hs < 16) {
 		Settings.SelectedHitSound = hs;
 		IGPlus_SaveSettings();
@@ -8212,6 +8266,8 @@ exec function SetHitSound(byte hs) {
 }
 
 exec function SetTeamHitSound(byte hs) {
+	if (IGPlus_RefuseForced("SelectedTeamHitSound", "team hit sound"))
+		return;
 	if (hs >= 0 && hs < 16) {
 		Settings.SelectedTeamHitSound = hs;
 		IGPlus_SaveSettings();
@@ -8811,6 +8867,8 @@ exec function TranslocatorClientSideAnimations(bool b) {
 }
 
 exec function setShockBeam(int sb) {
+	if (IGPlus_RefuseForced("cShockBeam", "shock beam"))
+		return;
 	if (sb > 0 && sb <= 4) {
 		Settings.cShockBeam = sb;
 		IGPlus_SaveSettings();
@@ -8820,6 +8878,8 @@ exec function setShockBeam(int sb) {
 }
 
 exec function setBeamScale(float bs) {
+	if (IGPlus_RefuseForced("BeamScale", "beam scale"))
+		return;
 	if (bs >= 0.1 && bs <= 1.0) {
 		Settings.BeamScale = bs;
 		IGPlus_SaveSettings();
@@ -11315,6 +11375,12 @@ function xxPlayerTickEvents(float DeltaTime)
 	if (Role == ROLE_AutonomousProxy) {
 		IGPlus_CameraCorrectionDecay(DeltaTime);
 
+		// A console 'set' can't be refused: put locked settings back twice a second.
+		if (IGPlus_ForcedSettings_Applied && CurrentTime >= IGPlus_ForcedSettings_EnforceAt) {
+			IGPlus_ForcedSettings_EnforceAt = CurrentTime + 0.5;
+			IGPlus_ForcedSettingsEnforce();
+		}
+
 		// Precise Rewind Time: what the last frame showed (the one a click
 		// now was aimed at), then this frame's newest update. Players are
 		// drawn from their newest update, carried forward since it arrived.
@@ -13454,6 +13520,8 @@ simulated function xxRenderLogo(canvas zzC)
 }
 
 exec function ShowFPS() {
+	if (IGPlus_RefuseForced("bShowFPS", "FPS display"))
+		return;
 	Settings.bShowFPS = !Settings.bShowFPS;
 	IGPlus_SaveSettings();
 	if (Settings.bShowFPS)
@@ -13941,6 +14009,8 @@ exec function ToggleInstantRocket()
 
 exec function ToggleSmoothDiscCorrections()
 {
+	if (IGPlus_RefuseForced("bSmoothDiscCorrections", "smooth disc corrections"))
+		return;
 	Settings.bSmoothDiscCorrections = !Settings.bSmoothDiscCorrections;
 	IGPlus_SaveSettings();
 	ClientMessage("Smooth Disc Corrections:"@Settings.bSmoothDiscCorrections, 'IGPlus');
@@ -13993,6 +14063,8 @@ exec function Sens(float F)
 exec function ForceModels(bool b)
 {
 
+	if (IGPlus_RefuseForced("bForceModels", "forced models"))
+		return;
 	/**
 	 * @Author: spect
 	 * @Date: 2020-02-21 02:28:03
@@ -14017,6 +14089,8 @@ simulated function reconnectClient() {
 
 exec function TeamInfo(bool b)
 {
+	if (IGPlus_RefuseForced("bTeamInfo", "team info"))
+		return;
 	Settings.bTeamInfo = b;
 	xxServerSetTeamInfo(b);
 	IGPlus_SaveSettings();
@@ -14030,6 +14104,8 @@ exec function mdct( float f )
 
 exec function SetMinDodgeClickTime( float f )
 {
+	if (IGPlus_RefuseForced("MinDodgeClickTime", "min dodge click time"))
+		return;
 	Settings.MinDodgeClickTime = f;
 	IGPlus_SaveSettings();
 	ClientMessage("MinDodgeClickTime:"@f);
@@ -14037,6 +14113,8 @@ exec function SetMinDodgeClickTime( float f )
 
 exec function SetMouseSmoothing(bool b)
 {
+	if (IGPlus_RefuseForced("bNoSmoothing", "mouse smoothing"))
+		return;
 	Settings.bNoSmoothing = !b;
 	IGPlus_SaveSettings();
 	if (b) ClientMessage("Mouse Smoothing enabled!");
@@ -14077,6 +14155,8 @@ function xxServerSetMinDodgeClickTime(float f)
 }
 
 exec function SetKillCamEnabled(bool b) {
+	if (IGPlus_RefuseForced("bEnableKillCam", "kill cam"))
+		return;
 	Settings.bEnableKillCam = b;
 	IGPlus_SaveSettings();
 	if (b)
@@ -14087,6 +14167,8 @@ exec function SetKillCamEnabled(bool b) {
 
 exec function EndShot(optional bool b)
 {
+	if (IGPlus_RefuseForced("bDoEndShot", "end shot"))
+		return;
 	Settings.bDoEndShot = b;
 	ClientMessage("Screenshot at end of match:"@b);
 	IGPlus_SaveSettings();
@@ -16000,6 +16082,8 @@ function string xxCreateDemoName(string zzDemoName)
 
 exec function AutoDemo(bool zzb)
 {
+	if (IGPlus_RefuseForced("bAutoDemo", "auto demo"))
+		return;
 	Settings.bAutoDemo = zzb;
 	ClientMessage("Record demos automatically after countdown:"@zzb);
 	IGPlus_SaveSettings();
@@ -16007,6 +16091,8 @@ exec function AutoDemo(bool zzb)
 
 exec function ShootDead()
 {
+	if (IGPlus_RefuseForced("bShootDead", "shoot dead"))
+		return;
 	Settings.bShootDead = !Settings.bShootDead;
 	if (Settings.bShootDead)
 		ClientMessage("Shooting carcasses enabled.");
@@ -16017,6 +16103,8 @@ exec function ShootDead()
 
 exec function SetDemoMask(optional string zzMask)
 {
+	if (IGPlus_RefuseForced("DemoMask", "demo mask"))
+		return;
 	if (zzMask != "")
 	{
 		Settings.DemoMask = zzMask;
@@ -16056,6 +16144,8 @@ function xxSetNetUpdateRate(float NewVal, int netspeed) {
 }
 
 exec function SetNetUpdateRate(float NewVal) {
+	if (IGPlus_RefuseForced("DesiredNetUpdateRate", "net update rate"))
+		return;
 	Settings.DesiredNetUpdateRate = NewVal;
 	xxSetNetUpdateRate(NewVal, Player.CurrentNetSpeed);
 	IGPlus_SaveSettings();
@@ -16181,6 +16271,8 @@ function PlaySpawn() {
 }
 
 exec function ShowOwnBeam() {
+	if (IGPlus_RefuseForced("bHideOwnBeam", "own beam"))
+		return;
 	Settings.bHideOwnBeam = !Settings.bHideOwnBeam;
 	IGPlus_SaveSettings();
 	if (Settings.bHideOwnBeam)

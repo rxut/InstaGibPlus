@@ -1955,6 +1955,8 @@ Each entry can be used to force a setting on clients:
   * `1` ➜ Always, but reset after leaving server
   * `2` ➜ Always, but don't reset (should not be used)
 
+Settings forced with mode `1` or `2` are locked while the player is connected. They are grayed out in the settings menu, and IG+ commands refuse to change them. A value changed with the console `set` command is put back within half a second.
+
 ## bEnableCarcassCollision
 
 **Type: bool**  
