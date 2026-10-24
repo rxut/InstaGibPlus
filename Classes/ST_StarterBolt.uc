@@ -13,6 +13,10 @@ var float DecalMinInterval;
 
 var WeaponSettingsRepl WSettings;
 
+// Client: the player whose screen this is (IGPlus_SeenFromShooterEyes).
+var PlayerPawn IGPlus_LocalPlayer;
+var bool IGPlus_bLocalPlayerFound;
+
 replication
 {
 	// Things the server should send to the client.
@@ -205,7 +209,9 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	local actor HitActor;
 	local vector HitLocation, HitNormal, Momentum;
 	local int BeamLen;
-	local vector BeamDir;
+	local vector BeamJoin, BeamEnd;
+	local PBolt Last;
+	local bool bHit;
 
 	CheckBeam(X, DeltaTime); // potentially lengthens the beam
 
@@ -301,7 +307,7 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 			}
 		}
 
-		CutDownBeam(HitLocation); // potentially shortens beam
+		bHit = true;
 	} else {
 		HitLocation = Location + BeamLen * BeamSize * X;
 
@@ -335,10 +341,107 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	}
 
 	// reposition beam
-	BeamDir = Normal(HitLocation - Location);
-	SetRotation(rotator(BeamDir));
-	if (PlasmaBeam != none)
-		PlasmaBeam.UpdateBeam(self, BeamDir, 0.0);
+	// Drawing only, the hit stays on the eye line. The gun sits below the eyes,
+	// so where the straight line from the gun to the end would cut through a
+	// floor or wall that the eye line clears:
+	// - seen from the shooter's eyes, the beam runs straight to the furthest
+	//   point on the eye line the gun can see (IGPlus_BendPoint) and on to the
+	//   end from there. That bend can't be seen from the eyes.
+	// - watching someone else, the beam starts a little higher, between the
+	//   gun and the eyes, just enough to clear it (IGPlus_RaisedStart).
+	// Barely blocked, it barely bends or rises.
+	BeamEnd = HitLocation;
+	BeamJoin = HitLocation;
+	if (Level.NetMode != NM_DedicatedServer) {
+		if (bHit == false)
+			BeamEnd = Origin + BeamLen * BeamSize * X; // the eye line was traced this far
+		BeamJoin = BeamEnd;
+		if (PlasmaBeam != None && FastTrace(BeamEnd - 4 * Normal(BeamEnd - Location), Location) == false) {
+			if (IGPlus_SeenFromShooterEyes())
+				BeamJoin = IGPlus_BendPoint(Origin, X, BeamEnd);
+			else
+				SetLocation(IGPlus_RaisedStart(Origin, BeamEnd)); // Tick puts it back at the gun
+		}
+	}
+	SetRotation(rotator(BeamJoin - Location));
+	if (bHit)
+		CutDownBeam(VSize(BeamJoin - Location) + VSize(HitLocation - BeamJoin)); // potentially shortens beam
+	if (ST_PBolt(PlasmaBeam) != none)
+		ST_PBolt(PlasmaBeam).IGPlus_AimBeam(self, BeamJoin, BeamEnd);
+
+	// Nothing hit: the cap sits at the end of the last segment.
+	if (bHit == false && BeamLen == MaxSegments && WallEffect != None && Level.NetMode != NM_DedicatedServer) {
+		Last = self;
+		while (Last.PlasmaBeam != None)
+			Last = Last.PlasmaBeam;
+		WallEffect.SetLocation(Last.Location + (BeamSize - 4) * vector(Last.Rotation));
+	}
+}
+
+// Client: is this screen looking out of the shooter's eyes (its own, or
+// someone watching through them in first person)?
+simulated function bool IGPlus_SeenFromShooterEyes() {
+	local PlayerPawn P;
+
+	if (IGPlus_bLocalPlayerFound == false) {
+		IGPlus_bLocalPlayerFound = true;
+		foreach AllActors(class'PlayerPawn', P)
+			if (Viewport(P.Player) != None) {
+				IGPlus_LocalPlayer = P;
+				break;
+			}
+	}
+	P = IGPlus_LocalPlayer;
+	if (P == None || P.bBehindView)
+		return false;
+	return P.ViewTarget == Instigator || (P == Instigator && P.ViewTarget == None);
+}
+
+// The lowest start between the gun (Location) and the eyes (Origin) from
+// which a straight line to End is clear. From the eyes it always is: the hit
+// was traced from there.
+simulated function vector IGPlus_RaisedStart(vector Origin, vector End) {
+	local float Lo, Hi, Mid;
+	local vector S;
+	local int i;
+
+	Lo = 0.0;
+	Hi = 1.0;
+	for (i = 0; i < 6; i++) {
+		Mid = 0.5 * (Lo + Hi);
+		S = Location + Mid * (Origin - Location);
+		if (FastTrace(End - 4 * Normal(End - S), S))
+			Hi = Mid;
+		else
+			Lo = Mid;
+	}
+	return Location + Hi * (Origin - Location);
+}
+
+// The furthest point on the eye line, between one segment from the gun
+// (Location) and End, that the gun reaches in a clear straight line.
+simulated function vector IGPlus_BendPoint(vector Origin, vector X, vector End) {
+	local vector D;
+	local float B, Disc, Lo, Hi, Mid;
+	local int i;
+
+	D = Origin - Location;
+	B = D dot X;
+	Disc = B * B - (D dot D) + BeamSize * BeamSize;
+	if (Disc < 0.0)
+		return End;
+	Lo = Sqrt(Disc) - B;
+	Hi = (End - Origin) dot X;
+	if (Lo <= 0.0 || Lo >= Hi)
+		return End;
+	for (i = 0; i < 8; i++) {
+		Mid = 0.5 * (Lo + Hi);
+		if (FastTrace(Origin + Mid * X, Location))
+			Lo = Mid;
+		else
+			Hi = Mid;
+	}
+	return Origin + Lo * X;
 }
 
 simulated function int BeamLength() {
@@ -371,11 +474,9 @@ simulated function int CalcDamage(float Damage) {
 	return Result;
 }
 
-simulated function CutDownBeam(vector HitLocation) {
+simulated function CutDownBeam(float Length) {
 	local PBolt Beam;
-	local float Length;
 
-	Length = VSize(HitLocation - Location);
 	Beam = self;
 
 	while (Beam.PlasmaBeam != none && Length >= BeamSize) {

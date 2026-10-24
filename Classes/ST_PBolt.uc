@@ -51,6 +51,24 @@ simulated function UpdateBeam(PBolt ParentBolt, vector Dir, float DeltaTime)
 		PlasmaBeam.UpdateBeam(self, Dir, DeltaTime);
 }
 
+// Starts where the parent segment ends and carries on its way until past Join,
+// then points at End (ST_StarterBolt.TraceBeam).
+simulated function IGPlus_AimBeam(PBolt ParentBolt, vector Join, vector End)
+{
+	local vector Dir;
+
+	SpriteFrame = ParentBolt.SpriteFrame;
+	Skin = SpriteAnim[SpriteFrame];
+	Dir = vector(ParentBolt.Rotation);
+	SetLocation(ParentBolt.Location + BeamSize * Dir);
+	if (((Join - Location) dot Dir) <= 0.0 && ((End - Location) dot Dir) > 0.0)
+		Dir = Normal(End - Location);
+	SetRotation(rotator(Dir));
+
+	if (ST_PBolt(PlasmaBeam) != none)
+		ST_PBolt(PlasmaBeam).IGPlus_AimBeam(self, Join, End);
+}
+
 defaultproperties {
 	GrowthDelay=0.050
 }
