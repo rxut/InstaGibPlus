@@ -291,6 +291,9 @@ function Translocate()
 	local ST_TranslocatorTarget STTarget;
 	local vector OriginalLocation;
 	local bbPlayer bbP;
+	local vector StartLoc, DiscLoc, Dest;
+	local string DiscInfo;
+	local bool bDiscOut;
 
 	bbP = bbPlayer(Owner);
 
@@ -304,9 +307,28 @@ function Translocate()
 	
 	if (Owner.IsA('bbPlayer'))
 		bbPlayer(Owner).IGPlus_BeforeTranslocate();
-		
+
+	// Where stock sends us, for the failure line below.
+	bDiscOut = TTarget != None;
+	if (bDiscOut) {
+		DiscLoc = TTarget.Location;
+		Dest = DiscLoc;
+		if (TTarget.Physics == PHYS_None)
+			Dest += vect(0,0,40);
+		if (STTarget != None && STTarget.bIGPlusFullHistory)
+			DiscInfo = "discAge="$STTarget.IGPlus_CurrentAge()@STTarget.IGPlus_DetPathSummary();
+	}
+	StartLoc = Owner.Location;
+
 	// Call base translocate - this will use whatever location TTarget is currently at
 	Super.Translocate();
+
+	// Stock fails without a word when we don't fit at the disc or have no
+	// line back to it, and the disc is gone. The thrower's screen may have
+	// moved there.
+	if (bDiscOut && TTarget == None && bbP != None && IGPlus_IsDetMode() && bbP.Health > 0
+		&& VSize(Owner.Location - StartLoc) <= 1.0)
+		bbP.IGPlus_DetTlocLog("server-tloc-failed", IGPlus_DetTlocFailInfo(StartLoc, Dest, DiscLoc)@DiscInfo);
 	
 	// If we used a historical position, restore the target's original location
 	// (although it's likely destroyed by now)
@@ -1114,6 +1136,29 @@ function IGPlus_DetFlyAhead(ST_TranslocatorTarget T, float Late) {
 	if (T.Physics == PHYS_None)
 		T.IGPlus_HistoryAnchor = Level.TimeSeconds;
 	ServerTimeSinceTargetSpawn = Late;
+}
+
+// Server: why stock didn't move us to the disc. A player standing there, no
+// room there, or no line from there back to the disc.
+function string IGPlus_DetTlocFailInfo(vector StartLoc, vector Dest, vector DiscLoc) {
+	local Pawn P, Blocker;
+	local string Info;
+
+	for (P = Level.PawnList; P != None; P = P.NextPawn)
+		if (P != Owner && P.bCollideActors && P.bBlockPlayers
+			&& VSize((P.Location - Dest) * vect(1,1,0)) < P.CollisionRadius + Owner.CollisionRadius
+			&& Abs(P.Location.Z - Dest.Z) < P.CollisionHeight + Owner.CollisionHeight)
+			Blocker = P;
+	if (Blocker != None && Blocker.PlayerReplicationInfo != None)
+		Info = "reason=blocked by="$Blocker.PlayerReplicationInfo.PlayerName;
+	else if (Blocker != None)
+		Info = "reason=blocked by="$Blocker.Name;
+	else if (FastTrace(Dest, DiscLoc) == false)
+		Info = "reason=no-line-back";
+	else
+		Info = "reason=no-room";
+	return Info@"dist="$int(VSize(Dest - StartLoc))@"landed="$(Dest != DiscLoc)
+		@"disc="$class'ST_ShockProj'.static.IGPlus_Vec(DiscLoc)@"from="$class'ST_ShockProj'.static.IGPlus_Vec(StartLoc);
 }
 
 // Server: a [DET-TLOC] line about our disc (see bbPlayer.IGPlus_DetTlocLog).
