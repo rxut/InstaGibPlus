@@ -534,6 +534,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
     local Pawn DActual;
+	local Actor ShooterBase;
 	local bbPlayer PRT, PRTDebug;
 	local int OldPing;
 	local vector OldLoc;
@@ -541,6 +542,15 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local string MostMovedName;
 
 	bCompensationIsActive = true;
+
+	// Where everyone stands, before any lift is moved back: moving a lift
+	// (SetLocation) takes everyone standing on it off it. Riders line up with
+	// their lift by this (UTPlusDummy.CompSwap).
+	if (Instigator != none)
+		ShooterBase = Instigator.Base;
+	for (D = CompDummies; D != none; D = D.Next)
+		if (D.Actual != none)
+			D.IGPlus_CompBase = D.Actual.Base;
 
 	// Precise Rewind Time: a hitscan shot's players where the shooter's
 	// screen drew them. Only on its own rewind (a capped combo rewind isn't).
@@ -574,14 +584,17 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
             continue;
         }
 
-		// Rewind the lift the target stands on first, so the live lift cannot
-		// occlude the rider's historical hitbox, and so the bot fallback in
-		// CompSwap (live mover Z) lands on the same frame as the player path.
-		// EndCompensation restores it. Never the shooter's own lift: shots and
-		// projectiles start from the shooter's live position, so the floor
-		// must stay live too (else a falling lift eats downward shots).
-		if (Mover(DActual.Base) != none && (Instigator == none || DActual.Base != Instigator.Base)) {
-			MD = FindMoverDummy(Mover(DActual.Base));
+		// Rewind the lift the target stands on first: CompSwap stands the rider
+		// on the lift where the trace sees it. EndCompensation restores it.
+		// Only while it moves: moving it takes its riders off and puts them back
+		// on, and a stock stand-to-open lift that has stopped reacts to a rider
+		// getting on and starts again (it ignores riders while it moves).
+		// Never the shooter's own lift: shots and projectiles start from the
+		// shooter's live position, so the floor must stay live too (else a
+		// falling lift eats downward shots).
+		if (Mover(D.IGPlus_CompBase) != none && D.IGPlus_CompBase.bInterpolating
+			&& (Instigator == none || D.IGPlus_CompBase != ShooterBase)) {
+			MD = FindMoverDummy(Mover(D.IGPlus_CompBase));
 			if (MD != none)
 				MD.CompStart(Ping);
 		}

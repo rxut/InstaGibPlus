@@ -9,6 +9,8 @@ var int DataIndex;
 var bool bCompActive;
 var vector SavedMoverLoc;
 var bool SavedCollideActors, SavedBlockActors, SavedBlockPlayers;
+var Actor Riders[16];
+var int NumRiders;
 
 event Tick(float DeltaTime) {
 	super.Tick(DeltaTime);
@@ -81,9 +83,20 @@ function CompStart(int Ping) {
 // Collision is dropped around SetLocation: a colliding mover moved onto a
 // rider runs encroachment (crush / return-when-encroach) and may refuse the
 // move. The rewound mover collides again at the historical position.
+// SetLocation also takes everything standing on the mover off it, so we note
+// who stood on it and CompEnd puts them back on.
 function ApplyRewind(vector HistoricalLoc) {
+	local Actor A;
+
 	if (VSize(HistoricalLoc - Actual.Location) < 1.0)
 		return;
+	NumRiders = 0;
+	foreach Actual.BasedActors(class'Actor', A) {
+		if (NumRiders == arraycount(Riders))
+			break;
+		Riders[NumRiders] = A;
+		NumRiders++;
+	}
 	SavedMoverLoc = Actual.Location;
 	SavedCollideActors = Actual.bCollideActors;
 	SavedBlockActors = Actual.bBlockActors;
@@ -135,6 +148,8 @@ function vector GetHistoricalLocation(float TargetTimeStamp) {
 }
 
 function CompEnd() {
+	local int i;
+
 	if (bCompActive) {
 		bCompActive = false;
 
@@ -142,7 +157,13 @@ function CompEnd() {
 			Actual.SetCollision(false, false, false);
 			Actual.SetLocation(SavedMoverLoc);
 			Actual.SetCollision(SavedCollideActors, SavedBlockActors, SavedBlockPlayers);
+			for (i = 0; i < NumRiders; i++)
+				if (Riders[i] != None && Riders[i].bDeleteMe == false && Riders[i].Base == None)
+					Riders[i].SetBase(Actual);
 		}
+		for (i = 0; i < NumRiders; i++)
+			Riders[i] = None;
+		NumRiders = 0;
 	}
 }
 

@@ -26,6 +26,10 @@ var IGPlus_WeaponImplementation WImp;
 var name  CurrentAnimSequence;
 var float CurrentAnimFrame;
 
+// What our player stood on when this compensation started, before any lift
+// was moved back. Moving a lift takes everyone standing on it off it.
+var Actor IGPlus_CompBase;
+
 simulated function PostBeginPlay()
 {
 
@@ -253,9 +257,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	local vector TargetLoc;
 	local vector TargetVel;
 	local bbPlayer BP;
-	local ST_MoverDummy MD;
 	local Mover BaseMover;
-	local vector HistoricalMoverLoc;
 	local float SnapshotMoverZ;
 	local float XpolTime;
 
@@ -284,27 +286,18 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 		TargetVel = SnapA.Vel;
 	}
 
-	if (SnapA.bBasedOnMover && Actual.Base == SnapA.BaseMover) {
+	if (SnapA.bBasedOnMover && IGPlus_CompBase == SnapA.BaseMover) {
 		BaseMover = Mover(SnapA.BaseMover);
 		if (BaseMover != None) {
-			BP = bbPlayer(Actual);
-			if (BP != None && BP.zzUTPure != None)
-				MD = BP.zzUTPure.FindMoverDummy(BaseMover);
-
 			// If sub-tick interpolation is active and both snapshots are from the
 			// same mover base, interpolate the mover snapshot Z consistently.
 			SnapshotMoverZ = SnapA.MoverZ;
 			if (SnapB != None && SnapB.bBasedOnMover && SnapB.BaseMover == SnapA.BaseMover)
 				SnapshotMoverZ = SnapA.MoverZ + (SnapB.MoverZ - SnapA.MoverZ) * FClamp(Alpha, 0.0, 1.0);
 
-			// Use historical mover position at the same rewind timestamp.
-			// Fallback to live mover only when no history actor is available.
-			if (MD != None)
-				HistoricalMoverLoc = MD.GetHistoricalLocation(TargetTimeStamp);
-			else
-				HistoricalMoverLoc = BaseMover.Location;
-
-			TargetLoc.Z += HistoricalMoverLoc.Z - SnapshotMoverZ;
+			// Stand on the lift where the trace sees it: rewound while it moves,
+			// live once it has stopped (UTPure.CompensateFor).
+			TargetLoc.Z += BaseMover.Location.Z - SnapshotMoverZ;
 		}
 	}
 
@@ -337,6 +330,7 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 }
 
 function CompEnd() {
+    IGPlus_CompBase = None;
     if (bCompActive) {
         bCompActive = false;
 
