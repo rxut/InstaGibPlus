@@ -340,6 +340,11 @@ var int IGPlus_DetHeldAction[4];
 var float IGPlus_DetHeldTS[4];
 var byte IGPlus_DetHeldFlags[4];      // 4: held by the warp fix (else a pause)
 var int IGPlus_DetHeldView[4];
+// Server: a translocator action held until our switch to the translocator
+// finishes (IGPlus_DetNotHeld). 0: none.
+var int IGPlus_DetSwitchHeldAction;
+var float IGPlus_DetSwitchHeldTS;
+var int IGPlus_DetSwitchHeldView;
 var bool IGPlus_WantCAP;
 var bool IGPlus_SkipMovesUntilNextTick;
 
@@ -4537,7 +4542,11 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 		return;
 	IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, TS);
 	TL = ST_Translocator(Weapon);
-	if (TL == none || TL.IGPlus_IsDetMode() == false)
+	if (TL == none) {
+		IGPlus_DetNotHeld(Action, TS, View);
+		return;
+	}
+	if (TL.IGPlus_IsDetMode() == false)
 		return;
 	IGPlus_DetTlocLog("resent", class'ST_Translocator'.static.IGPlus_DetActionName(Action)@"late="$(MoveTS - TS));
 	SavedTS = CurrentTimeStamp;
@@ -4549,6 +4558,52 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 	TL.IGPlus_DetServerStep(self, TS, Action, false, false, MoveTS - TS);
 	CurrentTimeStamp = SavedTS;
 	ViewRotation = SavedView;
+}
+
+// Server: a translocator action while our translocator isn't up. The
+// client's was, so our switch to it is still finishing: hold the action until
+// ours is up (IGPlus_DetRunSwitchHeld). Not switching to it: refuse it now, so
+// the client drops the disc it threw at once, not at its next translocate.
+function IGPlus_DetNotHeld(int Action, float TS, int View) {
+	if (ST_Translocator(PendingWeapon) != None && IGPlus_DetSwitchHeldAction == 0 && IsInState('Dying') == false) {
+		IGPlus_DetSwitchHeldAction = Action;
+		IGPlus_DetSwitchHeldTS = TS;
+		IGPlus_DetSwitchHeldView = View;
+		// ponytail: one held action, a second during the same switch is refused
+		IGPlus_DetTlocLog("held-for-switch", class'ST_Translocator'.static.IGPlus_DetActionName(Action)@"weapon="$string(Weapon));
+		return;
+	}
+	IGPlus_DetRefuseNotHeld(Action, TS);
+}
+
+function IGPlus_DetRefuseNotHeld(int Action, float TS) {
+	local Inventory Inv;
+
+	for (Inv = Inventory; Inv != None; Inv = Inv.Inventory)
+		if (ST_Translocator(Inv) != None && ST_Translocator(Inv).IGPlus_IsDetMode()) {
+			ST_Translocator(Inv).IGPlus_DetReject(Action & 3, TS, "not-held weapon="$string(Weapon)@"pending="$string(PendingWeapon));
+			return;
+		}
+}
+
+// Server: the held action runs once our translocator is up, as late as it
+// waited (a throw's disc flies ahead that far).
+function IGPlus_DetRunSwitchHeld(float MoveTS) {
+	local int Action;
+
+	if (IGPlus_DetSwitchHeldAction == 0)
+		return;
+	Action = IGPlus_DetSwitchHeldAction;
+	if (ST_Translocator(Weapon) != None) {
+		IGPlus_DetSwitchHeldAction = 0;
+		IGPlus_DetRunAction(Action, IGPlus_DetSwitchHeldTS, IGPlus_DetSwitchHeldView, MoveTS, true);
+		return;
+	}
+	// ponytail: half a second for our switch, a longer one refuses
+	if (ST_Translocator(PendingWeapon) != None && MoveTS - IGPlus_DetSwitchHeldTS < 0.5 && IsInState('Dying') == false)
+		return;
+	IGPlus_DetSwitchHeldAction = 0;
+	IGPlus_DetRefuseNotHeld(Action, IGPlus_DetSwitchHeldTS);
 }
 
 function IGPlus_DetRunHeld(float MoveTS) {
@@ -5000,14 +5055,22 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& SM.DetChargeData <= 7 && (SM.DetChargeData & 3) != 0)
 		IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, SM.TimeStamp);
-	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None
-		&& ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
-		ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
+	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None) {
+		IGPlus_DetRunSwitchHeld(SM.TimeStamp);
+		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
+			ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
+		else if (SM.DetChargeData <= 7 && (SM.DetChargeData & 3) != 0)
+			IGPlus_DetNotHeld(SM.DetChargeData, SM.TimeStamp, SM.View);
+	}
 
 	// Complete fast weapon switch after Det dispatch so Det targets the
 	// pre-switch weapon the client was actually firing.
-	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None)
+	if (IGPlus_UseFastWeaponSwitch && PendingWeapon != None) {
 		ChangedWeapon();
+		// A translocator action held for this very switch runs now.
+		if (bDetMoveAcceptedForFire)
+			IGPlus_DetRunSwitchHeld(SM.TimeStamp);
+	}
 
 	DbgOldBase = Base;
 
