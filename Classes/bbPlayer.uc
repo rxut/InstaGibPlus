@@ -5779,6 +5779,41 @@ function bool IGPlus_PointInsideCylinder(
 	return (DistXYSq <= Radius * Radius && Abs(P.Z - CylinderCenter.Z) <= HalfHeight);
 }
 
+function bool IGPlus_IsTraceBlockedByTargetMover(
+	UTPlusDummy TargetDummy,
+	vector StartTrace,
+	vector HitLocation
+) {
+	local Mover BaseMover;
+	local vector HistoricalMoverLoc;
+
+	if (TargetDummy == None || TargetDummy.Actual == None)
+		return false;
+
+	BaseMover = Mover(TargetDummy.Actual.Base);
+	if (BaseMover == None)
+		return false;
+
+	// Same-base shots should not be blocked by this protection.
+	if (Base == BaseMover)
+		return false;
+
+	HistoricalMoverLoc = BaseMover.Location;
+	IGPlus_GetHistoricalMoverLocation(BaseMover, HistoricalMoverLoc);
+
+	// Only guard "from below through mover" shots.
+	if (StartTrace.Z >= HistoricalMoverLoc.Z || HitLocation.Z <= HistoricalMoverLoc.Z)
+		return false;
+
+	return IGPlus_LineIntersectsCylinder(
+		StartTrace,
+		HitLocation,
+		HistoricalMoverLoc,
+		BaseMover.CollisionRadius,
+		BaseMover.CollisionHeight
+	);
+}
+
 function float IGPlus_GetLatencyMs(optional bool bOneWay) {
 	local float PingMs;
 
@@ -5859,6 +5894,11 @@ function bool IGPlus_ShouldIgnoreOwnBaseHit(
 	);
 }
 
+function bool IGPlus_GetHistoricalMoverLocation(Mover M, out vector HistoricalMoverLoc) {
+	// Target mover blocking uses the full compensation timeline.
+	return IGPlus_GetHistoricalMoverLocationByLatency(M, IGPlus_GetLatencyMs(false), HistoricalMoverLoc);
+}
+
 function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
 {
 	local Actor A, Other;
@@ -5895,6 +5935,8 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 					D = UTPlusDummy(A);
 					if (D != none && D.Actual != none && D.Actual != self) {
 						if (D.AdjustHitLocation(HitLocation, EndTrace - StartTrace)) {
+							if (IGPlus_IsTraceBlockedByTargetMover(D, StartTrace, HitLocation))
+								continue;
 							Other = D.Actual;
 							break;
 						}
