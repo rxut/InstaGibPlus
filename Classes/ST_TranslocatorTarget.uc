@@ -35,6 +35,12 @@ var int IGPlus_DetServerPathEvents;
 var int IGPlus_DetClientPathEvents;
 var Actor IGPlus_DetLastEncroacher;
 var string IGPlus_DetLastTouch;
+// Server, deterministic: where the last Tick had the disc, and the player who
+// last stopped it (IGPlus_DetRewoundStop).
+var vector IGPlus_DetPrevLoc;
+var bool IGPlus_bDetPrevLoc;
+var Pawn IGPlus_DetStoppedBy;
+var bool IGPlus_bDetSweeping;   // server: inside IGPlus_DetRewoundStop's own rewind
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
 
@@ -474,6 +480,60 @@ function IGPlus_DetLogTouch(string Event, Actor Other) {
 	ST_Translocator(Master).IGPlus_DetLog(Event, "by="$By);
 }
 
+// Server, deterministic translocator with ping compensation: other players
+// stop the disc where its thrower saw them, as the thrower's own disc stops on
+// the players on its screen.
+function bool IGPlus_DetJudgesRewound() {
+	local bbPlayer P;
+
+	P = bbPlayer(Instigator);
+	return Role == ROLE_Authority && IGPlus_bLocalDisc == false && bIGPlusFullHistory
+		&& ST_Translocator(Master) != None && ST_Translocator(Master).IGPlus_IsDetMode()
+		&& P != None && P.zzUTPure != None && P.GetWeaponSettings() != None
+		&& P.GetWeaponSettings().bEnablePingCompensation;
+}
+
+// Server: this frame's path from From against the other players, rewound to
+// where the thrower saw them: a ping and their interp late, as for its
+// hitscan. Stock stops a flying disc on the first player it touches, at that
+// player's spot (TranslocatorTarget.Touch).
+function IGPlus_DetRewoundStop(vector From) {
+	local bbPlayer P;
+	local IGPlus_WeaponImplementationBase WImpBase;
+	local UTPlusDummy D, Hit;
+	local vector HitLocation, HitNormal, Extent, NewPos;
+
+	P = bbPlayer(Instigator);
+	WImpBase = P.IGPlus_GetWeaponImplementationBase();
+	if (WImpBase == None)
+		return;
+	Extent.X = CollisionRadius;
+	Extent.Y = CollisionRadius;
+	Extent.Z = CollisionHeight;
+	// The rewind moves ridden lifts to their old spot and back, switching
+	// their collision off and on: nothing it brings here touches the disc.
+	IGPlus_bDetSweeping = true;
+	P.zzUTPure.CompensateFor(int(WImpBase.IGPlus_GetAveragePingRewindMs(P)), P);
+	foreach TraceActors(class'UTPlusDummy', D, HitLocation, HitNormal, Location, From, Extent) {
+		// Not again by the one it just stopped on (it drops through them).
+		if (D.Actual != None && D.Actual != Instigator && D.Actual != IGPlus_DetStoppedBy && D.Actual.Health > 0) {
+			Hit = D;
+			NewPos = D.Location;
+			NewPos.Z = HitLocation.Z;
+			break;
+		}
+	}
+	P.zzUTPure.EndCompensation();
+	IGPlus_bDetSweeping = false;
+	if (Hit == None)
+		return;
+	IGPlus_DetStoppedBy = Hit.Actual;
+	SetLocation(NewPos);
+	Velocity = vect(0,0,0);
+	IGPlus_DetLogTouch("stopped-by-rewound-player", Hit.Actual);
+	IGPlus_NoteChanged();
+}
+
 auto state Pickup {
 	simulated function Tick(float DeltaTime) {
 		local float Age;
@@ -512,6 +572,14 @@ auto state Pickup {
 				if (IGPlus_bResyncAfterHit)
 					IGPlus_SyncAge = Age + 0.05;
 			}
+			// Other players stop it where the thrower saw them. Not across a
+			// jump (a re-fly or correction moved it).
+			if (Physics == PHYS_Falling && IGPlus_bRebasing == false && IGPlus_DetJudgesRewound()) {
+				if (IGPlus_bDetPrevLoc && VSize(Location - IGPlus_DetPrevLoc) <= 2.0 * VSize(Velocity) * DeltaTime + 16.0)
+					IGPlus_DetRewoundStop(IGPlus_DetPrevLoc);
+				IGPlus_DetPrevLoc = Location;
+				IGPlus_bDetPrevLoc = true;
+			}
 			if (DesiredTarget == None || Master == None)
 				return;
 		}
@@ -520,6 +588,8 @@ auto state Pickup {
 
 	simulated event Landed(vector HitNormal) {
 		super.Landed(HitNormal);
+		IGPlus_bDetPrevLoc = false; // a knock starts a new flight
+		IGPlus_DetStoppedBy = None;
 
 		// Record where it came to rest (Landed switched Tick off). A re-fly
 		// records its own steps.
@@ -635,10 +705,26 @@ auto state Pickup {
 		local Pawn ActualPawn;
 		local vector OldVelocity;
 		
-		// The thrower's own client disc only collides to be stopped by lifts.
-		if (IGPlus_bLocalDisc)
+		// The thrower's own client disc: stopped by the players on its screen,
+		// as stock stops a flying disc on any player but the thrower. The
+		// server stops its copy on them where the thrower saw them
+		// (IGPlus_DetRewoundStop). Nothing else here touches it.
+		if (IGPlus_bLocalDisc) {
+			if (Other.bIsPawn && Other != Instigator && Physics != PHYS_None && IGPlus_bRebasing == false) {
+				NewPos = Other.Location;
+				NewPos.Z = Location.Z;
+				SetLocation(NewPos);
+				Velocity = vect(0,0,0);
+				IGPlus_PathEvent(false); // asks the server where its copy is
+			}
 			return;
-		if (Other.IsA('ST_HitTestHelper'))
+		}
+		if (Other.IsA('ST_HitTestHelper') || IGPlus_bDetSweeping)
+			return;
+		// Deterministic disc on the server: not where players are now, nor
+		// where another player's shot just rewound them. The thrower still
+		// picks it up.
+		if ((Other.IsA('UTPlusDummy') || (Other.bIsPawn && Other != Instigator)) && IGPlus_DetJudgesRewound())
 			return;
 		OldVelocity = Velocity;
 			
