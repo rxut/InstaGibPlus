@@ -4503,8 +4503,18 @@ function IGPlus_AfterTranslocate() {
 		IgnoreZChangeTicks = 2;
 		ExtrapolationDiscardData();
 		IGPlus_NotifiedTranslocate = false;
-		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
+		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()) {
 			IGPlus_bDetTlocCheckLanding = true;
+			// A jump right at landing that only we took: we come out rising,
+			// the client walking (stock keeps the vertical speed). The client
+			// walked into its translocate, so keep its speed. Never faster up.
+			// (Physics bytes: 1 PHYS_Walking, 2 PHYS_Falling.)
+			if (IGPlus_DetTlocPreClientPhys == 1 && IGPlus_DetTlocPrePhys == 2
+				&& Velocity.Z > 0.0 && Velocity.Z <= JumpZ + 1.0 && IGPlus_DetTlocPreClientVZ < Velocity.Z) {
+				IGPlus_DetTlocLog("jump-dropped", "vz="$int(Velocity.Z)$"/"$int(IGPlus_DetTlocPreClientVZ));
+				Velocity.Z = IGPlus_DetTlocPreClientVZ;
+			}
+		}
 	}
 }
 
