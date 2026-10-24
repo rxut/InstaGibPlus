@@ -208,7 +208,9 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 
 	if (GetWeaponSettings().PulseCompensatePing) {
 		HitActor = Instigator.TraceShot(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin);
-		if (HitActor == None) {
+		// Clients only, for the beam's look: TraceShot does not run on other players there.
+		// The server hits only where the shooter saw the target, not its live spot too.
+		if (HitActor == None && Level.NetMode == NM_Client) {
 			HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
 		}
 	} else {
