@@ -28,6 +28,14 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 
 auto state Flying
 {
+	simulated function ProcessTouch(Actor Other, Vector HitLocation)
+	{
+		// A rewound copy (ping fast-forward) gets the crouch cut-off stock Touch gives real players
+		if (UTPlusDummy(Other) != None && UTPlusDummy(Other).AdjustHitLocation(HitLocation, Velocity) == false)
+			return;
+		super.ProcessTouch(Other, HitLocation);
+	}
+
 	function BeginState()
 	{
 		local vector Dir;

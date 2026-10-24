@@ -148,6 +148,9 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 
 simulated function ProcessTouch (Actor Other, vector HitLocation)
 {
+	// A rewound copy (ping fast-forward) gets the crouch cut-off stock Touch gives real players
+	if (UTPlusDummy(Other) != None && UTPlusDummy(Other).AdjustHitLocation(HitLocation, Velocity) == false)
+		return;
 	if (Other == Instigator)
         return;
 

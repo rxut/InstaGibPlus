@@ -125,6 +125,9 @@ auto state Flying
 
 	function ProcessTouch(Actor Other, Vector HitLocation)
 	{
+		// A rewound copy (ping fast-forward) gets the crouch cut-off stock Touch gives real players
+		if (UTPlusDummy(Other) != None && UTPlusDummy(Other).AdjustHitLocation(HitLocation, Velocity) == false)
+			return;
 		// A rewound ball's stand-in (ping compensation): the ball it stands for.
 		if (ST_ProjectileDummy(Other) != None && ST_ProjectileDummy(Other).Actual != None)
 			Other = ST_ProjectileDummy(Other).Actual;
