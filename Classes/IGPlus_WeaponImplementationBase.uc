@@ -1193,7 +1193,9 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
     }
 }
 
-function SimulateProjectile(Projectile P, int Ping) {
+// CatchUpMs: catch up this much instead of the shooter's one-way ping (a
+// flak slug's chunks: what was left of the slug's own catch-up).
+function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs) {
   local float DeltaTime;
   local float SimPing;
   local float InterpMs;
@@ -1208,8 +1210,12 @@ function SimulateProjectile(Projectile P, int Ping) {
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
-  InterpMs = IGPlus_GetSnapshotInterpRewindMs(P.Instigator);
-  SimPing = Ping * 0.5 + InterpMs;
+  if (CatchUpMs > 0.0) {
+    SimPing = CatchUpMs;
+  } else {
+    InterpMs = IGPlus_GetSnapshotInterpRewindMs(P.Instigator);
+    SimPing = Ping * 0.5 + InterpMs;
+  }
 
   // Cap ping compensation
   if (SimPing > WeaponSettings.PingCompensationMax)
@@ -1232,6 +1238,8 @@ function SimulateProjectile(Projectile P, int Ping) {
       }
 
     PureRef.CompensateFor(int(SimPing), P.Instigator);
+    IGPlus_CatchUpProjectile = P;
+    IGPlus_CatchUpLeftMs = SimPing - DeltaTime * 1000.0;
     // From a moving lift (Push-Safe Aim): against the shooter's lift where
     // the shooter's screen has it.
     if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
@@ -1241,6 +1249,7 @@ function SimulateProjectile(Projectile P, int Ping) {
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
+  IGPlus_CatchUpProjectile = None;
   if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
     LS.FastForwarded(TotalMs);
 }

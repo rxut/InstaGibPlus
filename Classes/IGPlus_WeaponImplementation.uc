@@ -3,6 +3,10 @@ class IGPlus_WeaponImplementation extends Actor
 
 var WeaponSettings WeaponSettings;
 var WeaponSettingsRepl WSettingsRepl;
+// Server: the projectile SimulateProjectile is catching up now, and how much
+// of that catch-up is left after this step (ST_FlakSlug.NewExplode).
+var Projectile IGPlus_CatchUpProjectile;
+var float IGPlus_CatchUpLeftMs;
 
 replication {
 	reliable if (Role == ROLE_Authority)
@@ -90,7 +94,7 @@ function vector IGPlus_AdjustLocationToHistoricalMoverFrame(
 
 function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping);
 
-function SimulateProjectile(Projectile P, int Ping);
+function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs);
 
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping);
 

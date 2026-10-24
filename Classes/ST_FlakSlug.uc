@@ -284,6 +284,11 @@ function NewExplode(vector HitLocation, vector HitNormal)
 	CI = Spawn(Class'ST_UTChunkInfo', Instigator);
 	CI.WImp = WImp;
 	CI.RandomSpread = True;
+	CI.IGPlus_bSlugChunks = true;
+	// Blown up while still being caught up for the ping (point blank): the
+	// chunks get the rest of that catch-up, nothing more.
+	if (WImp.IGPlus_CatchUpProjectile == self)
+		CI.IGPlus_SlugCatchUpMs = FMax(WImp.IGPlus_CatchUpLeftMs, 0.0);
 	
 	// Our chunks hitting us on their fast-forward push us after the slug.
 	// Our own disc they only damage (ST_UTChunk.ProcessTouch).
