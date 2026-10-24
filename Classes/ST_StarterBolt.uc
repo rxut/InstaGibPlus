@@ -71,6 +71,11 @@ simulated function Tick(float DeltaTime)
 
 	if (ROLE == ROLE_Authority)
 	{
+		// Sent to whoever gets its shooter (bPlayersAlwaysRelevant), not only to
+		// those who can see the gun: a beam fired from behind cover stays visible.
+		if (Instigator != None)
+			bAlwaysRelevant = Instigator.bAlwaysRelevant;
+
 		ShootAccum -= DeltaTime;
 		while (ShootAccum <= 0.0)
 		{	// Handle stats this way.

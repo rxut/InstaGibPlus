@@ -6,6 +6,11 @@ simulated function Destroyed() { /* deliberately empty */ }
 simulated function Tick(float DeltaTime) {
 	local int IdealFatness;
 
+	// Sent to whoever gets its owner (bPlayersAlwaysRelevant), not only to
+	// those who can see the middle of the owner's body.
+	if (Role == ROLE_Authority && Owner != None)
+		bAlwaysRelevant = Owner.bAlwaysRelevant;
+
 	if (bHidden || (Level.NetMode == NM_DedicatedServer) || (Owner == None))
 		return;
 

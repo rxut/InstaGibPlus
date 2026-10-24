@@ -837,12 +837,16 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 
 		ServerBeamHidden.MoveAmount = DVector/NumPoints;
 		ServerBeamHidden.NumPuffs = NumPoints - 1;
+		// Sent to whoever gets the shooter (bPlayersAlwaysRelevant), not only to
+		// those who can see the gun: a beam fired from behind a corner stays visible.
+		ServerBeamHidden.bAlwaysRelevant = Owner.bAlwaysRelevant;
 
 	} else {
 		
 		ServerBeamVisible = Spawn(class'ShockBeam',, , SmokeLocation, SmokeRotation);
 		ServerBeamVisible.MoveAmount = DVector/NumPoints;
 		ServerBeamVisible.NumPuffs = NumPoints - 1;
+		ServerBeamVisible.bAlwaysRelevant = Owner.bAlwaysRelevant;
 	}
 }
 
