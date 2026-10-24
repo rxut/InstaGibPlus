@@ -426,10 +426,11 @@ function EnhancedHurtRadius(
 			if (bIsRazor2Alt)
 				MomentumDir.Z = FMin(0.45, MomentumDir.Z);
 
-			damageScale = FMin(1.0 - dist/EffectiveRadius, 1.0); // apply upper bound to damage
-			damageScale *= (1.0 - DamageDiffraction);
+			// The nearest point only decides who is reached. Damage and push fall off
+			// from the center like stock HurtRadius, so a blast in the open does stock damage.
 			MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - Victim.CollisionRadius)/EffectiveRadius, 0.0, 1.0);
 			MomentumScale *= (1.0 - DamageDiffraction);
+			damageScale = MomentumScale;
 		}
 		
 		if (damageScale <= 0.0)

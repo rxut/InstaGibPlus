@@ -3730,9 +3730,7 @@ simulated function bool IGPlus_SKSplash(IGPlus_SelfKnockback K, vector Loc, floa
 			return false;
 
 		MomentumDelta = Loc - K.HitLocation;
-		DamageScale = FMin(1.0 - Dist / K.Radius, 1.0);
-		if (DamageScale <= 0.0)
-			return true;
+		// The server's damage scale is this same push scale: no push at 0.
 		MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - R) / K.Radius, 0.0, 1.0);
 		Dir = Normal(MomentumDelta);
 		// The ripper's alt pushes no steeper than 0.45 up (Razor2Alt.BlowUp).
