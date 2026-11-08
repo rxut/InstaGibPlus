@@ -426,11 +426,15 @@ function EnhancedHurtRadius(
 			if (bIsRazor2Alt)
 				MomentumDir.Z = FMin(0.45, MomentumDir.Z);
 
-			// The nearest point only decides who is reached. Damage and push fall off
-			// from the center like stock HurtRadius, so a blast in the open does stock damage.
+			// Push falls off from the center like stock HurtRadius. Damage to others falls off
+			// from the nearest point (a floor blast hurts from the feet). Own damage uses the
+			// push scale, so a rocket jump costs stock health.
 			MomentumScale = FClamp(1.0 - (VSize(MomentumDelta) - Victim.CollisionRadius)/EffectiveRadius, 0.0, 1.0);
 			MomentumScale *= (1.0 - DamageDiffraction);
-			damageScale = MomentumScale;
+			if (bIsInstigator)
+				damageScale = MomentumScale;
+			else
+				damageScale = FMin(1.0 - dist/EffectiveRadius, 1.0) * (1.0 - DamageDiffraction);
 		}
 		
 		if (damageScale <= 0.0)
