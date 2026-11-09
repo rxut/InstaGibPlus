@@ -182,7 +182,9 @@ simulated function DrawStatus(Canvas Canvas)
 	}
 	DrawBigNum(Canvas, ArmorAmount, X + 14 * Scale, Y + 16 * Scale, 1);
 
-	if ((bbPlayer(PlayerOwner) != None && bbPlayer(PlayerOwner).HUDInfo > 0) || bbCHSpectator(PlayerOwner) != None)
+	// Demo playback: udemo's viewer (DemoPlaybackSpec) owns the HUD, like a spectator.
+	if ((bbPlayer(PlayerOwner) != None && bbPlayer(PlayerOwner).HUDInfo > 0) || bbCHSpectator(PlayerOwner) != None
+		|| (PlayerOwner != None && PlayerOwner.IsA('DemoPlaybackSpec')))
 	{
 		class'PureHUDHelper'.static.DrawTime(self, Canvas);
 
