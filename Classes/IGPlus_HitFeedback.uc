@@ -111,6 +111,15 @@ function MutatorTakeDamage(
 			Victim.PlayerReplicationInfo,
 			InstigatedBy.PlayerReplicationInfo
 		);
+		// Server demos never record the call above.
+		if (bbPlayer(InstigatedBy) != none)
+			bbPlayer(InstigatedBy).IGPlus_DemoLocalizedMessage(
+				Class'IGPlus_HitFeedbackMessage',
+				TotalDamage,
+				Victim.PlayerReplicationInfo,
+				InstigatedBy.PlayerReplicationInfo,
+				none
+			);
 		for (P = Level.PawnList; P != none; P = P.NextPawn)
 			if (P.IsA('PlayerPawn') && PlayerPawn(P).ViewTarget == InstigatedBy)
 				P.ReceiveLocalizedMessage(

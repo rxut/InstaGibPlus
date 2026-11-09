@@ -26,8 +26,11 @@ static function Send(
 	optional Pawn Exclude
 ) {
 	local Pawn P;
+	local bbPlayer DemoSender;
 
 	for (P = Level.PawnList; P != none; P = P.NextPawn) {
+		if (DemoSender == none && bbPlayer(P) != none)
+			DemoSender = bbPlayer(P);
 		if (P == Exclude) continue;
 		if (bbPlayer(P) != none)
 			bbPlayer(P).SendWeaponEffect(
@@ -50,6 +53,19 @@ static function Send(
 				TargetOffset,
 				HitNormal);
 	}
+
+	// A server demo gets none of the calls above (they are for live clients
+	// and client demos). One player records it once for the server demo.
+	if (DemoSender != none && Level.NetMode != NM_Client)
+		DemoSender.IGPlus_DemoWeaponEffect(
+			Effect,
+			SourcePRI,
+			SourceLocation,
+			SourceOffset,
+			Target,
+			TargetLocation,
+			TargetOffset,
+			HitNormal * 32767);
 }
 
 static final function vector GetPlayerLocation(Actor PotentialPlayer) {

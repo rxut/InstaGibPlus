@@ -26,6 +26,9 @@ var vector ExtrapolationDelta;
 // near the lift; clients, its speed, as it was sent held still.
 var IGPlus_LiftShot IGPlus_Lift;
 var vector IGPlus_HeldVelocity;
+// From a flak slug's blast, not the gun (server demo playback must not draw
+// it leaving the gun).
+var bool IGPlus_bFromSlug;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -49,7 +52,7 @@ replication
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3, R4, RBounce;
 	reliable if ( Role == ROLE_Authority && bNetInitial )
-		ChunkIndex, IGPlus_HeldVelocity;
+		ChunkIndex, IGPlus_HeldVelocity, IGPlus_bFromSlug;
 }
 
 simulated function float GetFRandValues()

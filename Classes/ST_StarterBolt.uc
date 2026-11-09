@@ -72,6 +72,12 @@ simulated function Tick(float DeltaTime)
 	local float dAdjust;
 	local Bot MyBot;
 	local vector Origin;
+	local bbPlayer DemoP;
+	local vector DemoPos;
+	local rotator DemoView;
+	local float DemoEye;
+	local bool bDemoView;
+	local vector Anchor;
 
 	if (ROLE == ROLE_Authority)
 	{
@@ -100,8 +106,25 @@ simulated function Tick(float DeltaTime)
 	// orient with respect to instigator
 	if ( Instigator != None )
 	{
-		if ( (Level.NetMode == NM_Client) && (!Instigator.IsA('PlayerPawn') || (PlayerPawn(Instigator).Player == None)) )
+		DemoP = bbPlayer(Instigator);
+		if (DemoP != None && DemoP.IGPlus_SDIsServerDemoProxy() && DemoP.IGPlus_SDFollowingViewer() != None)
 		{
+			// Server demo playback, following the shooter: from the camera,
+			// with their exact view (AimRotation is coarse in a demo and the
+			// shooter's Location is not their own move timing).
+			DemoP.IGPlus_SDCameraNow(DemoPos, DemoView, DemoEye);
+			bDemoView = true;
+			SetRotation(DemoView);
+			DrawOffset = ((0.01 * class'PulseGun'.Default.PlayerViewOffset) >> DemoView);
+			DrawOffset += (DemoEye * vect(0,0,1));
+		}
+		else if ( (Level.NetMode == NM_Client) && (!Instigator.IsA('PlayerPawn') || (PlayerPawn(Instigator).Player == None)) )
+		{
+			// Server demo, someone else followed with Player View: the
+			// shooter is drawn where that player saw them, the beam too.
+			Anchor = Instigator.Location;
+			if (DemoP != None && DemoP.IGPlus_SDIsServerDemoProxy())
+				DemoP.IGPlus_SDDrawnLocation(Anchor);
 			SetRotation(AimRotation); 
 			Instigator.ViewRotation = AimRotation;
 			DrawOffset = ((0.01 * class'PulseGun'.Default.PlayerViewOffset) >> Rotation);
@@ -174,7 +197,10 @@ simulated function Tick(float DeltaTime)
 			}
 			DrawOffset = Instigator.Weapon.CalcDrawOffset();
 		}
-		GetAxes(Instigator.ViewRotation,X,Y,Z);
+		if (bDemoView)
+			GetAxes(DemoView,X,Y,Z);
+		else
+			GetAxes(Instigator.ViewRotation,X,Y,Z);
 
 		if ( bCenter )
 		{
@@ -189,19 +215,45 @@ simulated function Tick(float DeltaTime)
 			else
 				FireOffset.Y = -1 * Default.FireOffset.Y;
 		}
-		if (Instigator.IsA('PlayerPawn')) {
-			Origin = Instigator.Location + PlayerPawn(Instigator).EyeHeight * vect(0,0,1);
+		if (bDemoView) {
+			// The hand the gun is drawn with (the viewer's; stock PulseGun:
+			// hidden is the middle, left uses the left offset, everything
+			// else the right one).
+			if (DemoP.Handedness > 1.5) {
+				FireOffset.Z = Default.FireOffset.Z * 1.5;
+				FireOffset.Y = 0;
+			} else {
+				FireOffset.Z = Default.FireOffset.Z;
+				if (DemoP.Handedness > 0.5)
+					FireOffset.Y = Default.FireOffset.Y;
+				else
+					FireOffset.Y = -1 * Default.FireOffset.Y;
+			}
+			Origin = DemoPos + DemoEye * vect(0,0,1);
+			SetLocation(DemoPos + DrawOffset + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z);
 		} else {
-			Origin = Instigator.Location + DrawOffset;
+			if (Anchor == vect(0,0,0))
+				Anchor = Instigator.Location;
+			if (Instigator.IsA('PlayerPawn')) {
+				Origin = Anchor + PlayerPawn(Instigator).EyeHeight * vect(0,0,1);
+			} else {
+				Origin = Anchor + DrawOffset;
+			}
+			SetLocation(Anchor + DrawOffset + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z);
 		}
-		SetLocation(Instigator.Location + DrawOffset + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z);
 	}
 	else {
 		GetAxes(Rotation,X,Y,Z);
 		Origin = Location;
 	}
 
-	TraceBeam(Origin, X, DeltaTime);
+	if (bDemoView) {
+		DemoP.IGPlus_SDTraceOthersBegin();
+		TraceBeam(Origin, X, DeltaTime);
+		DemoP.IGPlus_SDTraceOthersEnd();
+	} else {
+		TraceBeam(Origin, X, DeltaTime);
+	}
 }
 
 simulated function TraceBeam(vector Origin, vector X, float DeltaTime)

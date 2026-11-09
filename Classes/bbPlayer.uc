@@ -221,6 +221,104 @@ var int zzRepVRYaw, zzRepVRPitch;
 var float zzRepVREye;
 var bool zzbRepVRData;
 
+// Server demos (prefix IGPlus_SD). A server demo stores the server's view of
+// each player once per server tick. The server turns its moves back into the
+// player's own move timing (client timestamps) and records that, plus their
+// exact view, FOV and the delay they saw the others at. Playback (udemo
+// following a player) draws the camera from it.
+const IGPLUS_SD_RECSIZE = 48;
+const IGPLUS_SD_HISTSIZE = 128;
+// Server: the player's recent moves, by client timestamp.
+var float IGPlus_SDRecTS[48];
+var vector IGPlus_SDRecLoc[48];
+var int IGPlus_SDRecView[48];
+var float IGPlus_SDRecEye[48];
+var Actor IGPlus_SDRecBase[48];  // lift we stood on
+var vector IGPlus_SDRecRel[48];  // where on it
+var byte IGPlus_SDRecBreak[48];  // first move after a teleport/translocate
+var int IGPlus_SDRecHead;
+var int IGPlus_SDRecCount;
+var float IGPlus_SDLastMoveTS;
+var float IGPlus_SDLastSampleTime;
+var float IGPlus_SDOffset;      // lowest (server time - client timestamp) seen
+var bool IGPlus_SDHaveOffset;
+var float IGPlus_SDMinCur;      // lowest offset this second
+var float IGPlus_SDMinPrev[3];  // and in the 3 seconds before
+var float IGPlus_SDMinBucketEnd;
+var float IGPlus_SDJitter;      // average arrival lateness over the lowest
+var float IGPlus_SDWinMin;      // the lowest offset of the last 3-4 seconds
+var float IGPlus_SDDelay;       // playout delay behind the newest move
+var float IGPlus_SDRewindTime;  // what the player saw the others behind by
+var float IGPlus_SDRewindTarget;
+var float IGPlus_SDNextRewindRead;
+var int IGPlus_SDLastTloc;
+// Client -> server: our current FOV, and whether we are zoomed.
+var byte IGPlus_ClientFOV;
+var bool IGPlus_ClientZoomed;
+// Server -> server demo only (never live clients, never client demos).
+var vector IGPlus_DemoPos;       // where the player was at their own move timing
+var vector IGPlus_DemoRawOff;    // server Location minus IGPlus_DemoPos
+var float IGPlus_DemoEye;
+var int IGPlus_DemoOthersDelayMs;
+var byte IGPlus_DemoFlags;       // 1 = written by a server with this code
+var byte IGPlus_DemoFOV;
+var bool IGPlus_DemoZoomed;
+var Sound IGPlus_DemoWeaponAmbient;
+// Playback: this player's server positions by server time.
+var float IGPlus_SDHistTime[128];
+var vector IGPlus_SDHistLoc[128];
+var byte IGPlus_SDHistHidden[128];
+var Actor IGPlus_SDHistBase[128];
+var vector IGPlus_SDHistRel[128];
+var vector IGPlus_SDHistPos[128];   // IGPlus_DemoPos (the camera spot)
+var int IGPlus_SDHistView[128];
+var float IGPlus_SDHistEye[128];
+// Playback: our projectiles, drawn a fixed time behind the server's copy
+// (the server spawned them ahead by the ping), so they leave our gun and fly
+// at their own speed, as our client showed them. A short path history each.
+const IGPLUS_SD_PROJ = 24;
+const IGPLUS_SD_PROJEASE = 0.4;
+const IGPLUS_SD_PROJHIST = 32;
+var Projectile IGPlus_SDProj[24];
+var float IGPlus_SDProjStart[24];
+var float IGPlus_SDProjDelay[24];
+var vector IGPlus_SDProjMuzzle[24];
+var int IGPlus_SDProjHead[24];
+var int IGPlus_SDProjCount[24];
+var float IGPlus_SDProjHT[768];   // slot * 32 + i
+var EDrawType IGPlus_SDProjDrawType[24];
+var vector IGPlus_SDProjHL[768];
+var float IGPlus_SDGlideUpdateTime;
+var float IGPlus_SDFollowStart;   // when the viewer started following us
+// Playback: the others moved for a pulse beam trace.
+var vector IGPlus_SDTraceSaved;
+var bool IGPlus_SDTraceMoved;
+var int IGPlus_SDHistHead;
+var int IGPlus_SDHistCount;
+var float IGPlus_SDHistLastTime;
+// Playback: drawn somewhere else for one frame (followed player's own move
+// timing, or the others where the followed player saw them).
+var bool IGPlus_SDDisplaced;
+var bool IGPlus_SDHiddenByDisplace;
+var bool IGPlus_SDSavedCollideActors;
+var bool IGPlus_SDSavedBlockActors;
+var bool IGPlus_SDSavedBlockPlayers;
+var bool IGPlus_SDSavedCollideWorld;
+var vector IGPlus_SDTrueLoc;
+var vector IGPlus_SDDisplacedTo;
+var Actor IGPlus_SDAttached[8];
+var vector IGPlus_SDAttachedLoc[8];
+var int IGPlus_SDNumAttached;
+var bool IGPlus_SDDisplacedOthers;
+var byte IGPlus_SDLastFlashCount;
+var Weapon IGPlus_SDFlashWeapon;
+var bool IGPlus_SDAmbientSet;
+var float IGPlus_SDLastOverlayTime;
+var PlayerPawn IGPlus_SDViewer;
+var float IGPlus_SDViewerSearchTime;
+var IGPlus_DemoClock IGPlus_SDClock;
+var float IGPlus_SDClockSearchTime;
+
 // ConsoleCommand/INT Reader/Key+Alias Handling
 var string zzRemResult;		// Temporary Variable to store ConsoleCommands
 var string zzRemCmd;		// The command the server sent.
@@ -765,6 +863,8 @@ replication
 		IGPlus_ClientSnapInterpDelaySampleCount,
 		IGPlus_ClientSnapInterpDelaySpreadMs,
 		PingAverage,
+		IGPlus_ClientFOV,
+		IGPlus_ClientZoomed,
 		zzbDemoRecording,
 		zzNetspeed,
 		ClientWeaponSettingsData;
@@ -778,20 +878,26 @@ replication
 		IGPlus_LocationOffsetFix_ServerLocation;
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// Variables Server -> Server Demo (a server only sets bDemoRecording for its
+// demo recording, so live clients and client demos never get these)
+	unreliable if (bDemoRecording && !bClientDemoRecording && Role == ROLE_Authority)
+		IGPlus_DemoPos,
+		IGPlus_DemoRawOff,
+		IGPlus_DemoEye,
+		IGPlus_DemoOthersDelayMs,
+		IGPlus_DemoFlags,
+		IGPlus_DemoFOV,
+		IGPlus_DemoZoomed,
+		IGPlus_DemoWeaponAmbient;
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Functions Server -> Client
 	reliable if ( Role == ROLE_Authority )
 		IGPlusMenu,
 		Ready,
-		xxClientKicker,
 		xxClientSwJumpPad,
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
-		xxClientSwitchPending,
-		xxClientPSReject,
-		xxClientPSResume,
-		xxClientPSTimes,
-		xxClientPSFilterDone,
-		xxClientPSSpawn,
 		xxClientDetEntryGate,
 		xxSetTeleRadius,
 		xxSetTimes,
@@ -803,8 +909,27 @@ replication
 		xxClientDoEndShot,
 		xxClientDoScreenshot;
 
-	reliable if ((Role == ROLE_Authority) && !bClientDemoRecording)
+	// Not in server demos: these are simulated, so playback would run them
+	// again on every recorded player (a local kicker per player, predicted
+	// switch state on proxies). Client demos keep them.
+	reliable if (Role == ROLE_Authority && (!bDemoRecording || bClientDemoRecording))
+		xxClientKicker,
+		xxClientSwitchPending,
+		xxClientPSReject,
+		xxClientPSResume,
+		xxClientPSTimes,
+		xxClientPSFilterDone,
+		xxClientPSSpawn;
+
+	reliable if ((Role == ROLE_Authority) && !bDemoRecording)
 		xxNN_ClientProjExplode;
+
+	// Server demos only: one record of a WeaponEffect (rocket scorch marks),
+	// and personal messages (stock ReceiveLocalizedMessage is kept out of
+	// server demos).
+	reliable if (bDemoRecording && !bClientDemoRecording && Role == ROLE_Authority)
+		IGPlus_DemoLocalizedMessage,
+		IGPlus_DemoWeaponEffect;
 
 	reliable if (RemoteRole == ROLE_AutonomousProxy)
 		IGPlus_ForcedSettingsInit,
@@ -1013,6 +1138,9 @@ exec function Ghost()
 }
 
 simulated event Destroyed() {
+	// Server demo playback: our projectiles back on their real spots.
+	if (Role == ROLE_SimulatedProxy)
+		IGPlus_SDEndAllGlides();
 	if (Role == ROLE_Authority && zzUTPure != none) {
 		zzUTPure.ModifyLogout(self);
 	}
@@ -8984,9 +9112,18 @@ function xxCalcBehindView(out vector CameraLocation, out rotator CameraRotation,
 	CameraLocation -= (ViewDist - 30) * View;
 }
 
-event PlayerCalcView(out actor ViewActor, out vector CameraLocation, out rotator CameraRotation )
+simulated event PlayerCalcView(out actor ViewActor, out vector CameraLocation, out rotator CameraRotation )
 {
 	local Pawn PTarget;
+
+	// Only demo playback calls this on a recorded player (udemo following
+	// them). Before this was simulated the call was dropped, and udemo showed
+	// the pawn's Rotation. Server demos now carry the real view; anything
+	// else keeps udemo's values.
+	if (Role == ROLE_SimulatedProxy) {
+		IGPlus_SDCalcView(CameraRotation);
+		return;
+	}
 
 	if ( ViewTarget != None )
 	{
@@ -9768,6 +9905,7 @@ event ServerTick(float DeltaTime) {
 	}
 	IGPlus_ProcessRemoteMovement();
 	xxRememberPosition();
+	IGPlus_SDServerRecord(DeltaTime);
 	IGPlus_UpdateServerSnapInterpDelayEstimate();
 
 	if (IGPlus_EnableSnapshotInterpolation) {
@@ -11417,6 +11555,9 @@ function xxPlayerTickEvents(float DeltaTime)
 
 	if (Role == ROLE_AutonomousProxy) {
 		IGPlus_CameraCorrectionDecay(DeltaTime);
+		// For server demos (the server records it demo-only).
+		IGPlus_ClientFOV = byte(Clamp(int(FOVAngle + 0.5), 1, 255));
+		IGPlus_ClientZoomed = bZooming || DesiredFOV != DefaultFOV;
 
 		// A console 'set' can't be refused: put locked settings back twice a second.
 		if (IGPlus_ForcedSettings_Applied && CurrentTime >= IGPlus_ForcedSettings_EnforceAt) {
@@ -12181,6 +12322,12 @@ simulated event RenderOverlays(Canvas C) {
 	local Weapon W;
 	local vector SavedPVO;
 	local bool bShiftWeapon;
+	local bool bServerDemoView;
+
+	// Server demo playback: the engine calls this on the followed player.
+	bServerDemoView = IGPlus_SDIsServerDemoProxy();
+	if (bServerDemoView)
+		IGPlus_SDBeforeOverlays();
 
 	// Keep the first-person weapon on the smoothed camera.
 	W = Weapon;
@@ -12207,6 +12354,9 @@ simulated event RenderOverlays(Canvas C) {
 
 	if (IGPlus_LocationOffsetFix_DrawServerLocation)
 		IGPlus_DrawServerLocations(C);
+
+	if (bServerDemoView)
+		IGPlus_SDAfterOverlays(C);
 }
 
 simulated function vector IGPlus_CurrentLocation() {
@@ -12385,6 +12535,9 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 // This event is only executed on Pawns with Role=ROLE_SimulatedProxy
 // PlayerTick is used if Role=ROLE_AutonomousProxy or ROLE_Authority
 simulated event Tick(float DeltaTime) {
+	if (IGPlus_SDIsServerDemoProxy())
+		IGPlus_SDPlaybackTick(DeltaTime);
+
 	super.Tick(DeltaTime);
 
 	if (IGPlus_ShowRealModelsInDemo())
@@ -15893,6 +16046,1061 @@ simulated function bool IGPlus_InDemoPlayback() {
 	return IGPlus_IsDemoPlayback || zzbDemoPlayback;
 }
 
+// =============================================================================
+// Server demos (IGPlus_SD...)
+//
+// A server demo writes every player once per server tick, as the server has
+// them. That is not what the player saw: moves run when their packets arrive,
+// so the recorded path steps with network jitter, the view is the pawn's
+// pitch-clamped Rotation, and the others are at server time.
+//
+// The server records, demo-only (live clients and client demos never get it):
+// - IGPlus_DemoPos/DemoViewPitch/DemoViewYaw/IGPlus_DemoEye: the player's
+//   location, exact view and eye height re-timed to their own move clock
+//   (client timestamps), a short playout delay behind their newest move.
+// - IGPlus_DemoRawOff: the server Location, as an offset from IGPlus_DemoPos.
+// - IGPlus_DemoOthersDelayMs: how far behind the server the player saw the
+//   others (their hitscan rewind), on the same clock as IGPlus_DemoPos.
+// - IGPlus_DemoFOV/IGPlus_DemoZoomed, IGPlus_DemoWeaponAmbient, and the
+//   personal messages (IGPlus_DemoLocalizedMessage).
+// Playback (udemo following a recorded player) draws the camera from it, and
+// with bDemoPlayerView the others where that player saw them.
+// =============================================================================
+
+// Server, every tick, after this tick's moves (ServerTick).
+function IGPlus_SDServerRecord(float DeltaTime) {
+	local float Now, ArrivalOffset, WinMin, TargetDelay, Tc, Alpha, NewRewind;
+	local int k, Idx, NewerIdx, OlderIdx;
+	local vector Pos, Loc;
+	local int View, PitchA, PitchB, YawA, YawB, Pitch, Yaw;
+	local float Eye;
+	local IGPlus_WeaponImplementationBase WImpBase;
+
+	if (RemoteRole != ROLE_AutonomousProxy)
+		return;
+
+	Now = Level.TimeSeconds;
+
+	// A client clock that went back (reconnect, reset), or a long silence:
+	// start over.
+	if (CurrentTimeStamp < IGPlus_SDLastMoveTS - 0.5
+		|| (CurrentTimeStamp > IGPlus_SDLastMoveTS && Now - IGPlus_SDLastSampleTime > 2.0)) {
+		IGPlus_SDRecCount = 0;
+		IGPlus_SDHaveOffset = false;
+		if (CurrentTimeStamp < IGPlus_SDLastMoveTS)
+			IGPlus_SDLastMoveTS = 0;
+	}
+
+	if (CurrentTimeStamp > IGPlus_SDLastMoveTS) {
+		// The earliest a move arrives, relative to its timestamp, is the
+		// client clock seen from here. A later arrival waited in the network.
+		ArrivalOffset = Now - CurrentTimeStamp;
+		if (IGPlus_SDHaveOffset == false) {
+			IGPlus_SDMinCur = ArrivalOffset;
+			IGPlus_SDMinPrev[0] = ArrivalOffset;
+			IGPlus_SDMinPrev[1] = ArrivalOffset;
+			IGPlus_SDMinPrev[2] = ArrivalOffset;
+			IGPlus_SDMinBucketEnd = Now + 1.0;
+			IGPlus_SDOffset = ArrivalOffset;
+			IGPlus_SDWinMin = ArrivalOffset;
+			IGPlus_SDJitter = 0;
+			IGPlus_SDRecCount = 0;
+			IGPlus_SDHaveOffset = true;
+		}
+		IGPlus_SDMinCur = FMin(IGPlus_SDMinCur, ArrivalOffset);
+		WinMin = FMin(FMin(IGPlus_SDMinCur, IGPlus_SDMinPrev[0]), FMin(IGPlus_SDMinPrev[1], IGPlus_SDMinPrev[2]));
+		IGPlus_SDJitter += (FClamp(ArrivalOffset - WinMin, 0.0, 0.25) - IGPlus_SDJitter) * 0.05;
+
+		// Where the move put us (not server extrapolation on top of it).
+		Loc = Location;
+		if (bExtrapolatedLastUpdate)
+			Loc = Saved.Location;
+
+		// A translocation, teleport or respawn: no gliding across the map.
+		// The jump shows at its own move's time.
+		IGPlus_SDRecBreak[IGPlus_SDRecHead] = 0;
+		if (IGPlus_SDRecCount > 0) {
+			Idx = IGPlus_SDRecHead - 1;
+			if (Idx < 0)
+				Idx += IGPLUS_SD_RECSIZE;
+			if (TlocCounter != IGPlus_SDLastTloc
+				|| VSize(Loc - IGPlus_SDRecLoc[Idx]) > 64 + 3000 * FClamp(CurrentTimeStamp - IGPlus_SDRecTS[Idx], 0.0, 0.1))
+				IGPlus_SDRecBreak[IGPlus_SDRecHead] = 1;
+		}
+		IGPlus_SDLastTloc = TlocCounter;
+
+		IGPlus_SDRecTS[IGPlus_SDRecHead] = CurrentTimeStamp;
+		IGPlus_SDRecLoc[IGPlus_SDRecHead] = Loc;
+		// On a lift, also where on the lift: the lift moves in server time.
+		if (Mover(Base) != none) {
+			IGPlus_SDRecBase[IGPlus_SDRecHead] = Base;
+			IGPlus_SDRecRel[IGPlus_SDRecHead] = Loc - Base.Location;
+		} else {
+			IGPlus_SDRecBase[IGPlus_SDRecHead] = none;
+		}
+		IGPlus_SDRecView[IGPlus_SDRecHead] = ((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF);
+		IGPlus_SDRecEye[IGPlus_SDRecHead] = EyeHeight;
+		IGPlus_SDRecHead++;
+		if (IGPlus_SDRecHead >= IGPLUS_SD_RECSIZE)
+			IGPlus_SDRecHead = 0;
+		IGPlus_SDRecCount = Min(IGPlus_SDRecCount + 1, IGPLUS_SD_RECSIZE);
+		IGPlus_SDLastMoveTS = CurrentTimeStamp;
+		IGPlus_SDLastSampleTime = Now;
+	}
+
+	// The client clock: the lowest arrival offset of the last 3-4 seconds.
+	// A lasting ping rise is taken in within seconds (at most 10% slower
+	// playback while it catches up). A ping drop only shrinks the margin, so
+	// it is taken in slowly.
+	if (IGPlus_SDHaveOffset) {
+		if (Now >= IGPlus_SDMinBucketEnd) {
+			IGPlus_SDMinPrev[2] = IGPlus_SDMinPrev[1];
+			IGPlus_SDMinPrev[1] = IGPlus_SDMinPrev[0];
+			IGPlus_SDMinPrev[0] = IGPlus_SDMinCur;
+			IGPlus_SDMinCur = 1000000.0;
+			IGPlus_SDMinBucketEnd = Now + 1.0;
+		}
+		WinMin = FMin(FMin(IGPlus_SDMinCur, IGPlus_SDMinPrev[0]), FMin(IGPlus_SDMinPrev[1], IGPlus_SDMinPrev[2]));
+		if (WinMin < 1000.0) {
+			IGPlus_SDWinMin = WinMin;
+			if (WinMin > IGPlus_SDOffset)
+				IGPlus_SDOffset += FMin(WinMin - IGPlus_SDOffset, 0.1 * DeltaTime);
+			else
+				IGPlus_SDOffset -= FMin(IGPlus_SDOffset - WinMin, 0.02 * DeltaTime);
+		}
+	}
+
+	// Playout delay: enough to cover the usual lateness, changed slowly
+	// (at most 2% faster or slower than real time).
+	TargetDelay = FClamp(2.5 * IGPlus_SDJitter + 0.005, 0.01, 0.1);
+	if (IGPlus_SDDelay <= 0)
+		IGPlus_SDDelay = TargetDelay;
+	else
+		IGPlus_SDDelay += FClamp(TargetDelay - IGPlus_SDDelay, -0.02 * DeltaTime, 0.02 * DeltaTime);
+
+	if (IGPlus_SDRecCount == 0 || Now - IGPlus_SDLastSampleTime > 0.25 * Level.TimeDilation) {
+		// No recent moves (dead, paused, lost): the server's own values.
+		Pos = Location;
+		View = ((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF);
+		Eye = EyeHeight;
+	} else {
+		Tc = Now - IGPlus_SDOffset - IGPlus_SDDelay;
+		NewerIdx = -1;
+		OlderIdx = -1;
+		for (k = 0; k < IGPlus_SDRecCount; k++) {
+			Idx = IGPlus_SDRecHead - 1 - k;
+			if (Idx < 0)
+				Idx += IGPLUS_SD_RECSIZE;
+			if (IGPlus_SDRecTS[Idx] <= Tc) {
+				OlderIdx = Idx;
+				break;
+			}
+			NewerIdx = Idx;
+		}
+		if (OlderIdx < 0 || NewerIdx < 0) {
+			// Older than all we have (the oldest move), or past the newest
+			// (a late packet: hold the newest).
+			Idx = OlderIdx;
+			if (Idx < 0)
+				Idx = NewerIdx;
+			Pos = IGPlus_SDRecPos(Idx);
+			View = IGPlus_SDRecView[Idx];
+			Eye = IGPlus_SDRecEye[Idx];
+		} else if (IGPlus_SDRecBreak[NewerIdx] != 0) {
+			// A jump comes next: still at the old spot until its time.
+			Pos = IGPlus_SDRecPos(OlderIdx);
+			View = IGPlus_SDRecView[OlderIdx];
+			Eye = IGPlus_SDRecEye[OlderIdx];
+		} else {
+			Alpha = FClamp((Tc - IGPlus_SDRecTS[OlderIdx]) / FMax(IGPlus_SDRecTS[NewerIdx] - IGPlus_SDRecTS[OlderIdx], 0.0001), 0.0, 1.0);
+			Pos = IGPlus_SDRecPos(OlderIdx) + (IGPlus_SDRecPos(NewerIdx) - IGPlus_SDRecPos(OlderIdx)) * Alpha;
+			Eye = IGPlus_SDRecEye[OlderIdx] + (IGPlus_SDRecEye[NewerIdx] - IGPlus_SDRecEye[OlderIdx]) * Alpha;
+			PitchA = IGPlus_SDRecView[OlderIdx] >>> 16;
+			PitchB = IGPlus_SDRecView[NewerIdx] >>> 16;
+			YawA = IGPlus_SDRecView[OlderIdx] & 0xFFFF;
+			YawB = IGPlus_SDRecView[NewerIdx] & 0xFFFF;
+			Pitch = (PitchA + int(float(((PitchB - PitchA + 32768) & 0xFFFF) - 32768) * Alpha)) & 0xFFFF;
+			Yaw = (YawA + int(float(((YawB - YawA + 32768) & 0xFFFF) - 32768) * Alpha)) & 0xFFFF;
+			View = (Pitch << 16) | Yaw;
+		}
+	}
+
+	IGPlus_DemoPos = Pos;
+	IGPlus_DemoRawOff = Location - Pos;
+	DemoViewPitch = View >>> 16;
+	DemoViewYaw = View & 0xFFFF;
+	IGPlus_DemoEye = Eye;
+	IGPlus_DemoFOV = IGPlus_ClientFOV;
+	IGPlus_DemoZoomed = IGPlus_ClientZoomed;
+	if (Weapon != none)
+		IGPlus_DemoWeaponAmbient = Weapon.AmbientSound;
+	else
+		IGPlus_DemoWeaponAmbient = none;
+	IGPlus_DemoFlags = 1;
+
+	// The others' delay: the rewind hit detection used, changed slowly (it
+	// switches between Precise Rewind Time and the average ping).
+	if (Now >= IGPlus_SDNextRewindRead) {
+		IGPlus_SDNextRewindRead = Now + 0.1;
+		WImpBase = IGPlus_GetWeaponImplementationBase();
+		if (WImpBase != none)
+			IGPlus_SDRewindTarget = 0.001 * WImpBase.IGPlus_GetHitscanRewindMs(self) * Level.TimeDilation;
+	}
+	NewRewind = IGPlus_SDRewindTarget;
+	if (IGPlus_SDRewindTime <= 0)
+		IGPlus_SDRewindTime = NewRewind;
+	else
+		IGPlus_SDRewindTime += FClamp(NewRewind - IGPlus_SDRewindTime, -0.02 * DeltaTime, 0.02 * DeltaTime);
+	// The camera shows a move IGPlus_SDOffset + IGPlus_SDDelay after its
+	// timestamp. Hit detection rewound from when the move really arrived:
+	// IGPlus_SDWinMin + IGPlus_SDJitter after it, on average.
+	IGPlus_DemoOthersDelayMs = int(1000.0 * FMax(IGPlus_SDRewindTime + IGPlus_SDDelay + IGPlus_SDOffset - IGPlus_SDWinMin - IGPlus_SDJitter, 0.0) + 0.5);
+}
+
+// A recorded move's position. On a lift: where on the lift, with the lift
+// where it is now (it moves in server time).
+function vector IGPlus_SDRecPos(int Idx) {
+	if (IGPlus_SDRecBase[Idx] != none && IGPlus_SDRecBase[Idx].bDeleteMe == false)
+		return IGPlus_SDRecRel[Idx] + IGPlus_SDRecBase[Idx].Location;
+	return IGPlus_SDRecLoc[Idx];
+}
+
+// Server: a personal message, written to a server demo only. Stock
+// ReceiveLocalizedMessage is never recorded in a server demo.
+simulated function IGPlus_DemoLocalizedMessage(
+	class<LocalMessage> Message,
+	int Sw,
+	PlayerReplicationInfo RelatedPRI_1,
+	PlayerReplicationInfo RelatedPRI_2,
+	Object OptionalObject
+) {
+	if (Role == ROLE_Authority || Level.NetMode != NM_Client || Message == none)
+		return;
+	IGPlus_SDPersonalMessage(Message, Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
+}
+
+// Server demo playback: a recorded player written by a server with this code.
+simulated function bool IGPlus_SDIsServerDemoProxy() {
+	return Role == ROLE_SimulatedProxy && IGPlus_DemoFlags != 0 && Level.NetMode == NM_Client;
+}
+
+simulated function PlayerPawn IGPlus_SDGetViewer() {
+	local PlayerPawn P;
+
+	if (IGPlus_SDViewer != none && IGPlus_SDViewer.bDeleteMe == false)
+		return IGPlus_SDViewer;
+	IGPlus_SDViewer = none;
+	if (Level.TimeSeconds < IGPlus_SDViewerSearchTime)
+		return none;
+	IGPlus_SDViewerSearchTime = Level.TimeSeconds + 0.5;
+
+	foreach AllActors(class'PlayerPawn', P)
+		if (P.IsA('DemoPlaybackSpec')) {
+			IGPlus_SDViewer = P;
+			return P;
+		}
+	foreach AllActors(class'PlayerPawn', P)
+		if (P != self && P.Role == ROLE_Authority && Viewport(P.Player) != none) {
+			IGPlus_SDViewer = P;
+			return P;
+		}
+	return none;
+}
+
+// The viewer, if they are following us.
+simulated function PlayerPawn IGPlus_SDFollowingViewer() {
+	local PlayerPawn V;
+
+	V = IGPlus_SDGetViewer();
+	if (V != none && V.ViewTarget == self)
+		return V;
+	return none;
+}
+
+simulated function IGPlus_DemoClock IGPlus_SDGetClock() {
+	local IGPlus_DemoClock C;
+
+	if (IGPlus_SDClock != none && IGPlus_SDClock.bDeleteMe == false)
+		return IGPlus_SDClock;
+	IGPlus_SDClock = none;
+	if (Level.TimeSeconds < IGPlus_SDClockSearchTime)
+		return none;
+	IGPlus_SDClockSearchTime = Level.TimeSeconds + 1.0;
+	foreach AllActors(class'IGPlus_DemoClock', C) {
+		IGPlus_SDClock = C;
+		break;
+	}
+	return IGPlus_SDClock;
+}
+
+// Our server Location in this demo frame.
+simulated function vector IGPlus_SDServerLocation() {
+	return IGPlus_DemoPos + IGPlus_DemoRawOff;
+}
+
+// Playback, every frame (simulated Tick), after this frame's demo data.
+simulated function IGPlus_SDPlaybackTick(float DeltaTime) {
+	local IGPlus_DemoClock C;
+	local int Idx;
+
+	// Still drawn elsewhere (behind view has no RenderOverlays to put us
+	// back): back to the demo's position for this frame.
+	if (IGPlus_SDDisplaced)
+		IGPlus_SDRestore();
+
+	// Our projectile glides only while someone follows us.
+	if (IGPlus_SDGlideUpdateTime > 0
+		&& (Level.TimeSeconds - IGPlus_SDGlideUpdateTime > 0.1 || IGPlus_SDFollowingViewer() == none)) {
+		IGPlus_SDEndAllGlides();
+		IGPlus_SDGlideUpdateTime = 0;
+	}
+
+	// Server positions by server time, for drawing us where someone else saw us.
+	C = IGPlus_SDGetClock();
+	if (C != none && C.ServerTime != IGPlus_SDHistLastTime) {
+		if (C.ServerTime < IGPlus_SDHistLastTime || C.ServerTime > IGPlus_SDHistLastTime + 1.0)
+			IGPlus_SDHistCount = 0; // seek
+		IGPlus_SDHistLastTime = C.ServerTime;
+		Idx = IGPlus_SDHistHead;
+		IGPlus_SDHistTime[Idx] = C.ServerTime;
+		IGPlus_SDHistLoc[Idx] = IGPlus_SDServerLocation();
+		IGPlus_SDHistPos[Idx] = IGPlus_DemoPos;
+		IGPlus_SDHistView[Idx] = ((DemoViewPitch & 0xFFFF) << 16) | (DemoViewYaw & 0xFFFF);
+		IGPlus_SDHistEye[Idx] = IGPlus_DemoEye;
+		if (Mover(Base) != none) {
+			IGPlus_SDHistBase[Idx] = Base;
+			IGPlus_SDHistRel[Idx] = IGPlus_SDHistLoc[Idx] - Base.Location;
+		} else {
+			IGPlus_SDHistBase[Idx] = none;
+		}
+		if (bHidden)
+			IGPlus_SDHistHidden[Idx] = 1;
+		else
+			IGPlus_SDHistHidden[Idx] = 0;
+		IGPlus_SDHistHead++;
+		if (IGPlus_SDHistHead >= IGPLUS_SD_HISTSIZE)
+			IGPlus_SDHistHead = 0;
+		IGPlus_SDHistCount = Min(IGPlus_SDHistCount + 1, IGPLUS_SD_HISTSIZE);
+	}
+
+	// Weapon loops (minigun, pulse gun). A server demo drops the weapon's
+	// AmbientSound (owner and bClientAnim), so it plays from us instead.
+	if (IGPlus_DemoWeaponAmbient != none) {
+		if (AmbientSound != IGPlus_DemoWeaponAmbient) {
+			AmbientSound = IGPlus_DemoWeaponAmbient;
+			if (Weapon != none) {
+				SoundRadius = Weapon.default.SoundRadius;
+				SoundPitch = Weapon.default.SoundPitch;
+			}
+			SoundVolume = 255;
+		}
+		IGPlus_SDAmbientSet = true;
+	} else if (IGPlus_SDAmbientSet) {
+		AmbientSound = default.AmbientSound;
+		SoundRadius = default.SoundRadius;
+		SoundVolume = default.SoundVolume;
+		SoundPitch = default.SoundPitch;
+		IGPlus_SDAmbientSet = false;
+	}
+}
+
+// Draw us at NewLoc for this frame. What rides on us (shield belt, carried
+// flag) comes along. Collision is off while we are there: we are only drawn
+// there, nothing should touch us.
+simulated function IGPlus_SDDisplace(vector NewLoc, bool bHide) {
+	local Actor A;
+	local Decoration Flag;
+	local vector Delta;
+	local int i;
+
+	if (IGPlus_SDDisplaced == false) {
+		IGPlus_SDDisplaced = true;
+		IGPlus_SDNumAttached = 0;
+		// Only PHYS_Trailer actors (shield belt, UDamage glow), not our
+		// projectiles. ChildActors lists us too.
+		foreach ChildActors(class'Actor', A) {
+			if (A == self || A.bHidden || A.Physics != PHYS_Trailer)
+				continue;
+			if (IGPlus_SDNumAttached >= arraycount(IGPlus_SDAttached))
+				break;
+			IGPlus_SDAttached[IGPlus_SDNumAttached] = A;
+			IGPlus_SDAttachedLoc[IGPlus_SDNumAttached] = A.Location;
+			IGPlus_SDNumAttached++;
+		}
+		if (PlayerReplicationInfo != none)
+			Flag = PlayerReplicationInfo.HasFlag;
+		if (Flag != none && Flag.Owner != self && Flag.bHidden == false
+			&& IGPlus_SDNumAttached < arraycount(IGPlus_SDAttached)) {
+			IGPlus_SDAttached[IGPlus_SDNumAttached] = Flag;
+			IGPlus_SDAttachedLoc[IGPlus_SDNumAttached] = Flag.Location;
+			IGPlus_SDNumAttached++;
+		}
+		IGPlus_SDTrueLoc = Location;
+		IGPlus_SDSavedCollideActors = bCollideActors;
+		IGPlus_SDSavedBlockActors = bBlockActors;
+		IGPlus_SDSavedBlockPlayers = bBlockPlayers;
+		IGPlus_SDSavedCollideWorld = bCollideWorld;
+		SetCollision(false, false, false);
+		bCollideWorld = false;
+		if (bHide && bHidden == false) {
+			bHidden = true;
+			IGPlus_SDHiddenByDisplace = true;
+		}
+	}
+
+	Delta = NewLoc - IGPlus_SDTrueLoc;
+	SetLocation(NewLoc);
+	IGPlus_SDDisplacedTo = Location;
+	for (i = 0; i < IGPlus_SDNumAttached; i++)
+		if (IGPlus_SDAttached[i] != none && IGPlus_SDAttached[i].bDeleteMe == false)
+			IGPlus_SDAttached[i].SetLocation(IGPlus_SDAttachedLoc[i] + Delta);
+}
+
+// Back to the demo's position for this frame (not a saved spot: the demo
+// may have sent a new one since).
+simulated function IGPlus_SDRestore() {
+	local int i;
+
+	if (IGPlus_SDDisplaced == false)
+		return;
+
+	SetLocation(IGPlus_SDServerLocation());
+	for (i = 0; i < IGPlus_SDNumAttached; i++) {
+		if (IGPlus_SDAttached[i] != none && IGPlus_SDAttached[i].bDeleteMe == false)
+			IGPlus_SDAttached[i].SetLocation(IGPlus_SDAttachedLoc[i]);
+		IGPlus_SDAttached[i] = none;
+	}
+	IGPlus_SDNumAttached = 0;
+
+	// Collision back, unless the demo changed it meanwhile or we died (the
+	// server turns it off then, and the demo won't send that again).
+	if (Health > 0 && bCollideActors == false && bBlockActors == false && bBlockPlayers == false)
+		SetCollision(IGPlus_SDSavedCollideActors, IGPlus_SDSavedBlockActors, IGPlus_SDSavedBlockPlayers);
+	bCollideWorld = IGPlus_SDSavedCollideWorld;
+
+	// Visible again, unless we died meanwhile (the demo then has us hidden
+	// already and won't send it again).
+	if (IGPlus_SDHiddenByDisplace) {
+		if (Health > 0)
+			bHidden = false;
+		IGPlus_SDHiddenByDisplace = false;
+	}
+	IGPlus_SDDisplaced = false;
+}
+
+// Our server position at server time T. False if we don't have T.
+simulated function bool IGPlus_SDHistAt(float T, out vector L, out byte bWasHidden) {
+	local int k, Idx, NewerIdx;
+	local float Alpha;
+	local vector LA, LB;
+
+	NewerIdx = -1;
+	for (k = 0; k < IGPlus_SDHistCount; k++) {
+		Idx = IGPlus_SDHistHead - 1 - k;
+		if (Idx < 0)
+			Idx += IGPLUS_SD_HISTSIZE;
+		if (IGPlus_SDHistTime[Idx] <= T) {
+			bWasHidden = IGPlus_SDHistHidden[Idx];
+			// Riding a lift we still ride: on the lift where it is now (the
+			// lift is drawn at server time, hit detection moved it back too).
+			LA = IGPlus_SDHistLoc[Idx];
+			if (IGPlus_SDHistBase[Idx] != none && IGPlus_SDHistBase[Idx].bDeleteMe == false)
+				LA = IGPlus_SDHistRel[Idx] + IGPlus_SDHistBase[Idx].Location;
+			L = LA;
+			// Between two frames, unless we jumped (teleport, respawn): then
+			// we were still at the old spot.
+			if (NewerIdx >= 0 && VSize(IGPlus_SDHistLoc[NewerIdx] - IGPlus_SDHistLoc[Idx]) < 256) {
+				LB = IGPlus_SDHistLoc[NewerIdx];
+				if (IGPlus_SDHistBase[NewerIdx] != none && IGPlus_SDHistBase[NewerIdx].bDeleteMe == false)
+					LB = IGPlus_SDHistRel[NewerIdx] + IGPlus_SDHistBase[NewerIdx].Location;
+				Alpha = FClamp((T - IGPlus_SDHistTime[Idx]) / FMax(IGPlus_SDHistTime[NewerIdx] - IGPlus_SDHistTime[Idx], 0.0001), 0.0, 1.0);
+				L = LA + (LB - LA) * Alpha;
+			}
+			return true;
+		}
+		NewerIdx = Idx;
+	}
+	// Older than all we have (just after a seek): the oldest.
+	if (NewerIdx >= 0) {
+		L = IGPlus_SDHistLoc[NewerIdx];
+		if (IGPlus_SDHistBase[NewerIdx] != none && IGPlus_SDHistBase[NewerIdx].bDeleteMe == false)
+			L = IGPlus_SDHistRel[NewerIdx] + IGPlus_SDHistBase[NewerIdx].Location;
+		bWasHidden = IGPlus_SDHistHidden[NewerIdx];
+		return true;
+	}
+	return false;
+}
+
+simulated function GameReplicationInfo IGPlus_SDGetGRI() {
+	local PlayerPawn V;
+
+	if (GameReplicationInfo != none)
+		return GameReplicationInfo;
+	V = IGPlus_SDGetViewer();
+	if (V != none)
+		return V.GameReplicationInfo;
+	return none;
+}
+
+// The followed player's screen: the others where they saw them.
+simulated function IGPlus_SDDisplaceOthers() {
+	local IGPlus_DemoClock C;
+	local GameReplicationInfo GRI;
+	local PlayerReplicationInfo PRI;
+	local bbPlayer P;
+	local float T;
+	local vector L;
+	local byte bWasHidden;
+	local int i;
+
+	C = IGPlus_SDGetClock();
+	GRI = IGPlus_SDGetGRI();
+	if (C == none || GRI == none)
+		return;
+
+	T = C.IGPlus_DisplayTime() - 0.001 * float(IGPlus_DemoOthersDelayMs);
+	for (i = 0; i < arraycount(GRI.PRIArray); i++) {
+		PRI = GRI.PRIArray[i];
+		if (PRI == none)
+			break;
+		P = bbPlayer(PRI.Owner);
+		if (P == none || P == self || P.IGPlus_SDIsServerDemoProxy() == false)
+			continue;
+		// Dead now: the carcass is the server's. Not shown alive again here.
+		if (P.bHidden && P.IGPlus_SDHiddenByDisplace == false)
+			continue;
+		if (P.IGPlus_SDHistAt(T, L, bWasHidden))
+			P.IGPlus_SDDisplace(L, bWasHidden != 0);
+	}
+	IGPlus_SDDisplacedOthers = true;
+}
+
+simulated function IGPlus_SDRestoreOthers() {
+	local GameReplicationInfo GRI;
+	local PlayerReplicationInfo PRI;
+	local bbPlayer P;
+	local int i;
+
+	IGPlus_SDDisplacedOthers = false;
+	GRI = IGPlus_SDGetGRI();
+	if (GRI == none)
+		return;
+	for (i = 0; i < arraycount(GRI.PRIArray); i++) {
+		PRI = GRI.PRIArray[i];
+		if (PRI == none)
+			break;
+		P = bbPlayer(PRI.Owner);
+		if (P != none && P != self && P.IGPlus_SDDisplaced)
+			P.IGPlus_SDRestore();
+	}
+}
+
+// The camera at server time T: our own move timing, between two demo frames.
+simulated function IGPlus_SDCameraAt(float T, out vector Pos, out rotator View, out float Eye) {
+	local int k, Idx, NewerIdx;
+	local float Alpha;
+	local int PA, PB, YA, YB;
+
+	Pos = IGPlus_DemoPos;
+	View.Pitch = DemoViewPitch & 0xFFFF;
+	View.Yaw = DemoViewYaw & 0xFFFF;
+	View.Roll = 0;
+	Eye = IGPlus_DemoEye;
+
+	NewerIdx = -1;
+	for (k = 0; k < IGPlus_SDHistCount; k++) {
+		Idx = IGPlus_SDHistHead - 1 - k;
+		if (Idx < 0)
+			Idx += IGPLUS_SD_HISTSIZE;
+		if (IGPlus_SDHistTime[Idx] <= T) {
+			Pos = IGPlus_SDHistPos[Idx];
+			PA = IGPlus_SDHistView[Idx] >>> 16;
+			YA = IGPlus_SDHistView[Idx] & 0xFFFF;
+			Eye = IGPlus_SDHistEye[Idx];
+			// Not across a jump (teleport, respawn).
+			if (NewerIdx >= 0 && VSize(IGPlus_SDHistPos[NewerIdx] - IGPlus_SDHistPos[Idx]) < 256) {
+				Alpha = FClamp((T - IGPlus_SDHistTime[Idx]) / FMax(IGPlus_SDHistTime[NewerIdx] - IGPlus_SDHistTime[Idx], 0.0001), 0.0, 1.0);
+				Pos += (IGPlus_SDHistPos[NewerIdx] - IGPlus_SDHistPos[Idx]) * Alpha;
+				Eye += (IGPlus_SDHistEye[NewerIdx] - Eye) * Alpha;
+				PB = IGPlus_SDHistView[NewerIdx] >>> 16;
+				YB = IGPlus_SDHistView[NewerIdx] & 0xFFFF;
+				PA = (PA + int(float(((PB - PA + 32768) & 0xFFFF) - 32768) * Alpha)) & 0xFFFF;
+				YA = (YA + int(float(((YB - YA + 32768) & 0xFFFF) - 32768) * Alpha)) & 0xFFFF;
+			}
+			View.Pitch = PA;
+			View.Yaw = YA;
+			return;
+		}
+		NewerIdx = Idx;
+	}
+	// Older than all we have: the oldest.
+	if (NewerIdx >= 0) {
+		Pos = IGPlus_SDHistPos[NewerIdx];
+		View.Pitch = IGPlus_SDHistView[NewerIdx] >>> 16;
+		View.Yaw = IGPlus_SDHistView[NewerIdx] & 0xFFFF;
+		Eye = IGPlus_SDHistEye[NewerIdx];
+	}
+}
+
+// The camera for this rendered frame (also used by our pulse beam).
+simulated function IGPlus_SDCameraNow(out vector Pos, out rotator View, out float Eye) {
+	local IGPlus_DemoClock C;
+
+	C = IGPlus_SDGetClock();
+	if (C != none)
+		IGPlus_SDCameraAt(C.IGPlus_DisplayTime(), Pos, View, Eye);
+	else
+		IGPlus_SDCameraAt(1000000.0, Pos, View, Eye);
+}
+
+// Where our shots leave the gun, seen from the camera: the hand the gun is
+// drawn with (the viewer's, hidden is the middle).
+simulated function vector IGPlus_SDMuzzle(vector CamLoc, rotator View, Weapon W) {
+	local vector X, Y, Z, Offset, DrawOffset;
+	local float Hand;
+
+	if (W == none)
+		return CamLoc;
+	Hand = Handedness;
+	Offset = W.default.FireOffset;
+	DrawOffset = W.default.PlayerViewOffset;
+	if (Hand > 1.5) {
+		Offset.Y = 0;
+		DrawOffset.Y = 0;
+	} else {
+		Offset.Y *= Hand;
+		DrawOffset.Y *= Hand;
+	}
+	GetAxes(View, X, Y, Z);
+	return CamLoc + (DrawOffset >> View) + Offset.X * X + Offset.Y * Y + Offset.Z * Z;
+}
+
+// Our new projectiles: the server spawned them ahead along their path (half
+// the ping plus the playout delay ahead of our camera), and the demo only
+// has that copy. Each is drawn (PrePivot, collision unchanged) where it was
+// that much earlier, so it leaves our gun as our client showed it. The delay
+// eases to 0 over IGPLUS_SD_PROJEASE (a mild speed-up near the gun), so
+// impacts, bounces and the smoke and light it leaves line up with it after
+// that.
+// bNetTemporary projectiles (pulse spheres) are simulated by the client alone
+// once spawned, so they get what our client did live with its own copy: the
+// server's one is moved to our gun once and flies on from there (its hits and
+// explosion stay where it is drawn). Not shock balls: a combo explodes where
+// the ball really is.
+simulated function IGPlus_SDGlideOwnProjectiles(vector CamLoc, rotator View) {
+	local Projectile P;
+	local int i, Free, Base, Idx, k;
+	local bool bKnown;
+	local float Speed, Now, T, Alpha, Along, Age, D, NewerT;
+	local vector NewerL;
+	local vector Muzzle, Dir, Drawn;
+	local Actor A;
+
+	Now = Level.TimeSeconds;
+	// Just started following us: what we fired before is left alone.
+	if (IGPlus_SDGlideUpdateTime <= 0 || Now - IGPlus_SDGlideUpdateTime > 0.1)
+		IGPlus_SDFollowStart = Now;
+	IGPlus_SDGlideUpdateTime = Now;
+	Muzzle = IGPlus_SDMuzzle(CamLoc, View, Weapon);
+
+	foreach RadiusActors(class'Projectile', P, 800, CamLoc) {
+		if (P.Instigator != self || P.bDeleteMe || P.Physics == PHYS_None
+			|| ShockProj(P) != none || (P.DrawType != DT_Mesh && P.bNetTemporary == false)
+			|| P.default.LifeSpan <= 0)
+			continue;
+		// Only new ones. Pulse spheres set their own LifeSpan of 2 on clients.
+		Age = P.default.LifeSpan - P.LifeSpan;
+		if (PlasmaSphere(P) != none)
+			Age = 2.0 - P.LifeSpan;
+		if (Age > 0.2 || Age > Now - IGPlus_SDFollowStart)
+			continue;
+		// A flak slug's blast chunks did not leave the gun.
+		if (ST_UTChunk(P) != none && ST_UTChunk(P).IGPlus_bFromSlug)
+			continue;
+		Speed = VSize(P.Velocity);
+		if (Speed < 1)
+			continue;
+		Dir = P.Velocity / Speed;
+		// Only shots on their way out of the gun, at most a quarter second
+		// ahead of it.
+		Along = (P.Location - Muzzle) dot Dir;
+		if (Along <= 0 || Along / Speed > 0.25 || (Dir dot vector(View)) < 0.7)
+			continue;
+		bKnown = false;
+		Free = -1;
+		for (i = 0; i < IGPLUS_SD_PROJ; i++) {
+			if (IGPlus_SDProj[i] == P)
+				bKnown = true;
+			else if (Free < 0 && (IGPlus_SDProj[i] == none || IGPlus_SDProj[i].bDeleteMe))
+				Free = i;
+		}
+		if (bKnown || Free < 0)
+			continue;
+		IGPlus_SDProj[Free] = P;
+		IGPlus_SDProjStart[Free] = Now;
+		IGPlus_SDProjDelay[Free] = Along / Speed;
+		// Its start: back along its own path to the gun. That keeps the
+		// weapon's own offset for this shot (pulse barrels turn, height).
+		IGPlus_SDProjMuzzle[Free] = P.Location - Dir * Along;
+		IGPlus_SDProjHead[Free] = 0;
+		IGPlus_SDProjCount[Free] = 0;
+		IGPlus_SDProjDrawType[Free] = P.DrawType;
+		if (P.bNetTemporary) {
+			// Kept in its slot (delay -1) so it is not moved back again.
+			IGPlus_SDProjDelay[Free] = -1;
+			IGPlus_SDHandOver(P, IGPlus_SDProjMuzzle[Free]);
+		}
+	}
+
+	for (i = 0; i < IGPLUS_SD_PROJ; i++) {
+		P = IGPlus_SDProj[i];
+		if (P == none)
+			continue;
+		if (P.bDeleteMe) {
+			IGPlus_SDEndGlide(i);
+			continue;
+		}
+		// Handed over: flying on its own. Forgotten once it is too far out to
+		// be taken again (more than a quarter second ahead of the gun).
+		if (IGPlus_SDProjDelay[i] < 0) {
+			if (Now - IGPlus_SDProjStart[i] > 0.5)
+				IGPlus_SDProj[i] = none;
+			continue;
+		}
+		Base = i * IGPLUS_SD_PROJHIST;
+		// Its path, at most every 8 ms.
+		Idx = IGPlus_SDProjHead[i] - 1;
+		if (Idx < 0)
+			Idx += IGPLUS_SD_PROJHIST;
+		if (IGPlus_SDProjCount[i] == 0 || Now - IGPlus_SDProjHT[Base + Idx] >= 0.008) {
+			IGPlus_SDProjHT[Base + IGPlus_SDProjHead[i]] = Now;
+			IGPlus_SDProjHL[Base + IGPlus_SDProjHead[i]] = P.Location;
+			IGPlus_SDProjHead[i]++;
+			if (IGPlus_SDProjHead[i] >= IGPLUS_SD_PROJHIST)
+				IGPlus_SDProjHead[i] = 0;
+			IGPlus_SDProjCount[i] = Min(IGPlus_SDProjCount[i] + 1, IGPLUS_SD_PROJHIST);
+		}
+		// It exploded or stopped (a pulse sphere becomes its own explosion):
+		// on its real spot.
+		if (P.DrawType != IGPlus_SDProjDrawType[i] || P.Physics == PHYS_None) {
+			IGPlus_SDEndGlide(i);
+			continue;
+		}
+		// The delay eases out: on its real spot from then on.
+		Age = Now - IGPlus_SDProjStart[i];
+		D = IGPlus_SDProjDelay[i] * (1.0 - Age / IGPLUS_SD_PROJEASE);
+		if (D <= 0) {
+			IGPlus_SDEndGlide(i);
+			continue;
+		}
+
+		T = Now - D;
+		if (T <= IGPlus_SDProjStart[i]) {
+			// Not out yet then: from the gun (where it was a full delay
+			// before we first saw it) to where we first saw it.
+			Alpha = FClamp((T - IGPlus_SDProjStart[i] + IGPlus_SDProjDelay[i]) / IGPlus_SDProjDelay[i], 0.0, 1.0);
+			Drawn = IGPlus_SDProjMuzzle[i] + (IGPlus_SDProjHL[Base] - IGPlus_SDProjMuzzle[i]) * Alpha;
+		} else {
+			// Between two points of its path; the newest is where it is now.
+			Drawn = P.Location;
+			NewerT = Now;
+			NewerL = P.Location;
+			for (k = 0; k < IGPlus_SDProjCount[i]; k++) {
+				Idx = IGPlus_SDProjHead[i] - 1 - k;
+				if (Idx < 0)
+					Idx += IGPLUS_SD_PROJHIST;
+				Drawn = IGPlus_SDProjHL[Base + Idx];
+				if (IGPlus_SDProjHT[Base + Idx] <= T) {
+					Alpha = FClamp((T - IGPlus_SDProjHT[Base + Idx]) / FMax(NewerT - IGPlus_SDProjHT[Base + Idx], 0.0001), 0.0, 1.0);
+					Drawn += (NewerL - Drawn) * Alpha;
+					break;
+				}
+				NewerT = IGPlus_SDProjHT[Base + Idx];
+				NewerL = IGPlus_SDProjHL[Base + Idx];
+			}
+		}
+		P.PrePivot = P.default.PrePivot + Drawn - P.Location;
+		// Its trails (rocket flare, flak glow) follow its real spot each
+		// tick: put them on the drawn one for this frame.
+		foreach P.ChildActors(class'Actor', A)
+			if (A != P && A.Physics == PHYS_Trailer)
+				A.SetLocation(Drawn);
+	}
+}
+
+simulated function IGPlus_SDEndGlide(int i) {
+	local Projectile P;
+
+	P = IGPlus_SDProj[i];
+	if (P != none && P.bDeleteMe == false)
+		P.PrePivot = P.default.PrePivot;
+	IGPlus_SDProj[i] = none;
+}
+
+// Moved to our gun once, the way our client handed its own copy over to the
+// server's: no touching on the way, same speed and direction.
+simulated function IGPlus_SDHandOver(Projectile P, vector Muzzle) {
+	local bool bCA, bBA, bBP, bCW;
+
+	bCA = P.bCollideActors;
+	bBA = P.bBlockActors;
+	bBP = P.bBlockPlayers;
+	bCW = P.bCollideWorld;
+	P.SetCollision(false, false, false);
+	P.bCollideWorld = false;
+	P.SetLocation(Muzzle);
+	P.SetCollision(bCA, bBA, bBP);
+	P.bCollideWorld = bCW;
+}
+
+// Not followed any more (or udemo stopped asking): back on their real spots.
+simulated function IGPlus_SDEndAllGlides() {
+	local int i;
+
+	for (i = 0; i < IGPLUS_SD_PROJ; i++)
+		if (IGPlus_SDProj[i] != none)
+			IGPlus_SDEndGlide(i);
+}
+
+// A pulse beam traced from the followed player's camera hits the others where
+// they are drawn (Player View: where the followed player saw them).
+simulated function IGPlus_SDTraceOthersBegin() {
+	local IGPlus_DemoClock C;
+	local GameReplicationInfo GRI;
+	local PlayerReplicationInfo PRI;
+	local bbPlayer P;
+	local float T;
+	local vector L;
+	local byte bWasHidden;
+	local int i;
+
+	if (Settings == none || Settings.bDemoPlayerView == false)
+		return;
+	C = IGPlus_SDGetClock();
+	GRI = IGPlus_SDGetGRI();
+	if (C == none || GRI == none)
+		return;
+	T = C.IGPlus_DisplayTime() - 0.001 * float(IGPlus_DemoOthersDelayMs);
+	for (i = 0; i < arraycount(GRI.PRIArray); i++) {
+		PRI = GRI.PRIArray[i];
+		if (PRI == none)
+			break;
+		P = bbPlayer(PRI.Owner);
+		if (P == none || P == self || P.IGPlus_SDIsServerDemoProxy() == false || P.bHidden)
+			continue;
+		if (P.IGPlus_SDDisplaced)
+			P.IGPlus_SDRestore();
+		if (P.IGPlus_SDHistAt(T, L, bWasHidden) && bWasHidden == 0)
+			P.IGPlus_SDTraceMove(L);
+	}
+}
+
+simulated function IGPlus_SDTraceOthersEnd() {
+	local GameReplicationInfo GRI;
+	local PlayerReplicationInfo PRI;
+	local bbPlayer P;
+	local int i;
+
+	GRI = IGPlus_SDGetGRI();
+	if (GRI == none)
+		return;
+	for (i = 0; i < arraycount(GRI.PRIArray); i++) {
+		PRI = GRI.PRIArray[i];
+		if (PRI == none)
+			break;
+		P = bbPlayer(PRI.Owner);
+		if (P != none && P.IGPlus_SDTraceMoved)
+			P.IGPlus_SDTraceMoveBack();
+	}
+}
+
+// Moved for a trace only: no touching on the way, collision on while there.
+simulated function IGPlus_SDTraceMove(vector L) {
+	local bool bCA, bBA, bBP, bCW;
+
+	bCA = bCollideActors;
+	bBA = bBlockActors;
+	bBP = bBlockPlayers;
+	bCW = bCollideWorld;
+	IGPlus_SDTraceSaved = Location;
+	SetCollision(false, false, false);
+	bCollideWorld = false;
+	SetLocation(L);
+	SetCollision(bCA, bBA, bBP);
+	bCollideWorld = bCW;
+	IGPlus_SDTraceMoved = true;
+}
+
+simulated function IGPlus_SDTraceMoveBack() {
+	local bool bCA, bBA, bBP, bCW;
+
+	bCA = bCollideActors;
+	bBA = bBlockActors;
+	bBP = bBlockPlayers;
+	bCW = bCollideWorld;
+	SetCollision(false, false, false);
+	bCollideWorld = false;
+	SetLocation(IGPlus_SDTraceSaved);
+	SetCollision(bCA, bBA, bBP);
+	bCollideWorld = bCW;
+	IGPlus_SDTraceMoved = false;
+}
+
+// Where we are drawn for the player the viewer follows (Player View draws
+// us where they saw us). False if we are drawn at our own Location.
+simulated function bool IGPlus_SDDrawnLocation(out vector L) {
+	local PlayerPawn V;
+	local bbPlayer F;
+	local IGPlus_DemoClock C;
+	local byte bWasHidden;
+
+	V = IGPlus_SDGetViewer();
+	if (V == none)
+		return false;
+	F = bbPlayer(V.ViewTarget);
+	if (F == none || F == self || F.IGPlus_SDIsServerDemoProxy() == false
+		|| F.Settings == none || F.Settings.bDemoPlayerView == false)
+		return false;
+	C = IGPlus_SDGetClock();
+	if (C == none)
+		return false;
+	return IGPlus_SDHistAt(C.IGPlus_DisplayTime() - 0.001 * float(F.IGPlus_DemoOthersDelayMs), L, bWasHidden);
+}
+
+// udemo following us: the camera. udemo reads Location and EyeHeight after
+// this, and copies DesiredFOV to the viewer.
+simulated function IGPlus_SDCalcView(out rotator CameraRotation) {
+	local vector TrueLoc, Pos;
+	local rotator View;
+	local float Eye;
+
+	if (IGPlus_SDIsServerDemoProxy() == false)
+		return;
+
+	IGPlus_SDCameraNow(Pos, View, Eye);
+	CameraRotation = View;
+
+	TrueLoc = Location;
+	if (IGPlus_SDDisplaced)
+		TrueLoc = IGPlus_SDTrueLoc;
+	if (VSize(Pos - TrueLoc) < 256)
+		IGPlus_SDDisplace(Pos, false);
+
+	EyeHeight = Eye;
+	// Zoom (udemo copies it to the viewer). Not the player's normal FOV:
+	// DesiredFOV != DefaultFOV here means zoomed to stock code (the weapon
+	// hides, the sniper draws its scope).
+	if (IGPlus_DemoZoomed && IGPlus_DemoFOV > 0)
+		DesiredFOV = IGPlus_DemoFOV;
+	else
+		DesiredFOV = DefaultFOV;
+
+	IGPlus_SDGlideOwnProjectiles(Pos + Eye * vect(0,0,1), View);
+
+	if (Settings != none && Settings.bDemoPlayerView)
+		IGPlus_SDDisplaceOthers();
+	else if (IGPlus_SDDisplacedOthers)
+		IGPlus_SDRestoreOthers();
+}
+
+// Before our weapon draws: muzzle flash from the server's FlashCount.
+simulated function IGPlus_SDBeforeOverlays() {
+	local Weapon W;
+
+	W = Weapon;
+	if (W == none)
+		return;
+	if (W != IGPlus_SDFlashWeapon) {
+		IGPlus_SDFlashWeapon = W;
+		IGPlus_SDLastFlashCount = W.FlashCount;
+	} else if (W.FlashCount != IGPlus_SDLastFlashCount) {
+		IGPlus_SDLastFlashCount = W.FlashCount;
+		W.bMuzzleFlash = 1;
+		W.bSetFlashTime = false;
+	}
+	if (W.bSteadyFlash3rd) {
+		W.bMuzzleFlash = 1;
+		W.bSetFlashTime = false;
+	}
+}
+
+// After the world and our weapon are drawn (first person): hit feedback,
+// then everyone back.
+simulated function IGPlus_SDAfterOverlays(Canvas C) {
+	local float DeltaTime;
+
+	DeltaTime = FClamp((Level.TimeSeconds - IGPlus_SDLastOverlayTime) / FMax(Level.TimeDilation, 0.01), 0.0, 0.1);
+	IGPlus_SDLastOverlayTime = Level.TimeSeconds;
+	if (Settings != none) {
+		class'bbPlayerStatics'.static.DrawHitMarker(C, Settings, DeltaTime);
+		class'bbPlayerStatics'.static.DrawDamageNumbers(C, Settings, DeltaTime);
+	}
+
+	if (IGPlus_SDDisplacedOthers)
+		IGPlus_SDRestoreOthers();
+	IGPlus_SDRestore();
+}
+
+// A personal message to us (hit feedback), for a viewer following us.
+simulated function IGPlus_SDPersonalMessage(
+	class<LocalMessage> Message,
+	int Sw,
+	PlayerReplicationInfo RelatedPRI_1,
+	PlayerReplicationInfo RelatedPRI_2,
+	Object OptionalObject
+) {
+	local PlayerPawn V;
+	local PlayerPawn Me;
+
+	V = IGPlus_SDFollowingViewer();
+	if (V == none || Message == none)
+		return;
+
+	if (Message == class'IGPlus_HitFeedbackMessage') {
+		// Drawn in our RenderOverlays, with the viewer's hit marker settings.
+		if (Settings == none || RelatedPRI_1 == none || RelatedPRI_2 == none
+			|| RelatedPRI_1 == RelatedPRI_2 || RelatedPRI_2 != PlayerReplicationInfo)
+			return;
+		Me = self;
+		if (GameReplicationInfo == none)
+			Me = V;
+		if (Me.GameReplicationInfo == none)
+			return;
+		class'bbPlayerStatics'.static.PlayHitMarker(Me, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
+		if (ShowDamageNumberMode == 2 || ShowDamageNumberMode == 3)
+			class'bbPlayerStatics'.static.PlayDamageMarker(Me, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team, RelatedPRI_1);
+		class'bbPlayerStatics'.static.PlayHitSound(Me, Settings, Abs(Sw), RelatedPRI_2.Team, RelatedPRI_1.Team);
+		return;
+	}
+
+	V.ReceiveLocalizedMessage(Message, Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
+}
+
+// Server demo record of WeaponEffect.Send (rocket scorch marks).
+simulated function IGPlus_DemoWeaponEffect(
+	class<WeaponEffect> Effect,
+	PlayerReplicationInfo SourcePRI,
+	vector SourceLocation,
+	vector SourceOffset,
+	Actor Target,
+	vector TargetLocation,
+	vector TargetOffset,
+	vector HitNormal
+) {
+	if (Role == ROLE_Authority || Level.NetMode != NM_Client || Effect == none)
+		return;
+	Effect.static.Play(
+		self,
+		Settings,
+		SourcePRI,
+		SourceLocation,
+		SourceOffset,
+		Target,
+		TargetLocation,
+		TargetOffset,
+		Normal(HitNormal / 32767));
+}
+
 simulated function bool IGPlus_ShowRealModelsInDemo() {
 	return IGPlus_InDemoPlayback() && IGPlus_IsDemoPlayback && Settings != none && Settings.bDemoShowRealModels;
 }
@@ -15907,6 +17115,11 @@ simulated function IGPlus_DemoRestoreRealModel() {
 
 	PRI = bbPlayerReplicationInfo(PlayerReplicationInfo);
 	if (PRI == none || PRI.SkinName == "")
+		return;
+
+	// No mesh: the server hid this player (waiting or spectating in warmup,
+	// PlayerWaiting sets Mesh None). Giving it one back drew a body there.
+	if (Mesh == none)
 		return;
 
 	if (Mesh != default.Mesh)
@@ -16464,6 +17677,36 @@ exec function ShowOwnBeam() {
 function ClientShake(vector shake) {
 	if (Settings.bAllowWeaponShake)
 		super.ClientShake(shake);
+}
+
+// Server demo playback: the server's personal calls to this player are in the
+// demo. Simulated so they run there, and passed to a viewer following us.
+simulated function ClientFlash(float Scale, vector Fog) {
+	local PlayerPawn V;
+
+	if (Role == ROLE_SimulatedProxy) {
+		if (IGPlus_SDIsServerDemoProxy()) {
+			V = IGPlus_SDFollowingViewer();
+			if (V != none)
+				V.ClientFlash(Scale, Fog);
+		}
+		return;
+	}
+	super.ClientFlash(Scale, Fog);
+}
+
+simulated function ClientInstantFlash(float Scale, vector Fog) {
+	local PlayerPawn V;
+
+	if (Role == ROLE_SimulatedProxy) {
+		if (IGPlus_SDIsServerDemoProxy()) {
+			V = IGPlus_SDFollowingViewer();
+			if (V != none)
+				V.ClientInstantFlash(Scale, Fog);
+		}
+		return;
+	}
+	super.ClientInstantFlash(Scale, Fog);
 }
 
 function string GetReadyMessage() {

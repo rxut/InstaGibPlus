@@ -138,6 +138,10 @@ function PostBeginPlay()
 
 	Super.PostBeginPlay();
 
+	// Server time for server demos (bbPlayer playback history).
+	if (Level.NetMode == NM_DedicatedServer || Level.NetMode == NM_ListenServer)
+		Spawn(class'IGPlus_DemoClock');
+
 	InitializeSettings();
 
 	VersionInfoClass = class<Info>(DynamicLoadObject(class'StringUtils'.static.GetPackage()$".VersionInfo", class'class', true));

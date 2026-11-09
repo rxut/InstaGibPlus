@@ -21,6 +21,7 @@ function AddChunk(ST_UTChunk Chunk)
 		return;				// If it for some reason failed to spawn.
 	Chunk.Chunkie = Self;
 	Chunk.ChunkIndex = ChunkCount++;
+	Chunk.IGPlus_bFromSlug = IGPlus_bSlugChunks;
 	Chunk.LifeSpan = WImp.WeaponSettings.FlakChunkLifespan;
 	Chunk.RandomSpread = RandomSpread;
 	if (IGPlus_bLiftAim && bbP != None)
