@@ -317,6 +317,10 @@ var float IGPlus_SDLastOverlayTime;
 var PlayerPawn IGPlus_SDViewer;
 var float IGPlus_SDViewerSearchTime;
 var IGPlus_DemoClock IGPlus_SDClock;
+// IGPlus_Assets repaired our class's broken model before our
+// PlayerReplicationInfo arrived: we get it once we know we're not hidden.
+var bool IGPlus_MeshRepairPending;
+var Mesh IGPlus_MeshRepairOld;
 var float IGPlus_SDClockSearchTime;
 
 // ConsoleCommand/INT Reader/Key+Alias Handling
@@ -1449,6 +1453,10 @@ function float GetFRandValues(int Index)
 simulated function InitSettings() {
 	local bbPlayer P;
 	local bbCHSpectator S;
+
+	// Assets references the engine may have loaded broken (IGPlus_Assets).
+	if (Level.NetMode != NM_DedicatedServer)
+		class'IGPlus_Assets'.static.RepairDefaults(self);
 
 	if (Settings != none) return;
 
@@ -11848,13 +11856,17 @@ function SetForcedMesh(PlayerReplicationInfo PRI, int Skin) {
 
 	if (Skin >= 0 && Skin <= 17) {
 		if (PRI.bIsFemale == IsForcedSkinFemale(Skin)) {
-			NewMesh = class'IGPlus_ModelImport'.default.DefaultMesh[Skin];
+			NewMesh = class'IGPlus_Assets'.static.Msh(class'IGPlus_ModelImport'.default.DefaultMesh[Skin], class'IGPlus_Assets'.static.ForcedMeshName(Skin, false));
 		} else {
-			NewMesh = class'IGPlus_ModelImport'.default.RateCorrectedMesh[Skin];
+			NewMesh = class'IGPlus_Assets'.static.Msh(class'IGPlus_ModelImport'.default.RateCorrectedMesh[Skin], class'IGPlus_Assets'.static.ForcedMeshName(Skin, true));
 		}
 	} else {
 		NewMesh = PRI.Owner.default.Mesh;
 	}
+
+	// Never no model (a broken default): keep what the player has.
+	if (NewMesh == none)
+		return;
 
 	if (PRI.Owner.Mesh != NewMesh)
 		PRI.Owner.Mesh = NewMesh;
@@ -12535,6 +12547,14 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 // This event is only executed on Pawns with Role=ROLE_SimulatedProxy
 // PlayerTick is used if Role=ROLE_AutonomousProxy or ROLE_Authority
 simulated event Tick(float DeltaTime) {
+	if (IGPlus_MeshRepairPending && PlayerReplicationInfo != none) {
+		IGPlus_MeshRepairPending = false;
+		if (Mesh == IGPlus_MeshRepairOld && default.Mesh != none
+			&& PlayerReplicationInfo.bIsSpectator == false && PlayerReplicationInfo.bWaitingPlayer == false)
+			Mesh = default.Mesh;
+		IGPlus_MeshRepairOld = none;
+	}
+
 	if (IGPlus_SDIsServerDemoProxy())
 		IGPlus_SDPlaybackTick(DeltaTime);
 
@@ -13674,7 +13694,7 @@ simulated function xxDrawLogo(canvas zzC, float zzx, float zzY, float zzFadeValu
 	zzC.Style = ERenderStyle.STY_Translucent;
 	zzC.DrawColor = ChallengeHud(MyHud).WhiteColor * zzFadeValue;
 	zzC.SetPos(zzx,zzY);
-	zzC.DrawIcon(texture'NewNetLogo',1.0);
+	zzC.DrawIcon(class'IGPlus_Assets'.static.Tex(texture'NewNetLogo', "NewNetLogo"),1.0);
 	zzC.DrawColor = ChallengeHud(MyHud).CyanColor * zzFadeValue;
 	zzC.SetPos(zzx+70,zzY+8);
 	zzC.Font = ChallengeHud(MyHud).MyFonts.GetBigFont(zzC.ClipX);
@@ -17122,7 +17142,7 @@ simulated function IGPlus_DemoRestoreRealModel() {
 	if (Mesh == none)
 		return;
 
-	if (Mesh != default.Mesh)
+	if (default.Mesh != none && Mesh != default.Mesh)
 		Mesh = default.Mesh;
 
 	Key = PRI.SkinName$"/"$PRI.FaceName$"/"$PRI.Team;

@@ -87,7 +87,7 @@ static function DrawTime(ChallengeHUD H, Canvas C) {
 	}
 
 	C.SetPos(X,Y);
-	C.DrawTile(Texture'PureTimeBG', 148*H.Scale + XL * H.Scale, 64*H.Scale, 0, 0, 128.0, 64.0);
+	C.DrawTile(class'IGPlus_Assets'.static.Tex(Texture'PureTimeBG', "PureTimeBG"), 148*H.Scale + XL * H.Scale, 64*H.Scale, 0, 0, 128.0, 64.0);
 	C.Style = H.Style;
 	C.DrawColor = H.WhiteColor;
 

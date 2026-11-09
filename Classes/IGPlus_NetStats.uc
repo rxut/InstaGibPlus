@@ -37,7 +37,7 @@ function DrawBar(ScriptedTexture T, float Y, float YL, int ColorIndex) {
 	if (Y >= T.VSize)
 		return;
 	YL = FClamp(FMin(YL, T.VSize - Y), 0, T.VSize);
-	T.DrawTile(T.USize - 2, Y, 1, YL, ColorIndex, 0, 1, 1, Texture'NetStatsBase', false);
+	T.DrawTile(T.USize - 2, Y, 1, YL, ColorIndex, 0, 1, 1, class'IGPlus_Assets'.static.Tex(Texture'NetStatsBase', "NetStatsBase"), false);
 }
 
 function RenderTexture(ScriptedTexture T) {

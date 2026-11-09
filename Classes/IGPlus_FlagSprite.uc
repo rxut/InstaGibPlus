@@ -3,23 +3,23 @@ class IGPlus_FlagSprite extends Actor;
 simulated function ConfigureForTeam(byte Team) {
 	switch(Team) {
 		case 0:
-			Texture = Texture'FlagRed';
+			Texture = class'IGPlus_Assets'.static.Tex(Texture'FlagRed', "FlagRed");
 			break;
 
 		case 1:
-			Texture = Texture'FlagBlue';
+			Texture = class'IGPlus_Assets'.static.Tex(Texture'FlagBlue', "FlagBlue");
 			break;
 
 		case 2:
-			Texture = Texture'FlagGreen';
+			Texture = class'IGPlus_Assets'.static.Tex(Texture'FlagGreen', "FlagGreen");
 			break;
 
 		case 3:
-			Texture = Texture'FlagGold';
+			Texture = class'IGPlus_Assets'.static.Tex(Texture'FlagGold', "FlagGold");
 			break;
 
 		default:
-			Texture = Texture'Flag';
+			Texture = class'IGPlus_Assets'.static.Tex(Texture'Flag', "Flag");
 			break;
 	}
 }

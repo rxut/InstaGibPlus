@@ -534,7 +534,7 @@ function DrawCrosshairLayer(Canvas C, IGPlus_CrosshairLayersListItem L) {
 
 	if (L.Tex == none) {
 		if (L.Texture == "")
-			L.Tex = Texture'CrossHairBase';
+			L.Tex = class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase");
 		else
 			L.Tex = Texture(DynamicLoadObject(L.Texture, class'Texture'));
 	}
@@ -592,8 +592,8 @@ function Paint(Canvas C, float X, float Y) {
 	C.DrawColor.G = C.DrawColor.G ^ 0xFF;
 	C.DrawColor.B = C.DrawColor.B ^ 0xFF;
 	C.DrawColor.A = 255;
-	DrawStretchedTexture(C, 127, 0, 2, 256, Texture'CrossHairBase');
-	DrawStretchedTexture(C, 0, 127, 256, 2, Texture'CrossHairBase');
+	DrawStretchedTexture(C, 127, 0, 2, 256, class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase"));
+	DrawStretchedTexture(C, 0, 127, 256, 2, class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase"));
 
 	DrawCrosshair(C);
 

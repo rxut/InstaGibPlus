@@ -163,6 +163,10 @@ simulated function InitSettings() {
 	local bbPlayer P;
 	local bbCHSpectator S;
 
+	// Assets references the engine may have loaded broken (IGPlus_Assets).
+	if (Level.NetMode != NM_DedicatedServer)
+		class'IGPlus_Assets'.static.RepairDefaults(self);
+
 	if (Settings != none) return;
 
 	foreach AllActors(class'bbPlayer', P)

@@ -201,7 +201,7 @@ simulated function DrawStatus(Canvas Canvas)
 				Y = 192 * Scale;
 			}
 			Canvas.SetPos(X,Y);
-			Canvas.DrawTile(Texture'PureBoots', 148*Scale, 64*Scale, 0, 0, 128.0, 64.0);
+			Canvas.DrawTile(class'IGPlus_Assets'.static.Tex(Texture'PureBoots', "PureBoots"), 148*Scale, 64*Scale, 0, 0, 128.0, 64.0);
 			Canvas.DrawColor = WhiteColor;
 			DrawBigNum(Canvas, BootCharges, X + 14 * Scale, Y + 16 * Scale, 1);
 		}

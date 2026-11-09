@@ -191,7 +191,7 @@ simulated function RenderKillFeedLine(
 	C.DrawColor.A = int(Opacity * 48);
 	C.SetPos(X, Y);
 	C.DrawTile(
-		Texture'CrossHairBase',
+		class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase"),
 		LineLength,
 		YL + 4*Scale,
 		0,
@@ -304,9 +304,30 @@ function byte MapWeaponClassToIndex(class<Weapon> W) {
 
 simulated function Texture MapIndexToIcon(byte Index) {
 	if (Index == INVALID_WEAPON_ICON_INDEX)
-		return Texture'KF_General';
+		return class'IGPlus_Assets'.static.Tex(Texture'KF_General', "KF_General");
 
-	return WeaponIconMap[Index].Icon;
+	return class'IGPlus_Assets'.static.Tex(WeaponIconMap[Index].Icon, IconName(Index));
+}
+
+// The name of each WeaponIconMap icon (IGPlus_Assets: when the engine loaded
+// the defaults broken).
+simulated function string IconName(byte Index) {
+	switch (Index) {
+		case 0: return "KF_ChainSaw";
+		case 1: return "KF_ImpactHammer";
+		case 2: return "KF_Translocator";
+		case 3: return "KF_Enforcer";
+		case 4: return "KF_BioRifle";
+		case 5: return "KF_ShockRifle";
+		case 6: return "KF_PulseGun";
+		case 7: return "KF_Ripper";
+		case 8: return "KF_Minigun";
+		case 9: return "KF_FlakCannon";
+		case 10: return "KF_RocketLauncher";
+		case 11: return "KF_SniperRifle";
+		case 12: return "KF_WarheadLauncher";
+	}
+	return "KF_General";
 }
 
 function AddKillFeedLine(

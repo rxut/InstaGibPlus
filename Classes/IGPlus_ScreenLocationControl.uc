@@ -126,7 +126,7 @@ function Paint(Canvas C, float X, float Y) {
 	C.DrawColor.R = 0;
 	C.DrawColor.G = 0;
 	C.DrawColor.B = 0;
-	DrawStretchedTexture(C, ActiveRegion.X, ActiveRegion.Y, ActiveRegion.W, ActiveRegion.H, Texture'CrossHairBase');
+	DrawStretchedTexture(C, ActiveRegion.X, ActiveRegion.Y, ActiveRegion.W, ActiveRegion.H, class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase"));
 
 	C.DrawColor.R = 255;
 	C.DrawColor.G = 255;
@@ -137,7 +137,7 @@ function Paint(Canvas C, float X, float Y) {
 		ActiveRegion.Y+LocationY*(ActiveRegion.H-2),
 		2,
 		2,
-		Texture'CrossHairBase'
+		class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase")
 	);
 
 	class'CanvasUtils'.static.RestoreCanvas(C);
