@@ -20,7 +20,7 @@ simulated function PostNetBeginPlay()
 	if (GetWeaponSettings().BioCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);
-		if (In != none && Viewport(In.Player) != none)
+		if (In != none && Viewport(In.Player) != none && (bbPlayer(In) == none || bbPlayer(In).IGPlus_InDemoPlayback() == false))
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {

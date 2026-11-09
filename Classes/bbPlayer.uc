@@ -118,6 +118,15 @@ var bool IGPlus_DetTranslocator;        // server setting, replicated to the own
 var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
 var float IGPlus_PredComboTS;           // client: our last drawn shock combo (IGPlus_OwnerComboRing)
 var vector IGPlus_PredComboLoc;
+// Client demos: what our client draws itself before the server's copy
+// arrives (our own projectiles) is not in a client demo. Those copies are
+// RemoteRole None, and the engine records an actor a client spawned with
+// only its class and spawn spot. IGPlus_DemoTrack sends a copy of each into
+// the demo: playback spawns it, puts it where ours was every frame and
+// removes it when ours goes.
+var Actor IGPlus_DemoCopy[32];          // recording client: ours; playback: the copies
+var byte IGPlus_DemoCopyOn[32];         // recording client: slot in use
+var int IGPlus_DemoCopies;              // recording client: slots in use
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
 // A shock beam's verdict on our own deterministic disc, as our screen had
 // it: 0 none, 1 missed, 2 hit. The client sets it on the shot and the
@@ -877,7 +886,12 @@ replication
 		xxReplicateVRToDemo;
 
 	reliable if (bClientDemoRecording && !bClientDemoNetFunc)
-		xxClientDemoFix;
+		xxClientDemoFix,
+		IGPlus_DemoCopyBegin,
+		IGPlus_DemoCopyEnd,
+		IGPlus_DemoCopySound;
+	unreliable if (bClientDemoRecording && !bClientDemoNetFunc)
+		IGPlus_DemoCopyMove;
 
 	reliable if ( (!bDemoRecording || (bClientDemoRecording && bClientDemoNetFunc) || (Level.NetMode==NM_Standalone)) && Role == ROLE_Authority )
 		ReceiveWeaponEffect;
@@ -11469,6 +11483,12 @@ function xxPlayerTickEvents(float DeltaTime)
 	if (PureLevel != None)	// Why would this be None?!
 		zzbDemoRecording = PureLevel.zzDemoRecDriver != None;
 
+	// Here: our own player gets PlayerTick, never Tick. And before the demo
+	// records this frame, so a copy ends in the same demo frame as the
+	// server's copy that replaced it arrives, as on our screen.
+	if (IGPlus_DemoCopies > 0)
+		IGPlus_DemoCopiesTick();
+
 	if (!bDemoStarted && zzbGameStarted && (zzbForceDemo || Settings.bAutoDemo && (DeathMatchPlus(Level.Game) == none || DeathMatchPlus(Level.Game).CountDown < 1)))
 		xxClientDemoRec();
 	if (bDemoStarted && (zzbForceDemo || Settings.bAutoDemo) && GameReplicationInfo.GameEndedComments != "") {
@@ -15949,6 +15969,137 @@ simulated function xxClientDemoFix(Actor zzA, class<Actor> C, Vector L, optional
         if(NumPuffs > 0)
             ShockBeam(zzA).NumPuffs = NumPuffs;
     }
+}
+
+// Recording a client demo: put our own client-side copy A in it
+// (IGPlus_DemoCopy). Call once A is set up.
+simulated function IGPlus_DemoTrack(Actor A) {
+	local int i;
+
+	if (A == None || zzbDemoRecording == false || Level.NetMode != NM_Client)
+		return;
+	for (i = 0; i < arraycount(IGPlus_DemoCopy); i++) {
+		if (IGPlus_DemoCopyOn[i] != 0)
+			continue;
+		IGPlus_DemoCopy[i] = A;
+		IGPlus_DemoCopyOn[i] = 1;
+		IGPlus_DemoCopies++;
+		IGPlus_DemoCopyBegin(i, A.Class, A.Location, A.Rotation, A.Velocity, A.DrawScale);
+		return;
+	}
+	// ponytail: 32 in flight at once, more than any weapon fires in a round trip
+}
+
+// Recording: a sound our tracked copy A played. The demo has no channel for
+// A, so the sound would be lost.
+simulated function IGPlus_DemoTrackSound(Actor A, sound S, float Volume, float Radius, float Pitch) {
+	local int i;
+
+	for (i = 0; i < arraycount(IGPlus_DemoCopy); i++)
+		if (IGPlus_DemoCopyOn[i] != 0 && IGPlus_DemoCopy[i] == A) {
+			IGPlus_DemoCopySound(i, S, Volume, Radius, Pitch);
+			return;
+		}
+}
+
+// Recording: every frame, where each of ours is now, or that it is gone.
+simulated function IGPlus_DemoCopiesTick() {
+	local int i;
+	local Actor A;
+
+	for (i = 0; i < arraycount(IGPlus_DemoCopy); i++) {
+		if (IGPlus_DemoCopyOn[i] == 0)
+			continue;
+		A = IGPlus_DemoCopy[i];
+		if (A == None || A.bDeleteMe || zzbDemoRecording == false) {
+			IGPlus_DemoCopy[i] = None;
+			IGPlus_DemoCopyOn[i] = 0;
+			IGPlus_DemoCopies--;
+			if (zzbDemoRecording)
+				IGPlus_DemoCopyEnd(i);
+		} else {
+			IGPlus_DemoCopyMove(i, A.Location, A.Velocity, A.Rotation, A.bHidden);
+		}
+	}
+}
+
+// The IGPlus_DemoCopy* calls below go into the demo and also run on the
+// recording client, where they must do nothing. In playback the recorded
+// player has no viewport, except under udemo, which gives it a stand-in one.
+simulated function bool IGPlus_DemoCopySlot(int Slot) {
+	return Level.NetMode == NM_Client
+		&& (IGPlus_InDemoPlayback() || Viewport(Player) == None)
+		&& Slot >= 0 && Slot < arraycount(IGPlus_DemoCopy);
+}
+
+// Playback: a copy that only shows, flying where ours was until removed.
+// Nothing touches it, so none of its hit code runs.
+simulated function IGPlus_DemoCopyBegin(int Slot, class<Actor> C, vector Loc, rotator Rot, vector Vel, float DS) {
+	local Actor A;
+
+	if (IGPlus_DemoCopySlot(Slot) == false || C == None)
+		return;
+	IGPlus_DemoCopyKill(IGPlus_DemoCopy[Slot]);
+	A = Spawn(C,,, Loc, Rot);
+	IGPlus_DemoCopy[Slot] = A;
+	if (A == None)
+		return;
+	A.RemoteRole = ROLE_None;
+	A.SetPropertyText("bClientVisualOnly", "True");
+	A.SetCollision(false, false, false);
+	A.bCollideWorld = false;
+	// Only where ours was, frame by frame: on its own it ran ahead between
+	// demo frames and was pulled back at each one (jitter).
+	A.SetPhysics(PHYS_None);
+	A.Velocity = Vel;
+	A.DrawScale = DS;
+}
+
+simulated function IGPlus_DemoCopyMove(int Slot, vector Loc, vector Vel, rotator Rot, bool bHide) {
+	local Actor A;
+
+	if (IGPlus_DemoCopySlot(Slot) == false)
+		return;
+	A = IGPlus_DemoCopy[Slot];
+	if (A == None || A.bDeleteMe)
+		return;
+	A.SetLocation(Loc);
+	A.Velocity = Vel;
+	A.SetRotation(Rot);
+	if (A.bHidden != bHide) {
+		A.bHidden = bHide;
+		if (bHide)
+			A.LightType = LT_None;
+		else
+			A.LightType = A.default.LightType;
+	}
+}
+
+simulated function IGPlus_DemoCopyEnd(int Slot) {
+	if (IGPlus_DemoCopySlot(Slot) == false)
+		return;
+	IGPlus_DemoCopyKill(IGPlus_DemoCopy[Slot]);
+	IGPlus_DemoCopy[Slot] = None;
+}
+
+// Playback: remove a copy with what it spawned on itself (a flak chunk's
+// glow trail is its own actor and would stay behind, glowing like a hit),
+// as the live hand-over does.
+simulated function IGPlus_DemoCopyKill(Actor A) {
+	local Actor E;
+
+	if (A == None || A.bDeleteMe)
+		return;
+	// ChildActors lists A itself too: destroying A first would orphan the rest.
+	foreach A.ChildActors(class'Actor', E)
+		if (E != A)
+			E.Destroy();
+	A.Destroy();
+}
+
+simulated function IGPlus_DemoCopySound(int Slot, sound S, float Volume, float Radius, float Pitch) {
+	if (IGPlus_DemoCopySlot(Slot) && IGPlus_DemoCopy[Slot] != None)
+		IGPlus_DemoCopy[Slot].PlaySound(S,, Volume,, Radius, Pitch);
 }
 
 function string xxFindClanTags() {

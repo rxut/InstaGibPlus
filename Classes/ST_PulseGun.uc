@@ -157,6 +157,8 @@ simulated function SpawnClientDummyProjectile() {
 	NewDummy.Velocity = vector(PawnOwner.ViewRotation) * NewDummy.Speed;
 
 	LocalPlasmaSphereDummies[Slot] = NewDummy;
+	if (bbPlayer(PawnOwner) != None)
+		bbPlayer(PawnOwner).IGPlus_DemoTrack(NewDummy);
 }
 
 simulated function PlayFiring()

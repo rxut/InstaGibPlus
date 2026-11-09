@@ -91,12 +91,12 @@ simulated function PostNetBeginPlay() {
 
 	if (bbP != None && bbP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations) {
 		In = PlayerPawn(Instigator);
-		if (In != none && Viewport(In.Player) != none)
+		if (In != none && Viewport(In.Player) != none && (bbPlayer(In) == none || bbPlayer(In).IGPlus_InDemoPlayback() == false))
 			InstigatingPlayer = In;
 		if (InstigatingPlayer != none) {
 			// Own timeline only for a ball that came over the network: offline
 			// and on a listen host this is the real ball.
-			if (bbP.IGPlus_PredictiveShockCombos() && bbP.zzbDemoPlayback == false
+			if (bbP.IGPlus_PredictiveShockCombos() && bbP.IGPlus_InDemoPlayback() == false
 				&& Level.NetMode == NM_Client
 			) {
 				IGPlus_TakeOverLocalBall();
@@ -165,7 +165,7 @@ simulated event Tick(float Delta) {
 
 	// The old client-side animation (Predictive Shock Combos off).
 	if (IGPlus_bOwnTimeline == false) {
-		if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+		if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).IGPlus_InDemoPlayback())
 			return;
 		// Catch up to server
 		if (OldLocation == Location)
@@ -220,6 +220,11 @@ simulated function IGPlus_PredictCombo() {
 	IGPlus_ComboTS = Level.TimeSeconds;
 	IGPlus_HideBall();
 	if (bbPlayer(Instigator) != None) {
+		// A client demo records this ring without its rotation, and the
+		// sound not at all when this is our own copy of the ball (its demo
+		// copy plays it, IGPlus_DemoTrack).
+		bbPlayer(Instigator).xxClientDemoFix(None, class'ut_ComboRing', Location,,, Instigator.ViewRotation);
+		bbPlayer(Instigator).IGPlus_DemoTrackSound(self, ExploSound, 20.0, 2000, 0.6);
 		bbPlayer(Instigator).IGPlus_PredComboTS = Level.TimeSeconds;
 		bbPlayer(Instigator).IGPlus_PredComboLoc = Location;
 		bbPlayer(Instigator).ClientDebugMessage("Shock combo: drawn on the beam's frame");

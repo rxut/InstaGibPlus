@@ -417,6 +417,8 @@ simulated function SpawnClientDummyBioGel()
 	// Sticks where it hits, as the server's will: the server's takes over
 	// there (ST_UT_BioGel).
 	LocalBioGelDummy.SetCollision(false, false, false);
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).IGPlus_DemoTrack(LocalBioGelDummy);
 }
 
 simulated function bool ClientAltFire(float Value)
@@ -472,6 +474,8 @@ simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
 		LocalBioGlobDummy.bClientVisualOnly = true;
 		LocalBioGlobDummy.bCollideWorld = false;
 		LocalBioGlobDummy.SetCollision(false, false, false);
+		if (bbPlayer(Owner) != None)
+			bbPlayer(Owner).IGPlus_DemoTrack(LocalBioGlobDummy);
 	}
 }
 

@@ -625,6 +625,8 @@ simulated function ClientSpawnAltProjectileEffects(
 		}
 		if (bbP != None && bbP.bDrawDebugData)
 			bbP.ClientDebugMessage("Shock ball (client) from "$class'ST_ShockProj'.static.IGPlus_Vec(Start)$" aim "$(AimRot.Pitch & 65535)$","$(AimRot.Yaw & 65535));
+		if (bbP != None)
+			bbP.IGPlus_DemoTrack(LocalDummy);
 	}
 }
 

@@ -21,11 +21,28 @@ simulated function PostBeginPlay() {
 
 simulated function PostNetBeginPlay() {
 	local bbPlayer P;
+	local UT_ComboRing R;
 
 	if (Level.NetMode != NM_Client)
 		return; // PostBeginPlay did it
 	P = bbPlayer(Owner);
-	if (P != None && Viewport(P.Player) != None) {
+	if (P != None && P.Role == ROLE_AutonomousProxy && P.IGPlus_InDemoPlayback()) {
+		// The owner's own demo (udemo gives the recorded owner a stand-in
+		// viewport, so test this first). Only the player who recorded the
+		// demo plays back as AutonomousProxy: other players' rings, and all
+		// rings in a server demo, are drawn as recorded. The client's own ring,
+		// if it drew one, is in the demo: drop this one like the client did.
+		// Else the sound below was played before the demo had this ring, so
+		// play it.
+		if (IGPlus_OwnerShift != vect(0,0,0))
+			SetLocation(Location + IGPlus_OwnerShift);
+		foreach RadiusActors(class'UT_ComboRing', R, 64.0)
+			if (R != self && IGPlus_OwnerComboRing(R) == None) {
+				Destroy();
+				return;
+			}
+		PlaySound(class'ShockProj'.default.ExploSound,,20.0,,2000,0.6);
+	} else if (P != None && Viewport(P.Player) != None) {
 		if (IGPlus_OwnerShift != vect(0,0,0))
 			SetLocation(Location + IGPlus_OwnerShift);
 		if (P.IGPlus_PredComboTS > 0.0

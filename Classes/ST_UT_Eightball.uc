@@ -1296,6 +1296,8 @@ simulated function SpawnClientSideRockets(int NumRockets, optional bool bNoVisua
 			r.bCollideWorld = true; 
 			r.SetCollision(true, false, false);
 			r.LifeSpan = PawnOwner.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+			if (bbPlayer(PawnOwner) != None)
+				bbPlayer(PawnOwner).IGPlus_DemoTrack(r);
 		}
 
 		Angle += 1.04719755;

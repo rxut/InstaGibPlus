@@ -422,6 +422,7 @@ simulated function SpawnClientSideRazorAt(bool bAlt, rotator ShotView, vector Sh
 	Razor.RemoteRole = ROLE_None;
 	Razor.SetCollision(false, false, false);
 	Razor.LifeSpan = bbP.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+	bbP.IGPlus_DemoTrack(Razor);
 }
 
 state Idle

@@ -563,6 +563,8 @@ simulated function SpawnClientChunk(class<ST_UTChunk> ChunkClass, vector Pos, ro
 	C.ChunkIndex = Index;
 	C.bCollideWorld = true;
 	C.SetCollision(false, false, false);
+	if (bbPlayer(Owner) != None)
+		bbPlayer(Owner).IGPlus_DemoTrack(C);
 }
 
 simulated function SpawnClientSideChunks() {
@@ -712,6 +714,7 @@ simulated function SpawnClientSideSlug()
         LocalSlugDummy.SetCollision(false, false, false);
         // Floor: 25% slack over the RTT is under one net update at low ping.
         LocalSlugDummy.LifeSpan = FMax(0.15, PawnOwner.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;
+        bbP.IGPlus_DemoTrack(LocalSlugDummy);
     }
 }
 

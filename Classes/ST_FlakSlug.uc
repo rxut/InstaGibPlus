@@ -75,7 +75,7 @@ simulated function PostNetBeginPlay()
 	if (GetWeaponSettings().FlakCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);
-		if (In != none && Viewport(In.Player) != none)
+		if (In != none && Viewport(In.Player) != none && (bbPlayer(In) == none || bbPlayer(In).IGPlus_InDemoPlayback() == false))
 			InstigatingPlayer = In;
 
 		if (InstigatingPlayer != none) {
@@ -127,7 +127,7 @@ simulated event Tick(float Delta) {
     if (InstigatingPlayer == none)
         return;
 
-    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).zzbDemoPlayback)
+    if (bbPlayer(InstigatingPlayer) != none && bbPlayer(InstigatingPlayer).IGPlus_InDemoPlayback())
         return;
 
     // Extrapolate locally to compensate for ping
