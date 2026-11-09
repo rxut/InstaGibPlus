@@ -8,10 +8,12 @@ var string OriginalName;
 var int MaxMultiDodges;
 var int SkinIndex;
 var int Armor;
+var int Boots;   // jump boot charges, 0 without boots (for spectators: they get no one's inventory)
 
 replication {
     reliable if (Role == ROLE_Authority)
         Armor,
+        Boots,
         FaceName,
         MaxMultiDodges,
         SkinIndex,
@@ -62,12 +64,17 @@ function Timer()
 function UpdateArmor() {
     local Inventory Inv;
     local int ArmorAmount;
+    local int BootCharges;
 
-    for (Inv = Owner.Inventory; Inv != none; Inv = Inv.Inventory)
+    for (Inv = Owner.Inventory; Inv != none; Inv = Inv.Inventory) {
         if (Inv.bIsAnArmor)
             ArmorAmount += Inv.Charge;
+        else if (Inv.IsA('UT_JumpBoots'))
+            BootCharges = Inv.Charge;
+    }
 
     Armor = ArmorAmount;
+    Boots = BootCharges;
 }
 
 defaultproperties

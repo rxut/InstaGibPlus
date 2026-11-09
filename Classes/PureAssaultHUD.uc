@@ -46,6 +46,16 @@ simulated function DrawStatus(Canvas Canvas)
 		}
 	}
 
+	// Someone else's pawn (spectating, demos): their inventory never reaches
+	// us, the boots come with their PlayerReplicationInfo (like the armor).
+	if (bJumpBoots == false
+		&& (PawnOwner.IsA('PlayerPawn') == false || PlayerPawn(PawnOwner).Player == none || PlayerPawn(PawnOwner).Player.IsA('ViewPort') == false)
+		&& bbPlayerReplicationInfo(PawnOwner.PlayerReplicationInfo) != none
+		&& bbPlayerReplicationInfo(PawnOwner.PlayerReplicationInfo).Boots > 0) {
+		bJumpBoots = true;
+		BootCharges = bbPlayerReplicationInfo(PawnOwner.PlayerReplicationInfo).Boots;
+	}
+
 	if ( !bHideStatus )
 	{
 		TPOwner = TournamentPlayer(PawnOwner);
@@ -183,9 +193,9 @@ simulated function DrawStatus(Canvas Canvas)
 	}
 	DrawBigNum(Canvas, ArmorAmount, X + 14 * Scale, Y + 16 * Scale, 1);
 
-	// Demo playback: udemo's viewer (DemoPlaybackSpec) owns the HUD, like a spectator.
-	if ((bbPlayer(PlayerOwner) != None && bbPlayer(PlayerOwner).HUDInfo > 0) || bbCHSpectator(PlayerOwner) != None
-		|| (PlayerOwner != None && PlayerOwner.IsA('DemoPlaybackSpec')))
+	// Spectators, and demo playback viewers (udemo's DemoPlaybackSpec, the
+	// stock CHSpectator of console demoplay).
+	if ((bbPlayer(PlayerOwner) != None && bbPlayer(PlayerOwner).HUDInfo > 0) || CHSpectator(PlayerOwner) != None)
 	{
 		class'PureHUDHelper'.static.DrawTime(self, Canvas);
 
