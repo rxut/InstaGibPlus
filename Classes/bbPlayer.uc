@@ -16090,7 +16090,7 @@ simulated function bool IGPlus_InDemoPlayback() {
 // - IGPlus_DemoFOV/IGPlus_DemoZoomed, IGPlus_DemoWeaponAmbient, and the
 //   personal messages (IGPlus_DemoLocalizedMessage).
 // Playback (udemo following a recorded player) draws the camera from it, and
-// with bDemoPlayerView the others where that player saw them.
+// the others where that player saw them.
 // =============================================================================
 
 // Server, every tick, after this tick's moves (ServerTick).
@@ -16900,8 +16900,6 @@ simulated function IGPlus_SDTraceOthersBegin() {
 	local byte bWasHidden;
 	local int i;
 
-	if (Settings == none || Settings.bDemoPlayerView == false)
-		return;
 	C = IGPlus_SDGetClock();
 	GRI = IGPlus_SDGetGRI();
 	if (C == none || GRI == none)
@@ -16984,8 +16982,7 @@ simulated function bool IGPlus_SDDrawnLocation(out vector L) {
 	if (V == none)
 		return false;
 	F = bbPlayer(V.ViewTarget);
-	if (F == none || F == self || F.IGPlus_SDIsServerDemoProxy() == false
-		|| F.Settings == none || F.Settings.bDemoPlayerView == false)
+	if (F == none || F == self || F.IGPlus_SDIsServerDemoProxy() == false)
 		return false;
 	C = IGPlus_SDGetClock();
 	if (C == none)
@@ -17023,10 +17020,7 @@ simulated function IGPlus_SDCalcView(out rotator CameraRotation) {
 
 	IGPlus_SDGlideOwnProjectiles(Pos + Eye * vect(0,0,1), View);
 
-	if (Settings != none && Settings.bDemoPlayerView)
-		IGPlus_SDDisplaceOthers();
-	else if (IGPlus_SDDisplacedOthers)
-		IGPlus_SDRestoreOthers();
+	IGPlus_SDDisplaceOthers();
 }
 
 // Before our weapon draws: muzzle flash from the server's FlashCount.

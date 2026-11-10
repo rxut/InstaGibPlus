@@ -171,10 +171,6 @@ var localized string MoreInformationText;
 	var localized string DemoCharText;
 	var localized string DemoCharHelp;
 
-	var UWindowCheckbox Chk_DemoPlayerView;
-	var localized string DemoPlayerViewText;
-	var localized string DemoPlayerViewHelp;
-
 // Force Models
 	var UWindowLabelControl Lbl_ForceModels;
 	var localized string ForceModelsLblText;
@@ -967,7 +963,6 @@ function Created() {
 	Edit_DemoMask = CreateEditResizable(ECT_Text, DemoMaskText, 0.7, 100, MaxInt, DemoMaskHelp);
 	Edit_DemoPath = CreateEditResizable(ECT_Text, DemoPathText, 0.7, 100, MaxInt, DemoPathHelp);
 	Edit_DemoChar = CreateEdit(ECT_Text, DemoCharText, DemoCharHelp, 1, 14);
-	Chk_DemoPlayerView = CreateCheckbox(DemoPlayerViewText, DemoPlayerViewHelp);
 
 	Lbl_ForceModels = CreateSeparator(ForceModelsLblText);
 	Chk_ForceModels = CreateCheckbox(ForceModelsText, ForceModelsHelp);
@@ -1148,7 +1143,6 @@ function Load() {
 	Edit_DemoMask.SetValue(Settings.DemoMask);
 	Edit_DemoPath.SetValue(Settings.DemoPath);
 	Edit_DemoChar.SetValue(Settings.DemoChar);
-	Chk_DemoPlayerView.bChecked = Settings.bDemoPlayerView;
 
 	Chk_ForceModels.bChecked = Settings.bForceModels;
 	Chk_DemoShowRealModels.bChecked = Settings.bDemoShowRealModels;
@@ -1270,7 +1264,6 @@ function LoadForcedSettings() {
 	LockIfForced(Chk_NetStatsLocationError, "bNetStatsLocationError", P);
 	LockIfForced(Chk_NetStatsFrameTime, "bNetStatsFrameTime", P);
 	LockIfForced(Chk_AutoDemo, "bAutoDemo", P);
-	LockIfForced(Chk_DemoPlayerView, "bDemoPlayerView", P);
 	LockIfForced(Chk_ForceModels, "bForceModels", P);
 	LockIfForced(Chk_DemoShowRealModels, "bDemoShowRealModels", P);
 	LockIfForced(Chk_HideOwnBeam, "bHideOwnBeam", P);
@@ -1375,7 +1368,6 @@ function Save() {
 	Settings.DemoMask = Edit_DemoMask.GetValue();
 	Settings.DemoPath = Edit_DemoPath.GetValue();
 	Settings.DemoChar = Edit_DemoChar.GetValue();
-	Settings.bDemoPlayerView = Chk_DemoPlayerView.bChecked;
 
 	Settings.bForceModels = Chk_ForceModels.bChecked;
 	Settings.bDemoShowRealModels = Chk_DemoShowRealModels.bChecked;
@@ -1615,9 +1607,6 @@ defaultproperties
 
 		DemoCharText="Demo Char"
 		DemoCharHelp="Replacement character for those that cannot be used in file-names"
-
-		DemoPlayerViewText="Server Demos Show Player View"
-		DemoPlayerViewHelp="If checked, following a player in a server demo shows the other players where that player saw them (bots stay where the server had them). If unchecked, it shows them where the server had them"
 
 	ForceModelsLblText="Forced Skins"
 
