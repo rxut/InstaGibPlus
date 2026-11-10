@@ -129,13 +129,17 @@ simulated function bool IGPlus_Idle() {
 // Both machines, at the end of each of the owner's moves (bbPlayer), with
 // fire as the move carries it: a bring-up charges from IGPlus_ReadyTS if fire
 // was held during it, and a let-go releases.
-simulated function IGPlus_MoveEnd(float TS, bool bHeld) {
+// bButton (server): the move's own fire button. The server clears bHeld on a
+// move still bound to the weapon before (the move a predicted switch lands
+// on). Fire held on it is the hold carried over, not a let-go: the next held
+// move is no press, as on the client, which reads the button itself.
+simulated function IGPlus_MoveEnd(float TS, bool bHeld, optional bool bButton) {
 	local bool bPress;
 
 	if (IGPlus_OnMoves() == false)
 		return;
 	bPress = bHeld && IGPlus_bHeldBefore == false;
-	IGPlus_bHeldBefore = bHeld;
+	IGPlus_bHeldBefore = bHeld || bButton;
 	if (TS < IGPlus_ReadyTS) {
 		if (bPress)
 			IGPlus_bPressQueued = true;

@@ -5369,9 +5369,14 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 
 	// Hammer charged and let go on this move: its push lands at the end of it,
-	// as on the client (ST_ImpactHammer.IGPlus_MoveEnd).
-	if (ST_ImpactHammer(Weapon) != None)
-		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(CurrentTimeStamp, bFire != 0);
+	// as on the client (ST_ImpactHammer.IGPlus_MoveEnd). bFire is cleared on a
+	// move bound to a deterministic weapon, bFired is the move's button.
+	// Not on the press's own move when a predicted switch brings the hammer up
+	// on it (fast weapon switch): the client made that move with the weapon
+	// before, its hammer starts on the next one. A fire key in the same frame
+	// as the switch key is then held at the bring-up on both sides, no press.
+	if (ST_ImpactHammer(Weapon) != None && (Weapon != IGPlus_PSTarget || CurrentTimeStamp > IGPlus_PSTS))
+		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(CurrentTimeStamp, bFire != 0, bFired);
 
 	// Our shock ball waiting at a wall for our moves (ST_ShockProj.IGPlus_WallWait)
 	// explodes at the end of the move that gets there, as it stops on our
