@@ -127,6 +127,7 @@ var vector IGPlus_PredComboLoc;
 var Actor IGPlus_DemoCopy[32];          // recording client: ours; playback: the copies
 var byte IGPlus_DemoCopyOn[32];         // recording client: slot in use
 var int IGPlus_DemoCopies;              // recording client: slots in use
+var IGPlus_ClientDemoClock IGPlus_DemoRecClock; // recording client: our clock in the demo
 var ST_Translocator IGPlus_DetTloc;     // client: translocator whose disc we own
 // A shock beam's verdict on our own deterministic disc, as our screen had
 // it: 0 none, 1 missed, 2 hit. The client sets it on the shot and the
@@ -11646,6 +11647,11 @@ function xxPlayerTickEvents(float DeltaTime)
 		else if (Level.TimeSeconds >= IGPlus_GameEndedTime + 2.0)
 			ConsoleCommand("StopDemo");
 	}
+
+	// Recording a client demo: our clock goes into it from its first frame
+	// (IGPlus_ClientDemoClock). After AutoDemo, which may just have started one.
+	if (IGPlus_DemoRecClock == none && Level.NetMode == NM_Client && PureLevel != None && PureLevel.zzDemoRecDriver != None)
+		IGPlus_DemoRecClock = Spawn(class'IGPlus_ClientDemoClock');
 }
 
 static function SetForcedSkin(Actor SkinActor, int selectedSkin, bool bTeamGame, int TeamNum) {

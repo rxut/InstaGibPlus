@@ -57,6 +57,9 @@ var bool IGPlus_WeaponSettingsMenuCanEdit;
 
 var int ShowDamageNumberMode;
 
+var PureLevelBase PureLevel;    // client: our level, for its demo driver (as bbPlayer)
+var IGPlus_ClientDemoClock IGPlus_DemoRecClock; // recording client: our clock in the demo
+
 replication
 {
 	reliable if (RemoteRole == ROLE_AutonomousProxy)
@@ -148,6 +151,15 @@ function xxPlayerTickEvents()
 		} else {
 			GameReplicationInfo.SecondCount = Level.TimeSeconds - GRISecondCountOffset;
 		}
+	}
+
+	// Recording a client demo: our clock goes into it from its first frame,
+	// as for a player (IGPlus_ClientDemoClock, bbPlayer.xxPlayerTickEvents).
+	if (IGPlus_DemoRecClock == none && Level.NetMode == NM_Client) {
+		if (PureLevel == none)
+			SetPropertyText("PureLevel", GetPropertyText("xLevel"));
+		if (PureLevel != none && PureLevel.zzDemoRecDriver != none)
+			IGPlus_DemoRecClock = Spawn(class'IGPlus_ClientDemoClock');
 	}
 }
 
