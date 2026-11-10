@@ -118,6 +118,16 @@ var bool IGPlus_DetTranslocator;        // server setting, replicated to the own
 var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
 var float IGPlus_PredComboTS;           // client: our last drawn shock combo (IGPlus_OwnerComboRing)
 var vector IGPlus_PredComboLoc;
+var ST_ShockProj IGPlus_WallBall;       // server: our shock ball waiting at a wall for our moves (ST_ShockProj.IGPlus_WallWait)
+// Our shock beam and our own balls, as our client's screen had them: 0 no
+// verdict (the server's own trace decides), 1 the beam met none of them, 2 it
+// set off our newest ball, 3 the one before (ST_ShockRifle.IGPlus_ClientOwnBall).
+// It rides the shot's move with IGPlus_DetOwnBeamMode, and the server follows it
+// where its own record of the ball agrees (ST_ShockRifle.IGPlus_VerdictBall).
+var int IGPlus_OwnBallVerdict;
+var float IGPlus_OwnBallTS[2];          // client: when we fired our two newest shock balls, newest first
+var ST_ShockProj IGPlus_OwnBalls[2];    // server: our two newest shock balls, newest first (None: that shot made none)
+var float IGPlus_MoveFrameDelta;        // server: the length of the client's frame the move being run ends in (a shot's move is that one frame)
 // Client demos: what our client draws itself before the server's copy
 // arrives (our own projectiles) is not in a client demo. Those copies are
 // RemoteRole None, and the engine records an actor a client spawned with
@@ -4467,6 +4477,16 @@ simulated function IGPlus_SKPredictRipperAlt(vector Start, rotator Aim) {
 	IGPlus_SKPredictShot(IGPLUS_SK_RIPPERALT, 0, Start, vector(Aim), class'ST_Razor2Alt'.default.Speed);
 }
 
+// Our shock balls in the order we fired them, for our beam's verdict on them
+// (IGPlus_OwnBallVerdict). Both machines note every alt shot, also one that
+// made no ball, so "our newest ball" is the same shot on both.
+simulated function IGPlus_NoteOwnBall(ST_ShockProj Ball, float TS) {
+	IGPlus_OwnBalls[1] = IGPlus_OwnBalls[0];
+	IGPlus_OwnBalls[0] = Ball;
+	IGPlus_OwnBallTS[1] = IGPlus_OwnBallTS[0];
+	IGPlus_OwnBallTS[0] = TS;
+}
+
 // Client: our shock ball went off in a combo, not against the wall.
 simulated function IGPlus_SKCancelShockBall() {
 	IGPlus_SKCancelNext(IGPLUS_SK_SHOCKBALL);
@@ -5102,6 +5122,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		&& DeltaTime > 0
 		&& !IGPlus_SkipMovesUntilNextTick;
 
+	IGPlus_MoveFrameDelta = SM.MoveDeltaTime / float(MergeCount + 1);
+
 	bHaveReceivedServerMove = true;
 	LastServerMoveParams.Location = SM.ClientLocation;
 	LastServerMoveParams.Base = SM.ClientBase;
@@ -5191,8 +5213,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	if (bDetWholeMove) {
 		// A shock move's charge data is the client's verdict on its own disc.
-		if (ST_ShockRifle(DetWeapon) != none)
-			IGPlus_DetOwnBeamMode = SM.DetChargeData;
+		// and on its own balls (IGPlus_OwnBallVerdict).
+		if (ST_ShockRifle(DetWeapon) != none) {
+			IGPlus_DetOwnBeamMode = SM.DetChargeData & 3;
+			IGPlus_OwnBallVerdict = (SM.DetChargeData >> 2) & 3;
+		}
 		IGPlus_DetProcessStep(
 			DetWeapon,
 			SM.TimeStamp,
@@ -5209,6 +5234,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			false
 		);
 		IGPlus_DetOwnBeamMode = 0;
+		IGPlus_OwnBallVerdict = 0;
 		// Deterministic weapons execute shots directly from step processing.
 		// Keep fire latches cleared to avoid legacy state-machine refire.
 		bFire = 0;
@@ -5346,6 +5372,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// as on the client (ST_ImpactHammer.IGPlus_MoveEnd).
 	if (ST_ImpactHammer(Weapon) != None)
 		ST_ImpactHammer(Weapon).IGPlus_MoveEnd(CurrentTimeStamp, bFire != 0);
+
+	// Our shock ball waiting at a wall for our moves (ST_ShockProj.IGPlus_WallWait)
+	// explodes at the end of the move that gets there, as it stops on our
+	// screen in that frame: a beam on this move was still tested against it,
+	// and its push on us lands on this move, as our client predicted.
+	if (IGPlus_WallBall != None) {
+		if (IGPlus_WallBall.bDeleteMe)
+			IGPlus_WallBall = None;
+		else
+			IGPlus_WallBall.IGPlus_WallWaitCheck();
+	}
 
 	if (IGPlus_SKQueueCount > 0)
 		IGPlus_SKApplyDue(CurrentTimeStamp, none);
@@ -8035,10 +8072,12 @@ function xxReplicateMove(
 			ST_Translocator(Weapon).IGPlus_DetClientTranslocated(TlocCounter != TlocBefore || NewMove.DetChargeData != TlocAction);
 		}
 	}
-	// The shot's verdict on our own disc (shock moves carry no other charge).
-	if (IGPlus_DetOwnBeamMode != 0) {
-		NewMove.DetChargeData = IGPlus_DetOwnBeamMode;
+	// The shot's verdict on our own disc and on our own balls (shock moves
+	// carry no other charge).
+	if (IGPlus_DetOwnBeamMode != 0 || IGPlus_OwnBallVerdict != 0) {
+		NewMove.DetChargeData = (IGPlus_DetOwnBeamMode & 3) | ((IGPlus_OwnBallVerdict & 3) << 2);
 		IGPlus_DetOwnBeamMode = 0;
+		IGPlus_OwnBallVerdict = 0;
 	}
 
 	bJustFired = false;

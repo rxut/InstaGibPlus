@@ -668,6 +668,15 @@ function bool IGPlus_CompOwnBall(ST_ProjectileDummy PD, Pawn Instigator) {
 		PD.CompSwapAt(B.Location);
 		return true;
 	}
+	// Its client gave its own verdict on its own balls for this beam
+	// (bbPlayer.IGPlus_OwnBallVerdict): they are out of the trace, and
+	// ST_ShockRifle.TraceFireAt follows the verdict.
+	if (P.IGPlus_OwnBallVerdict != 0) {
+		PD.CompSwapAt(B.Location);
+		PD.SetCollision(false, false, false);
+		PD.bProjTarget = false;
+		return true;
+	}
 
 	if (B.IGPlus_OwnerSeesBall(P, Loc)) {
 		PD.CompSwapAt(Loc);

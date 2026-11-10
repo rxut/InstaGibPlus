@@ -8,6 +8,19 @@ class IGPlus_OwnerComboRing extends UT_ComboRing;
 // moving lift): the owner sees the ring there.
 var vector IGPlus_OwnerShift;
 
+// The owner's client drew a combo and this ring is the server's for it: it
+// got here within a round trip and a quarter second (the weapon can't fire
+// again inside half a second, so it isn't the next beam's), anywhere near.
+// One combo is one ring and one sound, where the client drew it, even when
+// the two machines had the ball some way apart.
+const IGPLUS_SAME_COMBO_DIST = 400.0;
+
+simulated function float IGPlus_SameComboTime(bbPlayer P) {
+	if (P.PlayerReplicationInfo == None)
+		return 0.25;
+	return P.PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.25;
+}
+
 replication {
 	unreliable if (Role == ROLE_Authority)
 		IGPlus_OwnerShift;
@@ -36,8 +49,10 @@ simulated function PostNetBeginPlay() {
 		// play it.
 		if (IGPlus_OwnerShift != vect(0,0,0))
 			SetLocation(Location + IGPlus_OwnerShift);
-		foreach RadiusActors(class'UT_ComboRing', R, 64.0)
-			if (R != self && IGPlus_OwnerComboRing(R) == None) {
+		foreach RadiusActors(class'UT_ComboRing', R, IGPLUS_SAME_COMBO_DIST)
+			if (R != self && IGPlus_OwnerComboRing(R) == None
+				&& R.default.LifeSpan - R.LifeSpan < IGPlus_SameComboTime(P)
+			) {
 				Destroy();
 				return;
 			}
@@ -46,8 +61,8 @@ simulated function PostNetBeginPlay() {
 		if (IGPlus_OwnerShift != vect(0,0,0))
 			SetLocation(Location + IGPlus_OwnerShift);
 		if (P.IGPlus_PredComboTS > 0.0
-			&& Level.TimeSeconds - P.IGPlus_PredComboTS < P.PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.5
-			&& VSize(Location - P.IGPlus_PredComboLoc) < 64.0
+			&& Level.TimeSeconds - P.IGPlus_PredComboTS < IGPlus_SameComboTime(P)
+			&& VSize(Location - P.IGPlus_PredComboLoc) < IGPLUS_SAME_COMBO_DIST
 		) {
 			P.IGPlus_PredComboTS = 0.0;
 			P.ClientDebugMessage("Shock combo: server agreed ("$int(VSize(Location - P.IGPlus_PredComboLoc))$"uu apart)");

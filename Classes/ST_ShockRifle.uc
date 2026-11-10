@@ -141,6 +141,7 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 
 	if (bAlt) {
 		PlayAltFiring();
+		BP.IGPlus_NoteOwnBall(None, Level.TimeSeconds);
 		if (BP.ClientWeaponSettingsData.bShockProjectileUseClientSideAnimations)
 			ClientSpawnAltProjectileEffects(true, StepView, StepLoc);
 		BP.IGPlus_SKPredictShockBall(IGPlus_ShotStart(StepView, StepLoc), StepView);
@@ -149,6 +150,8 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 		bOwnDisc = IGPlus_OwnDiscOnBeam(BP, StepView, StepLoc);
 		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
 			ClientTraceFire(true, StepView, StepLoc, bOwnDisc);
+		else
+			BP.IGPlus_OwnBallVerdict = 0; // nothing drawn here: the server's trace decides
 		if (bOwnDisc && BP.IGPlus_PredictsDiscBoost())
 			BP.IGPlus_DetTloc.IGPlus_DetPredictBoost(GetWeaponSettings().ShockBeamMomentum * 60000.0 * vector(StepView));
 	}
@@ -178,8 +181,8 @@ simulated function bool IGPlus_OwnDiscOnBeam(bbPlayer BP, rotator AimRot, vector
 			D.CollisionRadius, D.CollisionHeight) == false)
 		return false;
 	// Our own ball in front takes the beam (ClientTraceFire's combo).
-	if (BP.IGPlus_PredictiveShockCombos() && BP.IGPlus_OnMovingLift() == false
-		&& IGPlus_OwnBallOnBeam(StartTrace, X, (D.Location - StartTrace) dot X) != None)
+	if (BP.IGPlus_PredictiveShockCombos()
+		&& IGPlus_ClientOwnBall(BP, StartTrace, X, (D.Location - StartTrace) dot X) != None)
 		return false;
 
 	BP.IGPlus_DetOwnBeamMode = 2;
@@ -189,6 +192,7 @@ simulated function bool IGPlus_OwnDiscOnBeam(bbPlayer BP, rotator AimRot, vector
 
 function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	local Pawn PawnOwner;
+	local Projectile Ball;
 
 	PawnOwner = Pawn(Owner);
 
@@ -206,7 +210,9 @@ function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	if (bAlt) {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
 			DetPlayServerFireAnim(true);
-		DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
+		Ball = DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
+		if (bbPlayer(Owner) != None)
+			bbPlayer(Owner).IGPlus_NoteOwnBall(ST_ShockProj(Ball), bbPlayer(Owner).CurrentTimeStamp);
 	} else {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
 			DetPlayServerFireAnim(false);
@@ -380,8 +386,15 @@ simulated function ClientTraceFire(
 		if (bToOwnDisc)
 			Reach = FMin(Reach, VSize(IGPlus_OwnDiscBeamEnd - StartTrace));
 		IGPlus_DebugBeam("client", StartTrace, X, Reach);
-		if (bbP.IGPlus_PredictiveShockCombos() && bbP.IGPlus_OnMovingLift() == false)
-			Ball = IGPlus_OwnBallOnBeam(StartTrace, X, Reach);
+		if (bbP.IGPlus_PredictiveShockCombos()) {
+			// A deterministic shot's move carries our verdict to the server.
+			if (bUseShotData)
+				Ball = IGPlus_ClientOwnBall(bbP, StartTrace, X, Reach);
+			else
+				Ball = IGPlus_OwnBallNoVerdict(bbP, StartTrace, X, Reach);
+			if (bUseShotData && bbP.bDrawDebugData)
+				bbP.ClientDebugMessage("Shock beam (client) verdict on our own balls: "$IGPlus_VerdictName(bbP.IGPlus_OwnBallVerdict));
+		}
 		if (Ball != None) {
 			HitLocation = Ball.Location;
 			Ball.IGPlus_PredictCombo();
@@ -452,9 +465,9 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optio
 			Extra = Extra$"lift, server decides";
 		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc,
 				Best.CollisionRadius - IGPLUS_COMBO_MARGIN, Best.CollisionHeight - IGPLUS_COMBO_MARGIN))
-			Extra = Extra$"clear hit, drawn";
+			Extra = Extra$"clear hit";
 		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc, Best.CollisionRadius, Best.CollisionHeight))
-			Extra = Extra$"edge hit, server decides";
+			Extra = Extra$"edge hit";
 		else
 			Extra = Extra$"misses it";
 	}
@@ -487,6 +500,105 @@ simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, f
 		}
 	}
 	return Best;
+}
+
+// Client: this beam and our own balls, as our screen has them, and the ball
+// to draw the combo on. The shot's move carries the verdict to the server
+// (bbPlayer.IGPlus_OwnBallVerdict), which follows it where its own record of
+// the ball agrees (IGPlus_VerdictBall): both machines then have the same
+// combo on the same ball, or none. So any hit on the ball counts here, to its
+// edge. No verdict (the server's own trace decides, a combo shows a ping
+// late) where our screen can't be trusted: on a moving lift, near a ball we
+// can't place, or on a ball older than our newest two.
+simulated function ST_ShockProj IGPlus_ClientOwnBall(bbPlayer BP, vector Start, vector Dir, float MaxDist) {
+	local ST_ShockProj P, Best;
+	local float D, BestD;
+	local bool bUnsure;
+	local int i;
+
+	BP.IGPlus_OwnBallVerdict = 0;
+	// Input replication tests our ball live, not on our own timeline.
+	if (BP.IGPlus_EnableInputReplication)
+		return IGPlus_OwnBallNoVerdict(BP, Start, Dir, MaxDist);
+	if (BP.IGPlus_OnMovingLift())
+		return None;
+
+	foreach AllActors(class'ST_ShockProj', P) {
+		if (P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe || P.Physics == PHYS_None || P.Instigator != Owner)
+			continue;
+		// Fired from a lift, or its server copy came without ours: the server
+		// has it somewhere else.
+		if (P.IGPlus_bFromMover) {
+			if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, MaxDist, P.Location,
+					P.CollisionRadius + 64.0, P.CollisionHeight + 64.0))
+				bUnsure = true;
+			continue;
+		}
+		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, MaxDist, P.Location,
+				P.CollisionRadius, P.CollisionHeight) == false)
+			continue;
+		D = (P.Location - Start) dot Dir;
+		if (Best == None || D < BestD) {
+			Best = P;
+			BestD = D;
+		}
+	}
+	if (bUnsure)
+		return None;
+	if (Best == None) {
+		BP.IGPlus_OwnBallVerdict = 1;
+		return None;
+	}
+	for (i = 0; i < 2; i++)
+		if (Best.IGPlus_SpawnTS > 0.0 && Best.IGPlus_SpawnTS == BP.IGPlus_OwnBallTS[i]) {
+			BP.IGPlus_OwnBallVerdict = 2 + i;
+			return Best;
+		}
+	return None;
+}
+
+static function string IGPlus_VerdictName(int Verdict) {
+	switch (Verdict) {
+		case 1: return "it met none";
+		case 2: return "it set off our newest";
+		case 3: return "it set off the one before our newest";
+	}
+	return "none given, the server decides";
+}
+
+// Client: the ball to draw a combo on when the shot carries no verdict: only
+// where the server's own trace is sure to agree (IGPlus_OwnBallOnBeam).
+simulated function ST_ShockProj IGPlus_OwnBallNoVerdict(bbPlayer BP, vector Start, vector Dir, float MaxDist) {
+	local ST_ShockProj Ball;
+
+	if (BP.IGPlus_OnMovingLift())
+		return None;
+	Ball = IGPlus_OwnBallOnBeam(Start, Dir, MaxDist);
+	// A nearer ball of ours on the beam that we wouldn't draw on (the beam
+	// only grazes it, or it was fired from a lift) may take the beam on the
+	// server, and we would draw a combo on the wrong ball.
+	if (Ball != None && IGPlus_OwnBallBlocked(Start, Dir, Ball))
+		return None;
+	return Ball;
+}
+
+// Client: another of our own flying balls is on the beam before Ball. It is
+// not one the beam passes clearly through, or IGPlus_OwnBallOnBeam had picked it.
+simulated function bool IGPlus_OwnBallBlocked(vector Start, vector Dir, ST_ShockProj Ball) {
+	local ST_ShockProj P;
+	local float D, BallD;
+
+	BallD = (Ball.Location - Start) dot Dir;
+	foreach AllActors(class'ST_ShockProj', P) {
+		if (P == Ball || P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe
+			|| P.Physics == PHYS_None || P.Instigator != Owner)
+			continue;
+		D = (P.Location - Start) dot Dir;
+		if (D < BallD && class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, BallD, P.Location,
+				P.CollisionRadius, P.CollisionHeight))
+			return true;
+	}
+	return false;
 }
 
 simulated function ClientSpawnBeam(vector HitLocation, vector SmokeLocation) {
@@ -668,6 +780,9 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	local bool bLiftHit;
 	local ST_Translocator TL;
 	local Actor OwnDisc;
+	local ST_ShockProj OwnBall;
+	local vector OwnBallLoc;
+	local float BeamDist;
 
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == none)
@@ -718,10 +833,21 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		}
 		bbP.IGPlus_OwnLiftShotShift = LiftLead;
 	}
+	// Our own balls, as our client's screen had them for this beam
+	// (bbPlayer.IGPlus_OwnBallVerdict). A ball it set off that we don't have
+	// like that: no verdict, our own trace decides, as before. With a verdict
+	// our balls are out of the trace (UTPure.IGPlus_CompOwnBall).
+	if (bbP != None && bbP.IGPlus_OwnBallVerdict >= 2) {
+		OwnBall = IGPlus_VerdictBall(bbP, StartTrace, Normal(EndTrace - StartTrace), OwnBallLoc);
+		if (OwnBall == None)
+			bbP.IGPlus_OwnBallVerdict = 0;
+	}
 	if (WImp.WeaponSettings.ShockBeamUseReducedHitbox)
 		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
 	else
 		Other = PawnOwner.TraceShot(HitLocation,HitNormal,EndTrace,StartTrace);
+	if (bbP != None)
+		bbP.IGPlus_OwnBallVerdict = 0; // about this beam's trace only
 	if (LiftLead != vect(0,0,0)) {
 		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
 		if (bLiftHit && Other == None) {
@@ -746,9 +872,54 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		bbP.IGPlus_DetOwnBeamMode = 0;
 	}
 
+	// The ball our client set off, if the beam gets that far here too: the
+	// combo, where our screen had the ball.
+	if (OwnBall != None) {
+		BeamDist = 10000.0;
+		if (Other != None)
+			BeamDist = VSize(HitLocation - StartTrace);
+		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(StartTrace, Normal(EndTrace - StartTrace), BeamDist, OwnBallLoc,
+				OwnBall.CollisionRadius + IGPLUS_VERDICT_SLACK, OwnBall.CollisionHeight + IGPLUS_VERDICT_SLACK)) {
+			Other = OwnBall;
+			HitLocation = OwnBallLoc;
+			HitNormal = -Normal(EndTrace - StartTrace);
+		} else if (bbP.bDrawDebugData) {
+			bbP.ClientDebugMessage("Shock combo (server): our client drew one, not made: the beam is stopped "$int(BeamDist)$"uu out here, before the ball");
+		}
+	}
+
 	PendingSmokeLocation = SmokeLocation;
 	IGPlus_DebugBeam("server", StartTrace, Normal(EndTrace - StartTrace));
 	ProcessTraceHit(Other, HitLocation, HitNormal, vector(AdjustedAim), Y, Z);
+}
+
+// The two machines have our ball and beam a unit or two apart (measured), so
+// a hit on our client is a hit here within this much.
+// ponytail: 4uu of slack around the ball, so a cheat gains 4uu on its own ball only
+const IGPLUS_VERDICT_SLACK = 4.0;
+
+// Server: the ball our client says this beam set off (bbPlayer.IGPlus_OwnBallVerdict:
+// 2 our newest, 3 the one before), if we have it like that: still there,
+// flying on our client's screen at this move (IGPlus_OwnerSeesBall, Loc), and
+// on this beam within IGPLUS_VERDICT_SLACK. None: our client drew a combo
+// that we can't make.
+function ST_ShockProj IGPlus_VerdictBall(bbPlayer P, vector Start, vector Dir, out vector Loc) {
+	local ST_ShockProj B;
+	local string Why;
+
+	B = P.IGPlus_OwnBalls[P.IGPlus_OwnBallVerdict - 2];
+	if (B == None || B.bDeleteMe)
+		Why = "the ball is gone here (it hit something, or was set off)";
+	else if (B.IGPlus_OwnerSeesBall(P, Loc) == false)
+		Why = "the ball had stopped by then";
+	else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, 10000.0, Loc,
+			B.CollisionRadius + IGPLUS_VERDICT_SLACK, B.CollisionHeight + IGPLUS_VERDICT_SLACK) == false)
+		Why = "the beam passes "$int(VSize((Loc - Start) - Dir * ((Loc - Start) dot Dir)))$"uu from the ball's centre here";
+	else
+		return B;
+	if (P.bDrawDebugData)
+		P.ClientDebugMessage("Shock combo (server): our client drew one, not made: "$Why);
+	return None;
 }
 
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)

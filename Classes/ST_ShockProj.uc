@@ -18,12 +18,17 @@ var bool IGPlus_bLocalBall;   // the owner's own copy, until the server's arrive
 var float IGPlus_SpawnTS;     // client: when the local copy was fired
 var bool IGPlus_bFromMover;   // client: fired from a lift (positions disagree there)
 var float IGPlus_ComboTS;     // client: when a predicted combo hid this ball
-var vector IGPlus_WallNormal; // client: hidden ball stopped at a wall, mark not made yet
+var vector IGPlus_WallNormal; // client: hidden ball stopped at a wall, mark not made yet. Server: the wall it waits at
+var float IGPlus_WallHoldTime; // server: since when it waits at a wall for its owner's moves (IGPlus_WallWait), 0: not waiting
+var float IGPlus_WallAge;     // server: its flight time to that wall
+var Actor IGPlus_HeldWall;    // server: that wall
+var vector IGPlus_HeldVel;    // server: its velocity when it got there
 var Pawn IGPlus_ComboBy;      // server: whose beam set off SuperExplosion
 var float IGPlus_FireTS;      // server: the owner's move timestamp at the shot
 var float IGPlus_FireTime;    // server: Level.TimeSeconds at the shot
 var vector IGPlus_FireLoc;    // server: where the shot left from
 var vector IGPlus_FireLiftLead; // server: the owner's lift lead at the shot (bbPlayer.IGPlus_OwnLiftLead)
+var float IGPlus_FireDelta;   // server: the length of the owner's frame the shot was made in (bbPlayer.IGPlus_MoveFrameDelta)
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -61,8 +66,10 @@ simulated function PostBeginPlay() {
 			IGPlus_FireTS = bbP.CurrentTimeStamp;
 			IGPlus_FireTime = Level.TimeSeconds;
 			IGPlus_FireLoc = Location;
-			if (Level.NetMode != NM_Client)
+			if (Level.NetMode != NM_Client) {
 				IGPlus_FireLiftLead = bbP.IGPlus_OwnLiftLead();
+				IGPlus_FireDelta = bbP.IGPlus_MoveFrameDelta;
+			}
 			if (Level.NetMode != NM_Client && bbP.bDrawDebugData)
 				bbP.ClientDebugMessage("Shock ball (server) from "$IGPlus_Vec(Location)$" aim "$(Rotation.Pitch & 65535)$","$(Rotation.Yaw & 65535));
 		}
@@ -147,6 +154,7 @@ simulated function IGPlus_TakeOverLocalBall() {
 	Velocity = Mine.Velocity;
 	if (Mine.Physics == PHYS_None)
 		SetPhysics(PHYS_None);
+	IGPlus_SpawnTS = Mine.IGPlus_SpawnTS;
 	IGPlus_ComboTS = Mine.IGPlus_ComboTS;
 	IGPlus_WallNormal = Mine.IGPlus_WallNormal;
 	IGPlus_bFromMover = Mine.IGPlus_bFromMover;
@@ -159,6 +167,13 @@ simulated event Tick(float Delta) {
 	local vector NewXPolDelta;
 
 	super.Tick(Delta);
+
+	// Server, waiting at a wall: the owner's move that gets there ends it
+	// (bbPlayer), this is its time limit.
+	if (IGPlus_WallHoldTime > 0.0) {
+		IGPlus_WallWaitCheck();
+		return;
+	}
 
 	if (InstigatingPlayer == None)
 		return;
@@ -193,7 +208,8 @@ simulated event Tick(float Delta) {
 // exploding there; its explosion reaches the owner a round trip later.
 simulated function HitWall(vector HitNormal, actor Wall) {
 	if (IGPlus_bOwnTimeline == false) {
-		Super.HitWall(HitNormal, Wall);
+		if (IGPlus_WallWait(HitNormal, Wall) == false)
+			Super.HitWall(HitNormal, Wall);
 		return;
 	}
 	SetPhysics(PHYS_None);
@@ -202,6 +218,81 @@ simulated function HitWall(vector HitNormal, actor Wall) {
 		IGPlus_WallNormal = HitNormal;
 	else
 		IGPlus_WallMark(HitNormal);
+}
+
+// Server: this ball is at a wall, but its owner's moves are not there yet
+// (they come in a packet's wobble and up to a server frame late), so the
+// owner's screen still has it flying. The owner's beam is tested where that
+// screen has the ball (IGPlus_OwnerSeesBall), and a ball that exploded here
+// already is not there to be hit: the owner's client drew a combo the server
+// never made. So the ball waits here for its owner's moves, like the owner's
+// own copy waits at the wall for the server. True if it waits.
+function bool IGPlus_WallWait(vector HitNormal, Actor Wall) {
+	local bbPlayer P;
+
+	P = bbPlayer(Instigator);
+	// The owners whose beam is tested on their own timeline (UTPure.IGPlus_CompOwnBall).
+	// Not from a moving lift: the owner's ball flies another path there.
+	if (Level.NetMode == NM_Client || P == None || P.RemoteRole != ROLE_AutonomousProxy
+		|| P.zzUTPure == None || P.IGPlus_EnableInputReplication
+		|| GetWeaponSettings() == None || GetWeaponSettings().bEnablePingCompensation == false
+		|| P.IGPlus_PredictiveShockCombos() == false
+		|| IGPlus_FireTS <= 0.0 || Speed <= 0.0 || IGPlus_FireLiftLead != vect(0,0,0))
+		return false;
+
+	IGPlus_WallAge = VSize(Location - IGPlus_FireLoc) / Speed;
+	if (IGPlus_OwnerFlown(P) >= IGPlus_WallAge + IGPlus_WallSlack())
+		return false;
+
+	IGPlus_WallHoldTime = Level.TimeSeconds;
+	IGPlus_WallNormal = HitNormal;
+	IGPlus_HeldWall = Wall;
+	IGPlus_HeldVel = Velocity; // the wall ring's facing (Explode)
+	SetPhysics(PHYS_None);
+	Enable('Tick');
+	// One at a time: an earlier ball still waiting is left to its own Tick.
+	P.IGPlus_WallBall = self;
+	return true;
+}
+
+// Server: how long this ball has flown on its owner's screen once the frame
+// of the owner's last move is over (it is moved in the frame it is fired in).
+function float IGPlus_OwnerFlown(bbPlayer P) {
+	return P.CurrentTimeStamp - IGPlus_FireTS + IGPlus_FireDelta;
+}
+
+// Server: the two machines stop the ball a unit or two apart, so the owner's
+// screen may have it flying for a frame longer than our sums say: it waits
+// that much longer. Never a whole frame, or our push on our owner is late.
+function float IGPlus_WallSlack() {
+	return FMin(0.004, IGPlus_FireDelta);
+}
+
+// Server: done waiting once the owner's moves are at the wall too, or after
+// MaxJitterTime. Then it explodes against the wall as it would have. bbPlayer
+// calls this at the end of each of the owner's moves: the move that gets
+// there is the frame the ball stops in on the owner's screen, so a beam on it
+// was still tested (IGPlus_OwnerSeesBall), and our push on our owner is queued
+// in time to land on that move, as its client predicted it.
+function IGPlus_WallWaitCheck() {
+	local bbPlayer P;
+	local float Waited;
+
+	if (IGPlus_WallHoldTime <= 0.0)
+		return;
+	P = bbPlayer(Instigator);
+	Waited = Level.TimeSeconds - IGPlus_WallHoldTime;
+	if (P != None && P.zzUTPure != None) {
+		if (IGPlus_OwnerFlown(P) < IGPlus_WallAge + IGPlus_WallSlack() && Waited < P.zzUTPure.Settings.MaxJitterTime)
+			return;
+		if (P.IGPlus_WallBall == self)
+			P.IGPlus_WallBall = None;
+		if (P.bDrawDebugData)
+			P.ClientDebugMessage("Shock ball (server) waited "$int(Waited * 1000.0 / Level.TimeDilation)$"ms at the wall for our moves, no beam came");
+	}
+	IGPlus_WallHoldTime = 0.0;
+	Velocity = IGPlus_HeldVel;
+	Super.HitWall(IGPlus_WallNormal, IGPlus_HeldWall);
 }
 
 simulated function IGPlus_WallMark(vector HitNormal) {
@@ -252,6 +343,10 @@ simulated function IGPlus_ShowBall() {
 // straight path. Not the live ball, which is off by up to a server frame of
 // packet timing. False when the owner's screen has it stopped at a wall it
 // hasn't reached here yet: it is gone at that age.
+// The owner's beam leaves at the start of its frame, before that frame moves
+// the ball, and the ball was already moved in the frame it was fired in. So
+// on that screen the ball has flown the time between the two moves, plus the
+// shot's frame, less the beam's frame (each a single-frame move).
 function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	local float Live, Age;
 	local bool bSeen;
@@ -262,7 +357,18 @@ function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	if (P.IGPlus_EnableInputReplication == false) {
 		Live = Level.TimeSeconds - IGPlus_FireTime;
 		// ponytail: +-0.2s bounds how far a client clock can move the ball
-		Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS, FMax(0.0, Live - 0.2), Live + 0.2);
+		Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS + IGPlus_FireDelta - P.IGPlus_MoveFrameDelta,
+			FMax(0.0, Live - 0.2), Live + 0.2);
+		// Waiting at a wall for its owner (IGPlus_WallWait): the owner's
+		// screen has it on its way there, on the line from its start to where
+		// it stopped (its velocity isn't its path any more), or at the wall
+		// within IGPlus_WallSlack. It is gone at the end of the move that
+		// stops it on that screen (IGPlus_WallWaitCheck).
+		if (IGPlus_WallHoldTime > 0.0) {
+			if (Age < IGPlus_WallAge)
+				Loc = IGPlus_FireLoc + (Location - IGPlus_FireLoc) * (Age / IGPlus_WallAge);
+			return true;
+		}
 		Loc = IGPlus_FireLoc + Velocity * Age;
 		bSeen = Age <= Live || FastTrace(Loc, Location);
 	}
@@ -274,13 +380,14 @@ function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	return bSeen;
 }
 
-// Server: the owner's own beam, with the conditions under which the owner's
-// client draws its own combos (ST_ShockRifle.ClientTraceFire).
+// Server: the conditions under which the owner's client draws its own combos
+// on its own balls (ST_ShockRifle.ClientTraceFire). Whoever set this one off:
+// the owner may have drawn one on it with a beam of its own.
 function bool IGPlus_OwnerMayDrawCombo() {
 	local bbPlayer P;
 
 	P = bbPlayer(Instigator);
-	return P != None && IGPlus_ComboBy == P && P.RemoteRole == ROLE_AutonomousProxy
+	return P != None && P.RemoteRole == ROLE_AutonomousProxy
 		&& GetWeaponSettings() != None && GetWeaponSettings().bEnablePingCompensation
 		&& P.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations
 		&& P.IGPlus_PredictiveShockCombos();
@@ -312,6 +419,21 @@ function SuperExplosion() {
 	ComboDamage = WImp.WeaponSettings.ShockComboDamage;
 	ComboRadius = WImp.WeaponSettings.ShockComboHurtRadius;
 	ComboMomentum = WImp.WeaponSettings.ShockComboMomentum * MomentumTransfer * 2;
+
+	// Waiting at a wall for its owner (IGPlus_WallWait): the owner's own combo
+	// goes off where the owner's screen had the ball, short of the wall. It
+	// touches nothing on its way back there.
+	if (IGPlus_WallHoldTime > 0.0 && IGPlus_ComboBy == Instigator && bbPlayer(Instigator) != None
+		&& IGPlus_OwnerSeesBall(bbPlayer(Instigator), OwnerLoc)
+	) {
+		if (bbPlayer(Instigator).bDrawDebugData)
+			bbPlayer(Instigator).ClientDebugMessage("Shock combo (server): our ball had waited "
+				$int((Level.TimeSeconds - IGPlus_WallHoldTime) * 1000.0 / Level.TimeDilation)$"ms at the wall, set off "
+				$int(VSize(OwnerLoc - Location))$"uu short of it");
+		SetCollision(false, false, false);
+		SetLocation(OwnerLoc);
+		IGPlus_WallAge = 0.0; // it is there now: IGPlus_OwnerSeesBall gives this spot from here on
+	}
 
 	// Register explosion for translocator simulation tracking
 	IGPlus_WeaponImplementationBase(WImp).RegisterExplosion(
@@ -379,9 +501,12 @@ function SuperExplosion() {
 		Ring = Spawn(class'IGPlus_OwnerComboRing', Instigator,'', Location, Instigator.ViewRotation);
 		if (Ring != None) {
 			// The owner sees the ring where its beam met the ball on its own
-			// screen, which is where its client drew it.
-			IGPlus_OwnerSeesBall(bbPlayer(Instigator), OwnerLoc);
-			Ring.IGPlus_OwnerShift = OwnerLoc - Location;
+			// screen, which is where its client drew it. Another player's
+			// beam: where it went off.
+			if (IGPlus_ComboBy == Instigator) {
+				IGPlus_OwnerSeesBall(bbPlayer(Instigator), OwnerLoc);
+				Ring.IGPlus_OwnerShift = OwnerLoc - Location;
+			}
 			Ring.PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
 		}
 	} else {
