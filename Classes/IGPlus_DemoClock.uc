@@ -20,6 +20,7 @@ var float PBMin[4];      // lowest arrival offset per 0.125 s, newest first
 var float PBBucketEnd;
 var PlayerPawn PBViewer; // the local viewer (udemo's DemoPlaybackSpec)
 var float PBViewerSearchTime;
+var bool PBTimerFixed;   // the match timer's stale minute mark is cleared
 
 replication {
 	unreliable if (bDemoRecording && !bClientDemoRecording && Role == ROLE_Authority)
@@ -35,6 +36,8 @@ simulated event Tick(float DeltaTime) {
 	}
 
 	IGPlus_UsePureHUD();
+	if (PBTimerFixed == false)
+		IGPlus_FixMatchTimer();
 
 	if (ServerTime != PBLatest) {
 		if (ServerTime > PBLatest && ServerTime - PBLatest < 0.1) {
@@ -67,6 +70,20 @@ simulated event Tick(float DeltaTime) {
 			PBBucketEnd = Level.TimeSeconds + 0.125;
 		}
 		PBOffset = FMin(FMin(PBMin[0], PBMin[1]), FMin(PBMin[2], PBMin[3]));
+	}
+}
+
+// The server keeps the last minute mark in RemainingMinute and never clears
+// it. A demo started mid-game gets it in its first frame, and within a second
+// the GRI's Timer sets RemainingTime back to that mark (15:00 counting down at
+// 14:23), until the next mark or a spectator's 10 s time sync. RemainingTime
+// in that first frame is current: clear the mark before the Timer uses it.
+simulated function IGPlus_FixMatchTimer() {
+	local GameReplicationInfo GRI;
+
+	foreach AllActors(class'GameReplicationInfo', GRI) {
+		GRI.RemainingMinute = 0;
+		PBTimerFixed = true;
 	}
 }
 
