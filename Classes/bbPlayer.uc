@@ -2108,13 +2108,27 @@ function bool AddInventory(Inventory NewItem) {
 	return true;
 }
 
-function IGPlus_ClientReStart(EPhysics phys, vector NewLocation, rotator NewRotation) {
+function IGPlus_ClientReStart(EPhysics phys, vector NewLocation, rotator NewRotation, optional bool bNoEffect) {
 	ClientSetLocation(NewLocation, NewRotation);
 	ClientReStart();
 	SetPhysics(phys);
 
 	SetFOVAngle(135);
-	IGPlus_NotifyPlayerRestart(NewLocation, NewRotation, self);
+	if (bNoEffect == false)
+		IGPlus_NotifyPlayerRestart(NewLocation, NewRotation, self);
+}
+
+// At match start, DeathMatchPlus.StartMatch takes us out of CountdownDying,
+// whose EndState restarts us, then calls RestartPlayer and moves us to a new
+// start. Only that second start may show a spawn effect, or the light and
+// sound play where nobody is. In standalone RestartPlayer returns without
+// moving us (bRestartLevel), so the first restart keeps its effect there.
+function bool IGPlus_RestartedAgainByStartMatch() {
+	local DeathMatchPlus DMP;
+
+	DMP = DeathMatchPlus(Level.Game);
+	return DMP != none && DMP.bStartMatch
+		&& (Level.NetMode == NM_DedicatedServer || Level.NetMode == NM_ListenServer || DMP.bRestartLevel == false);
 }
 
 // Notification of other player respawning, play effects locally
@@ -11050,11 +11064,14 @@ state Dying
 {
 	function bool GameRestartPlayer() {
 		local bool bDeathMatchSave;
+		local bool bNoEffect;
 		local bool Result;
 
-		if (RemoteRole == ROLE_AutonomousProxy && zzUTPure.Settings.bEnablePingCompensatedSpawn) {
+		bNoEffect = (RemoteRole == ROLE_AutonomousProxy && zzUTPure.Settings.bEnablePingCompensatedSpawn)
+			|| IGPlus_RestartedAgainByStartMatch();
+		if (bNoEffect) {
 			bDeathMatchSave = Level.Game.bDeathMatch;
-			Level.Game.bDeathMatch = false; // this avoids the sound respawns generate, we will play our own later
+			Level.Game.bDeathMatch = false; // no stock spawn effect or sound: ping comp spawn plays its own later, match start shows them on the second restart
 			// see DeathMatchPlus.PlayTeleportEffect()
 		}
 
@@ -11064,7 +11081,7 @@ state Dying
 		if (Result)
 			IGPlus_UseNextTrans();
 
-		if (RemoteRole == ROLE_AutonomousProxy && zzUTPure.Settings.bEnablePingCompensatedSpawn)
+		if (bNoEffect)
 			Level.Game.bDeathMatch = bDeathMatchSave;
 
 		return Result;
@@ -11086,7 +11103,7 @@ state Dying
 			if ( Mesh != None )
 				PlaySpawn();
 
-			IGPlus_ClientReStart(Physics, Location, Rotation);
+			IGPlus_ClientReStart(Physics, Location, Rotation, IGPlus_RestartedAgainByStartMatch());
 			xxClientPSSpawn(CurrentTimeStamp);
 
 			IGPlus_DetClearSwitchTrustState();
