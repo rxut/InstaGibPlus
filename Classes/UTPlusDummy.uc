@@ -340,7 +340,13 @@ function CompEnd() {
 
         if (Actual != None && !Actual.bDeleteMe)
         {
-            Actual.SetCollision(ActualWasColliding, ActualWasBlockingActors, ActualWasBlockingPlayers);
+            // Gibbed during the rewind (a projectile's ping catch-up, an own-ball
+            // combo): HidePlayer hid them and turned their collision off, and
+            // Dying.Timer won't call it again for a hidden player. Turning
+            // collision back on here left an invisible body that blocked
+            // players and shots until the respawn.
+            if (!Actual.bHidden)
+                Actual.SetCollision(ActualWasColliding, ActualWasBlockingActors, ActualWasBlockingPlayers);
             Actual.bProjTarget = ActualWasProjTarget;
             
             // Apply all accumulated momentum at once
