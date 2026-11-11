@@ -525,9 +525,26 @@ function RegisterProjectile(Projectile P) {
     if (!AlreadyRegistered) {
         NewDummy = Spawn(class'ST_ProjectileDummy');
         NewDummy.Actual = P;
-        
+        NewDummy.IGPlus_Pure = self;
+
         NewDummy.Next = ProjDummies;
         ProjDummies = NewDummy;
+    }
+}
+
+// PD keeps its own Next, so a loop that is on it carries on from there.
+function IGPlus_UnlinkProjDummy(ST_ProjectileDummy PD) {
+    local ST_ProjectileDummy D;
+
+    if (ProjDummies == PD) {
+        ProjDummies = PD.Next;
+        return;
+    }
+    for (D = ProjDummies; D != none; D = D.Next) {
+        if (D.Next == PD) {
+            D.Next = PD.Next;
+            return;
+        }
     }
 }
 

@@ -21,6 +21,7 @@ var int DataIndex;
 var bool bCompActive;
 
 var ST_ProjectileDummy Next;
+var UTPure IGPlus_Pure; // whose ProjDummies list this is in
 
 var bool bHistoryCleared;
 
@@ -41,6 +42,16 @@ function FillData(out ProjectileData D) {
     D.bSnapBlockActors = Actual.bBlockActors;
     D.bSnapBlockPlayers = Actual.bBlockPlayers;
     D.bSnapProjTarget = Actual.bProjTarget;
+}
+
+// Leave the list on any destroy. Once enough destroyed actors wait for
+// cleanup, the engine sets every reference to them to None. A dead stand-in
+// left in the list then cut off every older one behind it, and their balls
+// and discs were no longer rewound.
+event Destroyed() {
+    if (IGPlus_Pure != none)
+        IGPlus_Pure.IGPlus_UnlinkProjDummy(self);
+    super.Destroyed();
 }
 
 event Tick(float DeltaTime) {
