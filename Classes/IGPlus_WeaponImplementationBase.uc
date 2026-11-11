@@ -341,7 +341,11 @@ function EnhancedHurtRadius(
 	}
 
 	foreach CollChecker.TouchingActors(class'Actor', Victim) {
-		if (Victim == Source)
+		// A touch lasts while the cylinders overlap, also once the actor's
+		// collision is off (a player swapped for their rewound copy, a
+		// stand-in after its rewind). Hitting those too could damage a
+		// player twice. Only what collides, like stock HurtRadius.
+		if (Victim == Source || !Victim.bCollideActors)
 			continue;
 
 		bIsInstigator = (Victim == Source.Instigator);
