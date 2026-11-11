@@ -17,6 +17,9 @@ var WeaponSettingsRepl WSettings;
 var PlayerPawn IGPlus_LocalPlayer;
 var bool IGPlus_bLocalPlayerFound;
 
+// The last trace hit something (server and clients alike).
+var bool IGPlus_bOnTarget;
+
 replication
 {
 	// Things the server should send to the client.
@@ -276,6 +279,14 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	// of segments from the eyes was hit, trimmed one segment short, missed and
 	// hit again after the regrow: a small hit and a hit sound on every tick.
 	Reach = BeamLen * BeamSize + VSize(Location - Origin);
+	// While the beam is on something, look one segment past its end. A target
+	// backing off steps past the end of the trimmed beam every BeamSize, and
+	// the beam used to miss until the next segment had grown: a payout hit and
+	// a catch-up hit each time, two hit sounds a tick apart. The next segment
+	// still grows at its usual rate (CutDownBeam), and a beam that is on
+	// nothing reaches no further than before.
+	if (IGPlus_bOnTarget && BeamLen < MaxSegments)
+		Reach += BeamSize;
 
 	if (GetWeaponSettings().PulseCompensatePing) {
 		HitActor = Instigator.TraceShot(HitLocation, HitNormal, Origin + Reach * X, Origin);
@@ -430,6 +441,7 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 		}
 	}
 	SetRotation(rotator(BeamJoin - Location));
+	IGPlus_bOnTarget = bHit;
 	if (bHit)
 		CutDownBeam(VSize(BeamJoin - Location) + VSize(HitLocation - BeamJoin)); // potentially shortens beam
 	if (ST_PBolt(PlasmaBeam) != none)
@@ -549,7 +561,10 @@ simulated function CutDownBeam(float Length) {
 		Length -= BeamSize;
 		Beam = Beam.PlasmaBeam;
 	}
-	ST_PBolt(Beam).GrowthAccumulator = 0.0;
+	// A hit past the end of the last segment (TraceBeam looks one segment
+	// ahead): that segment keeps growing.
+	if (Beam.PlasmaBeam != none || Length < BeamSize)
+		ST_PBolt(Beam).GrowthAccumulator = 0.0;
 
 	if (Beam.PlasmaBeam != none) {
 		Beam.PlasmaBeam.Destroy();
