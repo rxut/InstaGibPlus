@@ -1203,7 +1203,8 @@ function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping) 
 
 // CatchUpMs: catch up this much instead of the shooter's one-way ping (a
 // flak slug's chunks: what was left of the slug's own catch-up).
-function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs) {
+// Returns the catch-up in ms, 0 if none ran.
+function float SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs) {
   local float DeltaTime;
   local float SimPing;
   local float InterpMs;
@@ -1213,7 +1214,7 @@ function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs) {
 
   // Early exit if the projectile is already destroyed
   if (P == None || P.bDeleteMe)
-    return;
+    return 0;
   LS = class'IGPlus_LiftShot'.static.Of(P);
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
@@ -1230,14 +1231,14 @@ function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs) {
         SimPing = WeaponSettings.PingCompensationMax;
 
   if (SimPing <= 0.0)
-    return;
+    return 0;
 
   DeltaTime = 0.001*SimPing*Level.TimeDilation;
 
   DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
 
   if (DeltaTime <= 0.0)
-    return;
+    return 0;
 
   TotalMs = SimPing;
   while (SimPing > 0.0) {
@@ -1260,6 +1261,7 @@ function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs) {
   IGPlus_CatchUpProjectile = None;
   if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
     LS.FastForwarded(TotalMs);
+  return TotalMs;
 }
 
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping) {

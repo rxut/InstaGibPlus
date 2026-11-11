@@ -38,9 +38,10 @@ function AddChunk(ST_UTChunk Chunk)
 				Chunk.LifeSpan -= IGPlus_SlugCatchUpMs * 0.001 * Level.TimeDilation;
 			}
 		} else {
-			// Apply ping compensation simulation to each chunk
-			WImp.SimulateProjectile(Chunk, bbP.PingAverage);
-			Chunk.LifeSpan -= bbP.PingAverage*0.001*Level.TimeDilation;
+			// Apply ping compensation simulation to each chunk. It ages by
+			// the catch-up (half a ping), not a full ping: with a drop-off
+			// set, damage falls with age.
+			Chunk.LifeSpan -= WImp.SimulateProjectile(Chunk, bbP.PingAverage)*0.001*Level.TimeDilation;
 		}
 	}
 	if (LS != None)

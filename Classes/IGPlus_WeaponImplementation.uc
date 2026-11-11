@@ -94,7 +94,7 @@ function vector IGPlus_AdjustLocationToHistoricalMoverFrame(
 
 function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping);
 
-function SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs);
+function float SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs);
 
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping);
 
