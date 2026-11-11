@@ -440,7 +440,15 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 				SetLocation(IGPlus_RaisedStart(Origin, BeamEnd)); // Tick puts it back at the gun
 		}
 	}
-	SetRotation(rotator(BeamJoin - Location));
+	// The gun sits ahead of, beside and below the eyes. A hit closer than one
+	// segment along the eye line is beside or behind the gun, and a beam aimed
+	// at it swung far off the view (straight up when touching a player). Aim
+	// no closer than one segment out: the look of a one-segment beam that hits
+	// nothing, and of stock, which draws along the view.
+	if (((BeamJoin - Origin) dot X) < BeamSize)
+		SetRotation(rotator(Origin + BeamSize * X - Location));
+	else
+		SetRotation(rotator(BeamJoin - Location));
 	IGPlus_bOnTarget = bHit;
 	if (bHit)
 		CutDownBeam(VSize(BeamJoin - Location) + VSize(HitLocation - BeamJoin)); // potentially shortens beam
