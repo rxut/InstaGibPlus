@@ -11408,6 +11408,10 @@ state CountdownDying extends Dying
 	exec function Fire( optional float F ) {}
 
 	function EndState() {
+		// Dying.BeginState zeroed it and this EndState replaces Dying's, which
+		// puts it back. Without this nobody's body tilted with their aim in
+		// the first life after warm-up.
+		RotationRate = default.RotationRate;
 		bBehindView = false;
 		if (Player != none)
 			ServerReStartPlayer();
