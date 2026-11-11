@@ -247,7 +247,7 @@ defaultproperties
 	GrenadeDamage=80
 	GrenadeHurtRadius=200
 	GrenadeMomentum=1.0
-	RocketCompensatePing=False
+	RocketCompensatePing=True
 
 	FlakSelectTime=0.625
 	FlakPostSelectTime=0.384615
@@ -263,7 +263,7 @@ defaultproperties
 	FlakSlugDamage=70
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
-	FlakCompensatePing=False
+	FlakCompensatePing=True
 
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
@@ -276,7 +276,7 @@ defaultproperties
 	RipperSecondaryHurtRadius=180
 	RipperSecondaryDamage=34
 	RipperSecondaryMomentum=1.0
-	RipperCompensatePing=False
+	RipperCompensatePing=True
 
 	MinigunSelectTime=0.555556
 	MinigunDownTime=0.333333
@@ -302,7 +302,7 @@ defaultproperties
 	PulseBoltMaxAccumulate=0.08
 	PulseBoltGrowthDelay=0.05
 	PulseBoltMaxSegments=10
-	PulseCompensatePing=False
+	PulseCompensatePing=True
 
 	ShockSelectTime=0.5
 	ShockDownTime=0.259259
@@ -331,7 +331,7 @@ defaultproperties
 	BioAltMomentum=1.0
 	BioHurtRadiusBase=75
 	BioHurtRadiusMax=250
-	BioCompensatePing=False
+	BioCompensatePing=True
 
 	EnforcerSelectTime=0.777778
 	EnforcerDownTime=0.266667
@@ -378,7 +378,7 @@ defaultproperties
 
 	HealthPackHealingAmount=20
 
-	bEnablePingCompensation=False
+	bEnablePingCompensation=True
 
 	bEnableSubTickCompensation=False
 

@@ -446,6 +446,10 @@ simulated function SpawnClientDummyBioGlob(float ClientChargeSize)
 	local vector Start;
 	local float Hand;
 
+	// The client copy needs ping compensation, as for the other weapons.
+	if (IsPingCompEnabled() == false)
+		return;
+
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None)
 		return;

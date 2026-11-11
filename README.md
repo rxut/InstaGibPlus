@@ -814,19 +814,19 @@ A crosshair is made up of individual images that are drawn in a specific order p
 
 ## bBioUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Bio Rifle ping-compensated logic.
 
 ## bShockBeamUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Shock Beam ping-compensated logic.
 
 ## bShockProjectileUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Shock Projectile ping-compensated logic.
 
@@ -838,37 +838,37 @@ Only used with [bShockProjectileUseClientSideAnimations](#bshockprojectileusecli
 
 ## bPulseUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Pulse Gun ping-compensated logic.
 
 ## bRipperUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Ripper ping-compensated logic.
 
 ## bFlakUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Flak ping-compensated logic.
 
 ## bRocketUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Rocket Launcher ping-compensated logic.
 
 ## bSniperUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Sniper ping-compensated logic.
 
 ## bTranslocatorUseClientSideAnimations
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 Enable client-side animation timing for Translocator ping-compensated logic. Not used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator), which always shows your own disc the moment you throw. The settings menu grays it out there.
 
@@ -2029,7 +2029,7 @@ Per-preset settings in the `[WeaponSettings*]` sections. Only the netcode-releva
 ## bEnablePingCompensation
 
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 If enabled, hitscan shots are tested against where targets were on the shooter's screen: the server rewinds every player (and the lift they stand on) by the shooter's ping before tracing. Also switches supported ST_ weapons to the deterministic fire path (see Docs/DETERMINISTIC-NETCODE.md).
 
@@ -2074,7 +2074,7 @@ How far a shot's [bEnablePreciseRewindTime](#benablepreciserewindtime) rewind ma
 ## RocketCompensatePing
 
 **Type: bool**  
-**Default: False**  
+**Default: True**  
 
 If enabled, projectiles are fast-forwarded by the shooter's ping at spawn, with targets rewound for each simulated step.
 

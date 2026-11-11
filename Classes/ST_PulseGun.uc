@@ -126,6 +126,11 @@ simulated function SpawnClientDummyProjectile() {
 	local int Slot;
 	local ST_PlasmaSphere NewDummy;
 
+	// Without ping compensation the server's sphere doesn't take over from
+	// ours (ST_PlasmaSphere), so there is no client copy then.
+	if (GetWeaponSettings().PulseCompensatePing == false)
+		return;
+
 	PawnOwner = Pawn(Owner);
 	if (PawnOwner == None)
 		return;

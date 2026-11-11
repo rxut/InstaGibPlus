@@ -555,16 +555,16 @@ defaultproperties
 	HitMarkerDecayExponent=5.0
 	HitMarkerSource=HMSRC_Server
 	bUseCrosshairFactory=False
-	bBioUseClientSideAnimations=False
-	bShockBeamUseClientSideAnimations=False
-	bShockProjectileUseClientSideAnimations=False
+	bBioUseClientSideAnimations=True
+	bShockBeamUseClientSideAnimations=True
+	bShockProjectileUseClientSideAnimations=True
 	bPredictiveShockCombos=True
-	bPulseUseClientSideAnimations=False
-	bRipperUseClientSideAnimations=False
-	bFlakUseClientSideAnimations=False
-	bRocketUseClientSideAnimations=False
-	bSniperUseClientSideAnimations=False
-	bTranslocatorUseClientSideAnimations=False
+	bPulseUseClientSideAnimations=True
+	bRipperUseClientSideAnimations=True
+	bFlakUseClientSideAnimations=True
+	bRocketUseClientSideAnimations=True
+	bSniperUseClientSideAnimations=True
+	bTranslocatorUseClientSideAnimations=True
 
 	MenuX=200
 	MenuY=200
