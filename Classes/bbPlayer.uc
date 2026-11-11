@@ -3261,6 +3261,10 @@ function ClientUpdatePosition()
 				NetStatsElem.bInstantRelocation = true;
 			}
 		}
+		// Only the update that came with a state change skips the eases. It
+		// was cleared only by camera correction smoothing, so without that
+		// setting the lift exit ease stayed off after the first such update.
+		IGPlus_CameraCorrectionSnap = false;
 	}
 
 	bUpdating = false;
