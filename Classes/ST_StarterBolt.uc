@@ -397,6 +397,12 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 			}
 			else
 				WallEffect.SetLocation(HitLocation - 4 * X);
+		} else if (WallEffect != None) {
+			// Nothing hit and not at full length yet: no end effect, as in stock.
+			// Without this the hit ball stayed on the wall until the beam had
+			// grown back to full length.
+			WallEffect.Destroy();
+			WallEffect = None;
 		}
 	}
 
