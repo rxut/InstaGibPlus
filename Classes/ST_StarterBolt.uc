@@ -20,6 +20,13 @@ var bool IGPlus_bLocalPlayerFound;
 // The last trace hit something (server and clients alike).
 var bool IGPlus_bOnTarget;
 
+// Server: hit messages for the beam's small damage pieces are added up
+// (IGPlus_BeamDamage, IGPlus_HitFeedback.IGPlus_BeamLead).
+var IGPlus_HitFeedback IGPlus_Fb;
+var float IGPlus_FbTick;   // this tick's length
+const IGPLUS_FB_SLACK = 2.0;    // a steady hit is PulseBoltDPS * 0.22, less up to 2 (CalcDamage pays even numbers)
+const IGPLUS_FB_MAXHOLD = 0.45; // a held piece waits for the beam's next hit on that player, no longer than this
+
 replication
 {
 	// Things the server should send to the client.
@@ -63,6 +70,9 @@ simulated function PostBeginPlay()
 	if (ROLE == ROLE_Authority)
 		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
 			break;		// Find master :D
+	if (ROLE == ROLE_Authority)
+		ForEach AllActors(Class'IGPlus_HitFeedback', IGPlus_Fb)
+			break;
 
 	GrowthDelay = WImp.WeaponSettings.PulseBoltGrowthDelay;
 	MaxSegments = WImp.WeaponSettings.PulseBoltMaxSegments;
@@ -88,6 +98,9 @@ simulated function Tick(float DeltaTime)
 		// those who can see the gun: a beam fired from behind cover stays visible.
 		if (Instigator != None)
 			bAlwaysRelevant = Instigator.bAlwaysRelevant;
+
+		if (IGPlus_Fb != None)
+			IGPlus_Fb.IGPlus_BeamFlushHeld(Instigator, IGPLUS_FB_MAXHOLD);
 
 		ShootAccum -= DeltaTime;
 		while (ShootAccum <= 0.0)
@@ -269,6 +282,7 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	local bool bHit;
 	local float Reach;
 
+	IGPlus_FbTick = DeltaTime;
 	CheckBeam(X, DeltaTime); // potentially lengthens the beam
 
 	BeamLen = BeamLength();
@@ -313,12 +327,12 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 					Momentum = vect(0,0,0);
 				else
 					Momentum = MomentumTransfer * X * AccumulatedDamage;
-				HitActor.TakeDamage(
+				IGPlus_BeamDamage(
+					HitActor,
 					CalcDamage(WImp.WeaponSettings.PulseBoltDPS * AccumulatedDamage),
-					instigator,
 					HitLocation,
 					WImp.WeaponSettings.PulseBoltMomentum * Momentum,
-					MyDamageType);
+					false);
 				AccumulatedDamage = 0;
 			}
 			else if ( DamagedActor != HitActor )
@@ -327,12 +341,12 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 					Momentum = vect(0,0,0);
 				else
 					Momentum = MomentumTransfer * X * AccumulatedDamage;
-				DamagedActor.TakeDamage(
+				IGPlus_BeamDamage(
+					DamagedActor,
 					CalcDamage(WImp.WeaponSettings.PulseBoltDPS * AccumulatedDamage),
-					instigator,
 					HitLocation,
 					WImp.WeaponSettings.PulseBoltMomentum * Momentum,
-					MyDamageType);
+					false);
 				AccumulatedDamage = 0;
 			}
 			LastHitTime = Level.TimeSeconds;
@@ -346,12 +360,12 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 					Momentum = vect(0,0,0);
 				else
 					Momentum = MomentumTransfer * X * AccumulatedDamage;
-				DamagedActor.TakeDamage(
+				IGPlus_BeamDamage(
+					DamagedActor,
 					CalcDamage(WImp.WeaponSettings.PulseBoltDPS * AccumulatedDamage),
-					instigator,
 					HitLocation,
 					WImp.WeaponSettings.PulseBoltMomentum * Momentum,
-					MyDamageType);
+					true);
 				AccumulatedDamage = 0;
 			}
 		}
@@ -388,12 +402,12 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 			else
 				Momentum = MomentumTransfer * X * AccumulatedDamage;
 
-			DamagedActor.TakeDamage(
+			IGPlus_BeamDamage(
+				DamagedActor,
 				CalcDamage(WImp.WeaponSettings.PulseBoltDPS * AccumulatedDamage),
-				instigator,
 				DamagedActor.Location - X * 1.2 * DamagedActor.CollisionRadius,
 				WImp.WeaponSettings.PulseBoltMomentum * Momentum,
-				MyDamageType);
+				false);
 			AccumulatedDamage = 0;
 			DamagedActor = None;
 		}
@@ -528,6 +542,44 @@ simulated function vector IGPlus_BendPoint(vector Origin, vector X, vector End) 
 			Hi = Mid;
 	}
 	return Origin + Lo * X;
+}
+
+// Server. Deals one piece of the beam's damage. The damage call is the same as
+// before. What changes is the hit message. A steady beam's own hit (bSteady)
+// sends it at once, as before. So does a piece that the beam's time off the
+// player has paid for: one pass across a player, or the start of a steady beam,
+// sounds right away. Any other piece is small and comes faster than a steady
+// beam's hits: it is held, and the message goes out, with the sum, once the
+// held damage reaches a steady beam's hit (IGPlus_HitFeedback.IGPlus_BeamLead).
+function IGPlus_BeamDamage(Actor Victim, int Dmg, vector HitLoc, vector Mom, bool bSteady) {
+	local Pawn P;
+	local bool bSend;
+
+	P = Pawn(Victim);
+	if (IGPlus_Fb == None || P == None) {
+		Victim.TakeDamage(Dmg, Instigator, HitLoc, Mom, MyDamageType);
+		return;
+	}
+	// DamagedActor is None only for the piece dealt on reaching a target. A
+	// steady beam's time between hits is 0.22 s and up to a tick.
+	bSend = IGPlus_Fb.IGPlus_BeamLead(
+		Instigator, P,
+		DamagedActor == None,
+		bSteady,
+		Dmg,
+		FMax(2.0, WImp.WeaponSettings.PulseBoltDPS * 0.22 - IGPLUS_FB_SLACK),
+		0.22 + IGPlus_FbTick);
+
+	IGPlus_Fb.IGPlus_BeamMark(Instigator, P, bSend);
+	Victim.TakeDamage(Dmg, Instigator, HitLoc, Mom, MyDamageType);
+	IGPlus_Fb.IGPlus_BeamUnmark();
+}
+
+// The beam ended: what is still held goes out now.
+simulated function Destroyed() {
+	if (Role == ROLE_Authority && IGPlus_Fb != None)
+		IGPlus_Fb.IGPlus_BeamFlushHeld(Instigator, -1.0);
+	Super.Destroyed();
 }
 
 simulated function int BeamLength() {
