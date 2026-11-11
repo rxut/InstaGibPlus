@@ -264,20 +264,28 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	local vector BeamJoin, BeamEnd;
 	local PBolt Last;
 	local bool bHit;
+	local float Reach;
 
 	CheckBeam(X, DeltaTime); // potentially lengthens the beam
 
 	BeamLen = BeamLength();
 
+	// The hit is traced from the eyes, but the beam is drawn and trimmed
+	// (CutDownBeam) from the gun in front of them. Trace as far as the drawn
+	// beam reaches. Without the gun's lead, a target just past a whole number
+	// of segments from the eyes was hit, trimmed one segment short, missed and
+	// hit again after the regrow: a small hit and a hit sound on every tick.
+	Reach = BeamLen * BeamSize + VSize(Location - Origin);
+
 	if (GetWeaponSettings().PulseCompensatePing) {
-		HitActor = Instigator.TraceShot(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin);
+		HitActor = Instigator.TraceShot(HitLocation, HitNormal, Origin + Reach * X, Origin);
 		// Clients only, for the beam's look: TraceShot does not run on other players there.
 		// The server hits only where the shooter saw the target, not its live spot too.
 		if (HitActor == None && Level.NetMode == NM_Client) {
-			HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
+			HitActor = Trace(HitLocation, HitNormal, Origin + Reach * X, Origin, true);
 		}
 	} else {
-		HitActor = Trace(HitLocation, HitNormal, Origin + BeamLen * BeamSize * X, Origin, true);
+		HitActor = Trace(HitLocation, HitNormal, Origin + Reach * X, Origin, true);
 	}
 	
 	if ( (HitActor != None)    && (HitActor != Instigator) && (HitActor.bProjTarget || (HitActor == Level) || (HitActor.bBlockActors && HitActor.bBlockPlayers)) )
@@ -406,7 +414,7 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 	BeamJoin = HitLocation;
 	if (Level.NetMode != NM_DedicatedServer) {
 		if (bHit == false)
-			BeamEnd = Origin + BeamLen * BeamSize * X; // the eye line was traced this far
+			BeamEnd = Origin + BeamLen * BeamSize * X; // the beam's own length along the eye line
 		BeamJoin = BeamEnd;
 		if (PlasmaBeam != None && FastTrace(BeamEnd - 4 * Normal(BeamEnd - Location), Location) == false) {
 			if (IGPlus_SeenFromShooterEyes())
