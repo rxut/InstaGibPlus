@@ -449,6 +449,12 @@ var byte IGPlus_DetClientPhys, IGPlus_DetPrevClientPhys;
 var float IGPlus_DetTlocPreVZ, IGPlus_DetTlocPreClientVZ;  // server: fall speeds going into our last translocate
 var byte IGPlus_DetTlocPrePhys, IGPlus_DetTlocPreClientPhys;
 var string IGPlus_DetTlocInfo;        // the last translocate's disc details
+// Server: during a throw's step, where its disc leaves from
+// (IGPlus_DetThrowOrigin), and which rule took the client's spot
+// (0 none: our own spot, 1 Push-Safe Aim, 2 the 32uu bubble).
+var vector IGPlus_DetThrowSpot;
+var bool IGPlus_bDetThrowSpot;
+var int IGPlus_DetThrowRule;
 // Deterministic translocator actions survive a lost move: the client sends
 // its last action again with the next moves until the server is past it.
 var int IGPlus_DetRedoAction;         // client: last action (0: none to resend)
@@ -4727,6 +4733,74 @@ function IGPlus_DetTlocLog(string Event, string Details) {
 		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp, 'IGPlus');
 }
 
+// Server: the client's spot at the start of move SM (before its movement),
+// as IGPlus_PSAShotOrigin has it: exact when the previous move (and nothing
+// between) reported it. Not from the previous move on a lift, which has
+// moved on since.
+function vector IGPlus_ClientMoveStart(IGPlus_ServerMove SM, float PrevTS) {
+	local vector ClientStart;
+
+	ClientStart = SM.ClientLocation - SM.ClientVelocity * SM.MoveDeltaTime;
+	if (SM.ClientBase != none)
+		ClientStart += SM.ClientBase.Location;
+	if (Mover(SM.ClientBase) == none && IGPlus_PSALastClientTS == PrevTS
+		&& Abs(SM.TimeStamp - PrevTS - SM.MoveDeltaTime) < 0.5 * SM.MoveDeltaTime
+		&& VSize(IGPlus_PSALastClientLoc - ClientStart) < 4.0)
+		ClientStart = IGPlus_PSALastClientLoc;
+	return ClientStart;
+}
+
+// Server: where a deterministic throw's disc leaves from. The thrower's own
+// disc left from its spot at the start of this move. Ours leaves from there
+// too, so both fly one path and the translocate lands both in one place,
+// when Push-Safe Aim takes that spot (a push the client hadn't seen yet), or
+// when it is within 32uu of ours with a clear line (like a landing,
+// IGPlus_DetTakeClientLanding). Else from our own spot, and the thrower gets
+// our disc's path (IGPlus_DetAfterThrow). Not on a lift: there the client's
+// spot is inside our lift.
+function vector IGPlus_DetThrowOrigin(IGPlus_ServerMove SM, float PrevTS, int MergeCount) {
+	local vector Origin, ClientStart, Eye;
+	local float Dist;
+
+	IGPlus_DetThrowRule = 0;
+	if (IsInState('Dying') || MergeCount != 0 || Mover(Base) != none || Mover(SM.ClientBase) != none)
+		return Location;
+	Origin = IGPlus_PSAShotOrigin(SM, PrevTS, MergeCount);
+	if (Origin != Location) {
+		IGPlus_DetThrowRule = 1;
+		return Origin;
+	}
+	ClientStart = IGPlus_ClientMoveStart(SM, PrevTS);
+	Dist = VSize(ClientStart - Location);
+	// ponytail: a fixed 32uu, twice the landing bubble; under fire Push-Safe
+	// Aim leaves gaps of 17 to 43uu it has no push for
+	if (Dist < 0.5 || Dist > 32.0)
+		return Location;
+	Eye = BaseEyeHeight * vect(0,0,1);
+	if (IGPlus_PSAClear(ClientStart, Location) == false || IGPlus_PSAClear(ClientStart + Eye, Location + Eye) == false)
+		return Location;
+	IGPlus_DetThrowRule = 2;
+	return ClientStart;
+}
+
+// Server: after a move's translocator step. It threw, our disc left from our
+// own spot, and the client's spot (where its disc left from) is more than
+// 4uu off: the thrower gets our disc's path at once, so its own follows ours
+// from the start instead of landing that far off. Not on a lift (left as it
+// was).
+function IGPlus_DetAfterThrow(IGPlus_ServerMove SM, float PrevTS) {
+	local ST_Translocator TL;
+
+	TL = ST_Translocator(Weapon);
+	// (1: a throw. ThrowTarget stamps the one this step made.)
+	if ((SM.DetChargeData & 3) != 1 || SM.DetChargeData > 7 || IGPlus_DetThrowRule != 0
+		|| TL == None || ST_TranslocatorTarget(TL.TTarget) == None || TL.IGPlus_ThrowTS != SM.TimeStamp
+		|| Mover(Base) != none || Mover(SM.ClientBase) != none)
+		return;
+	if (VSize(Location - IGPlus_ClientMoveStart(SM, PrevTS)) > 4.0)
+		TL.IGPlus_DetServerDiscChanged(ST_TranslocatorTarget(TL.TTarget));
+}
+
 // Server: a deterministic translocator action from a lost or held-back move,
 // once, on the client's timeline: at its move's time stamp, aimed with that
 // move's view (packed like xxServerMove's View). MoveTS: the move we are
@@ -5262,9 +5336,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		IGPlus_DetLastActionSeenTS = FMax(IGPlus_DetLastActionSeenTS, SM.TimeStamp);
 	if (bDetMoveAcceptedForFire && IGPlus_DetTranslocator && SM.DetWeaponIndex == IGPLUS_DetWEAPON_None) {
 		IGPlus_DetRunSwitchHeld(SM.TimeStamp);
-		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
+		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()) {
+			// (1: a throw.) Its disc leaves from where the thrower's did.
+			IGPlus_DetThrowRule = 0;
+			if ((SM.DetChargeData & 3) == 1 && SM.DetChargeData <= 7) {
+				IGPlus_DetThrowSpot = IGPlus_DetThrowOrigin(SM, PSAPrevTS, MergeCount);
+				IGPlus_bDetThrowSpot = true;
+			}
 			ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
-		else if (SM.DetChargeData <= 7 && (SM.DetChargeData & 3) != 0)
+			IGPlus_bDetThrowSpot = false;
+			IGPlus_DetAfterThrow(SM, PSAPrevTS);
+		} else if (SM.DetChargeData <= 7 && (SM.DetChargeData & 3) != 0)
 			IGPlus_DetNotHeld(SM.DetChargeData, SM.TimeStamp, SM.View);
 	}
 

@@ -356,7 +356,7 @@ function Translocate()
 
 function ThrowTarget()
 {
-	local Vector Start, X,Y,Z;
+	local Vector Start, OwnStart, X,Y,Z;
 	local bbPlayer bbP;
 
 	bbP = bbPlayer(Owner);
@@ -368,10 +368,21 @@ function ThrowTarget()
 
 	if ( Owner.IsA('Bot') )
 		bBotMoveFire = true;
-	Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	// Deterministic: from the thrower's spot on its own screen when we take
+	// it (bbPlayer.IGPlus_DetThrowOrigin), so both discs fly the same path.
+	OwnStart = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
+	Start = OwnStart;
+	if (bbP != None && bbP.IGPlus_bDetThrowSpot)
+		Start += bbP.IGPlus_DetThrowSpot - Owner.Location;
 	Pawn(Owner).ViewRotation = Pawn(Owner).AdjustToss(TossForce, Start, 0, true, true);
 	GetAxes(Pawn(owner).ViewRotation,X,Y,Z);
 	TTarget = Spawn(class'ST_TranslocatorTarget',,, Start, IGPlus_DiscRotation());
+	// No room for our disc at the thrower's spot: from ours, as before.
+	if (TTarget == None && Start != OwnStart) {
+		Start = OwnStart;
+		bbP.IGPlus_DetThrowRule = 0;
+		TTarget = Spawn(class'ST_TranslocatorTarget',,, Start, IGPlus_DiscRotation());
+	}
 
 	if (TTarget!=None)
 	{
