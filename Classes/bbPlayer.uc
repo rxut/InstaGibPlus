@@ -326,6 +326,9 @@ var Weapon IGPlus_SDFlashWeapon;
 var bool IGPlus_SDAmbientSet;
 var float IGPlus_SDLastOverlayTime;
 var PlayerPawn IGPlus_SDViewer;
+var Inventory IGPlus_SDPickupItem[4];       // server: items this player asked to pick up (UTPure.HandlePickupQuery)
+var class<Inventory> IGPlus_SDPickupClass[4];
+var byte IGPlus_SDPickupTicks[4];          // server ticks left to see the pickup happen, 0 = free slot
 var float IGPlus_SDViewerSearchTime;
 var IGPlus_DemoClock IGPlus_SDClock;
 // IGPlus_Assets repaired our class's broken model before our
@@ -10263,6 +10266,7 @@ event ServerTick(float DeltaTime) {
 	IGPlus_ProcessRemoteMovement();
 	xxRememberPosition();
 	IGPlus_SDServerRecord(DeltaTime);
+	IGPlus_SDCheckPickups();
 	IGPlus_UpdateServerSnapInterpDelayEstimate();
 
 	if (IGPlus_EnableSnapshotInterpolation) {
@@ -16665,6 +16669,58 @@ simulated function IGPlus_DemoLocalizedMessage(
 	IGPlus_SDPersonalMessage(Message, Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
 }
 
+// Server: every pickup asks GameInfo.PickupQuery first, and UTPure's
+// HandlePickupQuery tells us. Whether it is taken is decided after that
+// (inventory chain, full health, Touch), so IGPlus_SDCheckPickups looks later.
+function IGPlus_SDNotePickupQuery(Inventory Item) {
+	local int i, Free;
+
+	if (Item == none || Item.bHidden)
+		return;
+	Free = -1;
+	for (i = 0; i < ArrayCount(IGPlus_SDPickupItem); i++) {
+		if (IGPlus_SDPickupTicks[i] > 0 && IGPlus_SDPickupItem[i] == Item)
+			return;
+		if (Free < 0 && IGPlus_SDPickupTicks[i] == 0)
+			Free = i;
+	}
+	if (Free < 0)
+		return;
+	IGPlus_SDPickupItem[Free] = Item;
+	IGPlus_SDPickupClass[Free] = Item.Class;
+	IGPlus_SDPickupTicks[Free] = 2;
+}
+
+// Server, every tick after the moves: a noted item that is now taken (gone to
+// its respawn wait, destroyed, or ours) gets the pickup message stock code
+// sent it, copied for a server demo, which never records the stock call.
+function IGPlus_SDCheckPickups() {
+	local int i;
+	local Inventory Item;
+	local class<Inventory> C;
+
+	for (i = 0; i < ArrayCount(IGPlus_SDPickupItem); i++) {
+		if (IGPlus_SDPickupTicks[i] == 0)
+			continue;
+		Item = IGPlus_SDPickupItem[i];
+		if (Item != none && Item.bDeleteMe == false && Item.bHidden == false && Item.Owner != self) {
+			IGPlus_SDPickupTicks[i]--;
+			continue;
+		}
+		IGPlus_SDPickupTicks[i] = 0;
+		IGPlus_SDPickupItem[i] = none;
+		C = IGPlus_SDPickupClass[i];
+		if (C == none)
+			continue;
+		if (ClassIsChildOf(C, class'TournamentHealth'))
+			IGPlus_DemoLocalizedMessage(class'PickupMessageHealthPlus', 0, none, none, C);
+		else if (C.default.PickupMessageClass != none)
+			IGPlus_DemoLocalizedMessage(C.default.PickupMessageClass, 0, none, none, C);
+		else
+			IGPlus_DemoClientMessage(C.default.PickupMessage, 'Pickup', false);
+	}
+}
+
 // Server: a text message (BroadcastMessage) this player got, written to a
 // server demo only. Playback shows it to a viewer following us.
 simulated function IGPlus_DemoClientMessage(string S, name Type, bool bBeep) {
@@ -17495,10 +17551,34 @@ simulated function IGPlus_DemoWeaponEffect(
 	vector TargetOffset,
 	vector HitNormal
 ) {
+	local PlayerPawn V;
+	local bbPlayer Shooter;
+	local vector CamPos, NewStart;
+	local rotator View;
+	local float Eye;
+
 	if (Role == ROLE_Authority || Level.NetMode != NM_Client || Effect == none)
 		return;
+	// Played as the viewer, so the effect's own-beam rules (Hide Own Beam)
+	// look at who is watching, not at the player who carried the record.
+	V = IGPlus_SDGetViewer();
+	if (V == none)
+		V = self;
+	// Following the shooter in first person (the NewNet rifles' beam): start
+	// it at the gun where the camera is, as on the shooter's client and as
+	// ST_ShockBeamOwnerHidden does for the shock rifle.
+	if (SourcePRI != none)
+		Shooter = bbPlayer(SourcePRI.Owner);
+	if (Shooter != none && Shooter.IGPlus_SDIsServerDemoProxy() && Shooter.IGPlus_SDFollowingViewer() != none) {
+		Shooter.IGPlus_SDCameraNow(CamPos, View, Eye);
+		NewStart = Shooter.IGPlus_SDMuzzle(CamPos + Eye * vect(0,0,1), View, Shooter.Weapon) + 20 * vector(View);
+		if (VSize(NewStart - SourceLocation) <= 150) {
+			SourceLocation = NewStart;
+			SourceOffset = NewStart - class'WeaponEffect'.static.GetPlayerLocation(Shooter);
+		}
+	}
 	Effect.static.Play(
-		self,
+		V,
 		Settings,
 		SourcePRI,
 		SourceLocation,

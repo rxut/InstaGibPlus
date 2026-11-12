@@ -390,7 +390,6 @@ function TraceFire( float Accuracy )
 function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
 {
 	local Pawn PawnOwner;
-	local Pawn P;
 	local vector HitOffset;
 	local vector SmokeOffset;
 
@@ -408,29 +407,19 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 
 	SmokeOffset = CalcDrawOffset() + (FireOffset.X + 20) * X + FireOffset.Y * Y + FireOffset.Z * Z;
 	SpawnEffect(HitLocation, Owner.Location + SmokeOffset);
-	for (P = Level.PawnList; P != none; P = P.NextPawn) {
-		if (P == Owner) continue;
-		if (bbPlayer(P) != none)
-			bbPlayer(P).SendWeaponEffect(
-				class'SuperShockRifleWeaponEffect',
-				Pawn(Owner).PlayerReplicationInfo,
-				Owner.Location + SmokeOffset,
-				SmokeOffset,
-				Other,
-				HitLocation,
-				HitOffset,
-				HitNormal);
-		else if (bbCHSpectator(P) != none)
-			bbCHSpectator(P).SendWeaponEffect(
-				class'SuperShockRifleWeaponEffect',
-				Pawn(Owner).PlayerReplicationInfo,
-				Owner.Location + SmokeOffset,
-				SmokeOffset,
-				Other,
-				HitLocation,
-				HitOffset,
-				HitNormal);
-	}
+	// Everyone but the shooter (their client drew it), and one record for a
+	// server demo, which the calls to each player never reach.
+	class'WeaponEffect'.static.Send(
+		Level,
+		class'SuperShockRifleWeaponEffect',
+		Pawn(Owner).PlayerReplicationInfo,
+		Owner.Location + SmokeOffset,
+		SmokeOffset,
+		Other,
+		HitLocation,
+		HitOffset,
+		HitNormal,
+		Pawn(Owner));
 
 	if ( (Other != self) && (Other != Owner) && (Other != None) )
 		Other.TakeDamage(HitDamage, PawnOwner, HitLocation, 60000.0*X, ST_MyDamageType);

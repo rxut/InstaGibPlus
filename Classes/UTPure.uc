@@ -1183,6 +1183,19 @@ function bool MutatorBroadcastLocalizedMessage( Actor Sender, Pawn Receiver, out
 } // MutatorBroadcastLocalizedMessage
 
 // ==================================================================================
+// HandlePickupQuery - notes pickups so the pickup message is copied for server demos
+// ==================================================================================
+function bool HandlePickupQuery(Pawn Other, Inventory Item, out byte bAllowPickup)
+{
+	local bool bResult;
+
+	bResult = Super.HandlePickupQuery(Other, Item, bAllowPickup);
+	if (bbPlayer(Other) != none)
+		bbPlayer(Other).IGPlus_SDNotePickupQuery(Item);
+	return bResult;
+}
+
+// ==================================================================================
 // ScoreKill - copies the killing spree announcement for server demos
 // ==================================================================================
 // DeathMatchPlus.Killed adds one to the killer's Spree right after this and,
