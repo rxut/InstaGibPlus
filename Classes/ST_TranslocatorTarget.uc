@@ -589,6 +589,15 @@ auto state Pickup {
 		super.Tick(DeltaTime);
 	}
 
+	// The thrower's own disc, known disrupted: stock's sparks are the server's
+	// to show (they reach us), and its crackle reaches no client. Ours would
+	// be a second set of sparks and a sound stock never plays online.
+	simulated function Timer() {
+		if (IGPlus_bLocalDisc && Disruption > DisruptionThreshold)
+			return;
+		super.Timer();
+	}
+
 	simulated event Landed(vector HitNormal) {
 		super.Landed(HitNormal);
 		IGPlus_bDetPrevLoc = false; // a knock starts a new flight

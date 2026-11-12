@@ -145,6 +145,13 @@ function Tick(float DeltaTime)
             IGPlus_ClientDetSync(false, IGPlus_ThrowTS, 0.0);
         }
 
+        // Stock drops the firing pose 0.1s after a press (NormalFire, then
+        // Idle.Begin). The deterministic step skips those states, so others
+        // saw the thrower hold the pose until the next weapon switch.
+        if (bPointing && IGPlus_IsDetMode()
+            && bbPlayer(Owner).CurrentTimeStamp - IGPlus_DetLastAttemptTS > 0.1)
+            bPointing = false;
+
         if (TTarget == None || ST_TranslocatorTarget(TTarget) == None || ST_TranslocatorTarget(TTarget).bIGPlusFullHistory == false)
             IGPlus_DetServer.DiscTS = 0.0;
         else
@@ -900,9 +907,12 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		IGPlus_DetClientThrow(P, TS);
 	} else if (Action == IGPLUS_DETTLOC_RECALL) {
 		IGPlus_DetLastFireTS = TS; // a recall restarts the throw timer
-		IGPlus_DetClientDiscGone();
 		// Now, like the throw's sound: the server's skips us (PlayOwnedSound).
-		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		// Not for a disc we know is disrupted: the server gibs us instead,
+		// with its own sound and no recall sound (stock).
+		if (IGPlus_DetLocalDisc == None || IGPlus_DetLocalDisc.Disruption <= IGPlus_DetLocalDisc.DisruptionThreshold)
+			Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		IGPlus_DetClientDiscGone();
 	}
 	return Action;
 }
@@ -1142,7 +1152,10 @@ static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
 		S.bProjTarget = false;
 		S.AmbientSound = None;
 		S.ImpactSound = None;
+		// Stock's water splash (ZoneChange): our own disc made it already.
+		S.Disable('ZoneChange');
 	} else {
+		S.Enable('ZoneChange');
 		S.DrawScale = S.default.DrawScale;
 		S.SetCollision(S.default.bCollideActors, S.default.bBlockActors, S.default.bBlockPlayers);
 		S.bProjTarget = S.default.bProjTarget;
@@ -1576,7 +1589,8 @@ simulated function IGPlus_DetLogKnock(ST_TranslocatorTarget D, vector OldLoc) {
 		@"landed="$IGPlus_bDetKnockLanded@"hit="$IGPlus_bDetKnockShot@"glided="$(D.IGPlus_EaseFrom != vect(0,0,0)));
 }
 
-// Client: our disc sparks like the server's (its stock Timer does the effect).
+// Client: our disc is disrupted. Its glow goes out now, as the server's did
+// (stock). The sparks are the server's (ST_TranslocatorTarget.Timer).
 simulated function IGPlus_DetMarkDisrupted() {
 	local ST_TranslocatorTarget D;
 
@@ -1586,7 +1600,6 @@ simulated function IGPlus_DetMarkDisrupted() {
 	D.Disruption = D.DisruptionThreshold + 1;
 	if (D.Glow != None)
 		D.Glow.Destroy();
-	D.SetTimer(0.05, false);
 }
 
 // Server: where the thrower's screen had its disc for the move being

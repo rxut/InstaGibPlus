@@ -4649,6 +4649,10 @@ function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move)
 		Dest += vect(0,0,40);
 
 	Start = Location;
+	// As stock's Translocate: landing 40uu above our own disc (we reach 39 down,
+	// it 3 up) is no pickup. The caller ends the disc either way.
+	if (Disc.IGPlus_bLocalDisc)
+		Disc.SetCollision(false, false, false);
 	if (SetLocation(Dest) == false) {
 		ClientDebugMessage("Tloc not predicted: we don't fit at the disc"@Dest@"landed="$(Disc.Physics == PHYS_None)
 			@"server's="$(Disc != ST_Translocator(Weapon).IGPlus_DetLocalDisc));
