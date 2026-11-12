@@ -43,6 +43,11 @@ var bool bWImpSearched;
 var bool bCompensationIsActive;
 
 var ST_ProjectileDummy ProjDummies;
+// The engine spawns a DemoRecSpectator for every server demo and never
+// destroys it. A leftover one still gets every broadcast and writes it into
+// the next demo on the same map, so the kill feed and chat showed once per
+// demo recorded so far. Tick keeps only the newest.
+var DemoRecSpectator IGPlus_DemoRecSpec;
 var ST_MoverDummy MoverDummies;
 
 replication
@@ -501,6 +506,15 @@ event Tick(float zzDelta)
 			if ((Level.NetMode == NM_DedicatedServer) ||
 				(Level.NetMode == NM_ListenServer && zzbP.RemoteRole == ROLE_AutonomousProxy))
 				zzbP.ServerTick(zzDelta);
+		}
+		else if (DemoRecSpectator(zzP) != None)
+		{
+			if (zzP != IGPlus_DemoRecSpec)
+			{
+				if (IGPlus_DemoRecSpec != None)
+					IGPlus_DemoRecSpec.Destroy();
+				IGPlus_DemoRecSpec = DemoRecSpectator(zzP);
+			}
 		}
 		else
 		{
