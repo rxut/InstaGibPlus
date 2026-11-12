@@ -1138,23 +1138,21 @@ function bool MutatorBroadcastMessage( Actor Sender,Pawn Receiver, out coerce st
 	if (A.isa('Pawn') && !legalspec)
 		return false;
 
-	if (Super.MutatorBroadcastMessage( Sender,Receiver, Msg, bBeep ) == false)
-		return false;
-	// Server demos never record the ClientMessage this becomes.
-	if (bbPlayer(Receiver) != none)
-		bbPlayer(Receiver).IGPlus_DemoClientMessage(Msg, Type, bBeep);
-	return true;
+	return Super.MutatorBroadcastMessage( Sender,Receiver, Msg, bBeep );
 }
 
 // ==================================================================================
-// MutatorTeamMessage - chat (say/teamsay), copied for server demos
+// MutatorTeamMessage - team chat, copied for server demos
 // ==================================================================================
+// Broadcasts (BroadcastMessage, BroadcastLocalizedMessage, Say) also go to
+// MessagingSpectators, so the engine's DemoRecSpectator already writes them
+// into a server demo. Team chat goes to team members only.
 function bool MutatorTeamMessage( Actor Sender, Pawn Receiver, PlayerReplicationInfo PRI, coerce string S, name Type, optional bool bBeep )
 {
 	if (Super.MutatorTeamMessage(Sender, Receiver, PRI, S, Type, bBeep) == false)
 		return false;
 	// Server demos never record the TeamMessage this becomes.
-	if (bbPlayer(Receiver) != none)
+	if (Type != 'Say' && bbPlayer(Receiver) != none)
 		bbPlayer(Receiver).IGPlus_DemoTeamMessage(PRI, S, Type);
 	return true;
 }
@@ -1172,13 +1170,7 @@ function bool MutatorBroadcastLocalizedMessage( Actor Sender, Pawn Receiver, out
 	if (A.isa('Pawn'))
 		return false;
 
-	if (Super.MutatorBroadcastLocalizedMessage( Sender, Receiver, Message, Switch, RelatedPRI_1, RelatedPRI_2, OptionalObject ) == false)
-		return false;
-	// Server demos never record the ReceiveLocalizedMessage this becomes
-	// (kill feed, first blood, flag messages).
-	if (bbPlayer(Receiver) != none)
-		bbPlayer(Receiver).IGPlus_DemoLocalizedMessage(Message, Switch, RelatedPRI_1, RelatedPRI_2, OptionalObject);
-	return true;
+	return Super.MutatorBroadcastLocalizedMessage( Sender, Receiver, Message, Switch, RelatedPRI_1, RelatedPRI_2, OptionalObject );
 
 } // MutatorBroadcastLocalizedMessage
 

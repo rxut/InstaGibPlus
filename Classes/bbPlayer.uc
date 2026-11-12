@@ -16721,8 +16721,10 @@ function IGPlus_SDCheckPickups() {
 	}
 }
 
-// Server: a text message (BroadcastMessage) this player got, written to a
-// server demo only. Playback shows it to a viewer following us.
+// Server: a text message only this player got (a pickup message without a
+// message class), written to a server demo only. Playback shows it to a viewer
+// following us. Broadcast text needs no copy: the engine's DemoRecSpectator
+// gets it.
 simulated function IGPlus_DemoClientMessage(string S, name Type, bool bBeep) {
 	local PlayerPawn V;
 
@@ -16733,8 +16735,8 @@ simulated function IGPlus_DemoClientMessage(string S, name Type, bool bBeep) {
 		V.ClientMessage(S, Type, bBeep);
 }
 
-// Server: a chat line (say/teamsay) this player got, written to a server demo
-// only. Playback shows it to a viewer following us.
+// Server: a team chat line this player got, written to a server demo only.
+// Playback shows it to a viewer following us.
 simulated function IGPlus_DemoTeamMessage(PlayerReplicationInfo PRI, string S, name Type) {
 	local PlayerPawn V;
 
