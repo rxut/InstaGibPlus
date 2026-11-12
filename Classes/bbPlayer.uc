@@ -456,12 +456,19 @@ var vector IGPlus_DetThrowSpot;
 var bool IGPlus_bDetThrowSpot;
 var int IGPlus_DetThrowRule;
 var string IGPlus_DetThrowGapInfo;    // [DET-TLOC]: how far apart the two discs of the last throw started
-// Server: this map's deterministic translocator counts, for one [DET-TLOC]
-// summary line when the match ends or the player leaves (IGPlus_DetLogSummary).
+// Server: this map's deterministic translocator counts, for one [DET-SUMMARY]
+// line when the match ends or the player's pawn goes (IGPlus_DetLogSummary).
 var int IGPlus_DetStatThrows, IGPlus_DetStatTlocs;
 var int IGPlus_DetStatApart, IGPlus_DetStatAbsorbed; // landings over 8uu apart: corrected, taken by the 16uu bubble
 var int IGPlus_DetStatThrowApart, IGPlus_DetStatRejects, IGPlus_DetStatLate;
+var int IGPlus_DetStatJumpDropped; // jumps at a landing that only the server took, dropped
+// Shots the client showed and the server did not fire (refused: the fire
+// window was closed, unbound: the server held another weapon), switch
+// commands the two sides resolved differently, and seconds with shots held
+// by the fire clock margin. The first two together at most one a second.
+var int IGPlus_StatShotRefused, IGPlus_StatShotUnbound, IGPlus_StatSwitchMismatch, IGPlus_StatClockHolds;
 var bool IGPlus_bDetStatLogged;
+var bool IGPlus_bDetTradeLogged; // dead: this death's Traded! line is written
 // Server: the translocate count the move being run carries (the client's,
 // after anything it predicted in that move). One ahead of ours when a
 // translocate runs: the client made it too, and played its sound
@@ -1512,7 +1519,6 @@ simulated function InitSettings() {
 		ClientSettingsHelper = new(none, StringUtils.StringToName(VersionInfo.GetPropertyText("PackageBaseName"))) class'Object'; // object name = INI file name
 		Settings = new(ClientSettingsHelper, 'ClientSettings') class'ClientSettings'; // object name = Section name
 		Settings.CheckConfig();
-		Log("Loaded Settings!", 'IGPlus');
 	}
 }
 
@@ -1570,7 +1576,6 @@ event PostBeginPlay()
 
 	TickRate = int(ConsoleCommand("get ini:Engine.Engine.NetworkDevice NetServerMaxTickRate"));
 	TickRate = ++TickRate / 2;
-	Log("Creating"@TickRate@"MovementInfo blocks", 'IGPlus');
 	while(TickRate > 0) {
 		if (OldestMI == none) {
 			OldestMI = new(none) class'bbOldMovementInfo';
@@ -4776,7 +4781,7 @@ function IGPlus_AfterTranslocate() {
 			// (Physics bytes: 1 PHYS_Walking, 2 PHYS_Falling.)
 			if (IGPlus_DetTlocPreClientPhys == 1 && IGPlus_DetTlocPrePhys == 2
 				&& Velocity.Z > 0.0 && Velocity.Z <= JumpZ + 1.0 && IGPlus_DetTlocPreClientVZ < Velocity.Z) {
-				IGPlus_DetTlocLog("jump-dropped", "vz="$int(Velocity.Z)$"/"$int(IGPlus_DetTlocPreClientVZ));
+				IGPlus_DetStatJumpDropped++;
 				Velocity.Z = IGPlus_DetTlocPreClientVZ;
 			}
 		}
@@ -4800,25 +4805,43 @@ function IGPlus_DetTlocLog(string Event, string Details) {
 	LossAgo = "never";
 	if (IGPlus_DetLastLossTS > 0.0)
 		LossAgo = string(Level.TimeSeconds - IGPlus_DetLastLossTS);
-	Log("[DET-TLOC]"@Event@PlayerReplicationInfo.PlayerName@Details
+	IGPlus_EventLog("[DET-TLOC]"@Event@PlayerReplicationInfo.PlayerName@Details
 		@"ping="$PlayerReplicationInfo.Ping@"lostMoves="$IGPlus_DetLostMoves
-		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp, 'IGPlus');
+		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp);
 }
 
-// Server: one [DET-TLOC] line with this player's translocator counts for the
-// map, when the match ends (UTPure.Tick) or the player leaves (Destroyed).
-// On a full server the rates say more than the single lines: landedApart
-// are landings the player saw corrected, absorbed those within the 16uu
-// bubble (nobody saw them), late the actions that came through the resend or
-// were held back. Not without a throw.
+// A line in the log with the machine's clock time at the end (on the server:
+// the server's), so a player's report ("around 21:15") or a demo can be
+// matched to it.
+function IGPlus_EventLog(string S) {
+	Log(S@"at="$PadNumberToTwoDigits(Level.Hour)$":"$PadNumberToTwoDigits(Level.Minute)
+		$":"$PadNumberToTwoDigits(Level.Second), 'IGPlus');
+}
+
+// Server: one [DET-SUMMARY] line with this player's counts for the map, when
+// the match ends (UTPure.Tick) or the player's pawn goes (Destroyed: the
+// player left, or the map changed and the engine closed the connections).
+// On a full server the rates say more than the single lines. Translocator:
+// landedApart are landings the player saw corrected, absorbed those within
+// the 16uu bubble (nobody saw them), late the actions that came through the
+// resend or were held back, jumpDropped the jumps at a landing that only the
+// server took. Weapons: see IGPlus_StatShotRefused, whose single lines are
+// written only while TraceInput is on. Not for a player with all at zero.
 function IGPlus_DetLogSummary() {
-	if (IGPlus_bDetStatLogged || IGPlus_DetStatThrows == 0 || PlayerReplicationInfo == None)
+	if (IGPlus_bDetStatLogged || PlayerReplicationInfo == None)
+		return;
+	if (IGPlus_DetStatThrows + IGPlus_DetStatRejects + IGPlus_StatShotRefused + IGPlus_StatShotUnbound
+		+ IGPlus_StatSwitchMismatch + IGPlus_StatClockHolds == 0)
 		return;
 	IGPlus_bDetStatLogged = true;
-	IGPlus_DetTlocLogCount = 0; // not lost to the 8 lines a second
-	IGPlus_DetTlocLog("summary", "throws="$IGPlus_DetStatThrows@"translocates="$IGPlus_DetStatTlocs
+	IGPlus_EventLog("[DET-SUMMARY]"@PlayerReplicationInfo.PlayerName
+		@"throws="$IGPlus_DetStatThrows@"translocates="$IGPlus_DetStatTlocs
 		@"landedApart="$IGPlus_DetStatApart@"absorbed="$IGPlus_DetStatAbsorbed
-		@"throwApart="$IGPlus_DetStatThrowApart@"rejects="$IGPlus_DetStatRejects@"late="$IGPlus_DetStatLate);
+		@"throwApart="$IGPlus_DetStatThrowApart@"rejects="$IGPlus_DetStatRejects@"late="$IGPlus_DetStatLate
+		@"jumpDropped="$IGPlus_DetStatJumpDropped
+		@"shotRefused="$IGPlus_StatShotRefused@"shotUnbound="$IGPlus_StatShotUnbound
+		@"switchMismatch="$IGPlus_StatSwitchMismatch@"clockHolds="$IGPlus_StatClockHolds
+		@"ping="$PlayerReplicationInfo.Ping@"lostMoves="$IGPlus_DetLostMoves);
 }
 
 // Server: the client's spot at the start of move SM (before its movement),
@@ -5396,14 +5419,17 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// Whole-move dispatch: one weapon step per v3 ServerMove.
 	bDetWholeMove = (DetWeapon != none);
 	// A ready hint with fire input but no valid binding: the client showed a
-	// shot from a weapon the server is not holding. Logged while TraceInput is on.
-	if (bTraceInput && !bDetWholeMove && SM.bDetReady && SM.DetWeaponIndex != IGPLUS_DetWEAPON_None
+	// shot from a weapon the server is not holding. Counted for the summary,
+	// logged while TraceInput is on.
+	if (!bDetWholeMove && SM.bDetReady && SM.DetWeaponIndex != IGPLUS_DetWEAPON_None
 		&& (bFired || bAltFired || bForceFire || bForceAltFire)
 		&& Level.TimeSeconds - IGPlus_DetLastRejectLogTS > 1.0) {
 		IGPlus_DetLastRejectLogTS = Level.TimeSeconds;
-		Log("[DET-UNBOUND]"@PlayerReplicationInfo.PlayerName@"index="$SM.DetWeaponIndex
-			@"step="$SM.TimeStamp@"weapon="$Weapon@"pending="$PendingWeapon
-			@"prev="$IGPlus_DetPrevWeapon@"prevStep="$IGPlus_DetPrevWeaponStepTS, 'IGPlus');
+		IGPlus_StatShotUnbound++;
+		if (bTraceInput)
+			IGPlus_EventLog("[DET-UNBOUND]"@PlayerReplicationInfo.PlayerName@"index="$SM.DetWeaponIndex
+				@"step="$SM.TimeStamp@"weapon="$Weapon@"pending="$PendingWeapon
+				@"prev="$IGPlus_DetPrevWeapon@"prevStep="$IGPlus_DetPrevWeaponStepTS);
 	}
 
 	if (bDetWholeMove) {
@@ -6452,7 +6478,7 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 	LastFireTimeStamp = TimeStamp;
 	
 	if (TimeStamp + zzUTPure.Settings.FireTimeout < CurrentTimeStamp) {
-		Log("Rejected Shot"@self@TimeStamp@CurrentTimeStamp, 'IGPlus');
+		IGPlus_EventLog("Rejected Shot"@PlayerReplicationInfo.PlayerName@TimeStamp@CurrentTimeStamp);
 		return;
 	}
 
@@ -6488,14 +6514,14 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 			TradeTimeMargin = IGPlus_TradeTimeMargin();
 
 			if (RealTimeDead < TradeTimeMargin) {
-				Log("["$Level.TimeSeconds$"] Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead, 'IGPlus');
+				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
 				Super.Fire(1);
 			} else {
-				Log("["$Level.TimeSeconds$"] Rejected Trade! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead, 'IGPlus');
+				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Rejected Trade! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
 			}
 		} else {
 			if (IsInState('Dying'))
-				Log("["$Level.TimeSeconds$"] Traded! RealTimeDead="$RealTimeDead, 'IGPlus');
+				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! RealTimeDead="$RealTimeDead);
 			Super.Fire(1);
 		}
 	}
@@ -6540,7 +6566,7 @@ function xxNN_AltFire( float TimeStamp, int ProjIndex, vector ClientLoc, vector 
 	LastAltFireTimeStamp = TimeStamp;
 
 	if (TimeStamp + zzUTPure.Settings.FireTimeout < CurrentTimeStamp) {
-		Log("Rejected Shot"@self@TimeStamp@CurrentTimeStamp, 'IGPlus');
+		IGPlus_EventLog("Rejected Shot"@PlayerReplicationInfo.PlayerName@TimeStamp@CurrentTimeStamp);
 		return;
 	}
 
@@ -7171,7 +7197,7 @@ function IGPlus_DetTradeLog(string What) {
 		@"ping="$PlayerReplicationInfo.Ping;
 	if (bbPlayer(LastKiller) != none)
 		S = S@"killer="$LastKiller.PlayerReplicationInfo.PlayerName@"killerPing="$LastKiller.PlayerReplicationInfo.Ping;
-	Log("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@S, 'IGPlus');
+	IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@S);
 	ClientDebugMessage("Trade (server):"@S);
 }
 
@@ -7299,8 +7325,9 @@ function bool IGPlus_DetFireClockOK() {
 	// A blocked step skips a server shot; log it, at most once a second.
 	if (!bOK && Level.TimeSeconds - IGPlus_DetLastClockLogTS > 1.0) {
 		IGPlus_DetLastClockLogTS = Level.TimeSeconds;
-		Log("[DET-CLOCK]"@PlayerReplicationInfo.PlayerName@"lead="$IGPlus_DetFireClockLead
-			@"margin="$zzUTPure.Settings.DetFireClockMargin@"- fresh Det shots held", 'IGPlus');
+		IGPlus_StatClockHolds++;
+		IGPlus_EventLog("[DET-CLOCK]"@PlayerReplicationInfo.PlayerName@"lead="$IGPlus_DetFireClockLead
+			@"margin="$zzUTPure.Settings.DetFireClockMargin@"- fresh Det shots held");
 	}
 	return bOK;
 }
@@ -7514,15 +7541,18 @@ simulated function bool IGPlus_DetProcessStep(
 	// no-input step to settle an in-flight load.
 	if (bServerSide && !IGPlus_DetFireWindowOpen(W, StepTS)) {
 		// A hinted step that wants to fire means the client predicted a shot
-		// here; rejecting it leaves a client-only shot. Logged while TraceInput is on.
-		if (bTraceInput && bClientPredictedStep && (bFireHeld || bAltHeld || bForceFire || bForceAlt)
+		// here; rejecting it leaves a client-only shot. Counted for the
+		// summary, logged while TraceInput is on.
+		if (bClientPredictedStep && (bFireHeld || bAltHeld || bForceFire || bForceAlt)
 			&& Level.TimeSeconds - IGPlus_DetLastRejectLogTS > 1.0) {
 			IGPlus_DetLastRejectLogTS = Level.TimeSeconds;
-			Log("[DET-REJECT]"@PlayerReplicationInfo.PlayerName@W.Name
-				@"step="$StepTS@"gate="$IGPlus_DetWeaponGateTS
-				@"pendingSeen="$IGPlus_DetPendingSeenTS@"slack="$IGPlus_DetInFlightSlack
-				@"prevStep="$IGPlus_DetPrevWeaponStepTS@"weapon="$Weapon
-				@"pending="$PendingWeapon, 'IGPlus');
+			IGPlus_StatShotRefused++;
+			if (bTraceInput)
+				IGPlus_EventLog("[DET-REJECT]"@PlayerReplicationInfo.PlayerName@W.Name
+					@"step="$StepTS@"gate="$IGPlus_DetWeaponGateTS
+					@"pendingSeen="$IGPlus_DetPendingSeenTS@"slack="$IGPlus_DetInFlightSlack
+					@"prevStep="$IGPlus_DetPrevWeaponStepTS@"weapon="$Weapon
+					@"pending="$PendingWeapon);
 		}
 		if (bForceFire && IGPlus_EnableInputReplication)
 			IGPlus_DetLatchFireTap(StepTS, W);
@@ -7678,7 +7708,7 @@ function IGPlus_DetCheckSwitchWedge() {
 	// never honor bChangeWeapon, so the pending switch would hang until death.
 	// Re-enter the machine at DownWeapon; its Begin completes the switch.
 	if (!Weapon.IsInState('DownWeapon')) {
-		Log("[EB-WEDGE] recover: forcing "$Weapon.Name$" ("$Weapon.GetStateName()
+		IGPlus_EventLog("[EB-WEDGE]"@PlayerReplicationInfo.PlayerName@"recover: forcing "$Weapon.Name$" ("$Weapon.GetStateName()
 			$") to DownWeapon for pending "$PendingWeapon.Name);
 		Weapon.bChangeWeapon = true;
 		Weapon.GotoState('DownWeapon');
@@ -10137,6 +10167,7 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 		TournamentWeapon(Weapon).bCanClientFire = false;
 	IGPlus_DetClearSwitchTrustState(zzUTPure.Settings.bEnableAllWeaponTrades);
 	IGPlus_bDetTradeClosed = zzUTPure.Settings.bEnableAllWeaponTrades == false;
+	IGPlus_bDetTradeLogged = false;
 	// Velocity has the killing push, which our client never saw.
 	IGPlus_TradeLoc = Location;
 	IGPlus_TradeTS = CurrentTimeStamp;
@@ -11552,8 +11583,11 @@ state Dying
 		if (IGPlus_DetTradeAllowed()) {
 			KeepData = MiscData & 0x03F8FFFF;
 			KeepData2 = MiscData2;
-			if (bFireInput)
+			// One line a death: held fire sends this on every move.
+			if (bFireInput && IGPlus_bDetTradeLogged == false) {
+				IGPlus_bDetTradeLogged = true;
 				IGPlus_DetTradeLog("Traded!");
+			}
 		} else {
 			if (bFireInput && IGPlus_bDetTradeClosed == false)
 				IGPlus_DetTradeLog("Rejected Trade!");
@@ -15218,7 +15252,7 @@ simulated function xxClientPSReject(int Serial, Weapon ServerWeapon, float Serve
 function IGPlus_PSLog(string What) {
 	if (Level.TimeSeconds - IGPlus_PSLastLogTS > 0.25) {
 		IGPlus_PSLastLogTS = Level.TimeSeconds;
-		Log("[PRED-SWITCH]"@What@PlayerReplicationInfo.PlayerName@"serverW="$Weapon@"pending="$PendingWeapon, 'IGPlus');
+		IGPlus_EventLog("[PRED-SWITCH]"@What@PlayerReplicationInfo.PlayerName@"serverW="$Weapon@"pending="$PendingWeapon);
 	}
 }
 
@@ -15582,15 +15616,17 @@ function xxServerWeaponCommand(byte Kind, byte F, class<Weapon> C, bool bClientK
 	// say (over half of these lines were that).
 	if (bUnchanged && ClientWeapon == W0 && ClientPend == P0)
 		return;
+	if (!bClientMatch || !bLogicMatch)
+		IGPlus_StatSwitchMismatch++;
 	if ((!bClientMatch || !bLogicMatch) && Level.TimeSeconds - IGPlus_PredSwitchLastLogTS > 0.25) {
 		IGPlus_PredSwitchLastLogTS = Level.TimeSeconds;
-		Log("[PRED-SWITCH] mismatch"@PlayerReplicationInfo.PlayerName
+		IGPlus_EventLog("[PRED-SWITCH] mismatch"@PlayerReplicationInfo.PlayerName
 			@"cmd="$IGPlus_WeaponCommandName(Kind, F, C)
 			@"client="$ClientTarget$"(known="$bClientKnown$")"
 			@"logic="$LogicTarget$"(known="$bLogicKnown$")"
 			@"server="$ServerTarget$"(unchanged="$bUnchanged$")"
 			@"clientW="$ClientWeapon@"clientPend="$ClientPend
-			@"serverW="$W0@"serverPend="$P0, 'IGPlus');
+			@"serverW="$W0@"serverPend="$P0);
 	}
 }
 

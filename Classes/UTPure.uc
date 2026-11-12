@@ -6,7 +6,7 @@ var ModifyLoginHandler NextMLH;			// Link list of handlers
 // Nice variables.
 var float zzTeamChangeTime;			// This would be to Prevent Team Change Spamming
 var bool zzbWarmupPlayers;			// Do we have any players warming up?
-var bool IGPlus_bDetSummariesDone;	// the [DET-TLOC] summary lines of this match are written
+var bool IGPlus_bDetSummariesDone;	// the [DET-SUMMARY] lines of this match are written
 var DeathMatchPlus zzDMP;			// A place to store the Game Object.
 var string BADminText;				// Text to give players that want admin commands without being admin.
 var bool bDidEndWarn;				// True if screenshot warning has been sent to players.
@@ -457,7 +457,7 @@ event Tick(float zzDelta)
 	if (Settings.ForceSettingsLevel > 2 && rand(5000) == 0)
 		zzb = True;
 
-	// The match is over: each player's translocator counts ([DET-TLOC] summary).
+	// The match is over: each player's counts ([DET-SUMMARY]).
 	if (Level.Game.bGameEnded && IGPlus_bDetSummariesDone == false) {
 		IGPlus_bDetSummariesDone = true;
 		for (zzP = Level.PawnList; zzP != None; zzP = zzP.NextPawn)
