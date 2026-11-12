@@ -969,10 +969,13 @@ replication
 		xxNN_ClientProjExplode;
 
 	// Server demos only: one record of a WeaponEffect (rocket scorch marks),
-	// and personal messages (stock ReceiveLocalizedMessage is kept out of
+	// and copies of the messages and chat this player got (stock
+	// ReceiveLocalizedMessage, ClientMessage and TeamMessage are kept out of
 	// server demos).
 	reliable if (bDemoRecording && !bClientDemoRecording && Role == ROLE_Authority)
 		IGPlus_DemoLocalizedMessage,
+		IGPlus_DemoClientMessage,
+		IGPlus_DemoTeamMessage,
 		IGPlus_DemoWeaponEffect;
 
 	reliable if (RemoteRole == ROLE_AutonomousProxy)
@@ -2199,6 +2202,21 @@ function IGPlus_SendRespawnNoficiation() {
 
 	foreach AllActors(class'bbCHSpectator', S)
 		S.IGPlus_NotifyPlayerRestart(Location, Rotation, self);
+}
+
+// Server: the time announcements and spree ends call ReceiveLocalizedMessage,
+// which a server demo misses. Copy them for the demo.
+function TimeMessage(int Num) {
+	Super.TimeMessage(Num);
+	IGPlus_DemoLocalizedMessage(TimeMessageClass, 16 - Num, none, none, none);
+}
+
+function EndSpree(PlayerReplicationInfo Killer, PlayerReplicationInfo Other) {
+	Super.EndSpree(Killer, Other);
+	if (Killer == Other || Killer == none)
+		IGPlus_DemoLocalizedMessage(class'KillingSpreeMessage', 1, none, Other, none);
+	else
+		IGPlus_DemoLocalizedMessage(class'KillingSpreeMessage', 0, Other, Killer, none);
 }
 
 event ReceiveLocalizedMessage( class<LocalMessage> Message, optional int Sw, optional PlayerReplicationInfo RelatedPRI_1, optional PlayerReplicationInfo RelatedPRI_2, optional Object OptionalObject )
@@ -10183,6 +10201,9 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 	if ( CarriedDecoration != None )
 		DropDecoration();
 	level.game.Killed(Killer, self, damageType);
+	// DeathMatchPlus.Killed just told the killer, which a server demo misses.
+	if (damageType == 'Decapitated' && Killer != self && bbPlayer(Killer) != none && Level.Game.IsA('DeathMatchPlus'))
+		bbPlayer(Killer).IGPlus_DemoLocalizedMessage(class'DecapitationMessage', 0, none, none, none);
 	if( Event != '' )
 		foreach AllActors( class 'Actor', A, Event )
 			A.Trigger( Self, Killer );
@@ -16644,6 +16665,30 @@ simulated function IGPlus_DemoLocalizedMessage(
 	IGPlus_SDPersonalMessage(Message, Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
 }
 
+// Server: a text message (BroadcastMessage) this player got, written to a
+// server demo only. Playback shows it to a viewer following us.
+simulated function IGPlus_DemoClientMessage(string S, name Type, bool bBeep) {
+	local PlayerPawn V;
+
+	if (Role == ROLE_Authority || Level.NetMode != NM_Client)
+		return;
+	V = IGPlus_SDFollowingViewer();
+	if (V != none)
+		V.ClientMessage(S, Type, bBeep);
+}
+
+// Server: a chat line (say/teamsay) this player got, written to a server demo
+// only. Playback shows it to a viewer following us.
+simulated function IGPlus_DemoTeamMessage(PlayerReplicationInfo PRI, string S, name Type) {
+	local PlayerPawn V;
+
+	if (Role == ROLE_Authority || Level.NetMode != NM_Client)
+		return;
+	V = IGPlus_SDFollowingViewer();
+	if (V != none)
+		V.TeamMessage(PRI, S, Type, true);
+}
+
 // Server demo playback: a recorded player written by a server with this code.
 simulated function bool IGPlus_SDIsServerDemoProxy() {
 	return Role == ROLE_SimulatedProxy && IGPlus_DemoFlags != 0 && Level.NetMode == NM_Client;
@@ -17432,6 +17477,10 @@ simulated function IGPlus_SDPersonalMessage(
 		return;
 	}
 
+	// What our ReceiveLocalizedMessage does: its death message also gives a
+	// viewer following the killer or the victim their own lines.
+	if (Message == class'Botpack.DeathMessagePlus')
+		Message = class'IGPlus_DeathMessagePlus';
 	V.ReceiveLocalizedMessage(Message, Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
 }
 

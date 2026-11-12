@@ -1,5 +1,25 @@
 class PureTDMHUD extends ChallengeTeamHUD;
 
+// Server demo playback while following a player: no "Live Feed from <name>"
+// line. ChallengeHUD.PostRender draws it when the viewed pawn bIsPlayer, and
+// reads bIsPlayer nowhere else for the viewed pawn. A client demo of that
+// player shows no such line either. Live spectators keep it.
+simulated function PostRender(canvas Canvas)
+{
+	local bbPlayer Followed;
+
+	if (PlayerPawn(Owner) != none)
+		Followed = bbPlayer(PlayerPawn(Owner).ViewTarget);
+	if (Followed != none && Followed.IGPlus_SDIsServerDemoProxy() && Followed.bIsPlayer) {
+		Followed.bIsPlayer = false;
+		Super.PostRender(Canvas);
+		Followed.bIsPlayer = true;
+		return;
+	}
+	Super.PostRender(Canvas);
+}
+
+
 simulated function DrawStatus(Canvas Canvas)
 {
 	local float StatScale, ChestAmount, ThighAmount, H1, H2, X, Y, DamageTime;

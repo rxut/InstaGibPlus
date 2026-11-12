@@ -1138,7 +1138,25 @@ function bool MutatorBroadcastMessage( Actor Sender,Pawn Receiver, out coerce st
 	if (A.isa('Pawn') && !legalspec)
 		return false;
 
-	return Super.MutatorBroadcastMessage( Sender,Receiver, Msg, bBeep );
+	if (Super.MutatorBroadcastMessage( Sender,Receiver, Msg, bBeep ) == false)
+		return false;
+	// Server demos never record the ClientMessage this becomes.
+	if (bbPlayer(Receiver) != none)
+		bbPlayer(Receiver).IGPlus_DemoClientMessage(Msg, Type, bBeep);
+	return true;
+}
+
+// ==================================================================================
+// MutatorTeamMessage - chat (say/teamsay), copied for server demos
+// ==================================================================================
+function bool MutatorTeamMessage( Actor Sender, Pawn Receiver, PlayerReplicationInfo PRI, coerce string S, name Type, optional bool bBeep )
+{
+	if (Super.MutatorTeamMessage(Sender, Receiver, PRI, S, Type, bBeep) == false)
+		return false;
+	// Server demos never record the TeamMessage this becomes.
+	if (bbPlayer(Receiver) != none)
+		bbPlayer(Receiver).IGPlus_DemoTeamMessage(PRI, S, Type);
+	return true;
 }
 
 // ==================================================================================
@@ -1154,9 +1172,40 @@ function bool MutatorBroadcastLocalizedMessage( Actor Sender, Pawn Receiver, out
 	if (A.isa('Pawn'))
 		return false;
 
-	return Super.MutatorBroadcastLocalizedMessage( Sender, Receiver, Message, Switch, RelatedPRI_1, RelatedPRI_2, OptionalObject );
+	if (Super.MutatorBroadcastLocalizedMessage( Sender, Receiver, Message, Switch, RelatedPRI_1, RelatedPRI_2, OptionalObject ) == false)
+		return false;
+	// Server demos never record the ReceiveLocalizedMessage this becomes
+	// (kill feed, first blood, flag messages).
+	if (bbPlayer(Receiver) != none)
+		bbPlayer(Receiver).IGPlus_DemoLocalizedMessage(Message, Switch, RelatedPRI_1, RelatedPRI_2, OptionalObject);
+	return true;
 
 } // MutatorBroadcastLocalizedMessage
+
+// ==================================================================================
+// ScoreKill - copies the killing spree announcement for server demos
+// ==================================================================================
+// DeathMatchPlus.Killed adds one to the killer's Spree right after this and,
+// at 5, 10, 15, 20 and 25, sends KillingSpreeMessage straight to every
+// TournamentPlayer (NotifySpree), which a server demo misses.
+function ScoreKill(Pawn Killer, Pawn Other)
+{
+	local DeathMatchPlus DMP;
+	local int Num;
+	local bbPlayer P;
+
+	DMP = DeathMatchPlus(Level.Game);
+	if (DMP != none && Other != none && Other.bIsPlayer && Killer != none && Killer.bIsPlayer && Killer != Other
+		&& Killer.PlayerReplicationInfo != none && Other.PlayerReplicationInfo != none
+		&& (DMP.bTeamGame == false || Other.PlayerReplicationInfo.Team != Killer.PlayerReplicationInfo.Team)
+	) {
+		Num = Killer.Spree + 1;
+		if (Num <= 25 && Num % 5 == 0)
+			foreach AllActors(class'bbPlayer', P)
+				P.IGPlus_DemoLocalizedMessage(class'KillingSpreeMessage', Num / 5 - 1, Killer.PlayerReplicationInfo, none, none);
+	}
+	Super.ScoreKill(Killer, Other);
+}
 
 function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bAutoPause") return "bAutoPause";
