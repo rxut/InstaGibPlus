@@ -45,6 +45,7 @@ const IGPLUS_DETTLOC_REFUSED = 4; // with TRANSLOCATE: the thrower didn't fit at
 const IGPLUS_DET_REFLY_STEP = 0.005;
 
 var float IGPlus_DetLastAttemptTS;
+var float IGPlus_DetPosePressTS; // server: the last fire press that raised the firing pose
 var float IGPlus_DetLastFireTS;               // last throw or recall
 var bool IGPlus_bDetExpectOut;                // server: a disc the client knows about is out
 var float IGPlus_DetThrowTS;                  // client: throw of the disc that is out
@@ -149,7 +150,7 @@ function Tick(float DeltaTime)
         // Idle.Begin). The deterministic step skips those states, so others
         // saw the thrower hold the pose until the next weapon switch.
         if (bPointing && IGPlus_IsDetMode()
-            && bbPlayer(Owner).CurrentTimeStamp - IGPlus_DetLastAttemptTS > 0.1)
+            && bbPlayer(Owner).CurrentTimeStamp - FMax(IGPlus_DetLastAttemptTS, IGPlus_DetPosePressTS) > 0.1)
             bPointing = false;
 
         if (TTarget == None || ST_TranslocatorTarget(TTarget) == None || ST_TranslocatorTarget(TTarget).bIGPlusFullHistory == false)

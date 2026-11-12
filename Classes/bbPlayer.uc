@@ -5215,6 +5215,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bDetBlockLegacyFire;
 	local Weapon DetWeapon;
 	local bool bDetMoveAcceptedForFire;
+	local bool bDetFirePress;
 	local float PSAPrevTS;
 	local int RedoAction;
 	local float OldTS;
@@ -5423,6 +5424,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation)
 		|| (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode());
 
+	// A new fire press: for the deterministic translocator's pose below.
+	bDetFirePress = bFired && IGPlus_LastFireEndHeld == false;
 	IGPlus_LastFireEndHeld = bFired;
 	IGPlus_LastAltEndHeld = bAltFired;
 
@@ -5495,6 +5498,16 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			if ((SM.DetChargeData & 3) == 1 && SM.DetChargeData <= 7) {
 				IGPlus_DetThrowSpot = IGPlus_DetThrowOrigin(SM, PSAPrevTS, MergeCount);
 				IGPlus_bDetThrowSpot = true;
+			}
+			// Stock's server puts the model in the firing pose on a fire press
+			// the client did not throw on (PlayerPawn.Fire: bPointing, then
+			// PlayFiring), so a recall raises the arm and a throw does not. A
+			// throw and every alt-fire press reach stock's server as forced
+			// taps, which skip that call. Our step skips it for every press.
+			if (bDetFirePress && ((SM.DetChargeData & 3) != 1 || SM.DetChargeData > 7)) {
+				Weapon.bPointing = true;
+				ST_Translocator(Weapon).IGPlus_DetPosePressTS = SM.TimeStamp;
+				PlayFiring();
 			}
 			ST_Translocator(Weapon).IGPlus_DetServerStep(self, SM.TimeStamp, SM.DetChargeData, bFired, bAltFired);
 			IGPlus_bDetThrowSpot = false;
