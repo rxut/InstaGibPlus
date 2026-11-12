@@ -455,6 +455,11 @@ var string IGPlus_DetTlocInfo;        // the last translocate's disc details
 var vector IGPlus_DetThrowSpot;
 var bool IGPlus_bDetThrowSpot;
 var int IGPlus_DetThrowRule;
+// Server: the translocate count the move being run carries (the client's,
+// after anything it predicted in that move). One ahead of ours when a
+// translocate runs: the client made it too, and played its sound
+// (ST_Translocator.Translocate).
+var int IGPlus_DetMoveTlocCounter;
 // Server: our client picked its disc (thrown at DiscTS) up on the move at TS,
 // standing at Loc (IGPlus_ServerDetPickedUp). 0: none waiting.
 var float IGPlus_DetPickupTS, IGPlus_DetPickupDiscTS;
@@ -5154,6 +5159,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 
 	ClientTlocCounter =          (SM.MiscData & 0x0C000000) >> 26;
+	IGPlus_DetMoveTlocCounter = ClientTlocCounter;
 	bFired         =             (SM.MiscData & 0x02000000) != 0;
 	bAltFired      =             (SM.MiscData & 0x01000000) != 0;
 	MergeCount     =             (SM.MiscData & 0x00F80000) >> 19;
@@ -8213,8 +8219,16 @@ function xxReplicateMove(
 				IGPlus_TlocPredictTo(TlocDisc, NewMove);
 				// We didn't fit at the disc: the server fails it too (stock's
 				// failed translocate, the disc gone on both sides).
-				if (TlocCounter == TlocBefore)
+				// Either way its sound plays now, and the server's skips us
+				// (PlayOwnedSound): the failed one below, the teleport's when
+				// this move's translocate count says we made it too
+				// (ST_Translocator.Translocate).
+				if (TlocCounter == TlocBefore) {
 					NewMove.DetChargeData = TlocAction | 4;
+					PlaySound(Weapon.AltFireSound, SLOT_Misc, 4 * SoundDampening);
+				} else {
+					PlaySound(Sound'Botpack.Resp2A', SLOT_None, 10.0);
+				}
 			} else if (IGPlus_PredictsTranslocation() && TlocDisc == none)
 				ClientDebugMessage("Tloc not predicted: no disc here (ours out="$ST_Translocator(Weapon).IGPlus_bDetOut
 					@"local="$ST_Translocator(Weapon).IGPlus_DetLocalDisc@"server's="$ST_Translocator(Weapon).IGPlus_DiscRepl$")");

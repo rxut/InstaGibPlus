@@ -325,8 +325,15 @@ function Translocate()
 	}
 	StartLoc = Owner.Location;
 
-	// Call base translocate - this will use whatever location TTarget is currently at
-	Super.Translocate();
+	// Call base translocate - this will use whatever location TTarget is currently at.
+	// The thrower's client made this translocate too (its move's count is one
+	// ahead of ours) and played the teleport sound then: everyone else hears
+	// ours. Only the stock effect is known well enough to play it ourselves.
+	if (IGPlus_IsDetMode() && DeathMatchPlus(Level.Game) != None
+		&& ((bbP.IGPlus_DetMoveTlocCounter - bbP.TlocCounter) & 3) == 1)
+		IGPlus_StockTranslocate();
+	else
+		Super.Translocate();
 
 	// Stock fails without a word when we don't fit at the disc or have no
 	// line back to it, and the disc is gone. The thrower's screen may have
@@ -352,6 +359,121 @@ function Translocate()
 	
 	if (Owner.IsA('bbPlayer'))
 		bbPlayer(Owner).IGPlus_AfterTranslocate();
+}
+
+// Botpack.Translocator.Translocate (469f), unchanged but for the teleport
+// effect: its sound doesn't go to the thrower (IGPlus_TeleportEffect).
+function IGPlus_StockTranslocate()
+{
+	local vector Dest, Start;
+	local Bot B;
+	local Pawn P;
+
+	bBotMoveFire = false;
+	PlayAnim('Thrown', 1.2,0.1);
+	Dest = TTarget.Location;
+	if ( TTarget.Physics == PHYS_None )
+		Dest += vect(0,0,40);
+
+	if ( Level.Game.IsA('DeathMatchPlus')
+		&& !DeathMatchPlus(Level.Game).AllowTranslocation(Pawn(Owner), Dest) )
+		return;
+
+	Start = Pawn(Owner).Location;
+	TTarget.SetCollision(false,false,false);
+	if ( Pawn(Owner).SetLocation(Dest) )
+	{
+		// stijn: added PHYS_Flying check
+		if ( !Owner.Region.Zone.bWaterZone && Owner.Physics != PHYS_Flying )
+			Owner.SetPhysics(PHYS_Falling);
+		if ( TTarget.Disrupted() )
+		{
+			if (Level.Game.LocalLog != None)
+				Level.Game.LocalLog.LogSpecialEvent("translocate_gib", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+			if (Level.Game.WorldLog != None)
+				Level.Game.WorldLog.LogSpecialEvent("translocate_gib", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+
+			SpawnEffect(Start, Dest);
+			Pawn(Owner).gibbedBy(TTarget.disruptor);
+			return;
+		}
+
+		if ( !FastTrace(Pawn(Owner).Location, TTarget.Location) )
+		{
+			if (Level.Game.LocalLog != None)
+				Level.Game.LocalLog.LogSpecialEvent("translocate_fail", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+			if (Level.Game.WorldLog != None)
+				Level.Game.WorldLog.LogSpecialEvent("translocate_fail", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+
+			Pawn(Owner).SetLocation(Start);
+			Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		}
+		else
+		{
+			if (Level.Game.LocalLog != None)
+				Level.Game.LocalLog.LogSpecialEvent("translocate", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+			if (Level.Game.WorldLog != None)
+				Level.Game.WorldLog.LogSpecialEvent("translocate", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+
+			Owner.Velocity.X = 0;
+			Owner.Velocity.Y = 0;
+			B = Bot(Owner);
+			if ( B != None )
+			{
+				if ( TTarget.DesiredTarget.IsA('NavigationPoint') )
+					B.MoveTarget = TTarget.DesiredTarget;
+				B.bJumpOffPawn = true;
+				if ( !Owner.Region.Zone.bWaterZone )
+					B.SetFall();
+			}
+			else
+			{
+				// bots must re-acquire this player
+				for ( P=Level.PawnList; P!=None; P=P.NextPawn )
+					if ( (P.Enemy == Owner) && P.IsA('Bot') )
+						Bot(P).LastAcquireTime = Level.TimeSeconds;
+			}
+
+			IGPlus_TeleportEffect();
+			SpawnEffect(Start, Dest);
+		}
+	}
+	else
+	{
+		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		if (Level.Game.LocalLog != None)
+			Level.Game.LocalLog.LogSpecialEvent("translocate_fail", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+		if (Level.Game.WorldLog != None)
+			Level.Game.WorldLog.LogSpecialEvent("translocate_fail", Pawn(Owner).PlayerReplicationInfo.PlayerID);
+	}
+
+	if ( TTarget != None )
+	{
+		bTTargetOut = false;
+		TTarget.Destroy();
+		TTarget = None;
+	}
+	bPointing=True;
+}
+
+// Botpack.DeathMatchPlus.PlayTeleportEffect(Owner, true, true), with the
+// sound for everyone but the thrower (the effect's owner), who played it on
+// its own frame.
+function IGPlus_TeleportEffect()
+{
+	local UTTeleportEffect PTE;
+	local DeathMatchPlus G;
+
+	G = DeathMatchPlus(Level.Game);
+	if ( G.bRequireReady && (G.CountDown > 0) )
+		return;
+
+	if ( Owner.Mesh != None )
+	{
+		PTE = Spawn(class'UTTeleportEffect', Owner,, Owner.Location, Owner.Rotation);
+		PTE.Initialize(Pawn(Owner), true);
+		PTE.PlayOwnedSound(sound'Botpack.Resp2A',, 10.0);
+	}
 }
 
 function ThrowTarget()
@@ -778,6 +900,8 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	} else if (Action == IGPLUS_DETTLOC_RECALL) {
 		IGPlus_DetLastFireTS = TS; // a recall restarts the throw timer
 		IGPlus_DetClientDiscGone();
+		// Now, like the throw's sound: the server's skips us (PlayOwnedSound).
+		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
 	}
 	return Action;
 }
@@ -1106,7 +1230,8 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 			IGPlus_DetLog("gib", "recall of a disrupted disc");
 		if (IGPlus_GibIfDisrupted())
 			return;
-		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		// The thrower played it on its own frame (IGPlus_DetClientStep).
+		Owner.PlayOwnedSound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
 		bTTargetOut = false;
 		TTarget.Destroy();
 		TTarget = None;
@@ -1138,7 +1263,8 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 			return;
 		}
 		IGPlus_DetLog("client-refused", "");
-		Owner.PlaySound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
+		// The thrower played it when it didn't fit (bbPlayer.xxReplicateMove).
+		Owner.PlayOwnedSound(AltFireSound, SLOT_Misc, 4 * Pawn(Owner).SoundDampening);
 		bTTargetOut = false;
 		TTarget.Destroy();
 		TTarget = None;
