@@ -768,7 +768,8 @@ function IGPlus_MoveDiscToSeenAge(ST_TranslocatorTarget STTarget, bbPlayer bbP, 
 		ServerTimeSinceTargetSpawn - Late + 0.2);
 	if (IGPlus_IsDetMode()) {
 		bbP.IGPlus_DetTlocInfo = "clientAge="$(bbP.CurrentTimeStamp - IGPlus_ThrowTS)
-			@"usedAge="$TimeSinceThrow@"discAge="$STTarget.IGPlus_CurrentAge()@STTarget.IGPlus_DetPathSummary();
+			@"usedAge="$TimeSinceThrow@"discAge="$STTarget.IGPlus_CurrentAge()@STTarget.IGPlus_DetPathSummary()
+			@bbP.IGPlus_DetThrowGapInfo;
 		// The disc is younger here than on the thrower's screen past what the
 		// lookup flies it on (50ms): the throw's move came in late.
 		if (TimeSinceThrow != bbP.CurrentTimeStamp - IGPlus_ThrowTS

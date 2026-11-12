@@ -455,6 +455,7 @@ var string IGPlus_DetTlocInfo;        // the last translocate's disc details
 var vector IGPlus_DetThrowSpot;
 var bool IGPlus_bDetThrowSpot;
 var int IGPlus_DetThrowRule;
+var string IGPlus_DetThrowGapInfo;    // [DET-TLOC]: how far apart the two discs of the last throw started
 // Server: the translocate count the move being run carries (the client's,
 // after anything it predicted in that move). One ahead of ours when a
 // translocate runs: the client made it too, and played its sound
@@ -4847,19 +4848,33 @@ function vector IGPlus_DetThrowOrigin(IGPlus_ServerMove SM, float PrevTS, int Me
 // Server: after a move's translocator step. It threw, our disc left from our
 // own spot, and the client's spot (where its disc left from) is more than
 // 4uu off: the thrower gets our disc's path at once, so its own follows ours
-// from the start instead of landing that far off. Not on a lift (left as it
-// was).
+// from the start instead of landing that far off, and a [DET-TLOC] line says
+// so. Not sent on a lift (left as it was), where the client's spot rides our
+// lift and its screen has the lift, and itself, a round trip back.
 function IGPlus_DetAfterThrow(IGPlus_ServerMove SM, float PrevTS) {
 	local ST_Translocator TL;
+	local vector Gap;
+	local bool bLift;
 
 	TL = ST_Translocator(Weapon);
 	// (1: a throw. ThrowTarget stamps the one this step made.)
-	if ((SM.DetChargeData & 3) != 1 || SM.DetChargeData > 7 || IGPlus_DetThrowRule != 0
-		|| TL == None || ST_TranslocatorTarget(TL.TTarget) == None || TL.IGPlus_ThrowTS != SM.TimeStamp
-		|| Mover(Base) != none || Mover(SM.ClientBase) != none)
+	if ((SM.DetChargeData & 3) != 1 || SM.DetChargeData > 7
+		|| TL == None || ST_TranslocatorTarget(TL.TTarget) == None || TL.IGPlus_ThrowTS != SM.TimeStamp)
 		return;
-	if (VSize(Location - IGPlus_ClientMoveStart(SM, PrevTS)) > 4.0)
+
+	bLift = Mover(Base) != none || Mover(SM.ClientBase) != none;
+	if (IGPlus_DetThrowRule == 0) {
+		Gap = Location - IGPlus_ClientMoveStart(SM, PrevTS);
+		if (SM.ClientBase == Base)
+			Gap += IGPlus_OwnLiftLead();
+	}
+	// Kept for the translocate's lines: a landing that far apart began here.
+	IGPlus_DetThrowGapInfo = "throwGap="$class'ST_ShockProj'.static.IGPlus_Vec(Gap);
+	if (VSize(Gap) <= 4.0)
+		return;
+	if (bLift == false)
 		TL.IGPlus_DetServerDiscChanged(ST_TranslocatorTarget(TL.TTarget));
+	IGPlus_DetTlocLog("throw-apart", "dist="$int(VSize(Gap))@"onLift="$bLift);
 }
 
 // Server: a deterministic translocator action from a lost or held-back move,
@@ -4890,6 +4905,9 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 	ViewRotation.Yaw = View & 0xFFFF;
 	ViewRotation.Roll = 0;
 	TL.IGPlus_DetServerStep(self, TS, Action, false, false, MoveTS - TS);
+	// A late throw: its move is gone, nothing tells where the client stood.
+	if ((Action & 3) == 1 && TL.TTarget != None && TL.IGPlus_ThrowTS == TS)
+		IGPlus_DetThrowGapInfo = "throwGap=unknown";
 	CurrentTimeStamp = SavedTS;
 	ViewRotation = SavedView;
 }
@@ -5013,7 +5031,8 @@ static final function int IGPlus_DetUnpackRedoView(int RedoData) {
 
 // Server, at each client error check: did the client translocate when we
 // did, and land where we did?
-function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool bLandingTaken) {
+// LandGap: our spot minus the client's (before a taken landing moved us).
+function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool bLandingTaken, vector LandGap) {
 	local int Diff;
 
 	if (IGPlus_DetTranslocator == false)
@@ -5021,7 +5040,8 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool b
 	Diff = (ClientTlocCounter - TlocCounter) & 3;
 	if (Diff == 0) {
 		if (IGPlus_bDetTlocCheckLanding && ClientLocError > 64.0)
-			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@"taken="$bLandingTaken@IGPlus_DetTlocInfo);
+			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@"taken="$bLandingTaken
+				@"landGap="$class'ST_ShockProj'.static.IGPlus_Vec(LandGap)@IGPlus_DetTlocInfo);
 		// Speeds (server/client) after the translocate and going into it: a
 		// fall speed one side carried in and the other didn't widens the gap.
 		if (IGPlus_bDetTlocCheckLanding && Abs(Velocity.Z - IGPlus_DetClientVel.Z) > 50.0)
@@ -5578,7 +5598,7 @@ function IGPlus_CheckClientError() {
 	ClientLocError = LocDelta Dot LocDelta;
 	debugClientLocError = ClientLocError;
 	bLandingTaken = IGPlus_DetTakeClientLanding(ClientTlocCounter, ClientPhysics, ClientLocAbs, ClientLocError);
-	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken);
+	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken, LocDelta);
 	if (bLandingTaken)
 		ClientLocError = 0.0;
 

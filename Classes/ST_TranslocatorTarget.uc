@@ -670,6 +670,15 @@ auto state Pickup {
 
 		super.TakeDamage(Damage, EventInstigator, HitLocation, Momentum, DamageType);
 
+		// For the [DET-TLOC] lines: who sent our disc flying, and when. A
+		// translocate within a round trip of it lands the thrower apart.
+		if (bIGPlusFullHistory) {
+			if (EventInstigator != None && EventInstigator.PlayerReplicationInfo != None)
+				IGPlus_DetLastTouch = "hit:"$EventInstigator.PlayerReplicationInfo.PlayerName$"@"$IGPlus_CurrentAge();
+			else
+				IGPlus_DetLastTouch = "hit:"$DamageType$"@"$IGPlus_CurrentAge();
+		}
+
 		// Landed() switched Tick off; a knocked disc flies again. Fast, and
 		// often with its bounce used up (no asking at walls): the two copies
 		// can part at any ledge. Tick sends ours every 0.05s until it lands.
