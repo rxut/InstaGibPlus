@@ -95,7 +95,7 @@ replication
     reliable if (bNetOwner && Role == ROLE_Authority)
         IGPlus_DiscRepl, IGPlus_DetServer;
     reliable if (Role == ROLE_Authority)
-        IGPlus_ClientDetSync, IGPlus_ClientDetKnock;
+        IGPlus_ClientDetSync, IGPlus_ClientDetKnock, IGPlus_ClientDetPickedUp;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -780,6 +780,53 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		IGPlus_DetClientDiscGone();
 	}
 	return Action;
+}
+
+// Client: we walked onto our landed disc. Ours goes now, so fire throws a
+// new one and alt-fire does nothing, and the server is told: it picks its
+// copy up on the same move, by its own touch (stock) or, when a push we
+// hadn't seen had it elsewhere, because we did (bbPlayer.IGPlus_DetPickupDue).
+// Its disc isn't there to pick up (shot away): it shows us its disc again.
+// The sound plays now: the server's skips us (IGPlus_DetServerPickedUp). The
+// safety net waits until the server is past this move, as after an action.
+simulated function IGPlus_DetClientPickedUp() {
+	local bbPlayer P;
+
+	P = bbPlayer(Owner);
+	if (P != None && IGPlus_DetLocalDisc != None) {
+		P.PlaySound(Sound'Botpack.Pickups.AmmoPick', SLOT_None, 2.0);
+		P.IGPlus_ServerDetPickedUp(IGPlus_DetThrowTS, Level.TimeSeconds, P.Location);
+		P.ClientDebugMessage("Tloc disc picked up on our own frame, age="$(Level.TimeSeconds - IGPlus_DetThrowTS));
+	}
+	IGPlus_DetLastActionTS = Level.TimeSeconds;
+	IGPlus_DetClientDiscGone();
+}
+
+// Server: the thrower picked disc T up, by its own touch
+// (ST_TranslocatorTarget.Touch) or because its client did
+// (bbPlayer.IGPlus_DetPickupDue). As stock's Touch, but the sound is for
+// everyone else: the thrower's client plays it once, at its own touch or,
+// when it had none, on hearing of ours (IGPlus_ClientDetPickedUp).
+function IGPlus_DetServerPickedUp(ST_TranslocatorTarget T) {
+	Owner.PlayOwnedSound(Sound'Botpack.Pickups.AmmoPick', SLOT_None, 2.0);
+	IGPlus_ClientDetPickedUp(IGPlus_ThrowTS);
+	TTarget = None;
+	bTTargetOut = false;
+	IGPlus_bDetExpectOut = false; // IGPlus_ClientDetPickedUp tells the client
+	if (PlayerPawn(Owner) != None)
+		PlayerPawn(Owner).ClientWeaponEvent('TouchTarget');
+	T.Destroy();
+}
+
+// Client: the server picked our disc (thrown at DiscTS) up. We did too, on
+// our own frame, and played the sound then: nothing left to do. We didn't
+// (no touch here): it goes now, with the sound.
+simulated function IGPlus_ClientDetPickedUp(float DiscTS) {
+	if (IGPlus_bDetOut == false || IGPlus_DetThrowTS != DiscTS)
+		return;
+	if (Owner != None)
+		Owner.PlaySound(Sound'Botpack.Pickups.AmmoPick', SLOT_None, 2.0);
+	IGPlus_DetClientDiscGone();
 }
 
 // Both sides: a disc spawns with our rotation unless told otherwise. On a

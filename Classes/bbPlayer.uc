@@ -455,6 +455,10 @@ var string IGPlus_DetTlocInfo;        // the last translocate's disc details
 var vector IGPlus_DetThrowSpot;
 var bool IGPlus_bDetThrowSpot;
 var int IGPlus_DetThrowRule;
+// Server: our client picked its disc (thrown at DiscTS) up on the move at TS,
+// standing at Loc (IGPlus_ServerDetPickedUp). 0: none waiting.
+var float IGPlus_DetPickupTS, IGPlus_DetPickupDiscTS;
+var vector IGPlus_DetPickupLoc;
 // Deterministic translocator actions survive a lost move: the client sends
 // its last action again with the next moves until the server is past it.
 var int IGPlus_DetRedoAction;         // client: last action (0: none to resend)
@@ -991,6 +995,7 @@ replication
 		xxServerPredictedSwitch,
 		xxServerPSCommand,
 		IGPlus_ServerDetDiscSync,
+		IGPlus_ServerDetPickedUp,
 		DropFlag,
 		Go,
 		Hold,
@@ -4682,6 +4687,57 @@ function IGPlus_ServerDetDiscSync(float DiscTS, float Age, optional bool bConfir
 		TL.IGPlus_DetSyncAfter(DiscTS, Age, bConfirm);
 }
 
+// Server: our client walked onto its landed disc on the move at TS, standing
+// at Loc, and picked it up (ST_Translocator.IGPlus_DetClientPickedUp). This
+// gets here before that move: IGPlus_DetPickupDue acts at its end.
+function IGPlus_ServerDetPickedUp(float DiscTS, float TS, vector Loc) {
+	if (TS > CurrentTimeStamp + 2.0)
+		return;
+	IGPlus_DetPickupDiscTS = DiscTS;
+	IGPlus_DetPickupTS = TS;
+	IGPlus_DetPickupLoc = Loc;
+}
+
+// Server: the move our client picked its disc up on has run. Stock picked
+// ours up too if we touched it there (ST_TranslocatorTarget.Touch). We
+// didn't (a push the client hadn't seen had us elsewhere): ours goes the
+// same way when it lies where the client stood. It doesn't (shot away, still
+// flying): the client gets our disc back.
+function IGPlus_DetPickupDue() {
+	local ST_Translocator TL;
+	local ST_TranslocatorTarget T;
+	local vector D;
+	local float TS;
+	local string Why;
+
+	TS = IGPlus_DetPickupTS;
+	IGPlus_DetPickupTS = 0.0;
+	TL = ST_Translocator(FindInventoryType(class'ST_Translocator'));
+	if (TL == None || TL.IGPlus_IsDetMode() == false)
+		return;
+	T = ST_TranslocatorTarget(TL.TTarget);
+	if (T == None || TL.IGPlus_ThrowTS != IGPlus_DetPickupDiscTS)
+		return; // picked up here as well, or a newer disc by now
+
+	D = T.Location - IGPlus_DetPickupLoc;
+	// ponytail: 8uu past touching, and the client within 200uu of us; a
+	// recall does the same from anywhere 0.8s after the throw
+	if (T.Physics != PHYS_None)
+		Why = "flying";
+	else if (Abs(D.Z) > T.CollisionHeight + CollisionHeight + 8.0
+		|| VSize(D * vect(1,1,0)) > T.CollisionRadius + CollisionRadius + 8.0)
+		Why = "disc-not-there";
+	else if (VSize(IGPlus_DetPickupLoc - Location) > 200.0)
+		Why = "client-far";
+	if (Why != "") {
+		TL.IGPlus_DetLog("reject", "pickup"@Why@"discDist="$int(VSize(D))@"bodyGap="$int(VSize(IGPlus_DetPickupLoc - Location)));
+		TL.IGPlus_ClientDetSync(true, TL.IGPlus_ThrowTS, TS);
+		return;
+	}
+	TL.IGPlus_DetLog("picked-up-by-thrower", "by=client bodyGap="$int(VSize(IGPlus_DetPickupLoc - Location)));
+	TL.IGPlus_DetServerPickedUp(T);
+}
+
 function IGPlus_BeforeTranslocate() {
 	TlocPrevLocation = Location;
 	// The client's side is its move before this one (it translocates first thing in this one).
@@ -5482,6 +5538,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (SM.ClientBase != none)
 		IGPlus_PSALastClientLoc += SM.ClientBase.Location;
 	IGPlus_PSALastClientTS = SM.TimeStamp;
+
+	// Our client picked its disc up on this move (or one before it).
+	if (IGPlus_DetPickupTS > 0.0 && SM.TimeStamp >= IGPlus_DetPickupTS)
+		IGPlus_DetPickupDue();
 
 	if (bDetMoveAcceptedForFire)
 		IGPlus_DetFinalizeExpiredPrevWeapon();

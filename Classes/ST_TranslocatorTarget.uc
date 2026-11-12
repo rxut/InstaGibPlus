@@ -710,6 +710,19 @@ auto state Pickup {
 		// server stops its copy on them where the thrower saw them
 		// (IGPlus_DetRewoundStop). Nothing else here touches it.
 		if (IGPlus_bLocalDisc) {
+			// The thrower walks onto its landed disc: picked up, and the
+			// server picks its copy up on the same move (stock, below, or
+			// because we did: IGPlus_DetClientPickedUp). Not while a
+			// correction replays our moves, nor when a knock puts the disc
+			// on us (IGPlus_DetApplyKnock, this frame): neither is a new
+			// touch.
+			if (Other == Instigator && Physics == PHYS_None && PlayerPawn(Other) != None
+				&& PlayerPawn(Other).bUpdating == false
+				&& ST_Translocator(Master) != None && ST_Translocator(Master).IGPlus_DetLocalDisc == self
+				&& ST_Translocator(Master).IGPlus_DetKnockFrameTS != Level.TimeSeconds) {
+				ST_Translocator(Master).IGPlus_DetClientPickedUp();
+				return;
+			}
 			if (Other.bIsPawn && Other != Instigator && Physics != PHYS_None && IGPlus_bRebasing == false) {
 				NewPos = Other.Location;
 				NewPos.Z = Location.Z;
@@ -776,6 +789,15 @@ auto state Pickup {
 			}
 		}
 		
+		// The deterministic thrower walks onto its landed disc: stock's
+		// pickup, with the sound left to its client (IGPlus_DetServerPickedUp).
+		if (Other == Instigator && Physics == PHYS_None && bbPlayer(Other) != None
+			&& ST_Translocator(Master) != None && ST_Translocator(Master).IGPlus_IsDetMode()) {
+			IGPlus_DetLogTouch("picked-up-by-thrower", Other);
+			ST_Translocator(Master).IGPlus_DetServerPickedUp(self);
+			return;
+		}
+
 		// Original touch handling for non-dummy actors
 		super.Touch(Other);
 		if (bDeleteMe && Other == Instigator)
