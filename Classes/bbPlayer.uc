@@ -5091,6 +5091,12 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool b
 
 	if (IGPlus_DetTranslocator == false)
 		return;
+	// A dead player's moves carry no count (state Dying strips it), so there
+	// is nothing to compare: it read as diff=2 whenever our own count was 2.
+	if (Health <= 0) {
+		IGPlus_bDetTlocCheckLanding = false;
+		return;
+	}
 	Diff = (ClientTlocCounter - TlocCounter) & 3;
 	if (Diff == 0) {
 		// Over 8uu apart. Within the bubble we took the client's spot and
