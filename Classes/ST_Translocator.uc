@@ -155,6 +155,11 @@ function Tick(float DeltaTime)
             // client's safety net must not take our disc state for its answer.
             if (bbPlayer(Owner).IGPlus_DetHeldCount > 0)
                 IGPlus_DetServer.MoveTS = FMin(IGPlus_DetServer.MoveTS, bbPlayer(Owner).IGPlus_DetHeldTS[0] - 0.0001);
+            // Nor is one held until our switch to this translocator is done
+            // (bbPlayer.IGPlus_DetNotHeld): the client dropped the disc it
+            // threw, then got ours.
+            if (bbPlayer(Owner).IGPlus_DetSwitchHeldAction != 0)
+                IGPlus_DetServer.MoveTS = FMin(IGPlus_DetServer.MoveTS, bbPlayer(Owner).IGPlus_DetSwitchHeldTS - 0.0001);
         }
     }
 }
