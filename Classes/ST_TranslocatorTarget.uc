@@ -459,9 +459,11 @@ function string IGPlus_DetPathSummary() {
 	return "bounces(server/client)="$IGPlus_DetServerPathEvents$"/"$IGPlus_DetClientPathEvents@"lastTouch="$Touched;
 }
 
-// Server: a [DET-TLOC] line about something only our copy met (the
-// thrower's disc touches nothing).
-function IGPlus_DetLogTouch(string Event, Actor Other) {
+// Server: note what our copy met. It shows as lastTouch in the [DET-TLOC]
+// lines about this disc (a landing apart, a refusal). No line of its own:
+// the thrower's disc meets the same players and flags. bLine: but for this
+// one (a door or lift pushing the disc, which the thrower's may not see).
+function IGPlus_DetNoteTouch(string Event, Actor Other, optional bool bLine) {
 	local string By;
 
 	if (Level.NetMode == NM_Client || IGPlus_bLocalDisc || bIGPlusFullHistory == false || ST_Translocator(Master) == None)
@@ -477,7 +479,8 @@ function IGPlus_DetLogTouch(string Event, Actor Other) {
 		}
 	}
 	IGPlus_DetLastTouch = Event$":"$By;
-	ST_Translocator(Master).IGPlus_DetLog(Event, "by="$By);
+	if (bLine)
+		ST_Translocator(Master).IGPlus_DetLog(Event, "by="$By);
 }
 
 // Server, deterministic translocator with ping compensation: other players
@@ -530,7 +533,7 @@ function IGPlus_DetRewoundStop(vector From) {
 	IGPlus_DetStoppedBy = Hit.Actual;
 	SetLocation(NewPos);
 	Velocity = vect(0,0,0);
-	IGPlus_DetLogTouch("stopped-by-rewound-player", Hit.Actual);
+	IGPlus_DetNoteTouch("stopped-by-rewound-player", Hit.Actual);
 	IGPlus_NoteChanged();
 }
 
@@ -617,7 +620,7 @@ auto state Pickup {
 		}
 		if (Other != IGPlus_DetLastEncroacher) {
 			IGPlus_DetLastEncroacher = Other;
-			IGPlus_DetLogTouch("pushed-by-mover", Other);
+			IGPlus_DetNoteTouch("pushed-by-mover", Other, true);
 		}
 		IGPlus_PathEvent(false);
 	}
@@ -773,7 +776,6 @@ auto state Pickup {
 				
 				if (Physics == PHYS_None) {
 					if (bMasterTouch) {
-						IGPlus_DetLogTouch("picked-up-by-thrower", ActualPawn);
 						PlaySound(Sound'Botpack.Pickups.AmmoPick',,2.0);
 						Master.TTarget = None;
 						Master.bTTargetOut = false;
@@ -792,7 +794,7 @@ auto state Pickup {
 				NewPos.Z = Location.Z;
 				SetLocation(NewPos);
 				Velocity = vect(0,0,0);
-				IGPlus_DetLogTouch("stopped-by-rewound-player", ActualPawn);
+				IGPlus_DetNoteTouch("stopped-by-rewound-player", ActualPawn);
 				IGPlus_NoteChanged();
 				
 				// Check team game rules
@@ -814,21 +816,18 @@ auto state Pickup {
 		// pickup, with the sound left to its client (IGPlus_DetServerPickedUp).
 		if (Other == Instigator && Physics == PHYS_None && bbPlayer(Other) != None
 			&& ST_Translocator(Master) != None && ST_Translocator(Master).IGPlus_IsDetMode()) {
-			IGPlus_DetLogTouch("picked-up-by-thrower", Other);
 			ST_Translocator(Master).IGPlus_DetServerPickedUp(self);
 			return;
 		}
 
 		// Original touch handling for non-dummy actors
 		super.Touch(Other);
-		if (bDeleteMe && Other == Instigator)
-			IGPlus_DetLogTouch("picked-up-by-thrower", Other);
 		// Stock sticks the disc to pawns and bounces it off other actors.
 		if (bDeleteMe == false && Velocity != OldVelocity) {
 			if (Other.bIsPawn)
-				IGPlus_DetLogTouch("stopped-by-player", Other);
+				IGPlus_DetNoteTouch("stopped-by-player", Other);
 			else
-				IGPlus_DetLogTouch("bounced-off-actor", Other);
+				IGPlus_DetNoteTouch("bounced-off-actor", Other);
 			IGPlus_NoteChanged();
 		}
 	}

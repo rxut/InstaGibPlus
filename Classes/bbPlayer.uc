@@ -456,6 +456,12 @@ var vector IGPlus_DetThrowSpot;
 var bool IGPlus_bDetThrowSpot;
 var int IGPlus_DetThrowRule;
 var string IGPlus_DetThrowGapInfo;    // [DET-TLOC]: how far apart the two discs of the last throw started
+// Server: this map's deterministic translocator counts, for one [DET-TLOC]
+// summary line when the match ends or the player leaves (IGPlus_DetLogSummary).
+var int IGPlus_DetStatThrows, IGPlus_DetStatTlocs;
+var int IGPlus_DetStatApart, IGPlus_DetStatAbsorbed; // landings over 8uu apart: corrected, taken by the 16uu bubble
+var int IGPlus_DetStatThrowApart, IGPlus_DetStatRejects, IGPlus_DetStatLate;
+var bool IGPlus_bDetStatLogged;
 // Server: the translocate count the move being run carries (the client's,
 // after anything it predicted in that move). One ahead of ours when a
 // translocate runs: the client made it too, and played its sound
@@ -1193,6 +1199,8 @@ simulated event Destroyed() {
 		IGPlus_DebugLogFile.Destroy();
 	if (IGPlus_SKBall != none)
 		IGPlus_SKBall.Destroy();
+	if (Role == ROLE_Authority)
+		IGPlus_DetLogSummary();
 	super.Destroyed();
 }
 
@@ -4740,7 +4748,6 @@ function IGPlus_DetPickupDue() {
 		TL.IGPlus_ClientDetSync(true, TL.IGPlus_ThrowTS, TS);
 		return;
 	}
-	TL.IGPlus_DetLog("picked-up-by-thrower", "by=client bodyGap="$int(VSize(IGPlus_DetPickupLoc - Location)));
 	TL.IGPlus_DetServerPickedUp(T);
 }
 
@@ -4762,6 +4769,7 @@ function IGPlus_AfterTranslocate() {
 		IGPlus_NotifiedTranslocate = false;
 		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()) {
 			IGPlus_bDetTlocCheckLanding = true;
+			IGPlus_DetStatTlocs++;
 			// A jump right at landing that only we took: we come out rising,
 			// the client walking (stock keeps the vertical speed). The client
 			// walked into its translocate, so keep its speed. Never faster up.
@@ -4780,6 +4788,8 @@ function IGPlus_AfterTranslocate() {
 function IGPlus_DetTlocLog(string Event, string Details) {
 	local string LossAgo;
 
+	if (Event == "reject")
+		IGPlus_DetStatRejects++;
 	if (Level.TimeSeconds - IGPlus_DetTlocLogWindowTS > 1.0) {
 		IGPlus_DetTlocLogWindowTS = Level.TimeSeconds;
 		IGPlus_DetTlocLogCount = 0;
@@ -4793,6 +4803,22 @@ function IGPlus_DetTlocLog(string Event, string Details) {
 	Log("[DET-TLOC]"@Event@PlayerReplicationInfo.PlayerName@Details
 		@"ping="$PlayerReplicationInfo.Ping@"lostMoves="$IGPlus_DetLostMoves
 		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp, 'IGPlus');
+}
+
+// Server: one [DET-TLOC] line with this player's translocator counts for the
+// map, when the match ends (UTPure.Tick) or the player leaves (Destroyed).
+// On a full server the rates say more than the single lines: landedApart
+// are landings the player saw corrected, absorbed those within the 16uu
+// bubble (nobody saw them), late the actions that came through the resend or
+// were held back. Not without a throw.
+function IGPlus_DetLogSummary() {
+	if (IGPlus_bDetStatLogged || IGPlus_DetStatThrows == 0 || PlayerReplicationInfo == None)
+		return;
+	IGPlus_bDetStatLogged = true;
+	IGPlus_DetTlocLogCount = 0; // not lost to the 8 lines a second
+	IGPlus_DetTlocLog("summary", "throws="$IGPlus_DetStatThrows@"translocates="$IGPlus_DetStatTlocs
+		@"landedApart="$IGPlus_DetStatApart@"absorbed="$IGPlus_DetStatAbsorbed
+		@"throwApart="$IGPlus_DetStatThrowApart@"rejects="$IGPlus_DetStatRejects@"late="$IGPlus_DetStatLate);
 }
 
 // Server: the client's spot at the start of move SM (before its movement),
@@ -4874,6 +4900,7 @@ function IGPlus_DetAfterThrow(IGPlus_ServerMove SM, float PrevTS) {
 		return;
 	if (bLift == false)
 		TL.IGPlus_DetServerDiscChanged(ST_TranslocatorTarget(TL.TTarget));
+	IGPlus_DetStatThrowApart++;
 	IGPlus_DetTlocLog("throw-apart", "dist="$int(VSize(Gap))@"onLift="$bLift);
 }
 
@@ -4897,7 +4924,7 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 	}
 	if (TL.IGPlus_IsDetMode() == false)
 		return;
-	IGPlus_DetTlocLog("resent", class'ST_Translocator'.static.IGPlus_DetActionName(Action)@"late="$(MoveTS - TS));
+	IGPlus_DetStatLate++; // (for the summary: no line each, a lossy link has many)
 	SavedTS = CurrentTimeStamp;
 	SavedView = ViewRotation;
 	CurrentTimeStamp = TS; // the throw time, the disc's age at a translocate
@@ -5039,9 +5066,17 @@ function IGPlus_DetTlocCheck(int ClientTlocCounter, float ClientLocError, bool b
 		return;
 	Diff = (ClientTlocCounter - TlocCounter) & 3;
 	if (Diff == 0) {
-		if (IGPlus_bDetTlocCheckLanding && ClientLocError > 64.0)
-			IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))@"taken="$bLandingTaken
-				@"landGap="$class'ST_ShockProj'.static.IGPlus_Vec(LandGap)@IGPlus_DetTlocInfo);
+		// Over 8uu apart. Within the bubble we took the client's spot and
+		// nobody saw a thing: counted for the summary, no line.
+		if (IGPlus_bDetTlocCheckLanding && ClientLocError > 64.0) {
+			if (bLandingTaken) {
+				IGPlus_DetStatAbsorbed++;
+			} else {
+				IGPlus_DetStatApart++;
+				IGPlus_DetTlocLog("landed-apart", "dist="$int(Sqrt(ClientLocError))
+					@"landGap="$class'ST_ShockProj'.static.IGPlus_Vec(LandGap)@IGPlus_DetTlocInfo);
+			}
+		}
 		// Speeds (server/client) after the translocate and going into it: a
 		// fall speed one side carried in and the other didn't widens the gap.
 		if (IGPlus_bDetTlocCheckLanding && Abs(Velocity.Z - IGPlus_DetClientVel.Z) > 50.0)

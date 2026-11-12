@@ -1211,6 +1211,7 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 			return;
 		}
 		IGPlus_bDetExpectOut = true;
+		P.IGPlus_DetStatThrows++;
 		return;
 	}
 
