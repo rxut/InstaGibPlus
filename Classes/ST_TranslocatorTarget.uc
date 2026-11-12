@@ -730,6 +730,18 @@ auto state Pickup {
 				Velocity = vect(0,0,0);
 				IGPlus_PathEvent(false); // asks the server where its copy is
 			}
+			// Stock bounces a flying disc off other actors (a CTF flag at its
+			// base, 96uu wide): ours too, or it flies through and is pulled
+			// back a ping later. Only off what the server has as well (not
+			// what we spawned here ourselves), and not our movers (HitWall).
+			// Not off projectiles either (stock does): they are somewhere
+			// else on the server by the time its disc gets here, so our
+			// bounce would be a guess. The server's disc tells us of its own.
+			else if (Other.bIsPawn == false && Physics == PHYS_Falling
+				&& Other.Role < ROLE_Authority && Mover(Other) == None && Projectile(Other) == None
+				&& Other.IsA('Inventory') == false && Other.IsA('Triggers') == false
+				&& Other.IsA('NavigationPoint') == false)
+				HitWall(-1 * Normal(Velocity), Other);
 			return;
 		}
 		if (Other.IsA('ST_HitTestHelper') || IGPlus_bDetSweeping)
