@@ -2237,6 +2237,29 @@ simulated function TimeMessage(int Num) {
 		V.ReceiveLocalizedMessage(class'TimeMessage', 16 - Num);
 }
 
+// The "You have won the match" / "You have lost the match" announcer at the
+// end of a match. Like TimeMessage, TournamentPlayer replicates it to the
+// player's client, the engine writes it into a server demo too, and playback
+// absorbs it on the recorded player. It is this player's own result, so it
+// plays only for a viewer following us.
+simulated function PlayWinMessage(bool bWinner) {
+	local PlayerPawn V;
+	local sound Announcement;
+
+	if (IGPlus_SDIsServerDemoProxy() == false) {
+		Super.PlayWinMessage(bWinner);
+		return;
+	}
+	V = IGPlus_SDFollowingViewer();
+	if (V == none)
+		return;
+	if (bWinner)
+		Announcement = Sound(DynamicLoadObject("Announcer.Winner", class'Sound'));
+	else
+		Announcement = Sound(DynamicLoadObject("Announcer.LostMatch", class'Sound'));
+	V.ClientPlaySound(Announcement, true, true);
+}
+
 // Server: the spree ends go to every player through ReceiveLocalizedMessage,
 // which a server demo misses. UTPure writes one copy into the demo.
 function EndSpree(PlayerReplicationInfo Killer, PlayerReplicationInfo Other) {
