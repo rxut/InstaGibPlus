@@ -1231,8 +1231,8 @@ function ScoreKill(Pawn Killer, Pawn Other)
 // ==================================================================================
 // IGPlus_DemoGlobalMessage - a message stock code sends to every player, once into a server demo
 // ==================================================================================
-// The killing spree messages and the countdown at match start go to each
-// TournamentPlayer only, so the engine's DemoRecSpectator never gets them.
+// The killing spree messages go to each TournamentPlayer only, so the
+// engine's DemoRecSpectator never gets them.
 // Giving it one copy writes it into the server demo, and playback shows it to
 // the viewer whoever they follow, as it does broadcasts. Each player's call
 // arrives in the same tick with the same values, so repeats are skipped.

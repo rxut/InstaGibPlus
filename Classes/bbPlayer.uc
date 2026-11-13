@@ -2207,15 +2207,38 @@ function IGPlus_SendRespawnNoficiation() {
 		S.IGPlus_NotifyPlayerRestart(Location, Rotation, self);
 }
 
-// Server: the countdown at match start and the spree ends go to every player
-// through ReceiveLocalizedMessage, which a server demo misses. UTPure writes
-// one copy into the demo.
-function TimeMessage(int Num) {
-	Super.TimeMessage(Num);
-	if (zzUTPure != none)
-		zzUTPure.IGPlus_DemoGlobalMessage(TimeMessageClass, 16 - Num, none, none);
+// The countdown at match start. TournamentPlayer replicates TimeMessage to
+// the player's client, and its condition lets the engine write it into a
+// server demo as well. In playback the recorded player is a simulated proxy,
+// which runs only simulated functions, so stock code drops the call there.
+// Every player carries the same countdown, so one of them shows it to the
+// viewer: the player the viewer follows, else the first recorded player.
+simulated function TimeMessage(int Num) {
+	local PlayerPawn V;
+	local bbPlayer P, Shower;
+
+	if (IGPlus_SDIsServerDemoProxy() == false) {
+		Super.TimeMessage(Num);
+		return;
+	}
+	V = IGPlus_SDGetViewer();
+	if (V == none)
+		return;
+	Shower = bbPlayer(V.ViewTarget);
+	if (Shower == none || Shower.IGPlus_SDIsServerDemoProxy() == false) {
+		Shower = none;
+		foreach AllActors(class'bbPlayer', P)
+			if (P.IGPlus_SDIsServerDemoProxy()) {
+				Shower = P;
+				break;
+			}
+	}
+	if (Shower == self)
+		V.ReceiveLocalizedMessage(class'TimeMessage', 16 - Num);
 }
 
+// Server: the spree ends go to every player through ReceiveLocalizedMessage,
+// which a server demo misses. UTPure writes one copy into the demo.
 function EndSpree(PlayerReplicationInfo Killer, PlayerReplicationInfo Other) {
 	Super.EndSpree(Killer, Other);
 	if (zzUTPure == none)
