@@ -48,6 +48,10 @@ var ST_ProjectileDummy ProjDummies;
 // the next demo on the same map, so the kill feed and chat showed once per
 // demo recorded so far. Tick keeps only the newest.
 var DemoRecSpectator IGPlus_DemoRecSpec;
+var class<LocalMessage> IGPlus_DemoLastMsg;	// last IGPlus_DemoGlobalMessage, to send it once
+var int IGPlus_DemoLastSw;
+var PlayerReplicationInfo IGPlus_DemoLastPRI1, IGPlus_DemoLastPRI2;
+var float IGPlus_DemoLastTime;
 var ST_MoverDummy MoverDummies;
 
 replication
@@ -1211,7 +1215,6 @@ function ScoreKill(Pawn Killer, Pawn Other)
 {
 	local DeathMatchPlus DMP;
 	local int Num;
-	local bbPlayer P;
 
 	DMP = DeathMatchPlus(Level.Game);
 	if (DMP != none && Other != none && Other.bIsPlayer && Killer != none && Killer.bIsPlayer && Killer != Other
@@ -1220,10 +1223,32 @@ function ScoreKill(Pawn Killer, Pawn Other)
 	) {
 		Num = Killer.Spree + 1;
 		if (Num <= 25 && Num % 5 == 0)
-			foreach AllActors(class'bbPlayer', P)
-				P.IGPlus_DemoLocalizedMessage(class'KillingSpreeMessage', Num / 5 - 1, Killer.PlayerReplicationInfo, none, none);
+			IGPlus_DemoGlobalMessage(class'KillingSpreeMessage', Num / 5 - 1, Killer.PlayerReplicationInfo, none);
 	}
 	Super.ScoreKill(Killer, Other);
+}
+
+// ==================================================================================
+// IGPlus_DemoGlobalMessage - a message stock code sends to every player, once into a server demo
+// ==================================================================================
+// The killing spree messages and the countdown at match start go to each
+// TournamentPlayer only, so the engine's DemoRecSpectator never gets them.
+// Giving it one copy writes it into the server demo, and playback shows it to
+// the viewer whoever they follow, as it does broadcasts. Each player's call
+// arrives in the same tick with the same values, so repeats are skipped.
+function IGPlus_DemoGlobalMessage(class<LocalMessage> Message, int Sw, PlayerReplicationInfo RelatedPRI_1, PlayerReplicationInfo RelatedPRI_2)
+{
+	if (IGPlus_DemoRecSpec == None || Message == None)
+		return;
+	if (Message == IGPlus_DemoLastMsg && Sw == IGPlus_DemoLastSw && RelatedPRI_1 == IGPlus_DemoLastPRI1
+		&& RelatedPRI_2 == IGPlus_DemoLastPRI2 && Level.TimeSeconds == IGPlus_DemoLastTime)
+		return;
+	IGPlus_DemoLastMsg = Message;
+	IGPlus_DemoLastSw = Sw;
+	IGPlus_DemoLastPRI1 = RelatedPRI_1;
+	IGPlus_DemoLastPRI2 = RelatedPRI_2;
+	IGPlus_DemoLastTime = Level.TimeSeconds;
+	IGPlus_DemoRecSpec.ReceiveLocalizedMessage(Message, Sw, RelatedPRI_1, RelatedPRI_2);
 }
 
 function string IGPlus_NormalizeServerSettingKey(string Key) {

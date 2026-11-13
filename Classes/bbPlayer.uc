@@ -2207,19 +2207,23 @@ function IGPlus_SendRespawnNoficiation() {
 		S.IGPlus_NotifyPlayerRestart(Location, Rotation, self);
 }
 
-// Server: the time announcements and spree ends call ReceiveLocalizedMessage,
-// which a server demo misses. Copy them for the demo.
+// Server: the countdown at match start and the spree ends go to every player
+// through ReceiveLocalizedMessage, which a server demo misses. UTPure writes
+// one copy into the demo.
 function TimeMessage(int Num) {
 	Super.TimeMessage(Num);
-	IGPlus_DemoLocalizedMessage(TimeMessageClass, 16 - Num, none, none, none);
+	if (zzUTPure != none)
+		zzUTPure.IGPlus_DemoGlobalMessage(TimeMessageClass, 16 - Num, none, none);
 }
 
 function EndSpree(PlayerReplicationInfo Killer, PlayerReplicationInfo Other) {
 	Super.EndSpree(Killer, Other);
+	if (zzUTPure == none)
+		return;
 	if (Killer == Other || Killer == none)
-		IGPlus_DemoLocalizedMessage(class'KillingSpreeMessage', 1, none, Other, none);
+		zzUTPure.IGPlus_DemoGlobalMessage(class'KillingSpreeMessage', 1, none, Other);
 	else
-		IGPlus_DemoLocalizedMessage(class'KillingSpreeMessage', 0, Other, Killer, none);
+		zzUTPure.IGPlus_DemoGlobalMessage(class'KillingSpreeMessage', 0, Other, Killer);
 }
 
 event ReceiveLocalizedMessage( class<LocalMessage> Message, optional int Sw, optional PlayerReplicationInfo RelatedPRI_1, optional PlayerReplicationInfo RelatedPRI_2, optional Object OptionalObject )
