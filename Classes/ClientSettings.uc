@@ -152,6 +152,8 @@ struct CrosshairLayerDescr {
 	var() config byte   Style;
 	var() config bool   bSmooth;
 	var() config bool   bUse;
+	var() config byte   Shape;     // 0: the texture, else a shape drawn row by row (CrosshairLayer.Shape)
+	var() config int    Thickness; // of a shape's outline in pixels, 0 fills it
 };
 var config bool bUseCrosshairFactory;
 var config CrosshairLayerDescr CrosshairLayers[32]; // the picked preset: what is drawn and what the Crosshair Factory edits
@@ -200,6 +202,8 @@ simulated function CrosshairLayer MakeCrosshairLayer(CrosshairLayerDescr D) {
 	L.Color = D.Color;
 	L.Style = Max(1, D.Style);
 	L.bSmooth = D.bSmooth;
+	L.Shape = D.Shape;
+	L.Thickness = D.Thickness;
 	return L;
 }
 
@@ -407,7 +411,7 @@ static function string DumpColor(out Color C) {
 }
 
 static function string DumpCrosshairLayer(out CrosshairLayerDescr L) {
-	return "(Texture="$L.Texture$",OffsetX="$L.OffsetX$",OffsetY="$L.OffsetY$",ScaleX="$L.ScaleX$",ScaleY="$L.ScaleY$",Color="$DumpColor(L.Color)$",Style="$L.Style$",bSmooth="$L.bSmooth$",bUse="$L.bUse$")";
+	return "(Texture="$L.Texture$",OffsetX="$L.OffsetX$",OffsetY="$L.OffsetY$",ScaleX="$L.ScaleX$",ScaleY="$L.ScaleY$",Color="$DumpColor(L.Color)$",Style="$L.Style$",bSmooth="$L.bSmooth$",bUse="$L.bUse$",Shape="$L.Shape$",Thickness="$L.Thickness$")";
 }
 
 // How many layers a crosshair can have. (For other classes: arraycount needs the array itself.)
@@ -491,6 +495,14 @@ simulated function SetCrosshairLayerSmooth(int i, bool S) {
 
 simulated function SetCrosshairLayerUse(int i, bool U) {
 	CrosshairLayers[i].bUse = U;
+}
+
+simulated function SetCrosshairLayerShape(int i, int S) {
+	CrosshairLayers[i].Shape = S;
+}
+
+simulated function SetCrosshairLayerThickness(int i, int T) {
+	CrosshairLayers[i].Thickness = T;
 }
 
 static function EHitSoundSource IntToHitSoundSource(int A) {

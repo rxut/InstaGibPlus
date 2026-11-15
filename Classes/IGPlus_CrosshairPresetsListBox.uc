@@ -33,7 +33,10 @@ function DrawItem(Canvas C, UWindowList Item, float X, float Y, float W, float H
 	for (L = P.Layers; L != none; L = L.Next) {
 		if (L.Texture == none)
 			continue;
-		Reach = FMax(Abs(L.OffsetX) + 0.5 * Abs(L.ScaleX) * L.Texture.USize, Abs(L.OffsetY) + 0.5 * Abs(L.ScaleY) * L.Texture.VSize);
+		if (L.Shape != 0)
+			Reach = FMax(Abs(L.OffsetX) + 0.5 * Abs(L.ScaleX), Abs(L.OffsetY) + 0.5 * Abs(L.ScaleY));
+		else
+			Reach = FMax(Abs(L.OffsetX) + 0.5 * Abs(L.ScaleX) * L.Texture.USize, Abs(L.OffsetY) + 0.5 * Abs(L.ScaleY) * L.Texture.VSize);
 		if (Reach * Fit > 0.5*H - 1)
 			Fit = (0.5*H - 1) / Reach;
 	}
@@ -49,11 +52,15 @@ function DrawItem(Canvas C, UWindowList Item, float X, float Y, float W, float H
 		for (L = P.Layers; L != none; L = L.Next) {
 			if (L.Texture == none)
 				continue;
-			LenX = Fit * L.ScaleX * L.Texture.USize;
-			LenY = Fit * L.ScaleY * L.Texture.VSize;
 			C.Style = L.Style;
 			C.DrawColor = L.Color;
 			C.bNoSmooth = (L.bSmooth == false);
+			if (L.Shape != 0) {
+				class'CrosshairLayer'.static.DrawShape(C, Self, L.Shape, L.Thickness, L.ScaleX, L.ScaleY, X + 0.5*H + Fit*L.OffsetX, Y + 0.5*H + Fit*L.OffsetY, Fit);
+				continue;
+			}
+			LenX = Fit * L.ScaleX * L.Texture.USize;
+			LenY = Fit * L.ScaleY * L.Texture.VSize;
 			DrawStretchedTexture(C, X + 0.5*(H - LenX) + Fit*L.OffsetX, Y + 0.5*(H - LenY) + Fit*L.OffsetY, LenX, LenY, L.Texture);
 		}
 		ClippingRegion = Rows;

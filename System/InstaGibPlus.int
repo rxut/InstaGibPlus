@@ -254,6 +254,14 @@ UseCrosshairFactoryText="Use Crosshair Factory"
 UseCrosshairFactoryHelp="If checked, replace standard crosshair with custom crosshair"
 CrosshairSettingsText="Crosshair Settings"
 
+[CrosshairLayer]
+ShapeNames[0]="Texture"
+ShapeNames[1]="Circle"
+ShapeNames[2]="Square"
+ShapeNames[3]="Diamond"
+ShapeNames[4]="Triangle Up"
+ShapeNames[5]="Triangle Down"
+
 [IGPlus_CrosshairSettingsContent]
 ScaleText="Scale"
 OffsetText="Offset"
@@ -272,6 +280,8 @@ StyleMasked="Masked"
 StyleTranslucent="Translucent"
 StyleModulated="Modulated"
 SmoothText="Smooth"
+ShapeText="Shape"
+ThicknessText="Thickness"
 PresetsText="Presets"
 PresetNameText="Name"
 

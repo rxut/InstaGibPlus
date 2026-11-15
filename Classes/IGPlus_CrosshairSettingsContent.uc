@@ -65,6 +65,11 @@ var localized string StyleModulated;
 var IGPlus_Checkbox Chk_Smooth;
 var localized string SmoothText;
 
+var IGPlus_ComboBox Cmb_Shape;
+var localized string ShapeText;
+var IGPlus_EditControl Edit_Thickness;
+var localized string ThicknessText;
+
 var UWindowSmallCloseButton Btn_Close;
 var UwindowSmallButton Btn_Save;
 
@@ -103,6 +108,8 @@ function CopyCrosshairLayers() {
 		Item.Color   = Settings.GetCrosshairLayer(i).Color;
 		Item.Style   = Settings.GetCrosshairLayer(i).Style;
 		Item.bSmooth = Settings.GetCrosshairLayer(i).bSmooth;
+		Item.Shape   = Settings.GetCrosshairLayer(i).Shape;
+		Item.Thickness = Settings.GetCrosshairLayer(i).Thickness;
 
 		if (Item.Style == 0)
 			Item.Style = 1;
@@ -133,6 +140,8 @@ function Save() {
 		Settings.SetCrosshairLayerColor(i, L.Color);
 		Settings.SetCrosshairLayerStyle(i, L.Style);
 		Settings.SetCrosshairLayerSmooth(i, L.bSmooth);
+		Settings.SetCrosshairLayerShape(i, L.Shape);
+		Settings.SetCrosshairLayerThickness(i, L.Thickness);
 
 		i++;
 	}
@@ -148,6 +157,8 @@ function Save() {
 		Settings.SetCrosshairLayerColor(i, White);
 		Settings.SetCrosshairLayerStyle(i, 0);
 		Settings.SetCrosshairLayerSmooth(i, false);
+		Settings.SetCrosshairLayerShape(i, 0);
+		Settings.SetCrosshairLayerThickness(i, 0);
 
 		i++;
 	}
@@ -200,6 +211,8 @@ function Load() {
 }
 
 function Created() {
+	local int i;
+
 	super.Created();
 
 	ParentDialog = IGPlus_CrosshairSettingsDialog(ParentWindow);
@@ -355,6 +368,27 @@ function Created() {
 	Chk_Smooth.SetFont(F_Normal);
 	Chk_Smooth.Align = TA_Left;
 
+	Cmb_Shape = IGPlus_ComboBox(CreateControl(class'IGPlus_ComboBox', 276, 300, 150, 16));
+	Cmb_Shape.SetText(ShapeText);
+	Cmb_Shape.SetFont(F_Normal);
+	Cmb_Shape.Align = TA_Left;
+	Cmb_Shape.SetEditable(false);
+	Cmb_Shape.EditBoxWidthFraction = (2.0/3.0);
+	Cmb_Shape.EditBoxWidth = 100;
+	for (i = 0; i < arraycount(class'CrosshairLayer'.default.ShapeNames); i++)
+		Cmb_Shape.AddItem(class'CrosshairLayer'.default.ShapeNames[i], string(i));
+
+	Edit_Thickness = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 320, 150, 16));
+	Edit_Thickness.SetText(ThicknessText);
+	Edit_Thickness.SetFont(F_Normal);
+	Edit_Thickness.Align = TA_Left;
+	Edit_Thickness.SetDelayedNotify(true);
+	Edit_Thickness.SetNumericOnly(true);
+	Edit_Thickness.SetNumericFloat(false);
+	Edit_Thickness.SetMaxLength(2);
+	Edit_Thickness.EditBoxWidthFraction = (1.0/6.0);
+	Edit_Thickness.EditBoxWidth = 25;
+
 	Btn_AddPreset = IGPlus_Button(CreateControl(class'IGPlus_Button', 436, 10, 16, 16));
 	Btn_AddPreset.SetText("+");
 	Btn_RemPreset = IGPlus_Button(CreateControl(class'IGPlus_Button', 456, 10, 16, 16));
@@ -421,6 +455,8 @@ function AddLayer() {
 	Item.Color.A = 255;
 	Item.Style   = 1;
 	Item.bSmooth = false;
+	Item.Shape   = 0;
+	Item.Thickness = 0;
 
 	LB_Layers.Items.AppendItem(Item);
 }
@@ -445,6 +481,8 @@ function FillControlsFor(IGPlus_CrosshairLayersListItem L) {
 		Edit_ColorAlpha.Clear();
 
 		Cmb_Style.ClearValue();
+		Cmb_Shape.ClearValue();
+		Edit_Thickness.Clear();
 	} else {
 		Edit_Texture.SetValue(L.Texture);
 
@@ -460,6 +498,8 @@ function FillControlsFor(IGPlus_CrosshairLayersListItem L) {
 
 		Cmb_Style.SetSelectedIndex(L.Style - 1);
 		Chk_Smooth.bChecked = L.bSmooth;
+		Cmb_Shape.SetSelectedIndex(Min(L.Shape, 5));
+		Edit_Thickness.SetValue(string(L.Thickness));
 	}
 }
 
@@ -577,6 +617,10 @@ function Notify(UWindowDialogControl C, byte E) {
 			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Style = int(Cmb_Style.GetValue2()) + 1;
 		} else if (C == Chk_Smooth && Chk_Smooth.bDisabled == false) {
 			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).bSmooth = Chk_Smooth.bChecked;
+		} else if (C == Cmb_Shape && LB_Layers.SelectedItem != none) {
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Shape = Max(0, Cmb_Shape.GetSelectedIndex());
+		} else if (C == Edit_Thickness && Edit_Thickness.EditBox.bCanEdit) {
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Thickness = Max(0, int(Edit_Thickness.GetValue()));
 		}
 	}
 }
@@ -617,6 +661,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	Edit_ColorGreen.EditBox.bCanEdit = HaveSelectedItem;
 	Edit_ColorBlue.EditBox.bCanEdit = HaveSelectedItem;
 	Edit_ColorAlpha.EditBox.bCanEdit = HaveSelectedItem;
+	Edit_Thickness.EditBox.bCanEdit = HaveSelectedItem;
 
 	if (Edit_Texture.EditBox.bCanEdit == false)
 		Edit_Texture.Clear();
@@ -638,6 +683,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 		Edit_ColorBlue.Clear();
 	if (Edit_ColorAlpha.EditBox.bCanEdit == false)
 		Edit_ColorAlpha.Clear();
+	if (Edit_Thickness.EditBox.bCanEdit == false)
+		Edit_Thickness.Clear();
 
 	Chk_Smooth.bDisabled = HaveNoSelectedItem;
 }
@@ -661,6 +708,25 @@ function DrawCrosshairLayer(Canvas C, IGPlus_CrosshairLayersListItem L) {
 	C.Style = L.Style;
 	C.DrawColor = L.Color;
 	C.bNoSmooth = (L.bSmooth == false);
+
+	if (L.Shape != 0) {
+		class'CrosshairLayer'.static.DrawShape(C, Self, L.Shape, L.Thickness, L.ScaleX, L.ScaleY, 128 + L.OffsetX*Scal, 128 + L.OffsetY*Scal, Scal);
+		if (L == LB_Layers.SelectedItem) {
+			// The selected one gets a frame in the opposite colour around its square.
+			LenX = int(L.ScaleX + 0.5) * Scal;
+			LenY = int(L.ScaleY + 0.5) * Scal;
+			C.DrawColor.R = L.Color.R ^ 0xFF;
+			C.DrawColor.G = L.Color.G ^ 0xFF;
+			C.DrawColor.B = L.Color.B ^ 0xFF;
+			C.DrawColor.A = 255;
+			C.Style = 1;
+			DrawStretchedTexture(C, 128 - 0.5*LenX + L.OffsetX*Scal, 128 - 0.5*LenY + L.OffsetY*Scal, LenX, 1, L.Tex);
+			DrawStretchedTexture(C, 128 - 0.5*LenX + L.OffsetX*Scal, 128 + 0.5*LenY + L.OffsetY*Scal - 1, LenX, 1, L.Tex);
+			DrawStretchedTexture(C, 128 - 0.5*LenX + L.OffsetX*Scal, 128 - 0.5*LenY + L.OffsetY*Scal, 1, LenY, L.Tex);
+			DrawStretchedTexture(C, 128 + 0.5*LenX + L.OffsetX*Scal - 1, 128 - 0.5*LenY + L.OffsetY*Scal, 1, LenY, L.Tex);
+		}
+		return;
+	}
 
 	LenX = L.ScaleX * L.Tex.USize * Scal;
 	LenY = L.ScaleY * L.Tex.VSize * Scal;
@@ -738,6 +804,8 @@ defaultproperties {
 	StyleModulated="Modulated"
 
 	SmoothText="Smooth"
+	ShapeText="Shape"
+	ThicknessText="Thickness"
 
 	PresetsText="Presets"
 	PresetNameText="Name"

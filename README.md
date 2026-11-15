@@ -850,7 +850,7 @@ If `True`, override default crosshair drawing with custom one, as described by [
 
 ## CrosshairLayers
 **Type: CrosshairLayerDescr\[32\]**  
-**Default: `(Texture="",OffsetX=0,OffsetY=0,ScaleX=0.000000,ScaleY=0.000000,Color=(R=0,G=0,B=0,A=0),Style=0,bSmooth=False,bUse=False)`**  
+**Default: `(Texture="",OffsetX=0,OffsetY=0,ScaleX=0.000000,ScaleY=0.000000,Color=(R=0,G=0,B=0,A=0),Style=0,bSmooth=False,bUse=False,Shape=0,Thickness=0)`**  
 
 The type `CrosshairLayerDescr` is defined like this:
 ```unrealscript
@@ -862,6 +862,8 @@ struct CrosshairLayerDescr {
     var() config byte   Style;
     var() config bool   bSmooth;
     var() config bool   bUse;
+    var() config byte   Shape;
+    var() config int    Thickness;
 };
 ```
 
@@ -879,6 +881,18 @@ A crosshair is made up of individual images that are drawn in a specific order p
     * 4 (`STY_Modulated`) - ?
 * `bSmooth` controls whether sharp edges should be smoothed out when `ScaleX` or `ScaleY` are greater than 1
 * `bUse` controls whether this layer should be drawn, `True` to draw, `False` to ignore
+* `Shape` draws a shape instead of the texture. `Texture` is then not used. The shape is `ScaleX` pixels wide and `ScaleY` pixels high, and a pixel is part of it when the pixel's centre is inside the shape. The edges are hard, `bSmooth` makes no difference. One of
+    * 0 - no shape, the texture is drawn
+    * 1 - circle, or an ellipse when `ScaleX` and `ScaleY` differ
+    * 2 - square, or a rectangle
+    * 3 - diamond
+    * 4 - triangle pointing up
+    * 5 - triangle pointing down
+* `Thickness` is the width of a shape's outline in pixels. 0 fills the shape. A shape too small for the outline is filled.
+
+In the Crosshair Factory window these are `Shape` and `Thickness`, under `Smooth`.
+
+IG+ versions from before shapes do not know `Shape` and `Thickness`. They draw a shape layer as its texture, which is a filled rectangle of the same size when `Texture` is empty. If you save your IG+ settings in such a version, the shapes of your picked preset become filled rectangles in newer versions too.
 
 `CrosshairLayers` holds the layers of the picked preset, see [CrosshairPreset](#crosshairpreset).
 
