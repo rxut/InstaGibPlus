@@ -1009,6 +1009,8 @@ var float IGPlus_TI_RecvTop;         // the most in this stretch
 var float IGPlus_TI_RecvTopPrev;     // and in the stretch before
 var float IGPlus_TI_RecvAt;          // when this stretch began
 var float IGPlus_TI_RecvAnim;        // the most of the last two stretches, followed evenly: the other players' animation is shown that much later too
+var bool IGPlus_TI_bHasTloc;         // we carry the deterministic translocator: no hold (IGPlus_TI_NoHold), looked up once a second
+var float IGPlus_TI_TlocCheckAt;
 var float IGPlus_PRTShotR;           // the tick position this frame's shot reports (its target's)
 var bool IGPlus_bPRTShotPast;        // and whether the target was drawn past its newest update
 var bool IGPlus_bPRTShotHeld;        // and whether it stood still there, held by the server
@@ -14307,6 +14309,15 @@ function xxPlayerTickEvents(float DeltaTime)
 				IGPlus_TI_bRecv = false;
 				IGPlus_TI_Recv = 0.0;
 			} else {
+				// Not while we carry the deterministic translocator (IGPlus_TI_NoHold):
+				// the clock is set at once, as it was before there was a hold.
+				if (IGPlus_TI_NoHold() && (IGPlus_TI_bRecv || Abs(TIGap) > IGPLUS_TI_RECV_SNAP)) {
+					IGPlus_TI_Clock = TITarget;
+					IGPlus_TI_StClockSnaps++;
+					IGPlus_TI_bRecv = false;
+					IGPlus_TI_Recv = 0.0;
+					TIGap = 0.0;
+				}
 				if (IGPlus_TI_bRecv == false && Abs(TIGap) > IGPLUS_TI_RECV_SNAP) {
 					IGPlus_TI_bRecv = true;
 					IGPlus_TI_RecvMin = 0.0;
@@ -15426,6 +15437,27 @@ simulated event Tick(float DeltaTime) {
 	// With Tick Interpolation on a player's client IGPlus_TI_AnimAfter has done this.
 	if (Role == ROLE_SimulatedProxy && Level.NetMode == NM_Client)
 		IGPlus_FlipFix_Plain();
+}
+
+// Client, on our own pawn: no hold of the tick clock for a player who carries
+// the deterministic translocator. Our own disc stops on another player where
+// the engine has their pawn when the two touch, which is their newest
+// received spot and not the spot they are drawn at (ST_TranslocatorTarget.Touch).
+// The server stops its disc where our screen drew them. Without a hold the two
+// spots are about 3 ticks apart and it does not show. With one they are up to
+// 11 ticks apart, 50 units for a strafing player, and on a test rig the server
+// then pulled our disc to another spot in 9 to 37 of 59 throws at a moving
+// player, against 1 without the hold. Until the disc is tested against the
+// drawn spot on both sides, such a player's clock is set at once as before.
+// Next InstaGib and Next Sniper Arena have no translocator and keep the hold.
+function bool IGPlus_TI_NoHold() {
+	if (IGPlus_DetTranslocator == false)
+		return false;
+	if (Level.TimeSeconds >= IGPlus_TI_TlocCheckAt || Level.TimeSeconds < IGPlus_TI_TlocCheckAt - 2.0) {
+		IGPlus_TI_TlocCheckAt = Level.TimeSeconds + 1.0;
+		IGPlus_TI_bHasTloc = FindInventoryType(class'ST_Translocator') != None;
+	}
+	return IGPlus_TI_bHasTloc;
 }
 
 // Client, on another player's pawn (Tick Interpolation): the tick number of
