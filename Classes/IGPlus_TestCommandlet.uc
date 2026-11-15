@@ -347,6 +347,18 @@ function TestTickInterp() {
 			class'bbPlayer'.static.IGPlus_TI_MoveByte(50.0500), 0.0087) - 0.0500) < 0.0006
 		&& class'bbPlayer'.static.IGPlus_TI_MoveDelta(7, 7, 0.0087) == 0.0,
 		"TickInterp_move_time_between_two_updates_comes_back_from_the_two_bytes");
+	// Tick Interpolation, the tick clock of a client whose download comes late at times: it stays behind the
+	// newest tick number, gives back only what the last seconds never needed, catches up over the most it
+	// holds, and falls back when the newest tick number is behind it.
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_HeldMove(6.0, 0.0, 1.0) == 0.0
+		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(6.0, 4.0, 1.0) - 0.03) < 0.0001
+		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(6.0, 0.01, 1.0) - 0.01) < 0.0001
+		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(12.0, 0.0, 1.0) - 0.15) < 0.0001
+		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(8.05, 0.0, 1.0) - 0.05) < 0.0001
+		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(-3.0, 2.0, 1.0) + 0.3) < 0.0001
+		&& class'bbPlayer'.static.IGPlus_TI_HeldMove(-9.0, 2.0, 1.0) == -9.0
+		&& class'bbPlayer'.static.IGPlus_TI_HeldMove(2.0, -4.0, 1.0) == 0.0,
+		"TickInterp_held_clock_stays_behind_and_gives_back_slowly");
 	// The server tests a shot against the spot as the client got it: in quarters of a unit,
 	// sent as whole units and one byte of quarters, also below zero.
 	LogTestResult(class'bbPlayer'.static.IGPlus_TI_WireLoc(vect(2317.04,-126.51,-212.2)) == vect(2317,-126.5,-212.25)

@@ -996,7 +996,19 @@ var int IGPlus_TI_ServerTick;        // server: the number of the current tick. 
 var int IGPlus_TI_SeenTick;          // the newest tick number that arrived
 var float IGPlus_TI_SeenAt;          // our time when it arrived
 var float IGPlus_TI_TickLen;         // our estimate of one server tick, in our seconds
+var int IGPlus_TI_TickLenSkips;      // tick numbers in a row that were not used for it
 var float IGPlus_TI_Clock;           // the server tick position now, smoothed
+// The same clock on a client whose own download comes late at times
+// (xxPlayerTickEvents): it is held behind the newest tick number, so the next
+// late update finds the other players still short of their newest spot.
+var bool IGPlus_TI_bRecv;            // it is held
+var float IGPlus_TI_Recv;            // how many ticks behind the newest tick number, this frame. 0 while it is not held
+var float IGPlus_TI_RecvMin;         // the least it was behind in this stretch of IGPLUS_TI_RECV_TIME
+var float IGPlus_TI_RecvMinPrev;     // and in the stretch before
+var float IGPlus_TI_RecvTop;         // the most in this stretch
+var float IGPlus_TI_RecvTopPrev;     // and in the stretch before
+var float IGPlus_TI_RecvAt;          // when this stretch began
+var float IGPlus_TI_RecvAnim;        // the most of the last two stretches, followed evenly: the other players' animation is shown that much later too
 var float IGPlus_PRTShotR;           // the tick position this frame's shot reports (its target's)
 var bool IGPlus_bPRTShotPast;        // and whether the target was drawn past its newest update
 var bool IGPlus_bPRTShotHeld;        // and whether it stood still there, held by the server
@@ -1083,6 +1095,9 @@ var bool IGPlus_TI_StHavePrev;
 // On our own pawn: clock jumps since the last line, and when the next line is due.
 var int IGPlus_TI_StClockSnaps;
 var float IGPlus_TI_StNextLine, IGPlus_TI_StSince;
+// And how far the clock was held behind the newest tick number, in ticks: summed over the frames, and the most.
+var int IGPlus_TI_StRecvFrames;
+var float IGPlus_TI_StRecvSum, IGPlus_TI_StRecvMax;
 // Server: the last report was a tick position (IGPlus_PRTNoteInterp).
 var bool IGPlus_bPRTInterp, IGPlus_bPRTInterpPast, IGPlus_bPRTInterpHeld;
 var float IGPlus_PRTInterpR;
@@ -1103,7 +1118,15 @@ const IGPLUS_TI_MU_SLEW = 0.03;      // and it runs at most this much faster or 
 const IGPLUS_TI_MU_SLEW_FAR = 0.15;  // or this much: when it is over a tick off, has to fall back, or runs low
 const IGPLUS_TI_MU_TIME_BACK = 0.1;  // seconds for falling back
 const IGPLUS_TI_MU_RESERVE = 0.75;   // ticks before the newest update under which it runs slower
-const IGPLUS_TI_MU_SNAP = 5.0;       // ticks off at which it is set at once
+const IGPLUS_TI_MU_SNAP = 5.0;       // ticks behind at which it is set at once
+const IGPLUS_TI_MU_LEAD = 2.5;       // ticks past the newest update it goes at most (the carry ends at IGPLUS_TI_MAX_CARRY)
+const IGPLUS_TI_RECV_SNAP = 5.0;     // ticks the tick clock is off the newest tick number at which a hold starts
+const IGPLUS_TI_RECV_LATE = 2.0;     // ticks early or late over which a tick number is not used to measure how long a tick is
+const IGPLUS_TI_RECV_FAR = 60.0;     // ticks off at which it is set at once, with no hold
+const IGPLUS_TI_RECV_MAX = 8.0;      // ticks it is held behind the newest tick number at most
+const IGPLUS_TI_RECV_GIVE = 0.03;    // how much faster than real time it runs while it gives a hold back
+const IGPLUS_TI_RECV_TIME = 10.0;    // seconds in a stretch: a hold stays for as long as one of the last two needed it
+const IGPLUS_TI_RECV_LEAVE = 3.0;    // ticks: after a stretch that never had more than this in hand the hold is over
 var bool IGPlus_PressedJumpSave;
 var IGPlus_SavedInputChain IGPlus_SavedInputChain;
 var IGPlus_DataBuffer IGPlus_InputReplicationBuffer;
@@ -3972,6 +3995,23 @@ static function float IGPlus_TI_CarryTicks(float Past, bool bHeld) {
 	if (bHeld || Past <= 0.0)
 		return 0.0;
 	return FMin(Past, IGPLUS_TI_MAX_CARRY);
+}
+// The tick clock of a client while it is held (IGPlus_TI_bRecv): how far it
+// moves in a frame on top of its own running. Gap: how many ticks the newest
+// tick number is ahead of it. MinGap: the least it was ahead in the last
+// seconds. Step: the ticks this frame took.
+// Behind the newest tick number is where it is meant to be: it stays there,
+// and only what the last seconds never needed is given back, slowly. Over the
+// most it holds it catches up, faster. Ahead of the newest tick number it
+// falls back as the clock always did: a late update needs more than was held.
+static function float IGPlus_TI_HeldMove(float Gap, float MinGap, float Step) {
+	if (Gap < -IGPLUS_TI_RECV_SNAP)
+		return Gap;
+	if (Gap < 0.0)
+		return Gap * 0.1;
+	if (Gap > IGPLUS_TI_RECV_MAX)
+		return FMin(Gap - IGPLUS_TI_RECV_MAX, IGPLUS_TI_MU_SLEW_FAR * Step);
+	return FClamp(FMin(MinGap, Gap), 0.0, IGPLUS_TI_RECV_GIVE * Step);
 }
 // A move time as IGPlus_NetMoveT carries it.
 static function byte IGPlus_TI_MoveByte(float TS) {
@@ -7999,7 +8039,7 @@ function Actor IGPlus_ClientShotTrace(
 				IGPlus_PRTShotR = ShotTarget.IGPlus_ShownR;
 				IGPlus_bPRTShotPast = ShotTarget.IGPlus_bShownPast;
 				IGPlus_bPRTShotHeld = ShotTarget.IGPlus_bShownHeld;
-				IGPlus_PRTShotDelay = ShotTarget.IGPlus_TI_Delay;
+				IGPlus_PRTShotDelay = ShotTarget.IGPlus_TI_Delay + IGPlus_TI_Recv;
 				IGPlus_PRTShotSpan = ShotTarget.IGPlus_ShownSpan;
 			}
 		} else {
@@ -10614,9 +10654,9 @@ function xxReplicateMove(
 		if (bDetLocalShot && IGPlus_PRTShotR > 0.0)
 			NewMove.IGPlus_PRTData = IGPlus_TI_Pack(IGPlus_PRTShotR, IGPlus_bPRTShotPast, IGPlus_bPRTShotHeld, IGPlus_PRTShotDelay, IGPlus_PRTShotSpan);
 		else if (AimTarget != None)
-			NewMove.IGPlus_PRTData = IGPlus_TI_Pack(AimTarget.IGPlus_ShownR, AimTarget.IGPlus_bShownPast, AimTarget.IGPlus_bShownHeld, AimTarget.IGPlus_TI_Delay, AimTarget.IGPlus_ShownSpan);
+			NewMove.IGPlus_PRTData = IGPlus_TI_Pack(AimTarget.IGPlus_ShownR, AimTarget.IGPlus_bShownPast, AimTarget.IGPlus_bShownHeld, AimTarget.IGPlus_TI_Delay + IGPlus_TI_Recv, AimTarget.IGPlus_ShownSpan);
 		else
-			NewMove.IGPlus_PRTData = IGPlus_TI_Pack(IGPlus_TI_Clock - IGPLUS_TI_MIN_DELAY, false, false, IGPLUS_TI_MIN_DELAY);
+			NewMove.IGPlus_PRTData = IGPlus_TI_Pack(IGPlus_TI_Clock - IGPLUS_TI_MIN_DELAY, false, false, IGPLUS_TI_MIN_DELAY + IGPlus_TI_Recv);
 	} else if (IGPlus_PRTSeenAt > 0 && IGPlus_PRTShownTick != 0) {
 		if (bDetLocalShot)
 			NewMove.IGPlus_PRTData = IGPlus_PRTPack(IGPlus_PRTShownTick, IGPlus_PRTShownAge + IGPlus_PRTShotLead);
@@ -14183,7 +14223,7 @@ simulated function bool ClientCannotShoot(optional Weapon W, optional byte Mode,
 
 function xxPlayerTickEvents(float DeltaTime)
 {
-	local float TITarget;
+	local float TITarget, TIGap, TIMove;
 	local float CurrentTime;
 
 	CurrentTime = Level.TimeSeconds;
@@ -14218,23 +14258,108 @@ function xxPlayerTickEvents(float DeltaTime)
 		// Tick Interpolation: the server's tick position now. It runs with our
 		// own clock and is pulled toward the newest tick number a little each
 		// frame, so that the uneven arrival of the updates does not show.
+		//
+		// Our own download can come late for a while and then catch up (wifi,
+		// a busy line): a tick number arrives over IGPLUS_TI_RECV_SNAP ticks
+		// later or earlier than the clock says. The clock used to be set at
+		// once both times, and every player on screen stepped back and then
+		// jumped ahead. Now such a moment starts a hold (IGPlus_TI_bRecv). A
+		// late tick number still sets the clock back at once, but the players
+		// do not step back for it (IGPlus_TI_Pace). When the line catches up
+		// the clock stays where it is, behind the newest tick number by what
+		// the line was late, at most IGPLUS_TI_RECV_MAX ticks: the next time
+		// the line is that late the players are drawn on from updates that
+		// are already here. What no late update needed for a few seconds is
+		// given back slowly, and with nothing in hand the hold is over
+		// (IGPlus_TI_HeldMove). The shot reports the tick position its target
+		// was drawn at, as always, so the server tests the same picture. A
+		// client that never sees a tick number that late runs none of this.
 		if (IGPlus_EnableTickInterp) {
 			if (IGPlus_TI_TickLen <= 0.0)
 				IGPlus_TI_TickLen = 0.01;
 			if (IGPlus_TI_ServerTick != IGPlus_TI_SeenTick) {
-				if (IGPlus_TI_SeenAt > 0.0 && IGPlus_TI_ServerTick > IGPlus_TI_SeenTick && IGPlus_TI_ServerTick - IGPlus_TI_SeenTick < 20)
-					IGPlus_TI_TickLen += ((CurrentTime - IGPlus_TI_SeenAt) / float(IGPlus_TI_ServerTick - IGPlus_TI_SeenTick) - IGPlus_TI_TickLen) * 0.02;
+				// (A tick number that came over IGPLUS_TI_RECV_LATE ticks early or
+				// late says how our line is, not how long a tick is. Counted, one
+				// late tick number of 5 ticks makes the estimate 10% too long, and
+				// a clock that runs on it loses those 5 ticks until it is pulled
+				// back. A steady line has none: its tick numbers come within about
+				// a tick of their time at any frame rate. Twenty in a row are the
+				// estimate being wrong, on a server with long ticks: then one counts.)
+				if (IGPlus_TI_SeenAt > 0.0 && IGPlus_TI_ServerTick > IGPlus_TI_SeenTick && IGPlus_TI_ServerTick - IGPlus_TI_SeenTick < 20) {
+					if (IGPlus_TI_TickLenSkips >= 20
+						|| Abs((CurrentTime - IGPlus_TI_SeenAt) / IGPlus_TI_TickLen - float(IGPlus_TI_ServerTick - IGPlus_TI_SeenTick)) <= IGPLUS_TI_RECV_LATE) {
+						IGPlus_TI_TickLen += ((CurrentTime - IGPlus_TI_SeenAt) / float(IGPlus_TI_ServerTick - IGPlus_TI_SeenTick) - IGPlus_TI_TickLen) * 0.02;
+						IGPlus_TI_TickLenSkips = 0;
+					} else {
+						IGPlus_TI_TickLenSkips++;
+					}
+				}
 				IGPlus_TI_SeenTick = IGPlus_TI_ServerTick;
 				IGPlus_TI_SeenAt = CurrentTime;
 			}
 			TITarget = float(IGPlus_TI_SeenTick) + (CurrentTime - IGPlus_TI_SeenAt) / IGPlus_TI_TickLen;
 			IGPlus_TI_Clock += DeltaTime / IGPlus_TI_TickLen;
-			if (Abs(TITarget - IGPlus_TI_Clock) > 5.0) {
+			TIGap = TITarget - IGPlus_TI_Clock;
+			if (Abs(TIGap) > IGPLUS_TI_RECV_FAR) {
+				// A join, a map change or a freeze of our own: set at once, with no hold.
 				IGPlus_TI_Clock = TITarget;
 				IGPlus_TI_StClockSnaps++;
+				IGPlus_TI_bRecv = false;
+				IGPlus_TI_Recv = 0.0;
 			} else {
-				IGPlus_TI_Clock += (TITarget - IGPlus_TI_Clock) * 0.1;
+				if (IGPlus_TI_bRecv == false && Abs(TIGap) > IGPLUS_TI_RECV_SNAP) {
+					IGPlus_TI_bRecv = true;
+					IGPlus_TI_RecvMin = 0.0;
+					IGPlus_TI_RecvMinPrev = 0.0;
+					IGPlus_TI_RecvTop = 0.0;
+					IGPlus_TI_RecvTopPrev = 0.0;
+					IGPlus_TI_RecvAt = CurrentTime;
+				}
+				if (IGPlus_TI_bRecv) {
+					TIMove = IGPlus_TI_HeldMove(TIGap, FMin(IGPlus_TI_RecvMin, IGPlus_TI_RecvMinPrev), DeltaTime / IGPlus_TI_TickLen);
+					if (Abs(TIMove) > IGPLUS_TI_RECV_SNAP)
+						IGPlus_TI_StClockSnaps++;
+					IGPlus_TI_Clock += TIMove;
+					TIGap -= TIMove;
+					// What the stretches noted was measured from where the clock was.
+					// (Only when it gave some back: set back by a late tick number
+					// it holds no more than before, the line is that much later.)
+					if (TIMove > 0.0) {
+						IGPlus_TI_RecvMin -= TIMove;
+						IGPlus_TI_RecvMinPrev -= TIMove;
+						IGPlus_TI_RecvTop -= TIMove;
+						IGPlus_TI_RecvTopPrev -= TIMove;
+					}
+					IGPlus_TI_RecvMin = FMin(IGPlus_TI_RecvMin, TIGap);
+					IGPlus_TI_RecvTop = FMax(IGPlus_TI_RecvTop, TIGap);
+					IGPlus_TI_Recv = FMax(0.0, TIGap);
+					if (CurrentTime - IGPlus_TI_RecvAt >= IGPLUS_TI_RECV_TIME || CurrentTime < IGPlus_TI_RecvAt) {
+						if (IGPlus_TI_RecvTop < IGPLUS_TI_RECV_LEAVE) {
+							IGPlus_TI_bRecv = false;
+							IGPlus_TI_Recv = 0.0;
+						}
+						IGPlus_TI_RecvMinPrev = IGPlus_TI_RecvMin;
+						IGPlus_TI_RecvMin = TIGap;
+						IGPlus_TI_RecvTopPrev = IGPlus_TI_RecvTop;
+						IGPlus_TI_RecvTop = TIGap;
+						IGPlus_TI_RecvAt = CurrentTime;
+					}
+				} else {
+					IGPlus_TI_Clock += TIGap * 0.1;
+				}
 			}
+			// The animation of the other players is shown later by what is held
+			// when our line is at its best, not by what is held this frame: that
+			// drops and comes back with every late moment, and their legs would
+			// skip each time. It follows evenly, 15% at most.
+			TIMove = 0.0;
+			if (IGPlus_TI_bRecv)
+				TIMove = FMax(0.0, FMax(IGPlus_TI_RecvTop, IGPlus_TI_RecvTopPrev));
+			IGPlus_TI_RecvAnim += FClamp(TIMove - IGPlus_TI_RecvAnim,
+				-IGPLUS_TI_MU_SLEW_FAR * DeltaTime / IGPlus_TI_TickLen, IGPLUS_TI_MU_SLEW_FAR * DeltaTime / IGPlus_TI_TickLen);
+			IGPlus_TI_StRecvFrames++;
+			IGPlus_TI_StRecvSum += IGPlus_TI_Recv;
+			IGPlus_TI_StRecvMax = FMax(IGPlus_TI_StRecvMax, IGPlus_TI_Recv);
 			// enableDebugData: one line per other player every 30 seconds.
 			if (bDrawDebugData && Level.TimeSeconds >= IGPlus_TI_StNextLine) {
 				IGPlus_TI_LogStats(IGPlus_TI_StNextLine > 0.0);
@@ -15352,7 +15477,10 @@ simulated function float IGPlus_TI_Pace(float R, float TickLen, float DeltaTime)
 	// The move time that goes with R: the newest update's, moved by the ticks
 	// between, less what that update is off the even pace.
 	Mu = IGPlus_TI_MT[B] + (R - float(IGPlus_TI_Tick[B])) * TickLen - IGPlus_TI_Dev;
-	if (IGPlus_TI_bMu == false || Abs(Mu - IGPlus_TI_Mu - DeltaTime) > IGPLUS_TI_MU_SNAP * TickLen) {
+	// (Only when it is behind. Ahead of the asked moment it falls back, however
+	// far: the tick clock is set back at once when our own download comes
+	// late, and the player is not to step back for that.)
+	if (IGPlus_TI_bMu == false || Mu - IGPlus_TI_Mu - DeltaTime > IGPLUS_TI_MU_SNAP * TickLen) {
 		IGPlus_TI_Mu = Mu;
 		IGPlus_TI_bMu = true;
 	} else {
@@ -15378,6 +15506,9 @@ simulated function float IGPlus_TI_Pace(float R, float TickLen, float DeltaTime)
 		if (IGPlus_TI_MT[B] - IGPlus_TI_Mu < IGPLUS_TI_MU_RESERVE * TickLen)
 			Err = FMin(Err, -IGPLUS_TI_MU_SLEW_FAR * DeltaTime);
 		IGPlus_TI_Mu += Err;
+		// No further past the newest update than the carry reaches: the spot
+		// drawn is the same, and the way back to the asked moment is short.
+		IGPlus_TI_Mu = FMin(IGPlus_TI_Mu, IGPlus_TI_MT[B] + IGPLUS_TI_MU_LEAD * TickLen);
 	}
 	Mu = IGPlus_TI_Mu;
 	if (Mu >= IGPlus_TI_MT[B])
@@ -15571,6 +15702,8 @@ function IGPlus_TI_LogStats(bool bWrite) {
 				@"backMax="$IGPlus_Fmt1(P.IGPlus_TI_StBackMax)
 				@"paceMsMax="$IGPlus_Fmt1(1000.0 * P.IGPlus_TI_StDevMax)
 				@"resets="$P.IGPlus_TI_StResets@"clockSnaps="$IGPlus_TI_StClockSnaps
+				@"recvMsAvg="$IGPlus_Fmt1(Ms * IGPlus_TI_StRecvSum / FMax(1.0, float(IGPlus_TI_StRecvFrames)))
+				@"recvMsMax="$IGPlus_Fmt1(Ms * IGPlus_TI_StRecvMax)
 				@"tickMs="$IGPlus_Fmt1(Ms));
 		}
 		P.IGPlus_TI_StFrames = 0;
@@ -15588,6 +15721,9 @@ function IGPlus_TI_LogStats(bool bWrite) {
 		P.IGPlus_TI_StDevMax = 0.0;
 	}
 	IGPlus_TI_StClockSnaps = 0;
+	IGPlus_TI_StRecvFrames = 0;
+	IGPlus_TI_StRecvSum = 0.0;
+	IGPlus_TI_StRecvMax = 0.0;
 }
 
 // Client, every frame, on any player's pawn that may be drawn: the animation
@@ -15934,6 +16070,7 @@ simulated function IGPlus_TI_After(float DeltaTime) {
 			// A stamp from far off (they were out of sight): start again.
 			if (Delta <= 0 || Delta > 60) {
 				IGPlus_TI_Num = 0;
+				IGPlus_TI_bMu = false;
 				IGPlus_TI_StResets++;
 			}
 			else if (float(Delta) > IGPlus_TI_Gap)
@@ -16001,7 +16138,7 @@ simulated function IGPlus_TI_After(float DeltaTime) {
 		SetLocation(IGPlus_LocationOffsetFix_SafeLocation);
 		bCollideWorld = true;
 	}
-	IGPlus_TI_AnimAfter(IGPlus_TI_Delay * TickLen);
+	IGPlus_TI_AnimAfter((IGPlus_TI_Delay + LP.IGPlus_TI_RecvAnim) * TickLen);
 	if (LP.bDrawDebugData)
 		IGPlus_TI_Stat();
 
