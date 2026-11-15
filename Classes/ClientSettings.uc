@@ -154,7 +154,7 @@ struct CrosshairLayerDescr {
 	var() config bool   bUse;
 };
 var config bool bUseCrosshairFactory;
-var config CrosshairLayerDescr CrosshairLayers[10]; // the picked preset: what is drawn and what the Crosshair Factory edits
+var config CrosshairLayerDescr CrosshairLayers[32]; // the picked preset: what is drawn and what the Crosshair Factory edits
 var config int CrosshairPreset; // the slot of the picked preset, 0 to 15
 var IGPlus_CrosshairPreset CrosshairPresets[16];
 var CrosshairLayer BottomLayer;
@@ -408,6 +408,11 @@ static function string DumpColor(out Color C) {
 
 static function string DumpCrosshairLayer(out CrosshairLayerDescr L) {
 	return "(Texture="$L.Texture$",OffsetX="$L.OffsetX$",OffsetY="$L.OffsetY$",ScaleX="$L.ScaleX$",ScaleY="$L.ScaleY$",Color="$DumpColor(L.Color)$",Style="$L.Style$",bSmooth="$L.bSmooth$",bUse="$L.bUse$")";
+}
+
+// How many layers a crosshair can have. (For other classes: arraycount needs the array itself.)
+simulated function int CrosshairLayerCount() {
+	return arraycount(CrosshairLayers);
 }
 
 simulated function string DumpCrosshairLayers() {
