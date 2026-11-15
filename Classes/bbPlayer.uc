@@ -370,7 +370,7 @@ var int PingRunningAverageCount;
 // Precise Rewind Time (WeaponSettings.bEnablePreciseRewindTime): a hitscan
 // shot rewinds players to what the shooter's screen showed.
 var int IGPlus_PRTServerTick;        // server: counts ticks, sent to our client
-var float IGPlus_PRTTickTime[64];    // server: the time of each recent tick
+var float IGPlus_PRTTickTime[128];   // server: the time of each recent tick (as far back as UTPlusDummy's snapshots)
 var int IGPlus_PRTSeenTick;          // client: the newest tick we got
 var float IGPlus_PRTSeenAt;          // client: our time when it arrived
 var int IGPlus_PRTShownTick;         // client: the update our last frame showed
@@ -4006,11 +4006,11 @@ function IGPlus_PRTNote(int Data) {
 		IGPlus_PRTNoteInterp(Data, WS);
 		return;
 	}
-	// We keep the times of our last 64 ticks.
+	// We keep the times of our last 128 ticks.
 	Back = IGPlus_PRTTicksBack(IGPlus_PRTServerTick, Data);
 	IGPlus_PRTNoteTS = Level.TimeSeconds;
 	IGPlus_PRTNoteTick = IGPlus_PRTServerTick;
-	IGPlus_PRTSeenTime = IGPlus_PRTTickTime[(IGPlus_PRTServerTick - Back) & 63];
+	IGPlus_PRTSeenTime = IGPlus_PRTTickTime[(IGPlus_PRTServerTick - Back) & 127];
 	IGPlus_PRTViewTime = IGPlus_PRTSeenTime + IGPlus_PRTAge(Data);
 	IGPlus_PRTLagMs = 1000.0 * (Level.TimeSeconds - IGPlus_PRTViewTime) / Level.TimeDilation;
 	IGPlus_PRTReason = "";
@@ -4018,7 +4018,7 @@ function IGPlus_PRTNote(int Data) {
 		IGPlus_PRTReason = "off";
 	else if (IGPlus_EnableSnapshotInterpolation)
 		IGPlus_PRTReason = "snapshot interpolation";
-	else if (Back >= 64 || IGPlus_PRTSeenTime <= 0)
+	else if (Back >= 128 || IGPlus_PRTSeenTime <= 0)
 		IGPlus_PRTReason = "update too old";
 	// On a LAN a frame can reach us before our next tick, and a shot's report
 	// is later by one client frame when the engine had moved its target on
@@ -12450,7 +12450,7 @@ event ServerTick(float DeltaTime) {
 	if (RemoteRole == ROLE_AutonomousProxy && GetWeaponSettings() != none
 		&& GetWeaponSettings().bEnablePreciseRewindTime) {
 		IGPlus_PRTServerTick++;
-		IGPlus_PRTTickTime[IGPlus_PRTServerTick & 63] = Level.TimeSeconds;
+		IGPlus_PRTTickTime[IGPlus_PRTServerTick & 127] = Level.TimeSeconds;
 		if (Level.TimeSeconds >= IGPlus_PRTPingReadTS) {
 			IGPlus_PRTServerPing = float(ConsoleCommand("GETPING"));
 			IGPlus_PRTPingReadTS = Level.TimeSeconds + 0.5;

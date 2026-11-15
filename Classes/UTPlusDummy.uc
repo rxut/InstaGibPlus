@@ -8,7 +8,13 @@ var float DuckFraction;
 var bool bHistoryCleared;
 var bool bLastHeld;
 
-var UTPlusSnapshot Data[48];
+// One snapshot for every tick a move ran in. 128 of them reach back one second
+// at 128 ticks a second and 0.64 s at 200. A shot is rewound by the shooter's
+// ping, plus the delay their screen draws others with, plus the delay
+// Adaptive Buffering runs their own moves with: 450 ms for a 300 ping player.
+// (48 reached back 380 ms at 126 ticks a second, and a rewind past the oldest
+// snapshot took the oldest one.)
+var UTPlusSnapshot Data[128];
 var int DataIndex;
 
 var bool bCompActive;
@@ -118,8 +124,13 @@ event Tick(float DeltaTime) {
     if (PP != None) {
 		if (PP.Health <= 0 || PP.GetStateName() == 'Dying') {
 			if (PP.Player != None && !bHistoryCleared) {
+				// The snapshots are emptied, not dropped: the engine only frees
+				// objects at a map change, so a new list for every life left
+				// one list of dead objects behind for every death on the map.
+				// (A snapshot with no time is skipped by every rewind.)
 				for (i = 0; i < arraycount(Data); i++) {
-					Data[i] = None;
+					if (Data[i] != None)
+						Data[i].ServerTimeStamp = 0.0;
 				}
 				DataIndex = 0;
 				if (bCompActive)

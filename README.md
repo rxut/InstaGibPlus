@@ -2232,6 +2232,10 @@ If enabled, hitscan shots are tested against where targets were on the shooter's
 
 Upper bound on the rewind. Players above this ping are compensated as if they had this ping.
 
+With [bEnablePreciseRewindTime](#benablepreciserewindtime) the rewind is the age of the picture a shot was aimed at, and that age is what this bound is compared with. It is the shooter's ping, plus the delay their screen draws other players with (about 20 ms with [bEnableTickInterpolation](#benabletickinterpolation), up to 80 for a target whose updates arrive unevenly), plus the delay [bEnableAdaptiveBuffering](#benableadaptivebuffering) runs the shooter's own moves with (up to AdaptiveBufferingMax). A shot older than the bound falls back to the average-ping rewind at this bound, and the shooter's own hit sound and marker can then be wrong. So a player with 300 ping is fully covered at about 350, and at about 450 while their moves are buffered by 100 ms.
+
+The server keeps each player's last 128 positions, one for every tick a move ran in. That is one second at 128 ticks a second and 0.64 s at 200.
+
 ## ShockComboRewindMax
 
 **Type: int**  
