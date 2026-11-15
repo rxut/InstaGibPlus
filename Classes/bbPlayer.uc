@@ -660,6 +660,14 @@ const IGPLUS_AB_ENTER_FRAMES = 1.0; // a move later than this queues the player
 const IGPLUS_AB_ENTER_TICKS = 2.0;
 const IGPLUS_AB_LEAVE_FRAMES = 0.5; // lateness under this counts as on time again
 const IGPLUS_AB_LEAVE_TICKS = 1.5;
+// With Tick Interpolation the other clients draw a player 2 ticks behind
+// their newest update and carry them on for 2 more, so a move up to 4 ticks
+// late shows as nothing on anyone's screen. Queueing the player for less only
+// costs them delay: in a player test on 126 ticks a second, players with good
+// lines (moves 5 ms late on average, none over 50) were queued for a third of
+// the match, each time for a single move 22 to 26 ms late (IGPlus_ABSlack).
+const IGPLUS_AB_ENTER_TICKS_TI = 4.0;
+const IGPLUS_AB_LEAVE_TICKS_TI = 3.5;
 const IGPLUS_AB_LEAVE_DELAY_TICKS = 1.0; // the queue is left with no more delay than this
 const IGPLUS_AB_PEAK_TIME = 4.0;    // seconds until a late packet is mostly forgotten
 const IGPLUS_AB_DRAIN = 0.05;       // the clock runs at most this much fast
@@ -6544,6 +6552,19 @@ static function string IGPlus_ABFmt(float F) {
 	return (T / 10)$"."$(T - (T / 10) * 10);
 }
 
+// How late a move may be before it queues the player (bEnter), or how late
+// the usual lateness may be and still count as on time (IGPLUS_AB_ENTER_TICKS_TI).
+function float IGPlus_ABSlack(bool bEnter, float Tick) {
+	if (bEnter) {
+		if (IGPlus_EnableTickInterp)
+			return IGPLUS_AB_ENTER_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_ENTER_TICKS_TI * Tick;
+		return IGPLUS_AB_ENTER_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_ENTER_TICKS * Tick;
+	}
+	if (IGPlus_EnableTickInterp)
+		return IGPLUS_AB_LEAVE_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_LEAVE_TICKS_TI * Tick;
+	return IGPLUS_AB_LEAVE_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_LEAVE_TICKS * Tick;
+}
+
 // One [BUFFER] line when a player enters or leaves the queue, at most one a
 // second for each player.
 function IGPlus_ABLog(string What) {
@@ -6579,7 +6600,7 @@ function IGPlus_ABNoteArrival(float Late, float Gap, float MoveLen, float Tick) 
 		IGPlus_ABStatOver50++;
 	// Would this move have queued the player (IGPlus_ABIntercept)? Counted
 	// with the setting off too, to set the slack from real connections.
-	Slack = IGPLUS_AB_ENTER_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_ENTER_TICKS * Tick;
+	Slack = IGPlus_ABSlack(true, Tick);
 	IGPlus_ABStatSlackSum += 1000.0 * Slack / Level.TimeDilation;
 	if (Late > Slack) {
 		IGPlus_ABStatOverSlack++;
@@ -6723,8 +6744,7 @@ function IGPlus_ABIntercept(
 	}
 	if (IGPlus_ABQueued == false) {
 		// On time: this move runs now, through the code as before.
-		if (ServerTimeStamp <= 0.0
-			|| Late <= IGPLUS_AB_ENTER_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_ENTER_TICKS * Tick)
+		if (ServerTimeStamp <= 0.0 || Late <= IGPlus_ABSlack(true, Tick))
 			return;
 		// Late: from here this player's moves are queued. The delay is how
 		// late this move came. After a stall the player stood still that
@@ -6746,7 +6766,7 @@ function IGPlus_ABIntercept(
 		IGPlus_ABStatEnters++;
 		IGPlus_ABSetDelayMs();
 		IGPlus_ABLog("queued lateMs="$int(1000.0 * Late / Level.TimeDilation)
-			@"slackMs="$int(1000.0 * (IGPLUS_AB_ENTER_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_ENTER_TICKS * Tick) / Level.TimeDilation));
+			@"slackMs="$int(1000.0 * IGPlus_ABSlack(true, Tick) / Level.TimeDilation));
 	} else if (TimeStamp <= CurrentTimeStamp && Late > IGPlus_ABDelay) {
 		// Too late even for the queue: newer moves ran over its time. The
 		// delay grows to this lateness, so the next move this late is in
@@ -6893,7 +6913,7 @@ function IGPlus_ABPlayout() {
 	// The delay to keep is the player's usual lateness. Lateness within the
 	// leave slack is a connection that arrives on time: no delay to keep.
 	Target = 0.0;
-	if (IGPlus_ABPeak > IGPLUS_AB_LEAVE_FRAMES * IGPlus_ABMoveLen + IGPLUS_AB_LEAVE_TICKS * IGPlus_ABTickLen)
+	if (IGPlus_ABPeak > IGPlus_ABSlack(false, IGPlus_ABTickLen))
 		Target = FMin(IGPlus_ABPeak, MaxDelay);
 
 	// More delay than that: the clock runs up to 5% fast. The delay is time

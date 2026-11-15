@@ -1956,6 +1956,8 @@ The player with the bad connection pays with delay. Their moves, shots and hit s
 
 A player whose packets arrive on time is not queued. The server runs their moves on arrival, as with the setting off.
 
+A player is queued when one of their moves arrives later than 2 server ticks plus one of their own move intervals. With [bEnableTickInterpolation](#benabletickinterpolation) on it is 4 ticks. The other clients then draw a player 2 ticks behind and carry them on for 2 more, so a move up to 4 ticks late shows as nothing, and queueing for it would only cost that player delay. They leave the queue once their usual lateness is back under 1.5 ticks plus half a move interval (3.5 ticks with Tick Interpolation) and the delay has run down.
+
 Adaptive Buffering replaces jitter bounding. [JitterBoundingMode](#jitterboundingmode) does not run while this is on. Requires bEnableInputReplication to be False. Needs a server on version 469.
 
 The server log gets a `[BUFFER]` line when a player enters or leaves the queue. It also gets a `[JITTER-SUMMARY]` line for each player at the end of a map. That line says how late the player's moves arrived, and how many of them were later than the slack that queues a player (`slackMs`, `overSlack`, and `overSlackEvents` for the times such a move came with none in the 3 seconds before it). It is written with the setting on or off.
