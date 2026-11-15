@@ -349,11 +349,11 @@ function TestTickInterp() {
 		"TickInterp_move_time_between_two_updates_comes_back_from_the_two_bytes");
 	// Tick Interpolation, the tick clock of a client whose download comes late at times: it stays behind the
 	// newest tick number, gives back only what the last seconds never needed, catches up over the most it
-	// holds, and falls back when the newest tick number is behind it.
+	// holds at once (never more than 8 ticks behind), and falls back when the newest tick number is behind it.
 	LogTestResult(class'bbPlayer'.static.IGPlus_TI_HeldMove(6.0, 0.0, 1.0) == 0.0
 		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(6.0, 4.0, 1.0) - 0.03) < 0.0001
 		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(6.0, 0.01, 1.0) - 0.01) < 0.0001
-		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(12.0, 0.0, 1.0) - 0.15) < 0.0001
+		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(12.0, 0.0, 1.0) - 4.0) < 0.0001
 		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(8.05, 0.0, 1.0) - 0.05) < 0.0001
 		&& Abs(class'bbPlayer'.static.IGPlus_TI_HeldMove(-3.0, 2.0, 1.0) + 0.3) < 0.0001
 		&& class'bbPlayer'.static.IGPlus_TI_HeldMove(-9.0, 2.0, 1.0) == -9.0
