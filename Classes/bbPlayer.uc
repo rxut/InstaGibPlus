@@ -1100,6 +1100,7 @@ var float IGPlus_TI_StNextLine, IGPlus_TI_StSince;
 // And how far the clock was held behind the newest tick number, in ticks: summed over the frames, and the most.
 var int IGPlus_TI_StRecvFrames;
 var float IGPlus_TI_StRecvSum, IGPlus_TI_StRecvMax;
+var int IGPlus_TI_StFreezes;         // and times our download stopped for longer than a hold covers (IGPLUS_TI_RECV_FREEZE)
 // Server: the last report was a tick position (IGPlus_PRTNoteInterp).
 var bool IGPlus_bPRTInterp, IGPlus_bPRTInterpPast, IGPlus_bPRTInterpHeld;
 var float IGPlus_PRTInterpR;
@@ -1129,6 +1130,7 @@ const IGPLUS_TI_RECV_MAX = 8.0;      // ticks it is held behind the newest tick 
 const IGPLUS_TI_RECV_GIVE = 0.03;    // how much faster than real time it runs while it gives a hold back
 const IGPLUS_TI_RECV_TIME = 10.0;    // seconds in a stretch: a hold stays for as long as one of the last two needed it
 const IGPLUS_TI_RECV_LEAVE = 3.0;    // ticks: after a stretch that never had more than this in hand the hold is over
+const IGPLUS_TI_RECV_FREEZE = 13.0;  // ticks off (IGPLUS_TI_RECV_MAX plus IGPLUS_TI_RECV_SNAP) at which it is a freeze of our download: set at once, no hold
 var bool IGPlus_PressedJumpSave;
 var IGPlus_SavedInputChain IGPlus_SavedInputChain;
 var IGPlus_DataBuffer IGPlus_InputReplicationBuffer;
@@ -4011,8 +4013,11 @@ static function float IGPlus_TI_HeldMove(float Gap, float MinGap, float Step) {
 		return Gap;
 	if (Gap < 0.0)
 		return Gap * 0.1;
+	// Never more than the most it holds: the server takes a shot's report
+	// only up to that age (IGPlus_PRTNoteInterp). The pace of each player
+	// drawn (IGPlus_TI_Pace) takes a step of a few ticks without a jump.
 	if (Gap > IGPLUS_TI_RECV_MAX)
-		return FMin(Gap - IGPLUS_TI_RECV_MAX, IGPLUS_TI_MU_SLEW_FAR * Step);
+		return Gap - IGPLUS_TI_RECV_MAX;
 	return FClamp(FMin(MinGap, Gap), 0.0, IGPLUS_TI_RECV_GIVE * Step);
 }
 // A move time as IGPlus_NetMoveT carries it.
@@ -14302,10 +14307,18 @@ function xxPlayerTickEvents(float DeltaTime)
 			TITarget = float(IGPlus_TI_SeenTick) + (CurrentTime - IGPlus_TI_SeenAt) / IGPlus_TI_TickLen;
 			IGPlus_TI_Clock += DeltaTime / IGPlus_TI_TickLen;
 			TIGap = TITarget - IGPlus_TI_Clock;
-			if (Abs(TIGap) > IGPLUS_TI_RECV_FAR) {
-				// A join, a map change or a freeze of our own: set at once, with no hold.
+			if (Abs(TIGap) > IGPLUS_TI_RECV_FREEZE) {
+				// Our download stopped for longer than a hold can cover (a full
+				// line, a short outage, a freeze of our own game, a join): when it
+				// comes back the clock is set at once, and a hold ends. Drawn that
+				// far behind, the other players would stay old for seconds, and no
+				// shot aimed at them could be taken by the server. The players
+				// stand still while nothing comes (IGPLUS_TI_MAX_CARRY), and jump
+				// to the present once their updates are here.
 				IGPlus_TI_Clock = TITarget;
 				IGPlus_TI_StClockSnaps++;
+				if (Abs(TIGap) <= IGPLUS_TI_RECV_FAR)
+					IGPlus_TI_StFreezes++;
 				IGPlus_TI_bRecv = false;
 				IGPlus_TI_Recv = 0.0;
 			} else {
@@ -15736,6 +15749,7 @@ function IGPlus_TI_LogStats(bool bWrite) {
 				@"resets="$P.IGPlus_TI_StResets@"clockSnaps="$IGPlus_TI_StClockSnaps
 				@"recvMsAvg="$IGPlus_Fmt1(Ms * IGPlus_TI_StRecvSum / FMax(1.0, float(IGPlus_TI_StRecvFrames)))
 				@"recvMsMax="$IGPlus_Fmt1(Ms * IGPlus_TI_StRecvMax)
+				@"freezes="$IGPlus_TI_StFreezes
 				@"tickMs="$IGPlus_Fmt1(Ms));
 		}
 		P.IGPlus_TI_StFrames = 0;
@@ -15756,6 +15770,7 @@ function IGPlus_TI_LogStats(bool bWrite) {
 	IGPlus_TI_StRecvFrames = 0;
 	IGPlus_TI_StRecvSum = 0.0;
 	IGPlus_TI_StRecvMax = 0.0;
+	IGPlus_TI_StFreezes = 0;
 }
 
 // Client, every frame, on any player's pawn that may be drawn: the animation
