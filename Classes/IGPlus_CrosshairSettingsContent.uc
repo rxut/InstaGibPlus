@@ -86,7 +86,7 @@ function CopyCrosshairLayers() {
 	if (Settings == none)
 		return;
 
-	for (i = 0; i < 10; ++i) {
+	for (i = 0; i < MaxLayers(); ++i) {
 		if (Settings.GetCrosshairLayer(i).bUse == false)
 			continue;
 
@@ -122,7 +122,7 @@ function Save() {
 	White.A = 255;
 
 	i = 0;
-	for (L = IGPlus_CrosshairLayersListItem(LB_Layers.Items.Next); L != none && i < 10; L = IGPlus_CrosshairLayersListItem(L.Next)) {
+	for (L = IGPlus_CrosshairLayersListItem(LB_Layers.Items.Next); L != none && i < MaxLayers(); L = IGPlus_CrosshairLayersListItem(L.Next)) {
 		Settings.SetCrosshairLayerUse(i, true);
 
 		Settings.SetCrosshairLayerTexture(i, L.Texture);
@@ -137,7 +137,7 @@ function Save() {
 		i++;
 	}
 
-	while(i < 10) {
+	while(i < MaxLayers()) {
 		Settings.SetCrosshairLayerUse(i, false);
 
 		Settings.SetCrosshairLayerTexture(i, "");
@@ -385,6 +385,12 @@ function Created() {
 	Btn_Save.SetText(class'IGPlus_SettingsScroll'.default.SaveButtonText);
 }
 
+function int MaxLayers() {
+	if (Settings == none)
+		return 0;
+	return Settings.CrosshairLayerCount();
+}
+
 function int FindHighestIndex() {
 	local int i;
 	local IGPlus_CrosshairLayersListItem Item;
@@ -584,7 +590,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	HaveSelectedItem = LB_Layers.SelectedItem != none;
 	HaveNoSelectedItem = LB_Layers.SelectedItem == none;
 
-	Btn_AddLayer.bDisabled = LB_Layers.Items.Count() >= 10;
+	Btn_AddLayer.bDisabled = LB_Layers.Items.Count() >= MaxLayers();
 	Btn_RemLayer.bDisabled = (LB_Layers.Items.Count() <= 0 || HaveNoSelectedItem);
 
 	Btn_AddPreset.bDisabled = LB_Presets.Items.Count() >= 16;

@@ -7,7 +7,7 @@ class IGPlus_CrosshairPreset extends Object
 	dependson(ClientSettings); // its layer struct has to be parsed first
 
 var config string PresetName; // empty: the slot is free
-var config ClientSettings.CrosshairLayerDescr Layers[10];
+var config ClientSettings.CrosshairLayerDescr Layers[32]; // as many as ClientSettings.CrosshairLayers
 
 // (The array is too large to reach through an object reference.)
 function ClientSettings.CrosshairLayerDescr GetLayer(int i) {

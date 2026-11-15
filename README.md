@@ -849,7 +849,7 @@ How quickly the HitMarker becomes transparent. Higher values mean sharper drop-o
 If `True`, override default crosshair drawing with custom one, as described by [CrosshairLayers](#crosshairlayers).
 
 ## CrosshairLayers
-**Type: CrosshairLayerDescr\[10\]**  
+**Type: CrosshairLayerDescr\[32\]**  
 **Default: `(Texture="",OffsetX=0,OffsetY=0,ScaleX=0.000000,ScaleY=0.000000,Color=(R=0,G=0,B=0,A=0),Style=0,bSmooth=False,bUse=False)`**  
 
 The type `CrosshairLayerDescr` is defined like this:
@@ -865,7 +865,7 @@ struct CrosshairLayerDescr {
 };
 ```
 
-A crosshair is made up of individual images that are drawn in a specific order potentially on top of each other, which are called layers. The current factory supports up to 10 layers for a single crosshair.
+A crosshair is made up of individual images that are drawn in a specific order potentially on top of each other, which are called layers. The current factory supports up to 32 layers for a single crosshair. IG+ versions from before the presets draw the first 10 layers only.
 
 * `Texture` refers to the image to draw. If left empty, a 1x1 white pixel will be used.
 * `OffsetX` and `OffsetY` is the offset from the center of the screen in pixels where the image should be drawn
@@ -898,7 +898,7 @@ In the Crosshair Factory window the presets are in the list on the right, each w
 
 A crosshair you made before presets existed is your first preset, named `Crosshair 1`.
 
-Every preset has its own section in InstaGibPlus.ini, `[CrosshairPreset1]` to `[CrosshairPreset16]`, with `PresetName` and ten `Layers` in the format of [CrosshairLayers](#crosshairlayers). An empty `PresetName` means the slot is free. The picked preset is read from `CrosshairLayers` in `[ClientSettings]`. If you change it by hand, change it there and not in its own section. An older IG+ version on another server reads the same file and draws `CrosshairLayers`, so it draws the picked preset too.
+Every preset has its own section in InstaGibPlus.ini, `[CrosshairPreset1]` to `[CrosshairPreset16]`, with `PresetName` and 32 `Layers` in the format of [CrosshairLayers](#crosshairlayers). An empty `PresetName` means the slot is free. The picked preset is read from `CrosshairLayers` in `[ClientSettings]`. If you change it by hand, change it there and not in its own section. An older IG+ version on another server reads the same file and draws `CrosshairLayers`, so it draws the picked preset too.
 
 ## bBioUseClientSideAnimations
 **Type: bool**  

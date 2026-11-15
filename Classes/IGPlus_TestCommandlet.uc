@@ -465,6 +465,15 @@ function TestCrosshairPresets() {
 	LogTestResult(bOK && S.DeleteCrosshairPreset() == false && S.GetCrosshairPresetName(0) == "Crosshair 1",
 		"CrosshairPresets_a_delete_picks_the_first_one_left_and_the_last_one_stays");
 
+	// The last of the 32 layers goes into the preset like the first.
+	S.SetCrosshairLayerUse(31, true);
+	S.SetCrosshairLayerScaleX(31, 4);
+	S.StoreCrosshairPreset();
+	bOK = S.CrosshairLayerCount() == 32 && S.CrosshairPresets[S.CrosshairPreset].GetLayer(31).ScaleX == 4;
+	S.SetCrosshairLayerUse(31, false);
+	S.StoreCrosshairPreset();
+	LogTestResult(bOK, "CrosshairPresets_thirty_two_layers");
+
 	bOK = true;
 	for (i = 1; i < arraycount(S.CrosshairPresets); i++)
 		bOK = bOK && S.NewCrosshairPreset();
