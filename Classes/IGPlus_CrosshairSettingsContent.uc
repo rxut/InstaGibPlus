@@ -298,6 +298,7 @@ function Created() {
 	Edit_ColorRed.SetDelayedNotify(true);
 	Edit_ColorRed.SetNumericOnly(true);
 	Edit_ColorRed.SetNumericFloat(false);
+	Edit_ColorRed.SetMaxLength(3);
 	Edit_ColorRed.EditBoxWidthFraction = (1.0/6.0);
 	Edit_ColorRed.EditBoxWidth = 25;
 
@@ -309,6 +310,7 @@ function Created() {
 	Edit_ColorGreen.SetDelayedNotify(true);
 	Edit_ColorGreen.SetNumericOnly(true);
 	Edit_ColorGreen.SetNumericFloat(false);
+	Edit_ColorGreen.SetMaxLength(3);
 	Edit_ColorGreen.EditBoxWidthFraction = (1.0/6.0);
 	Edit_ColorGreen.EditBoxWidth = 25;
 
@@ -320,6 +322,7 @@ function Created() {
 	Edit_ColorBlue.SetDelayedNotify(true);
 	Edit_ColorBlue.SetNumericOnly(true);
 	Edit_ColorBlue.SetNumericFloat(false);
+	Edit_ColorBlue.SetMaxLength(3);
 	Edit_ColorBlue.EditBoxWidthFraction = (1.0/6.0);
 	Edit_ColorBlue.EditBoxWidth = 25;
 
@@ -331,6 +334,7 @@ function Created() {
 	Edit_ColorAlpha.SetDelayedNotify(true);
 	Edit_ColorAlpha.SetNumericOnly(true);
 	Edit_ColorAlpha.SetNumericFloat(false);
+	Edit_ColorAlpha.SetMaxLength(3);
 	Edit_ColorAlpha.EditBoxWidthFraction = (1.0/6.0);
 	Edit_ColorAlpha.EditBoxWidth = 25;
 
@@ -453,6 +457,21 @@ function FillControlsFor(IGPlus_CrosshairLayersListItem L) {
 	}
 }
 
+// A colour box holds 0 to 255. A larger number typed in becomes 255, in the box too.
+function byte ColorValue(IGPlus_EditControl E) {
+	local int V;
+	local bool bWas;
+
+	V = Clamp(int(E.GetValue()), 0, 255);
+	if (string(V) != E.GetValue()) {
+		bWas = bUpdatingControls;
+		bUpdatingControls = true;
+		E.SetValue(string(V));
+		bUpdatingControls = bWas;
+	}
+	return V;
+}
+
 function Notify(UWindowDialogControl C, byte E) {
 	local int Slot;
 
@@ -541,13 +560,13 @@ function Notify(UWindowDialogControl C, byte E) {
 		} else if (C == Edit_ScaleY && Edit_ScaleY.EditBox.bCanEdit) {
 			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleY = float(Edit_ScaleY.GetValue());
 		} else if (C == Edit_ColorRed && Edit_ColorRed.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.R = byte(Edit_ColorRed.GetValue());
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.R = ColorValue(Edit_ColorRed);
 		} else if (C == Edit_ColorGreen && Edit_ColorGreen.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.G = byte(Edit_ColorGreen.GetValue());
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.G = ColorValue(Edit_ColorGreen);
 		} else if (C == Edit_ColorBlue && Edit_ColorBlue.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.B = byte(Edit_ColorBlue.GetValue());
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.B = ColorValue(Edit_ColorBlue);
 		} else if (C == Edit_ColorAlpha && Edit_ColorAlpha.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.A = byte(Edit_ColorAlpha.GetValue());
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.A = ColorValue(Edit_ColorAlpha);
 		} else if (C == Cmb_Style && LB_Layers.SelectedItem != none) {
 			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Style = int(Cmb_Style.GetValue2()) + 1;
 		} else if (C == Chk_Smooth && Chk_Smooth.bDisabled == false) {
