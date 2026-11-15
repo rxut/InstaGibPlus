@@ -1035,10 +1035,34 @@ var byte IGPlus_ShownDuck;
 var name IGPlus_TI_AnimSeqH[64];
 var float IGPlus_TI_AnimFrameH[64];
 var float IGPlus_TI_AnimTimeH[64];
+var float IGPlus_TI_AnimTweenH[64];  // the blend rate that went with it (IGPlus_FlipFix_Apply)
 var int IGPlus_TI_AnimHead, IGPlus_TI_AnimNum;
 var name IGPlus_TI_RawSeq, IGPlus_TI_ShownSeq;
-var float IGPlus_TI_RawFrame, IGPlus_TI_ShownFrame;
+var float IGPlus_TI_RawFrame, IGPlus_TI_ShownFrame, IGPlus_TI_ShownTween;
 var bool IGPlus_TI_bAnimSwapped;
+// Client, on a pawn that may be drawn (client setting FlipAnimationFix, IGPlus_FlipFix_Apply):
+// how much of the pose on screen is a turned-over one (1 all of
+// it, 0 none), the animation shown last frame, and the flip that plays on or
+// the blend that takes over from it.
+var float IGPlus_FlipFix_Flipped;
+var name IGPlus_FlipFix_Seq;
+var float IGPlus_FlipFix_Last, IGPlus_FlipFix_Time;
+var name IGPlus_FlipFix_BlendSeq;         // the blend the game is in
+var float IGPlus_FlipFix_BlendFirst;      // and the frame it started with
+var byte IGPlus_FlipFix_State;            // 1: the flip plays on. 2: the game's blend takes over
+var float IGPlus_FlipFix_FlipFrame, IGPlus_FlipFix_FlipRate, IGPlus_FlipFix_Ramp;
+var float IGPlus_FlipFix_FlipAt, IGPlus_FlipFix_FlipTime; // the flip frame shown last, and when
+var bool IGPlus_FlipFix_bLogged;
+// The part of the Flip animation the model is turned over in. Measured on
+// the stock male model (20 frames): 50 degrees off upright at frame 3, 170 at
+// frame 12, 59 at frame 18. A dodge on level ground lands at frames 15 to 17.
+const IGPLUS_FLIPFIX_FLIP_FROM = 0.15;
+const IGPLUS_FLIPFIX_FLIP_TO = 0.92;
+const IGPLUS_FLIPFIX_FLIP_END = 0.95;     // the flip's last frame
+const IGPLUS_FLIPFIX_MIN_FLIPPED = 0.2;   // how much of the drawn pose has to be a turned-over one
+const IGPLUS_FLIPFIX_MIN_BLEND = 0.25;    // seconds a blend has to have left
+const IGPLUS_FLIPFIX_FLIP_MEMORY = 0.2; // seconds a flip counts as just shown
+const IGPLUS_FLIPFIX_RAMP_TIME = 0.06;    // seconds: how fast the blend that takes over catches up
 // Client, with enableDebugData on: how Tick Interpolation drew this player
 // since the last "Tick Interpolation:" line (IGPlus_TI_Stat, IGPlus_TI_LogStats).
 var int IGPlus_TI_StFrames, IGPlus_TI_StPast, IGPlus_TI_StStopped, IGPlus_TI_StHeld;
@@ -14815,6 +14839,10 @@ event PreRender( canvas zzCanvas )
 	// Tick does not get called when the game is paused, so this is here to
 	// ensure players are visible during pauses
 	IGPlus_LocationOffsetFix_AfterAll(0);
+	// Our own model, drawn in behind view (FlipAnimationFix). PostRender puts the
+	// engine's animation back.
+	if (Level.NetMode == NM_Client && Role == ROLE_AutonomousProxy)
+		IGPlus_FlipFix_Plain();
 
 	if (Role == ROLE_AutonomousProxy && Level.NetMode == NM_Client)
 		IGPlus_UpdateClientSnapInterpDelayReport();
@@ -15250,6 +15278,9 @@ simulated event Tick(float DeltaTime) {
 	} else if (Settings.bEnableLocationOffsetFix || IGPlus_LocationOffsetFix_Moved) {
 		IGPlus_LocationOffsetFix_After(DeltaTime);
 	}
+	// With Tick Interpolation on a player's client IGPlus_TI_AnimAfter has done this.
+	if (Role == ROLE_SimulatedProxy && Level.NetMode == NM_Client)
+		IGPlus_FlipFix_Plain();
 }
 
 // Client, on another player's pawn (Tick Interpolation): the tick number of
@@ -15539,6 +15570,245 @@ function IGPlus_TI_LogStats(bool bWrite) {
 	IGPlus_TI_StClockSnaps = 0;
 }
 
+// Client, every frame, on any player's pawn that may be drawn: the animation
+// to draw it with (client setting FlipAnimationFix). It reads AnimSequence and
+// AnimFrame as the game would show them and may put others in their place for
+// this frame. Rate is the speed of the blend they belong to.
+//
+// From the turned-over part of the forward dodge's flip, a blend to an upright
+// pose folds the model into a small lump for as long as the blend takes: the
+// "pancake". The usual way there: a
+// forward dodge lands in the middle of its flip, and a jump in that moment
+// swaps the 0.12 s landing blend for one of 0.35 or 0.7 s (PlayInAir). A jump
+// pad does the same, with 2 s.
+//
+// IGPlus_FlipFix_Flipped estimates how much of the pose on screen is a
+// turned-over one. It only changes in frames the
+// model is drawn in, as far as a script can tell (IGPlus_FlipFix_Seen): a model
+// that left the screen in the middle of a flip keeps that pose in the engine
+// until it is drawn again. When a blend with more than IGPLUS_FLIPFIX_MIN_BLEND
+// seconds to go would be drawn from such a pose:
+//   FAF_Instant: the pose the blend goes to is drawn once, as a played frame.
+//     The engine keeps it from there, and the game's air logic goes on.
+//   FAF_FinishFlip: when the flip was what the model showed, it plays on to
+//     its end at its own speed, and then the blend the game is in by then
+//     takes over from its start and catches up. Every frame drawn is a stock
+//     frame. A model that comes into view with an old turned-over pose gets
+//     the pose its blend goes to, as with FAF_Instant.
+//   FAF_Off: nothing is changed.
+// Everything else is drawn as it came: the flip itself, short blends, and
+// slow ones from an upright pose.
+simulated function IGPlus_FlipFix_Apply(float Rate) {
+	local name Seq;
+	local float Frame, Dt, Left;
+	local int Mode;
+	local bool bStart;
+
+	Seq = AnimSequence;
+	Frame = AnimFrame;
+	Dt = FClamp(Level.TimeSeconds - IGPlus_FlipFix_Time, 0.0, 0.1);
+	IGPlus_FlipFix_Time = Level.TimeSeconds;
+
+	// The blend the game is in, and the frame it had when it started.
+	if (Frame >= 0.0) {
+		IGPlus_FlipFix_BlendSeq = '';
+	} else if (Seq != IGPlus_FlipFix_BlendSeq) {
+		IGPlus_FlipFix_BlendSeq = Seq;
+		IGPlus_FlipFix_BlendFirst = Frame;
+	}
+
+	if (IGPlus_FlipFix_State == 1) {
+		// The flip plays on to its end.
+		IGPlus_FlipFix_FlipFrame += IGPlus_FlipFix_FlipRate * Dt;
+		if (Frame < 0.0 && IGPlus_FlipFix_FlipFrame < IGPLUS_FLIPFIX_FLIP_END) {
+			AnimSequence = 'Flip';
+			AnimFrame = IGPlus_FlipFix_FlipFrame;
+			IGPlus_FlipFix_Seq = 'Flip';
+			IGPlus_FlipFix_Last = IGPlus_FlipFix_FlipFrame;
+			return;
+		}
+		IGPlus_FlipFix_State = 0;
+		IGPlus_FlipFix_Flipped = 0.0;
+		IGPlus_FlipFix_Seq = 'Flip';
+		IGPlus_FlipFix_Last = IGPLUS_FLIPFIX_FLIP_END;
+		if (Frame < 0.0 && IGPlus_FlipFix_BlendFirst < 0.0) {
+			// The blend the game is in takes over, from its own start.
+			IGPlus_FlipFix_State = 2;
+			IGPlus_FlipFix_Ramp = FMax(0.0, IGPlus_FlipFix_BlendFirst / Frame - 1.0);
+		}
+	}
+	if (IGPlus_FlipFix_State == 2) {
+		// It catches up with the game's blend.
+		IGPlus_FlipFix_Ramp *= Exp(-Dt / IGPLUS_FLIPFIX_RAMP_TIME);
+		if (Frame < 0.0 && Seq == IGPlus_FlipFix_BlendSeq && IGPlus_FlipFix_Ramp > 0.02
+			&& (IGPlus_FlipFix_Seq != Seq || Frame * (1.0 + IGPlus_FlipFix_Ramp) >= IGPlus_FlipFix_Last)) {
+			AnimFrame = Frame * (1.0 + IGPlus_FlipFix_Ramp);
+			IGPlus_FlipFix_Seq = Seq;
+			IGPlus_FlipFix_Last = AnimFrame;
+			return;
+		}
+		IGPlus_FlipFix_State = 0;
+	}
+
+	if (Frame >= 0.0) {
+		// A played animation: the model has this pose and no other, once it is drawn.
+		if (Seq == 'Flip') {
+			IGPlus_FlipFix_FlipAt = Frame;
+			IGPlus_FlipFix_FlipTime = Level.TimeSeconds;
+		}
+		if (Seq == 'Flip' && Frame > IGPLUS_FLIPFIX_FLIP_FROM && Frame < IGPLUS_FLIPFIX_FLIP_TO) {
+			if (IGPlus_FlipFix_Flipped < 1.0 && IGPlus_FlipFix_Seen())
+				IGPlus_FlipFix_Flipped = 1.0;
+		} else if (IGPlus_FlipFix_Flipped > 0.0 && IGPlus_FlipFix_Seen()) {
+			IGPlus_FlipFix_Flipped = 0.0;
+		}
+		IGPlus_FlipFix_Seq = Seq;
+		IGPlus_FlipFix_Last = Frame;
+		IGPlus_FlipFix_bLogged = false;
+		return;
+	}
+
+	// A blend. It starts this frame when the animation is a new one, or the
+	// same one was played until now.
+	bStart = Seq != IGPlus_FlipFix_Seq || IGPlus_FlipFix_Last >= 0.0;
+	if (bStart)
+		IGPlus_FlipFix_bLogged = false;
+	if (IGPlus_FlipFix_Flipped > 0.1 && IGPlus_FlipFix_Seen()) {
+		if (Rate > 0.0)
+			Left = -Frame / Rate;
+		if (Left > IGPLUS_FLIPFIX_MIN_BLEND) {
+			Mode = IGPlus_FlipFix_Setting();
+			// The flip was on screen a moment ago, with at most a short blend
+			// since (the 0.12 s one of a landing): it plays on from where it
+			// would be by now.
+			if (Mode == 2 && bStart && IGPlus_FlipFix_Flipped > 0.5
+				&& Level.TimeSeconds - IGPlus_FlipFix_FlipTime < IGPLUS_FLIPFIX_FLIP_MEMORY) {
+				IGPlus_FlipFix_Note(Seq, Left, "flip", bStart);
+				if (IGPlus_FlipFix_FlipRate <= 0.0)
+					IGPlus_FlipFix_FlipRate = 2.0;
+				IGPlus_FlipFix_State = 1;
+				IGPlus_FlipFix_FlipFrame = FMin(IGPLUS_FLIPFIX_FLIP_END, IGPlus_FlipFix_FlipAt
+					+ IGPlus_FlipFix_FlipRate * (Level.TimeSeconds - IGPlus_FlipFix_FlipTime));
+				AnimSequence = 'Flip';
+				AnimFrame = IGPlus_FlipFix_FlipFrame;
+				IGPlus_FlipFix_Seq = 'Flip';
+				IGPlus_FlipFix_Last = IGPlus_FlipFix_FlipFrame;
+				return;
+			}
+			if (Mode != 0 && IGPlus_FlipFix_Flipped > IGPLUS_FLIPFIX_MIN_FLIPPED) {
+				IGPlus_FlipFix_Note(Seq, Left, "instant", bStart);
+				AnimFrame = 0.0;
+				IGPlus_FlipFix_Flipped = 0.0;
+				IGPlus_FlipFix_Seq = Seq;
+				IGPlus_FlipFix_Last = Frame;
+				return;
+			}
+			IGPlus_FlipFix_Note(Seq, Left, "off", bStart);
+		}
+		// Less of the turned-over pose is left as the blend goes on.
+		if (bStart == false && IGPlus_FlipFix_Last < 0.0)
+			IGPlus_FlipFix_Flipped *= FClamp(Frame / IGPlus_FlipFix_Last, 0.0, 1.0);
+	}
+	IGPlus_FlipFix_Seq = Seq;
+	IGPlus_FlipFix_Last = Frame;
+}
+
+// The client's FlipAnimationFix setting: 0 off, 1 instant, 2 finish the flip.
+simulated function int IGPlus_FlipFix_Setting() {
+	local PlayerPawn LP;
+
+	LP = GetLocalPlayer();
+	if (bbPlayer(LP) != None && bbPlayer(LP).Settings != None)
+		return bbPlayer(LP).Settings.FlipAnimationFix;
+	if (bbCHSpectator(LP) != None && bbCHSpectator(LP).Settings != None)
+		return bbCHSpectator(LP).Settings.FlipAnimationFix;
+	return 0;
+}
+
+// enableDebugData 1: one line for every slow blend out of a turned-over pose,
+// with the setting on any value, so a log shows how often it happens and what
+// was done. bStart false: the model came into view in the middle of the blend.
+simulated function IGPlus_FlipFix_Note(name Seq, float Left, string What, bool bStart) {
+	local bbPlayer LP;
+	local string S;
+
+	if (IGPlus_FlipFix_bLogged)
+		return;
+	IGPlus_FlipFix_bLogged = true;
+	LP = bbPlayer(GetLocalPlayer());
+	if (LP == None || LP.bDrawDebugData == false || PlayerReplicationInfo == None)
+		return;
+	if (bStart)
+		S = "blend to";
+	else
+		S = "seen again in a blend to";
+	LP.ClientDebugMessage("Flip fix: player="$PlayerReplicationInfo.PlayerName@S@Seq
+		@"ms="$int(1000.0 * Left)@"flipped="$IGPlus_Fmt1(IGPlus_FlipFix_Flipped)@"fix="$What);
+}
+
+// Is this pawn drawn on our screen this frame? A script cannot ask the engine,
+// so this is an estimate: inside the view cone, and a clear line from the
+// camera to the middle, the head or the feet. Our own pawn is drawn in behind
+// view only. Where the estimate is wrong, a model keeps a stock blend it
+// should not have, or takes its next pose a moment early.
+simulated function bool IGPlus_FlipFix_Seen() {
+	local PlayerPawn LP;
+	local vector Cam, To, Up;
+
+	LP = GetLocalPlayer();
+	if (LP == None)
+		return true;
+	if (LP == self)
+		return bBehindView;
+	// The eye of whoever we look through. Read here and not asked of
+	// PlayerCalcView: that one also sets what the camera correction applied
+	// this frame, which a shot reads.
+	if (LP.ViewTarget != None) {
+		Cam = LP.ViewTarget.Location;
+		if (Pawn(LP.ViewTarget) != None)
+			Cam.Z += Pawn(LP.ViewTarget).EyeHeight;
+	} else {
+		Cam = LP.Location;
+		Cam.Z += LP.EyeHeight;
+	}
+	To = Location - Cam;
+	if (VSize(To) > 1.0 && (Normal(To) dot vector(LP.ViewRotation)) < Cos(LP.FOVAngle * 0.5 * Pi / 180.0))
+		return false;
+	Up = vect(0,0,0.8) * CollisionHeight;
+	return FastTrace(Location, Cam) || FastTrace(Location + Up, Cam) || FastTrace(Location - Up, Cam);
+}
+
+// The pawn has the engine's own animation here (no Tick Interpolation, a
+// spectator's view, or our own pawn). What IGPlus_FlipFix_Apply changes is drawn
+// this frame, and IGPlus_AnimRestore puts the engine's back after it.
+simulated function IGPlus_FlipFix_Plain() {
+	local name S;
+	local float F;
+
+	if (IGPlus_TI_bAnimSwapped)
+		return;
+	S = AnimSequence;
+	F = AnimFrame;
+	if (S == 'Flip' && AnimRate > 0.0)
+		IGPlus_FlipFix_FlipRate = AnimRate;
+	IGPlus_FlipFix_Apply(TweenRate);
+	if (AnimSequence != S || AnimFrame != F) {
+		IGPlus_TI_RawSeq = S;
+		IGPlus_TI_RawFrame = F;
+		IGPlus_TI_bAnimSwapped = true;
+	}
+}
+
+// After the frame is drawn: the engine plays on from its own animation.
+simulated function IGPlus_AnimRestore() {
+	if (IGPlus_TI_bAnimSwapped) {
+		AnimSequence = IGPlus_TI_RawSeq;
+		AnimFrame = IGPlus_TI_RawFrame;
+		IGPlus_TI_bAnimSwapped = false;
+	}
+}
+
+
 // Client, on another player's pawn (Tick Interpolation). Between frames the
 // pawn holds the animation as the engine plays it, and that is the newest one
 // the server sent. The body is drawn Delay seconds behind the newest update,
@@ -15561,6 +15831,7 @@ simulated function IGPlus_TI_AnimAfter(float Delay) {
 		IGPlus_TI_AnimSeqH[IGPlus_TI_AnimHead & 63] = AnimSequence;
 		IGPlus_TI_AnimFrameH[IGPlus_TI_AnimHead & 63] = AnimFrame;
 		IGPlus_TI_AnimTimeH[IGPlus_TI_AnimHead & 63] = T;
+		IGPlus_TI_AnimTweenH[IGPlus_TI_AnimHead & 63] = TweenRate;
 		IGPlus_TI_AnimHead = (IGPlus_TI_AnimHead + 1) & 63;
 		if (IGPlus_TI_AnimNum < 64)
 			IGPlus_TI_AnimNum++;
@@ -15568,6 +15839,8 @@ simulated function IGPlus_TI_AnimAfter(float Delay) {
 	IGPlus_TI_RawSeq = AnimSequence;
 	IGPlus_TI_RawFrame = AnimFrame;
 	IGPlus_TI_bAnimSwapped = true;
+	if (AnimSequence == 'Flip' && AnimRate > 0.0)
+		IGPlus_FlipFix_FlipRate = AnimRate;
 
 	if (IGPlus_TI_bStopped == false || IGPlus_TI_ShownSeq == '') {
 		T -= Delay;
@@ -15583,6 +15856,7 @@ simulated function IGPlus_TI_AnimAfter(float Delay) {
 			A = (IGPlus_TI_AnimHead - IGPlus_TI_AnimNum) & 63;
 		IGPlus_TI_ShownSeq = IGPlus_TI_AnimSeqH[A];
 		IGPlus_TI_ShownFrame = IGPlus_TI_AnimFrameH[A];
+		IGPlus_TI_ShownTween = IGPlus_TI_AnimTweenH[A];
 		// Between two notes of one animation running on: the part of the way.
 		B = (A + 1) & 63;
 		if (A != ((IGPlus_TI_AnimHead - 1) & 63)
@@ -15597,6 +15871,7 @@ simulated function IGPlus_TI_AnimAfter(float Delay) {
 	}
 	AnimSequence = IGPlus_TI_ShownSeq;
 	AnimFrame = IGPlus_TI_ShownFrame;
+	IGPlus_FlipFix_Apply(IGPlus_TI_ShownTween);
 }
 
 // Client, on another player's pawn, every frame (Tick Interpolation). The
@@ -16633,11 +16908,7 @@ simulated function IGPlus_LocationOffsetFix_Before() {
 
 	// Tick Interpolation drew an earlier moment of the animation
 	// (IGPlus_TI_AnimAfter). The engine plays on from its own.
-	if (IGPlus_TI_bAnimSwapped) {
-		AnimSequence = IGPlus_TI_RawSeq;
-		AnimFrame = IGPlus_TI_RawFrame;
-		IGPlus_TI_bAnimSwapped = false;
-	}
+	IGPlus_AnimRestore();
 
 	if (IGPlus_LocationOffsetFix_CollisionDummy == none)
 		IGPlus_LocationOffsetFix_SpawnCollisionDummy();
@@ -16687,6 +16958,7 @@ function IGPlus_LocationOffsetFix_TickBefore() {
 			if (P.bDeleteMe) continue;
 			if (P.Role != ROLE_SimulatedProxy) continue;
 
+			P.IGPlus_AnimRestore();
 			if (IGPlus_ShouldUseSnapshotInterpForProxy(P))
 				P.IGPlus_LocationOffsetFix_Before();
 			else if (P.IGPlus_TI_Use())
@@ -16746,6 +17018,9 @@ function IGPlus_FixNetspeed() {
 event PostRender( canvas zzCanvas )
 {
 	local int CH;
+
+	// Our own model was drawn with FlipAnimationFix's animation (PreRender).
+	IGPlus_AnimRestore();
 
 	if (Settings.bUseCrosshairFactory) {
 		CH = MyHud.Crosshair;

@@ -403,6 +403,19 @@ event PreRender(Canvas C) {
 event PostRender( canvas Canvas )
 {
 	local int CH;
+	local int i;
+	local PlayerReplicationInfo PRI;
+
+	// FlipAnimationFix drew some models with an animation of its own for this
+	// frame (bbPlayer.IGPlus_FlipFix_Plain). The engine plays on from its own.
+	if (GameReplicationInfo != None) {
+		for (i = 0; i < arraycount(GameReplicationInfo.PRIArray); ++i) {
+			PRI = GameReplicationInfo.PRIArray[i];
+			if (PRI == None) break;
+			if (bbPlayer(PRI.Owner) != None)
+				bbPlayer(PRI.Owner).IGPlus_AnimRestore();
+		}
+	}
 
 	if ((MyHud == none) && (Viewport(Player) != None) && (HUDType != None))
 		MyHud = spawn(HUDType, self);

@@ -19,6 +19,14 @@ enum EHitEffectSource {
 	HESRC_Client
 };
 
+// What to draw when a player's model would blend slowly out of the
+// turned-over part of a flip and collapse into a lump (bbPlayer.IGPlus_FlipFix_Apply).
+enum EFlipAnimationFix {
+	FAF_Off,
+	FAF_Instant,
+	FAF_FinishFlip
+};
+
 var config bool   bInitialized;
 var config bool   bForceModels; // if Client wishes models forced to his own. (default false)
 var config bool   bDemoShowRealModels; // restore real player models during demo playback
@@ -66,6 +74,7 @@ var config bool   bLogClientMessages;
 var config bool   bDemoShowClientMessages;
 var config bool   bDebugMovement;
 var config bool   bShowDebugDataOnScreen; // enableDebugData 1: also draw the debug block and the debug lines on the HUD
+var config EFlipAnimationFix FlipAnimationFix;
 var config bool   bEnableKillCam;
 var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
 var config bool   bCameraCorrectionSmoothing; // Apply corrections to the simulation at once, ease only the camera
@@ -487,6 +496,14 @@ static function EHitSoundSource IntToHitSoundSource(int A) {
 	return HSSRC_Server;
 }
 
+static function EFlipAnimationFix IntToFlipAnimationFix(int A) {
+	switch(A) {
+		case 1: return FAF_Instant;
+		case 2: return FAF_FinishFlip;
+	}
+	return FAF_Off;
+}
+
 static function EHitEffectSource IntToHitEffectSource(int A) {
 	switch(A) {
 		case 0: return HESRC_Server;
@@ -566,6 +583,7 @@ simulated function string DumpSettings() {
 		GetSetting("bDemoShowClientMessages")$
 		GetSetting("bDebugMovement")$
 		GetSetting("bShowDebugDataOnScreen")$
+		GetSetting("FlipAnimationFix")$
 		GetSetting("bEnableKillCam")$
 		GetSetting("FakeCAPInterval")$
 		GetSetting("bCameraCorrectionSmoothing")$
@@ -679,6 +697,7 @@ defaultproperties
 	bDemoShowClientMessages=False
 	bDebugMovement=False
 	bShowDebugDataOnScreen=False
+	FlipAnimationFix=FAF_FinishFlip
 	bEnableKillCam=False
 	FakeCAPInterval=0.1
 	bCameraCorrectionSmoothing=False

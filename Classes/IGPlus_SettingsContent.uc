@@ -123,6 +123,13 @@ var localized string MoreInformationText;
 	var localized string ShowDebugDataOnScreenText;
 	var localized string ShowDebugDataOnScreenHelp;
 
+	var IGPlus_ComboBox Cmb_FlipAnimationFix;
+	var localized string FlipAnimationFixText;
+	var localized string FlipAnimationFixHelp;
+	var localized string FlipAnimationFixOff;
+	var localized string FlipAnimationFixInstant;
+	var localized string FlipAnimationFixFinishFlip;
+
 	var UWindowCheckbox Chk_LocationOffsetFix;
 	var localized string LocationOffsetFixText;
 	var localized string LocationOffsetFixHelp;
@@ -957,6 +964,10 @@ function Created() {
 	Chk_DemoShowClientMessages = CreateCheckbox(DemoShowClientMessagesText, DemoShowClientMessagesHelp);
 	Chk_DebugMovement = CreateCheckbox(DebugMovementText, DebugMovementHelp);
 	Chk_ShowDebugDataOnScreen = CreateCheckbox(ShowDebugDataOnScreenText, ShowDebugDataOnScreenHelp);
+	Cmb_FlipAnimationFix = CreateComboBox(FlipAnimationFixText, FlipAnimationFixHelp, false, 150);
+	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixOff);
+	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixInstant);
+	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixFinishFlip);
 	Chk_LocationOffsetFix = CreateCheckbox(LocationOffsetFixText, LocationOffsetFixHelp);
 
 	Lbl_NetStats = CreateSeparator(NetStatsText);
@@ -1142,6 +1153,7 @@ function Load() {
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
 	Chk_DebugMovement.bChecked = Settings.bDebugMovement;
 	Chk_ShowDebugDataOnScreen.bChecked = Settings.bShowDebugDataOnScreen;
+	Cmb_FlipAnimationFix.SetSelectedIndex(Clamp(Settings.FlipAnimationFix, 0, 2));
 	Chk_LocationOffsetFix.bChecked = Settings.bEnableLocationOffsetFix;
 
 	Chk_EnableNetStats.bChecked = Settings.bEnableNetStats;
@@ -1370,6 +1382,7 @@ function Save() {
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
 	Settings.bDebugMovement = Chk_DebugMovement.bChecked;
 	Settings.bShowDebugDataOnScreen = Chk_ShowDebugDataOnScreen.bChecked;
+	Settings.FlipAnimationFix = Settings.IntToFlipAnimationFix(Cmb_FlipAnimationFix.GetSelectedIndex());
 	Settings.bEnableLocationOffsetFix = Chk_LocationOffsetFix.bChecked;
 
 	Settings.bEnableNetStats = Chk_EnableNetStats.bChecked;
@@ -1587,6 +1600,11 @@ defaultproperties
 		DebugMovementText="Trace Movement Input"
 		DebugMovementHelp="If checked, trace movement input to demo"
 
+		FlipAnimationFixText="Flip Animation Fix"
+		FlipAnimationFixHelp="What to do when another player's model would collapse into a small lump in the air (a pancake)\\nIt happens when a slow blend starts in the turned-over part of a forward dodge's flip\\nOff --> Nothing, as the game draws it\\nInstant --> The model takes its next pose at once\\nFinish Flip --> The model finishes its flip first, then blends on"
+		FlipAnimationFixOff="Off"
+		FlipAnimationFixInstant="Instant"
+		FlipAnimationFixFinishFlip="Finish Flip"
 		ShowDebugDataOnScreenText="Show Debug Data On Screen"
 		ShowDebugDataOnScreenHelp="If checked, enableDebugData 1 also shows the debug data on screen\\nUnchecked, it only goes to the console and to a file in your Logs folder"
 

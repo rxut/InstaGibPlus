@@ -84,6 +84,7 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bDemoShowClientMessages](#bdemoshowclientmessages)
 1. [bDebugMovement](#bdebugmovement)
 1. [bShowDebugDataOnScreen](#bshowdebugdataonscreen)
+1. [FlipAnimationFix](#flipanimationfix)
 1. [bEnableKillCam](#benablekillcam)
 1. [MinDodgeClickTime](#mindodgeclicktime)
 1. [bUseOldMouseInput](#buseoldmouseinput)
@@ -551,6 +552,26 @@ If `False`, the screen stays as it is. You get one line when you turn debug data
 If `True`, the HUD shows the debug values and the message area shows the debug lines.
 
 In the IG+ menu this is `Show Debug Data On Screen`, under `Advanced`.
+
+## FlipAnimationFix
+**Type: EFlipAnimationFix**  
+**Default: FAF_FinishFlip**  
+
+What to draw when a player's model would collapse into a small lump in the air (a "pancake").
+
+The game blends a model into its next animation by moving every point of it in a straight line. The flip of a forward dodge turns the model over. When a blend of some length starts in that part of the flip, the lines cross in the middle and the model is a lump for as long as the blend takes. The usual way there is a forward dodge that lands in the middle of its flip, followed at once by a jump (a blend of 0.35 or 0.7 seconds) or by a jump pad (2 seconds).
+
+- `FAF_Off`: models are drawn as the game draws them.
+- `FAF_Instant`: the model takes the pose the blend ends in at once, and the game's air animations go on from there.
+- `FAF_FinishFlip`: the model plays its flip to the end at the flip's own speed. Then the blend the game is in by then takes over from its start and catches up. Every frame drawn is a frame of the stock animations.
+
+It acts on blends that start from the turned-over part of a flip and have more than a quarter of a second to go. The flip itself, short blends and slow blends from an upright pose are drawn as before. It works on other players, on your own model in behind view and for spectators.
+
+A model that comes into view in the middle of such a blend is drawn in the pose the blend ends in, with `FAF_Instant` and with `FAF_FinishFlip`. The game would blend it from the pose it had when you last saw it. Whether a model was on your screen is an estimate: it is inside your view and the line to it is clear.
+
+A player with [EnableDebugData](#enabledebugdata) on gets one `Flip fix:` line in the debug log for every such blend, with any value of this setting. It names the player, the animation the blend goes to, the milliseconds it had left, how much of the pose was a turned-over one (1.0 is all of it) and what was done (`off`, `instant` or `flip`). `seen again in a blend to` marks a model that came into view in the middle of the blend.
+
+In the IG+ menu this is `Flip Animation Fix`, under `Advanced`.
 
 ## bEnableKillCam
 **Type: bool**  
