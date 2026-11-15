@@ -18,7 +18,9 @@ function DrawItem(Canvas C, UWindowList Item, float X, float Y, float W, float H
 
 	Descr = L.Index $ ": ";
 
-	if (L.Texture != "")
+	if (L.Shape != 0)
+		Descr = Descr $ class'CrosshairLayer'.default.ShapeNames[Min(L.Shape, 5)] $ " ";
+	else if (L.Texture != "")
 		Descr = Descr $ L.Texture $ " ";
 
 	if (L.ScaleX != 1.0 || L.ScaleY != 1.0)

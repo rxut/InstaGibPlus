@@ -8,6 +8,8 @@ var() color  Color;
 var() byte   Style;
 var() bool   bSmooth;
 var() bool   bUse;
+var() byte   Shape;
+var() int    Thickness;
 
 var Texture Tex;
 

@@ -1,4 +1,5 @@
-class IGPlus_TestCommandlet extends Commandlet;
+class IGPlus_TestCommandlet extends Commandlet
+	dependson(ClientSettings); // the crosshair layer struct
 
 function LogTestResult(bool Result, string TestName) {
 	if (Result)
@@ -481,6 +482,54 @@ function TestCrosshairPresets() {
 		"CrosshairPresets_sixteen_slots");
 }
 
+// A crosshair shape as text, row after row: # for a pixel of the shape, . for none.
+function string ShapePic(byte Shape, int W, int H, int Thickness) {
+	local int Row, i, First, Last, HoleFirst, HoleLast;
+	local string S;
+
+	for (Row = 0; Row < H; Row++) {
+		if (Row > 0)
+			S = S$"/";
+		if (class'CrosshairLayer'.static.ShapeRow(Shape, W, H, Thickness, Row, First, Last, HoleFirst, HoleLast) == false) {
+			First = 1;
+			Last = 0;
+		}
+		for (i = 0; i < W; i++) {
+			if (i >= First && i <= Last && (i < HoleFirst || i > HoleLast))
+				S = S$"#";
+			else
+				S = S$".";
+		}
+	}
+	return S;
+}
+
+function TestCrosshairShapes() {
+	local ClientSettings.CrosshairLayerDescr D;
+	local CrosshairLayer L;
+	local ClientSettings S;
+	local int First, Last, HoleFirst, HoleLast;
+
+	LogTestResult(ShapePic(1, 5, 5, 0) == ".###./#####/#####/#####/.###.", "CrosshairShape_circle_5");
+	LogTestResult(ShapePic(1, 4, 4, 0) == ".##./####/####/.##.", "CrosshairShape_circle_4");
+	LogTestResult(ShapePic(1, 7, 7, 1) == "..###../.#...#./#.....#/#.....#/#.....#/.#...#./..###..", "CrosshairShape_ring_7");
+	LogTestResult(ShapePic(2, 5, 5, 1) == "#####/#...#/#...#/#...#/#####", "CrosshairShape_square_outline");
+	LogTestResult(ShapePic(2, 5, 5, 3) == "#####/#####/#####/#####/#####", "CrosshairShape_outline_thicker_than_the_shape_fills_it");
+	LogTestResult(ShapePic(3, 5, 5, 0) == "..#../.###./#####/.###./..#..", "CrosshairShape_diamond");
+	LogTestResult(ShapePic(4, 9, 5, 0) == "....#..../...###.../..#####../.#######./#########", "CrosshairShape_triangle_up");
+	LogTestResult(ShapePic(5, 9, 5, 0) == "#########/.#######./..#####../...###.../....#....", "CrosshairShape_triangle_down");
+	LogTestResult(class'CrosshairLayer'.static.ShapeRow(0, 5, 5, 0, 2, First, Last, HoleFirst, HoleLast) == false
+		&& class'CrosshairLayer'.static.ShapeRow(1, 0, 5, 0, 2, First, Last, HoleFirst, HoleLast) == false,
+		"CrosshairShape_no_shape_and_no_width_draw_nothing");
+
+	D.Shape = 3;
+	D.Thickness = 2;
+	S = new(none, 'IGPlusShapeTest') class'ClientSettings';
+	L = S.MakeCrosshairLayer(D);
+	LogTestResult(L.Shape == 3 && L.Thickness == 2 && InStr(class'ClientSettings'.static.DumpCrosshairLayer(D), ",Shape=3,Thickness=2)") >= 0,
+		"CrosshairShape_a_layer_and_the_dump_keep_shape_and_thickness");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
@@ -493,5 +542,6 @@ event int main(string Params) {
 	TestFireOrder();
 	TestTickInterp();
 	TestCrosshairPresets();
+	TestCrosshairShapes();
 	return 0;
 }
