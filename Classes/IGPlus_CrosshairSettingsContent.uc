@@ -614,7 +614,7 @@ function Notify(UWindowDialogControl C, byte E) {
 		} else if (C == Edit_ColorAlpha && Edit_ColorAlpha.EditBox.bCanEdit) {
 			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.A = ColorValue(Edit_ColorAlpha);
 		} else if (C == Cmb_Style && LB_Layers.SelectedItem != none) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Style = int(Cmb_Style.GetValue2()) + 1;
+			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Style = int(Cmb_Style.GetValue2()); // the entry's style, 1 to 4
 		} else if (C == Chk_Smooth && Chk_Smooth.bDisabled == false) {
 			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).bSmooth = Chk_Smooth.bChecked;
 		} else if (C == Cmb_Shape && LB_Layers.SelectedItem != none) {
