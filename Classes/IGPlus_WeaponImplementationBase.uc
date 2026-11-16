@@ -101,7 +101,24 @@ function float IGPlus_GetHitscanRewindMs(Pawn Instigator) {
 	bbP = bbPlayer(Instigator);
 	if (bbP != None && bbP.IGPlus_PRTUsable())
 		return bbP.IGPlus_PRTLagMs;
+	// No report we can take: our own measure of the shooter's ping, the
+	// lowest of the last readings, plus the delays that come on top of it
+	// (Adaptive Buffering, Tick Interpolation's drawing delay). The average
+	// below comes from the time stamps of the client's moves, which the
+	// client writes itself and which run late after every moment of lag.
+	if (bbP != None && bbP.IGPlus_PingLowMs() > 0.0 && IGPlus_GetSnapshotInterpRewindMs(Instigator) <= 0.0
+		&& bbP.GetWeaponSettings() != None && bbP.GetWeaponSettings().bEnablePreciseRewindTime)
+		return IGPlus_GetServerPingRewindMs(bbP);
 	return IGPlus_GetAveragePingRewindMs(Instigator);
+}
+
+function float IGPlus_GetServerPingRewindMs(bbPlayer bbP) {
+	local float Ms;
+
+	Ms = bbP.IGPlus_PingLowMs() + float(bbP.IGPlus_ABDelayMs) + IGPlus_GetTickInterpDelayMs(bbP);
+	if (WSettingsRepl != None && Ms > WSettingsRepl.PingCompensationMax)
+		Ms = WSettingsRepl.PingCompensationMax;
+	return FMax(0.0, Ms);
 }
 
 function float IGPlus_GetAveragePingRewindMs(Pawn Instigator) {
