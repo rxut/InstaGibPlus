@@ -4084,8 +4084,14 @@ function IGPlus_PRTNote(int Data) {
 		IGPlus_PRTReason = "above PingCompensationMax";
 	// (A queued move ran IGPlus_ABDelayMs after it arrived, Adaptive
 	// Buffering: the report is that much older than our ping.)
+	// Older than our ping says by more than the deviation: more rewind than
+	// the line can explain. Younger: checked against the lowest of our last
+	// readings, as a moment of lag raises the readings after it for a while
+	// while the player's screen is current again. A younger picture gives
+	// a shot nothing.
 	else if (IGPlus_PRTServerPing > 0
-		&& Abs(IGPlus_PRTLagMs - IGPlus_PRTServerPing - IGPlus_ABDelayMs) > WS.PreciseRewindTimeMaxDeviationMs)
+		&& (IGPlus_PRTLagMs > IGPlus_PRTServerPing + IGPlus_ABDelayMs + WS.PreciseRewindTimeMaxDeviationMs
+			|| IGPlus_PRTLagMs < IGPlus_PingLowMs() + IGPlus_ABDelayMs - WS.PreciseRewindTimeMaxDeviationMs))
 		IGPlus_PRTReason = "server ping"@int(IGPlus_PRTServerPing)@"ms";
 	IGPlus_PRTLagMs = FMax(0, IGPlus_PRTLagMs);
 }
@@ -4120,8 +4126,9 @@ function IGPlus_PRTNoteInterp(int Data, WeaponSettingsRepl WS) {
 		IGPlus_PRTReason = "report ahead of our clock";
 	else if (IGPlus_PRTLagMs > WS.PingCompensationMax)
 		IGPlus_PRTReason = "above PingCompensationMax";
+	// (Younger: against the lowest of our last readings, see IGPlus_PRTNote.)
 	else if (IGPlus_PRTServerPing > 0
-		&& (IGPlus_PRTLagMs < IGPlus_PRTServerPing + IGPlus_ABDelayMs - WS.PreciseRewindTimeMaxDeviationMs
+		&& (IGPlus_PRTLagMs < IGPlus_PingLowMs() + IGPlus_ABDelayMs - WS.PreciseRewindTimeMaxDeviationMs
 			|| IGPlus_PRTLagMs > MaxLag + IGPlus_ABDelayMs + WS.PreciseRewindTimeMaxDeviationMs))
 		IGPlus_PRTReason = "server ping"@int(IGPlus_PRTServerPing)@"ms";
 	IGPlus_PRTLagMs = FMax(0, IGPlus_PRTLagMs);
@@ -7037,6 +7044,20 @@ static function bool IGPlus_ShotRunsFirst(float AgoArrivedLater, float AgoArrive
 	return AgoArrivedLater > AgoArrivedFirst + Margin;
 }
 
+// Server: the lowest of our last readings of this player's ping (two a
+// second, IGPlus_PingRing), in ms. 0 before the first one. A client can't
+// make it lower than its line is, and a moment of lag (a stop of its
+// download) raises the readings that follow it for a while but not this.
+function float IGPlus_PingLowMs() {
+	local float PingMs;
+	local int i;
+
+	for (i = 0; i < arraycount(IGPlus_PingRing); i++)
+		if (IGPlus_PingRing[i] > 0.0 && (PingMs == 0.0 || IGPlus_PingRing[i] < PingMs))
+			PingMs = IGPlus_PingRing[i];
+	return PingMs;
+}
+
 // Server: how long before now the shot of the move stamped StepTS was fired.
 // The move's stamp is the client's clock. The arrival measure of Adaptive
 // Buffering maps it to ours (it runs with the setting off too): Late is
@@ -7046,13 +7067,10 @@ static function bool IGPlus_ShotRunsFirst(float AgoArrivedLater, float AgoArrive
 // only makes its shots look later.
 function float IGPlus_ShotAgo(float StepTS) {
 	local float Late, PingMs;
-	local int i;
 
 	if (IGPlus_ABMeasureStart > 0.0 && Level.TimeSeconds - IGPlus_ABMeasureStart >= IGPLUS_AB_WARMUP)
 		Late = FClamp(IGPlus_ABBase() - StepTS, 0.0, 0.25);
-	for (i = 0; i < arraycount(IGPlus_PingRing); i++)
-		if (IGPlus_PingRing[i] > 0.0 && (PingMs == 0.0 || IGPlus_PingRing[i] < PingMs))
-			PingMs = IGPlus_PingRing[i];
+	PingMs = IGPlus_PingLowMs();
 	if (PingMs == 0.0 && PlayerReplicationInfo != None)
 		PingMs = PlayerReplicationInfo.Ping;
 	return Late + 0.0005 * PingMs * Level.TimeDilation;
