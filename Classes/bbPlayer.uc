@@ -418,6 +418,18 @@ var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving
 var vector IGPlus_PushCamOffset;            // camera lag after a push our client couldn't predict (always eased)
 var bool IGPlus_CAPPushed;                  // client: a correction since the last replay says a push made it
 var float IGPlus_PushEaseTS;                // server: move time of the last push the client couldn't predict
+// Own boarding (client): a moving lift we do not ride is moved, for the length of
+// one of our own moves, to where the server has it when it runs that move, then put
+// back where it is drawn (IGPlus_OBBegin, IGPlus_OBEnd).
+var Mover IGPlus_OBLift;                    // moved for the move running now
+var vector IGPlus_OBDrawn;                  // where it is drawn
+var Actor IGPlus_OBRiders[8];               // what stood on it, put back on it after
+var int IGPlus_OBNumRiders;
+var Mover IGPlus_OBMovers[64];              // the level's movers, found once
+var int IGPlus_OBNumMovers;
+var bool IGPlus_OBMoversFound;
+var Mover IGPlus_OBLastBase;                // the lift we last rode, and when
+var float IGPlus_OBLastBaseTS;
 var float IGPlus_LiftExitTS;                // when we last left a moving lift
 var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
 var Actor IGPlus_DbgLastBase;               // debug: base before the last change
@@ -3235,6 +3247,10 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 	if (M.bIGPlusTloc)
 		IGPlus_ReplayTranslocate(M.IGPlusTlocDest);
 
+	// Own boarding: the lift where it was put for this move the first time.
+	if (M.IGPlus_OBLift != None && M.IGPlus_OBLift.bDeleteMe == false && M.IGPlus_OBLift != Base)
+		IGPlus_OBPut(M.IGPlus_OBLift, M.IGPlus_OBLoc);
+
 	MergeCount = M.IGPlus_MergeCount + 1;
 	dt = M.Delta / MergeCount;
 	for (MoveIndex = 0; MoveIndex < MergeCount; MoveIndex++) {
@@ -3253,6 +3269,7 @@ function IGPlus_ClientReplayMove(IGPlus_SavedMove M) {
 
 		IGPlus_MoveAutonomous(dt, bDoRun, bDoDuck, bDoJump, DoDodge, M.Acceleration, rot(0,0,0));
 	}
+	IGPlus_OBEnd(true);
 
 	if (M.IGPlus_LiftExitShift != vect(0,0,0))
 		MoveSmooth(M.IGPlus_LiftExitShift);
@@ -3452,6 +3469,181 @@ simulated function IGPlus_LeftMovingLift(Mover Lift, IGPlus_SavedMove Move) {
 	IGPlus_LiftExitCamOffset -= Move.IGPlus_LiftExitShift;
 	IgnoreZChangeTicks = 2; // not a step up: no eye-height smoothing on top
 	ClientDebugMessage("Left a moving lift: moved "$int(Move.IGPlus_LiftExitShift.Z)$"uu to the server's spot, speed "$int(Move.IGPlus_LiftExitVelZ));
+}
+
+// Own boarding, client: the level's movers, found once (they are level actors).
+simulated function IGPlus_OBFindMovers() {
+	local Mover M;
+
+	IGPlus_OBMoversFound = true;
+	IGPlus_OBNumMovers = 0;
+	foreach AllActors(class'Mover', M)
+		if (IGPlus_OBNumMovers < arraycount(IGPlus_OBMovers)) {
+			IGPlus_OBMovers[IGPlus_OBNumMovers] = M;
+			IGPlus_OBNumMovers++;
+		}
+}
+
+// Own boarding, client, before one of our own moves (Move: the saved move it goes in).
+// Our copy of a moving lift is behind the server's: its updates come a one-way late and
+// our moves reach the server a one-way late. The server runs our move before its lift
+// moves in that tick. We take our ping (PingAverage, the age of our newest acknowledged
+// move) as the lead: on a test rig at 10 to 172 ping that had us on the lift on the move
+// the server did or one tick before it in most boardings, which cost no corrections.
+// Two ticks early or one tick late cost a correction every tick for a round trip.
+// Walking at a lift in the last part of its way down, our screen had it 15 to 30 uu
+// higher than the server: we slid along its edge while the server had us on it, and got
+// a correction every tick until our copy came low enough. Now our move is tested against
+// the lift where the server has it, so we step on, bump into and land on it on the move
+// the server does. Only for our own moves: the lift is drawn where it was, the server
+// runs the lift and decides as before, and other players see us from the server.
+// Not the lift we ride (positions on it are compared on the lift), not one we left
+// within a ping and a bit (Smooth Lift Jump has us there already), and not when the
+// moved lift would be inside us.
+simulated function IGPlus_OBBegin(IGPlus_SavedMove Move) {
+	local Mover M, Best;
+	local vector Lead, VelLead, BestLead, D;
+	local float Ahead, Dist, BestDist;
+	local int i;
+
+	if (Move != None)
+		Move.IGPlus_OBLift = None;
+	IGPlus_OBLift = None;
+	if (Level.NetMode != NM_Client)
+		return;
+	if (IGPlus_OBMoversFound == false)
+		IGPlus_OBFindMovers();
+	Ahead = float(PingAverage) * 0.001 * Level.TimeDilation;
+	if (Mover(Base) != None) {
+		IGPlus_OBLastBase = Mover(Base);
+		IGPlus_OBLastBaseTS = Level.TimeSeconds;
+		// The lift we ride stays where it is drawn, but the move notes where the
+		// server has it: a correction may put us back off it (we got on a move or
+		// two before the server), and the replay must meet that lift, not the drawn one.
+		if (Move != None && IGPlus_LiftAhead(Mover(Base), Ahead, Lead, VelLead) && VSize(Lead) >= 0.5) {
+			Move.IGPlus_OBLift = Mover(Base);
+			Move.IGPlus_OBLoc = Base.Location + Lead;
+		}
+	}
+	BestDist = 768.0;
+	for (i = 0; i < IGPlus_OBNumMovers; i++) {
+		M = IGPlus_OBMovers[i];
+		if (M == None || M.bDeleteMe || M == Base)
+			continue;
+		if (M == IGPlus_OBLastBase && Level.TimeSeconds - IGPlus_OBLastBaseTS < Ahead + 0.3 * Level.TimeDilation)
+			continue;
+		D = M.Location - Location;
+		D.Z = 0;
+		Dist = VSize(D);
+		if (Dist >= BestDist)
+			continue;
+		if (IGPlus_LiftAhead(M, Ahead, Lead, VelLead) == false || VSize(Lead) < 0.5)
+			continue;
+		// Lifts and gates that go up and down only: our test for a mover cutting
+		// through us looks along our height, not across it.
+		if (Abs(Lead.Z) < 2.0 * VSize(Lead * vect(1,1,0)))
+			continue;
+		Best = M;
+		BestDist = Dist;
+		BestLead = Lead;
+	}
+	if (Best == None)
+		return;
+	IGPlus_OBPut(Best, Best.Location + BestLead);
+	if (IGPlus_OBInside(Best)) {
+		IGPlus_OBEnd(true);
+		return;
+	}
+	if (Move != None) {
+		Move.IGPlus_OBLift = Best;
+		Move.IGPlus_OBLoc = Best.Location;
+	}
+}
+
+// Own boarding: move our copy of M to Loc with its collision off (a mover moved onto
+// something runs encroachment), noting what stood on it: moving it takes them off.
+simulated function IGPlus_OBPut(Mover M, vector Loc) {
+	local Actor A;
+	local bool bC, bA, bP;
+
+	IGPlus_OBNumRiders = 0;
+	foreach M.BasedActors(class'Actor', A)
+		if (A != self && IGPlus_OBNumRiders < arraycount(IGPlus_OBRiders)) {
+			IGPlus_OBRiders[IGPlus_OBNumRiders] = A;
+			IGPlus_OBNumRiders++;
+		}
+	IGPlus_OBLift = M;
+	IGPlus_OBDrawn = M.Location;
+	bC = M.bCollideActors;
+	bA = M.bBlockActors;
+	bP = M.bBlockPlayers;
+	M.SetCollision(false, false, false);
+	M.SetLocation(Loc);
+	M.SetCollision(bC, bA, bP);
+}
+
+// Own boarding: the moved lift cuts through our body (we are under it, or just off it).
+simulated function bool IGPlus_OBInside(Mover M) {
+	local Actor A;
+	local vector HL, HN, Top, Bottom;
+
+	Top = Location + vect(0,0,1) * CollisionHeight;
+	Bottom = Location - vect(0,0,1) * (CollisionHeight - 2.0);
+	foreach TraceActors(class'Actor', A, HL, HN, Bottom, Top)
+		if (A == M)
+			return true;
+	foreach TraceActors(class'Actor', A, HL, HN, Top, Bottom)
+		if (A == M)
+			return true;
+	return false;
+}
+
+// Own boarding, after the move: the lift goes back where it is drawn and whatever stood
+// on it is set on it again. If we got on it in this move we ride back with it, as a rider
+// does, and (not in a replay) the view follows over 0.1 s (IGPlus_LiftExitCamOffset).
+simulated function IGPlus_OBEnd(bool bReplay) {
+	local Mover M;
+	local vector D;
+	local bool bOn, bC, bA, bP, bW;
+	local bool bOldActCol, bOldBlockAct, bOldBlockPlayer;
+	local int i;
+
+	M = IGPlus_OBLift;
+	if (M == None)
+		return;
+	IGPlus_OBLift = None;
+	bOn = Base == M;
+	D = IGPlus_OBDrawn - M.Location;
+	bC = M.bCollideActors;
+	bA = M.bBlockActors;
+	bP = M.bBlockPlayers;
+	M.SetCollision(false, false, false);
+	M.SetLocation(IGPlus_OBDrawn);
+	M.SetCollision(bC, bA, bP);
+	for (i = 0; i < IGPlus_OBNumRiders; i++) {
+		if (IGPlus_OBRiders[i] != None && IGPlus_OBRiders[i].bDeleteMe == false && IGPlus_OBRiders[i].Base == None)
+			IGPlus_OBRiders[i].SetBase(M);
+		IGPlus_OBRiders[i] = None;
+	}
+	IGPlus_OBNumRiders = 0;
+	if (bOn == false || VSize(D) < 0.01)
+		return;
+	bW = bCollideWorld;
+	bOldActCol = bCollideActors;
+	bOldBlockAct = bBlockActors;
+	bOldBlockPlayer = bBlockPlayers;
+	bCollideWorld = false;
+	SetCollision(false, false, false);
+	SetLocation(Location + D);
+	bCollideWorld = bW;
+	SetCollision(bOldActCol, bOldBlockAct, bOldBlockPlayer);
+	SetBase(M);
+	if (bReplay)
+		return;
+	IGPlus_LiftExitCamOffset -= D;
+	IgnoreZChangeTicks = 2;
+	if (bDrawDebugData)
+		ClientDebugMessage("Own boarding: got on "$M.Name$" where the server has it, "$int(-D.Z)$"uu from where it is drawn");
 }
 
 // Debug (enableDebugData): stepping on or off a lift, on each side. A lift
@@ -10703,9 +10895,12 @@ function xxReplicateMove(
 		ExitLift = Mover(Base);
 	DbgOldBase = Base;
 
+	// Own boarding: a moving lift by us where the server has it, for this move.
+	IGPlus_OBBegin(NewMove);
 	// Simulate the movement locally.
 	ProcessMove(DeltaTime, NewAccel, DodgeMove, DeltaRot);
 	AutonomousPhysics(DeltaTime);
+	IGPlus_OBEnd(false);
 
 	CorrectTeleporterVelocity();
 
