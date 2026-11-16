@@ -28,6 +28,9 @@ var bool bIGPlusTloc;
 var vector IGPlusTlocDest;
 var vector IGPlus_LiftExitShift; // left a moving lift: moved to the server's spot after the move
 var float IGPlus_LiftExitVelZ;
+// Own boarding: the lift moved for this move and where it was put (bbPlayer.IGPlus_OBBegin).
+var Mover IGPlus_OBLift;
+var vector IGPlus_OBLoc;
 // Precise Rewind Time: what our last frame showed (bbPlayer.SendSavedMove).
 var int IGPlus_PRTData;
 // The eye height this move's hitscan shot was traced from (bbPlayer.IGPlus_EyePack). 0: none.
@@ -41,6 +44,7 @@ function Clear2() {
     bIGPlusTloc = false;
     IGPlus_LiftExitShift = vect(0,0,0);
     IGPlus_LiftExitVelZ = 0.0;
+    IGPlus_OBLift = none;
     IGPlus_ShotEye = 0;
     JumpIndex = -1;
     DodgeIndex = -1;
