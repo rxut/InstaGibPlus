@@ -720,6 +720,25 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	PingCompensationMax = S.PingCompensationMax;
 
 	bEnableAnimationAdaptiveHeadHitbox = S.bEnableAnimationAdaptiveHeadHitbox;
+
+	IGPlus_ApplyTickInterpLocks();
+}
+
+// Tick Interpolation draws the other players later and reports what the
+// screen drew with every shot. Without ping compensation and Precise Rewind
+// Time the server tests the present instead, so both are on while it is,
+// whatever the weapon section says. The ini keeps its own values. The server
+// settings load after the weapon settings at map start: UTPure.PostBeginPlay
+// calls InitFromWeaponSettings again, and so does a change of either.
+function IGPlus_ApplyTickInterpLocks() {
+	local UTPure Pure;
+
+	foreach AllActors(class'UTPure', Pure)
+		break;
+	if (Pure == None || Pure.Settings == None || Pure.Settings.TickInterpolationActive() == false)
+		return;
+	bEnablePingCompensation = true;
+	bEnablePreciseRewindTime = true;
 }
 
 defaultproperties

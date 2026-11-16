@@ -233,6 +233,8 @@ var IGPlus_EditControl Edit_AdaptiveBufferingMax;
 var UWindowCheckbox Chk_bEnableTickInterpolation;
 var localized string bEnableTickInterpolationText;
 var localized string bEnableTickInterpolationHelp;
+var localized string InputReplicationOffHelp;
+var localized string SnapshotInterpolationOffHelp;
 var localized string AdaptiveBufferingMaxText;
 var localized string AdaptiveBufferingMaxHelp;
 
@@ -629,6 +631,38 @@ function DeletePasswordFromUI() {
 	DeletePasswordFromHistory(Password);
 }
 
+// A grayed-out box shows what another setting makes of it, not the ini
+// (ApplyServerLocks): its key is left alone.
+function SaveBoxIfOpen(ServerSettings S, string Key, UWindowCheckbox Chk) {
+	if (Chk.bDisabled == false)
+		SaveServerSettingIfChanged(S, Key, BoolToString(Chk.bChecked));
+}
+
+// Input Replication turns off what is built on the normal move path, and
+// Snapshot Interpolation turns off Tick Interpolation (ServerSettings.*Active).
+// Those boxes show it: unticked and grayed out, with the reason as help. Runs
+// when the window loads and when either box is clicked.
+function ApplyServerLocks() {
+	local ServerSettings S;
+	local bool bIR, bSI;
+
+	S = FindServerSettingsObject();
+	if (S == none)
+		return;
+	bIR = Chk_bEnableInputReplication.bChecked;
+	bSI = Chk_bEnableSnapshotInterpolation.bChecked;
+	IGPlus_Checkbox(Chk_bEnablePredictedSwitching).SetLock(bIR, false, S.bEnablePredictedSwitching, bEnablePredictedSwitchingHelp, InputReplicationOffHelp);
+	IGPlus_Checkbox(Chk_bEnablePredictedTranslocation).SetLock(bIR, false, S.bEnablePredictedTranslocation, bEnablePredictedTranslocationHelp, InputReplicationOffHelp);
+	IGPlus_Checkbox(Chk_bEnablePredictedSelfKnockback).SetLock(bIR, false, S.bEnablePredictedSelfKnockback, bEnablePredictedSelfKnockbackHelp, InputReplicationOffHelp);
+	IGPlus_Checkbox(Chk_bEnablePushSafeAim).SetLock(bIR, false, S.bEnablePushSafeAim, bEnablePushSafeAimHelp, InputReplicationOffHelp);
+	IGPlus_Checkbox(Chk_bEnableDeterministicTranslocator).SetLock(bIR, false, S.bEnableDeterministicTranslocator, bEnableDeterministicTranslocatorHelp, InputReplicationOffHelp);
+	IGPlus_Checkbox(Chk_bEnableAdaptiveBuffering).SetLock(bIR, false, S.bEnableAdaptiveBuffering, bEnableAdaptiveBufferingHelp, InputReplicationOffHelp);
+	if (bIR)
+		IGPlus_Checkbox(Chk_bEnableTickInterpolation).SetLock(true, false, S.bEnableTickInterpolation, bEnableTickInterpolationHelp, InputReplicationOffHelp);
+	else
+		IGPlus_Checkbox(Chk_bEnableTickInterpolation).SetLock(bSI, false, S.bEnableTickInterpolation, bEnableTickInterpolationHelp, SnapshotInterpolationOffHelp);
+}
+
 function SaveServerSettings() {
 	local ServerSettings S;
 
@@ -661,11 +695,11 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bAllowMultiWeapon", BoolToString(Chk_bAllowMultiWeapon.bChecked));
 	SaveServerSettingIfChanged(S, "bDelayedPickupSpawn", BoolToString(Chk_bDelayedPickupSpawn.bChecked));
 	SaveServerSettingIfChanged(S, "bUseFastWeaponSwitch", BoolToString(Chk_bUseFastWeaponSwitch.bChecked));
-	SaveServerSettingIfChanged(S, "bEnablePredictedSwitching", BoolToString(Chk_bEnablePredictedSwitching.bChecked));
-	SaveServerSettingIfChanged(S, "bEnablePredictedTranslocation", BoolToString(Chk_bEnablePredictedTranslocation.bChecked));
-	SaveServerSettingIfChanged(S, "bEnablePredictedSelfKnockback", BoolToString(Chk_bEnablePredictedSelfKnockback.bChecked));
-	SaveServerSettingIfChanged(S, "bEnablePushSafeAim", BoolToString(Chk_bEnablePushSafeAim.bChecked));
-	SaveServerSettingIfChanged(S, "bEnableDeterministicTranslocator", BoolToString(Chk_bEnableDeterministicTranslocator.bChecked));
+	SaveBoxIfOpen(S, "bEnablePredictedSwitching", Chk_bEnablePredictedSwitching);
+	SaveBoxIfOpen(S, "bEnablePredictedTranslocation", Chk_bEnablePredictedTranslocation);
+	SaveBoxIfOpen(S, "bEnablePredictedSelfKnockback", Chk_bEnablePredictedSelfKnockback);
+	SaveBoxIfOpen(S, "bEnablePushSafeAim", Chk_bEnablePushSafeAim);
+	SaveBoxIfOpen(S, "bEnableDeterministicTranslocator", Chk_bEnableDeterministicTranslocator);
 	SaveServerSettingIfChanged(S, "bEnablePredictedDiscBoost", BoolToString(Chk_bEnablePredictedDiscBoost.bChecked));
 	SaveServerSettingIfChanged(S, "bTellSpectators", BoolToString(Chk_bTellSpectators.bChecked));
 
@@ -691,9 +725,9 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "SnapshotInterpRewindMs", Edit_SnapshotInterpRewindMs.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableWarpFix", BoolToString(Chk_bEnableWarpFix.bChecked));
 	SaveServerSettingIfChanged(S, "WarpFixDelay", Edit_WarpFixDelay.GetValue());
-	SaveServerSettingIfChanged(S, "bEnableAdaptiveBuffering", BoolToString(Chk_bEnableAdaptiveBuffering.bChecked));
+	SaveBoxIfOpen(S, "bEnableAdaptiveBuffering", Chk_bEnableAdaptiveBuffering);
 	SaveServerSettingIfChanged(S, "AdaptiveBufferingMax", Edit_AdaptiveBufferingMax.GetValue());
-	SaveServerSettingIfChanged(S, "bEnableTickInterpolation", BoolToString(Chk_bEnableTickInterpolation.bChecked));
+	SaveBoxIfOpen(S, "bEnableTickInterpolation", Chk_bEnableTickInterpolation);
 
 	SaveServerSettingIfChanged(S, "MinClientRate", Edit_MinClientRate.GetValue());
 	SaveServerSettingIfChanged(S, "MaxClientRate", Edit_MaxClientRate.GetValue());
@@ -1118,6 +1152,7 @@ function LoadServerSettings() {
 	Chk_bEnableAdaptiveBuffering.bChecked = S.bEnableAdaptiveBuffering;
 	Edit_AdaptiveBufferingMax.SetValue(string(S.AdaptiveBufferingMax));
 	Chk_bEnableTickInterpolation.bChecked = S.bEnableTickInterpolation;
+	ApplyServerLocks();
 
 	Edit_MinClientRate.SetValue(string(S.MinClientRate));
 	Edit_MaxClientRate.SetValue(string(S.MaxClientRate));
@@ -1396,6 +1431,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 function Notify(UWindowDialogControl C, byte E) {
 	super.Notify(C, E);
 
+	if (E == DE_Change && (C == Chk_bEnableInputReplication || C == Chk_bEnableSnapshotInterpolation))
+		ApplyServerLocks();
 	if (E == DE_Click && C == Btn_AdminAuth) {
 		if (HasServerAdminAccess())
 			AdminLogoutFromUI();
@@ -1616,7 +1653,9 @@ defaultproperties
 	bEnableAdaptiveBufferingHelp="If checked, the server evens out the movement of a player whose packets arrive late or in clumps. Their moves wait in a short queue and play at the pace they were made, so other players see an even path instead of a stop and a jump. That player gets extra delay, up to Adaptive Buffering Max, and no corrections from it. A player whose packets arrive on time is not queued and plays as before. Replaces jitter bounding, which does not run while this is on. Has no effect with input replication."
 	AdaptiveBufferingMaxText="Adaptive Buffering Max"
 	bEnableTickInterpolationText="Tick Interpolation"
-	bEnableTickInterpolationHelp="If checked, clients draw other players between two server updates, a little in the past, and a shot is tested against the exact spot the shooter's screen drew. Needs ping compensation and Precise Rewind Time. Not with Snapshot Interpolation or Input Replication."
+	bEnableTickInterpolationHelp="If checked, clients draw other players between two server updates, a little in the past, and a shot is tested against the exact spot the shooter's screen drew. Keeps ping compensation and Precise Rewind Time on. Not with Snapshot Interpolation or Input Replication."
+	InputReplicationOffHelp="Server setting: off while Input Replication is on, which doesn't use it"
+	SnapshotInterpolationOffHelp="Server setting: off while Snapshot Interpolation is on, which draws players its own way"
 	AdaptiveBufferingMaxHelp="The most delay Adaptive Buffering gives one player, in milliseconds. Movement that arrives later than this runs at once, as without Adaptive Buffering."
 
 	ClientEnforcementText="Client Enforcement"

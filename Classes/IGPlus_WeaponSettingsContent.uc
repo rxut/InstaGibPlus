@@ -85,6 +85,8 @@ var localized string bEnableSubTickCompensationHelp;
 var UWindowCheckbox Chk_bEnablePreciseRewindTime;
 var localized string bEnablePreciseRewindTimeText;
 var localized string bEnablePreciseRewindTimeHelp;
+var localized string TickInterpLockHelp;
+var localized string NeedsPingCompHelp;
 var UWindowCheckbox Chk_bEnableTrades;
 var localized string bEnableTradesText;
 var localized string bEnableTradesHelp;
@@ -900,9 +902,13 @@ function SaveWeaponSettings() {
 	SaveWeaponSettingIfChanged(S, "SplashWraparoundRadiusScale", Edit_SplashWraparoundRadiusScale.GetValue());
 	SaveWeaponSettingIfChanged(S, "HeadHalfHeight", Edit_HeadHalfHeight.GetValue());
 	SaveWeaponSettingIfChanged(S, "HeadRadius", Edit_HeadRadius.GetValue());
-	SaveWeaponSettingIfChanged(S, "bEnablePingCompensation", BoolToString(Chk_bEnablePingCompensation.bChecked));
-	SaveWeaponSettingIfChanged(S, "bEnableSubTickCompensation", BoolToString(Chk_bEnableSubTickCompensation.bChecked));
-	SaveWeaponSettingIfChanged(S, "bEnablePreciseRewindTime", BoolToString(Chk_bEnablePreciseRewindTime.bChecked));
+	// A grayed-out box shows what another setting makes of it, not the ini.
+	if (Chk_bEnablePingCompensation.bDisabled == false)
+		SaveWeaponSettingIfChanged(S, "bEnablePingCompensation", BoolToString(Chk_bEnablePingCompensation.bChecked));
+	if (Chk_bEnableSubTickCompensation.bDisabled == false)
+		SaveWeaponSettingIfChanged(S, "bEnableSubTickCompensation", BoolToString(Chk_bEnableSubTickCompensation.bChecked));
+	if (Chk_bEnablePreciseRewindTime.bDisabled == false)
+		SaveWeaponSettingIfChanged(S, "bEnablePreciseRewindTime", BoolToString(Chk_bEnablePreciseRewindTime.bChecked));
 	SaveWeaponSettingIfChanged(S, "bEnableTrades", BoolToString(Chk_bEnableTrades.bChecked));
 	SaveWeaponSettingIfChanged(S, "bEnableFireTimeOrder", BoolToString(Chk_bEnableFireTimeOrder.bChecked));
 	SaveWeaponSettingIfChanged(S, "PreciseRewindTimeMaxDeviationMs", Edit_PreciseRewindTimeMaxDeviationMs.GetValue());
@@ -1496,6 +1502,35 @@ function ConfigureResponsiveWeaponControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_TranslocatorHealth, C, ControlWidth, 80);
 }
 
+// The server's Tick Interpolation keeps ping compensation and Precise Rewind
+// Time on (WeaponSettingsRepl.IGPlus_ApplyTickInterpLocks). Known from our own
+// player; a spectating admin doesn't know it, and the boxes stay open there.
+function bool TickInterpLocks() {
+	return ResolveOwnerBBPlayer() != none && ResolveOwnerBBPlayer().IGPlus_EnableTickInterp;
+}
+
+// What other settings make of three boxes (IGPlus_Checkbox.SetLock). Tick
+// Interpolation keeps ping compensation and Precise Rewind Time on. Without
+// ping compensation nothing is rewound, so Precise Rewind Time and sub-tick
+// compensation do nothing. Runs when the window loads and when the ping
+// compensation box is clicked. The window stays open across servers.
+function ApplyWeaponLocks() {
+	local WeaponSettings S;
+	local bool bTI, bPC;
+
+	S = FindWeaponSettingsObject();
+	if (S == none)
+		return;
+	bTI = TickInterpLocks();
+	IGPlus_Checkbox(Chk_bEnablePingCompensation).SetLock(bTI, true, S.bEnablePingCompensation, bEnablePingCompensationHelp, TickInterpLockHelp);
+	bPC = Chk_bEnablePingCompensation.bChecked;
+	if (bTI)
+		IGPlus_Checkbox(Chk_bEnablePreciseRewindTime).SetLock(true, true, S.bEnablePreciseRewindTime, bEnablePreciseRewindTimeHelp, TickInterpLockHelp);
+	else
+		IGPlus_Checkbox(Chk_bEnablePreciseRewindTime).SetLock(bPC == false, false, S.bEnablePreciseRewindTime, bEnablePreciseRewindTimeHelp, NeedsPingCompHelp);
+	IGPlus_Checkbox(Chk_bEnableSubTickCompensation).SetLock(bPC == false, false, S.bEnableSubTickCompensation, bEnableSubTickCompensationHelp, NeedsPingCompHelp);
+}
+
 function LoadWeaponSettings() {
 	local WeaponSettings S;
 
@@ -1523,6 +1558,7 @@ function LoadWeaponSettings() {
 	Edit_PreciseRewindTimeMaxDeviationMs.SetValue(string(S.PreciseRewindTimeMaxDeviationMs));
 	Edit_PingCompensationMax.SetValue(string(S.PingCompensationMax));
 	Chk_bEnableAnimationAdaptiveHeadHitbox.bChecked = S.bEnableAnimationAdaptiveHeadHitbox;
+	ApplyWeaponLocks();
 	Edit_InvisibilityDuration.SetValue(string(S.InvisibilityDuration));
 	Edit_ShieldBeltCharge.SetValue(string(S.ShieldBeltCharge));
 	Edit_ArmorCharge.SetValue(string(S.ArmorCharge));
@@ -2145,6 +2181,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 
 function Notify(UWindowDialogControl C, byte E) {
 	super.Notify(C, E);
+	if (E == DE_Change && C == Chk_bEnablePingCompensation)
+		ApplyWeaponLocks();
 	if (E == DE_Click && C == Btn_AdminAuth) {
 		if (HasServerAdminAccess())
 			AdminLogoutFromUI();
@@ -2260,6 +2298,8 @@ defaultproperties
 	bEnableSubTickCompensationHelp="Weapon setting: Enable Sub Tick Compensation"
 	bEnablePreciseRewindTimeText="Enable Precise Rewind Time"
 	bEnablePreciseRewindTimeHelp="Weapon setting: rewind hitscan shots to the moment the shooter's screen showed"
+	TickInterpLockHelp="Weapon setting: always on while the server's Tick Interpolation is on, which needs it"
+	NeedsPingCompHelp="Weapon setting: off while Ping Compensation is off. Without it nothing is rewound"
 	bEnableTradesText="Enable Trades"
 	bEnableTradesHelp="Weapon setting: a shot from a player who just died still counts. NextIG and NextSA read this in place of the server setting"
 	bEnableFireTimeOrderText="Enable Fire Time Order"

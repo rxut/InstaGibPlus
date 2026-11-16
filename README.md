@@ -671,7 +671,8 @@ If `False`, your FOV immediately changes to the desired FOV without a smooth tra
 **Default: True**  
 
 If `True`, enables client-side location offset correction to reduce visual jitter/offset artifacts.  
-If `False`, disables that correction.
+If `False`, disables that correction.  
+On a server with Tick Interpolation or Snapshot Interpolation it changes nothing. The settings menu grays it out there.
 
 ## bEnableKillFeed
 **Type: bool**  
@@ -1840,6 +1841,8 @@ Restrictions:
 - Speed parameters of movement axis inputs are ignored.
 - Pitch is only replicated within [-90°..+90°). Values outside this range may not be replicated correctly.
 
+While it is on, these are off: [bEnablePredictedSwitching](#benablepredictedswitching), [bEnablePredictedTranslocation](#benablepredictedtranslocation), [bEnablePredictedSelfKnockback](#benablepredictedselfknockback), [bEnablePushSafeAim](#benablepushsafeaim), [bEnableDeterministicTranslocator](#benabledeterministictranslocator), [bEnableAdaptiveBuffering](#benableadaptivebuffering) and [bEnableTickInterpolation](#benabletickinterpolation). The Server tab of the IG+ menu shows them unticked and grayed out. The ini keeps their own values.
+
 Disable to restore default netcode behavior.
 
 ## bEnableServerExtrapolation
@@ -1897,6 +1900,8 @@ Jitter bounding does not run while [bEnableAdaptiveBuffering](#benableadaptivebu
 If enabled, clients use snapshot interpolation for simulated proxies.
 
 This feature is highly experimental and should be enabled only for controlled testing.
+
+While it is on, [bEnableTickInterpolation](#benabletickinterpolation) is off. The Server tab shows it unticked and grayed out.
 
 ## SnapshotInterpSendHz
 
@@ -1973,7 +1978,7 @@ It costs the server about 12 bytes for each other player in each tick.
 
 A client's Location Offset Fix setting has no effect while this is on. The picture is later than without it, by the delay above. A player whose packets stall is drawn standing still for a moment and then catches up. [bEnableAdaptiveBuffering](#benableadaptivebuffering) evens that out on the server.
 
-Needs [bEnablePingCompensation](#benablepingcompensation) and [bEnablePreciseRewindTime](#benablepreciserewindtime). Not used with [bEnableSnapshotInterpolation](#benablesnapshotinterpolation) or bEnableInputReplication. Players on lifts are drawn the same way, with no lift handling of their own yet.
+Keeps [bEnablePingCompensation](#benablepingcompensation) and [bEnablePreciseRewindTime](#benablepreciserewindtime) on while it is on, whatever the weapon settings say. Without them the server would test your shots against where the players are now. The ini keeps its own values. The Weapon Settings tab of the IG+ menu shows both ticked and grayed out. Not used with [bEnableSnapshotInterpolation](#benablesnapshotinterpolation) or bEnableInputReplication. Players on lifts are drawn the same way, with no lift handling of their own yet.
 
 ## KillCamDelay
 
@@ -2191,6 +2196,8 @@ The URL option `?IGPlusWeaponSettings=<section>` makes the mutator read another 
 
 If enabled, hitscan shots are tested against where targets were on the shooter's screen: the server rewinds every player (and the lift they stand on) by the shooter's ping before tracing. Also switches supported ST_ weapons to the deterministic fire path (see Docs/DETERMINISTIC-NETCODE.md).
 
+Always on while [bEnableTickInterpolation](#benabletickinterpolation) is on.
+
 ## PingCompensationMax
 
 **Type: int**  
@@ -2218,12 +2225,16 @@ A shock combo on its owner's own ball goes off where the owner saw the ball. If 
 
 If enabled, the rewound position is interpolated between the two snapshots around the target time instead of snapping to the older one.
 
+Does nothing without [bEnablePingCompensation](#benablepingcompensation). The Weapon Settings tab grays it out then.
+
 ## bEnablePreciseRewindTime
 
 **Type: bool**  
 **Default: False** (True in NextIG and NextSA)  
 
 If enabled, a hitscan shot rewinds the other players to the moment the shooter's screen showed them, instead of guessing from the shooter's average ping. Each shot tells the server which update the screen showed and how far past it the screen had moved the players. The server places every player the same way. Network jitter and ping changes then no longer move the rewound players. Your moves also carry this report while your own [deterministic translocator](#benabledeterministictranslocator) disc flies. The server uses it to stop the disc on players where you saw them. Shots traced later in the tick use the same report: minigun, pulse beam and enforcer refire. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them.
+
+Always on while [bEnableTickInterpolation](#benabletickinterpolation) is on. Otherwise it does nothing without [bEnablePingCompensation](#benablepingcompensation). The Weapon Settings tab grays it out then.
 
 The server doesn't use a report that differs from its own ping reading by more than PreciseRewindTimeMaxDeviationMs, or that is older than [PingCompensationMax](#pingcompensationmax) allows. Then it rewinds by the lowest of its last four ping readings, plus the delays of Adaptive Buffering and Tick Interpolation. Doesn't need bEnableSubTickCompensation. Needs bEnablePingCompensation and bEnableInputReplication off. Not used for a player with Snapshot Interpolation.
 

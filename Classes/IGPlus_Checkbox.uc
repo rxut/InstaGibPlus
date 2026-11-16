@@ -19,6 +19,25 @@ function SetDisabled(bool bNewDisabled) {
 	bDisabled = bNewDisabled;
 }
 
+// Admin windows: a setting that another setting turns on or off. Locked, the
+// box shows what the game uses, grayed out, with LockHelp as its help. Open
+// again, it shows Stored, the value the window loaded, and its own help.
+// Save leaves a grayed-out box's key alone.
+function SetLock(bool bLock, bool bLockedValue, bool bStored, string Help, string LockHelp) {
+	if (bLock) {
+		bChecked = bLockedValue;
+		SetHelpText(LockHelp);
+		ToolTipString = LockHelp;
+		SetDisabled(true);
+	} else {
+		if (bDisabled)
+			bChecked = bStored;
+		SetHelpText(Help);
+		ToolTipString = Help;
+		SetDisabled(false);
+	}
+}
+
 function MouseLeave() {
 	super(UWindowDialogControl).MouseLeave();
 

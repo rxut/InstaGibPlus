@@ -363,7 +363,7 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 		StartTrace = BaseLoc + bbPlayer(PawnOwner).IGPlus_ServerShotEye() * vect(0,0,1);
 	else
 		StartTrace = BaseLoc + PawnOwner.Eyeheight * vect(0,0,1);
-	if (WImp != None && WImp.WeaponSettings.bEnablePingCompensation)
+	if (WImp != None && WImp.WSettingsRepl.bEnablePingCompensation)
 	{
 		RewindMs = WImp.IGPlus_GetHitscanRewindMs(PawnOwner);
 		StartTrace = WImp.IGPlus_AdjustLocationToHistoricalMoverFrame(PawnOwner, StartTrace, RewindMs);
@@ -402,7 +402,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	// Only spawn shell case on server if compensation is disabled and if player
 	if (bbP != None)
 	{
-		if(WImp.WeaponSettings.bEnablePingCompensation && IGPlus_ClientAnims(bbP)) {
+		if(WImp.WSettingsRepl.bEnablePingCompensation && IGPlus_ClientAnims(bbP)) {
 			s = Spawn(class'ST_UT_ShellCaseOwnerHidden',Owner, '', Owner.Location + CalcDrawOffset() + 30 * X + (2.8 * FireOffset.Y+5.0) * Y - Z * 1);
 
 			s.RemoteRole = ROLE_None;
@@ -472,7 +472,7 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
 
     Loc = P.Location;
 	
-    if (WImp.WeaponSettings.bEnablePingCompensation) {
+    if (WImp.WSettingsRepl.bEnablePingCompensation) {
         bbP = bbPlayer(Owner);
         if (bbP != none)
             Dummy = bbP.zzUTPure.FindDummy(P);
@@ -483,7 +483,7 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
     if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
         return (HitLocation.Z - Loc.Z > 0.62 * P.CollisionHeight);
 
-	if (WImp.WeaponSettings.bEnablePingCompensation)
+	if (WImp.WSettingsRepl.bEnablePingCompensation)
 		return WImp.CheckHeadShotCompensated(Dummy, HitLocation, BulletDir);
 
     return WImp.CheckHeadShot(P, HitLocation, BulletDir);
