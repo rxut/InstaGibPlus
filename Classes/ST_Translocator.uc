@@ -1133,6 +1133,15 @@ simulated function IGPlus_DetClientTick() {
 	}
 }
 
+// Client, once a frame with the other players where they are drawn: they stop
+// our discs there (ST_TranslocatorTarget.IGPlus_DetClientSweep).
+simulated function IGPlus_DetClientSweep() {
+	if (IGPlus_DetLocalDisc != None && IGPlus_DetLocalDisc.bDeleteMe == false)
+		IGPlus_DetLocalDisc.IGPlus_DetClientSweep();
+	if (IGPlus_DetLingerDisc != None && IGPlus_DetLingerDisc.bDeleteMe == false)
+		IGPlus_DetLingerDisc.IGPlus_DetClientSweep();
+}
+
 // Client: the server's copy of our disc, hidden (inert: nothing here may hit,
 // hear or stop at it) or shown as it normally is.
 static function IGPlus_DetSetCopyHidden(ST_TranslocatorTarget S, bool bHide) {
@@ -1480,12 +1489,13 @@ simulated function IGPlus_DetConfirmAfterPush() {
 }
 
 // Client: our disc bounced or landed (ST_TranslocatorTarget.IGPlus_PathEvent).
-simulated function IGPlus_DetLocalDiscBounced() {
+// Later: ask for the server's disc that much older than ours is now.
+simulated function IGPlus_DetLocalDiscBounced(optional float Later) {
 	// ponytail: one ask per 50ms, a disc grinding along a ledge bounces every frame
 	if (bbPlayer(Owner) == None || Level.TimeSeconds - IGPlus_DetLastSyncAskTS < 0.05)
 		return;
 	IGPlus_DetLastSyncAskTS = Level.TimeSeconds;
-	bbPlayer(Owner).IGPlus_ServerDetDiscSync(IGPlus_DetThrowTS, Level.TimeSeconds - IGPlus_DetThrowTS);
+	bbPlayer(Owner).IGPlus_ServerDetDiscSync(IGPlus_DetThrowTS, Level.TimeSeconds - IGPlus_DetThrowTS + Later);
 }
 
 simulated function IGPlus_ClientDetKnock(float LocX, float LocY, float LocZ, vector Vel, bool bLanded, float Age, float DiscTS,
@@ -1543,6 +1553,7 @@ simulated function IGPlus_DetApplyKnock() {
 	D.bCollideWorld = false;
 	D.SetLocation(IGPlus_DetKnockLoc);
 	D.bCollideWorld = true;
+	D.IGPlus_bDetPrevLoc = false; // its next sweep starts here
 	D.Velocity = IGPlus_DetKnockVel;
 	D.bBounce = IGPlus_bDetKnockBounce;
 	D.bAlreadyHit = IGPlus_bDetKnockHit;
