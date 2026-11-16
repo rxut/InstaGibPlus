@@ -306,12 +306,14 @@ function Translocate()
 	local bbPlayer bbP;
 	local vector StartLoc, DiscLoc, Dest;
 	local string DiscInfo;
-	local bool bDiscOut;
+	local bool bDiscOut, bRewoundTelefrag;
 
 	bbP = bbPlayer(Owner);
 
 	STTarget = ST_TranslocatorTarget(TTarget);
-	
+	// (Asked before: a translocate takes the disc away.)
+	bRewoundTelefrag = STTarget != None && STTarget.IGPlus_DetJudgesRewound();
+
 	// Store original location in case we need to restore it
 	if (STTarget != None && STTarget.bUsingHistoricalPosition)
 	{
@@ -349,7 +351,10 @@ function Translocate()
 	if (bDiscOut && TTarget == None && bbP != None && IGPlus_IsDetMode() && bbP.Health > 0
 		&& VSize(Owner.Location - StartLoc) <= 1.0)
 		bbP.IGPlus_DetTlocLog("server-tloc-failed", IGPlus_DetTlocFailInfo(StartLoc, Dest, DiscLoc)@DiscInfo);
-	
+
+	if (bRewoundTelefrag && bbP != None && bbP.Health > 0 && VSize(Owner.Location - StartLoc) > 1.0)
+		IGPlus_DetRewoundTelefrag(bbP);
+
 	// If we used a historical position, restore the target's original location
 	// (although it's likely destroyed by now)
 	if (STTarget != None && !STTarget.bDeleteMe && STTarget.bUsingHistoricalPosition)
@@ -1738,6 +1743,68 @@ simulated function IGPlus_DetPredictBoost(vector Momentum) {
 	D.SetPhysics(PHYS_Falling);
 	D.Velocity = V;
 	D.SetTimer(0.3, false);
+}
+
+// Server, after a translocate of the deterministic translocator: telefrag the
+// other players where the thrower saw them. The disc stopped on a player where
+// the thrower's screen drew them (ST_TranslocatorTarget.IGPlus_DetRewoundStop)
+// and we came out where that screen had the disc (Translocate), but stock's
+// telefrag (Pawn.EncroachedBy) only meets the bodies where they are now. A
+// player running away is ahead of the drawn body by the ping and the drawing
+// delay, about 50 units at 100 ping, and a telefrag needs the bodies to
+// overlap. So the players are rewound as for a hitscan shot of the thrower,
+// and whoever overlaps us there is telefragged, as stock does with anyone it
+// meets (teammates too). Stock's own telefrag stays: someone standing here now
+// is telefragged as before. The client sends nothing for this.
+function IGPlus_DetRewoundTelefrag(bbPlayer P) {
+	local IGPlus_WeaponImplementationBase WImpBase;
+	local UTPlusDummy D;
+	local Pawn Victims[8], Near;
+	local int n, i, RewindMs;
+	local float Gap, NearGap, NearDZ;
+
+	WImpBase = P.IGPlus_GetWeaponImplementationBase();
+	if (WImpBase == None || P.zzUTPure == None)
+		return;
+	RewindMs = int(WImpBase.IGPlus_GetHitscanRewindMs(P));
+	P.zzUTPure.CompensateFor(RewindMs, P, true, true);
+	// Only read where the stand-ins are, and telefrag after the rewind
+	// (UTPlusDummy.CompEnd puts collision back on the real bodies).
+	NearGap = 1000000.0;
+	for (D = P.zzUTPure.CompDummies; D != None && n < ArrayCount(Victims); D = D.Next) {
+		if (D.bCompActive == false || D.Actual == None || D.Actual == P || D.Actual.Health <= 0)
+			continue;
+		Gap = VSize((D.Location - P.Location) * vect(1,1,0));
+		if (Gap < NearGap) {
+			NearGap = Gap;
+			NearDZ = D.Location.Z - P.Location.Z;
+			Near = D.Actual;
+		}
+		if (IGPlus_CylindersOverlap(P.Location, P.CollisionRadius, P.CollisionHeight,
+				D.Location, D.CollisionRadius, D.CollisionHeight))
+			Victims[n++] = D.Actual;
+	}
+	P.zzUTPure.EndCompensation();
+	// For player reports: the nearest player where the thrower saw them, and
+	// where they are now (level distances to our landing spot).
+	if (Near != None && NearGap < 80.0) {
+		if (n > 0)
+			P.IGPlus_DetTlocLog("rewound-telefrag", "victim="$Near.GetHumanName()@"gap="$int(NearGap)@"dz="$int(NearDZ)
+				@"liveGap="$int(VSize((Near.Location - P.Location) * vect(1,1,0)))@"rewindMs="$RewindMs);
+		else
+			P.IGPlus_DetTlocLog("telefrag-near", "nearest="$Near.GetHumanName()@"gap="$int(NearGap)@"dz="$int(NearDZ)
+				@"liveGap="$int(VSize((Near.Location - P.Location) * vect(1,1,0)))@"rewindMs="$RewindMs);
+	}
+	for (i = 0; i < n; i++)
+		if (Victims[i] != None && Victims[i].bDeleteMe == false && Victims[i].Health > 0)
+			Victims[i].gibbedBy(P);
+}
+
+// The engine's test for two upright cylinders that overlap
+// (UPrimitive::PointCheck, as an encroachment uses it).
+static function bool IGPlus_CylindersOverlap(vector A, float RA, float HA, vector B, float RB, float HB) {
+	return Square(A.Z - B.Z) < Square(HA + HB)
+		&& Square(A.X - B.X) + Square(A.Y - B.Y) < Square(RA + RB);
 }
 
 // Does the ray Start + t*Dir (t in [0, MaxDist], Dir normalized) pass through

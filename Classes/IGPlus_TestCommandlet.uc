@@ -134,6 +134,19 @@ function TestTranslocatorFireMerging() {
 		"Translocator_unchanged_primary_hold_can_merge");
 }
 
+// Two standing players (radius 17, half height 39): a telefrag needs their
+// bodies to overlap, as the engine tests it.
+function TestTelefragOverlap() {
+	LogTestResult(class'ST_Translocator'.static.IGPlus_CylindersOverlap(vect(0,0,0), 17, 39, vect(33,0,0), 17, 39),
+		"Telefrag_bodies_33_units_apart_overlap");
+	LogTestResult(!class'ST_Translocator'.static.IGPlus_CylindersOverlap(vect(0,0,0), 17, 39, vect(34,0,0), 17, 39),
+		"Telefrag_bodies_34_units_apart_do_not");
+	LogTestResult(class'ST_Translocator'.static.IGPlus_CylindersOverlap(vect(0,0,0), 17, 39, vect(20,20,77), 17, 39),
+		"Telefrag_bodies_overlap_diagonally_and_77_units_up");
+	LogTestResult(!class'ST_Translocator'.static.IGPlus_CylindersOverlap(vect(0,0,0), 17, 39, vect(0,0,78), 17, 39),
+		"Telefrag_bodies_78_units_up_do_not");
+}
+
 // Simulates 200 Hz moves against a server ticking every 10 ms. The client
 // clock runs at ClientRate from HackAt on; a spike holds packets in flight
 // and delivers them together. Returns the highest lead after the 2 s learn.
@@ -549,6 +562,7 @@ event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
 	TestTranslocatorFireMerging();
+	TestTelefragOverlap();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
 	TestTradeReach();
