@@ -697,7 +697,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local bbPlayer PRT, PRTDebug;
 	local int OldPing, OwnPing;
 	local vector OldLoc;
-	local float Moved, MostMoved;
+	local float Moved, MostMoved, BotSeen;
 	local string MostMovedName;
 
 	bCompensationIsActive = true;
@@ -775,9 +775,16 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 		}
 		// Tick Interpolation: between the two snapshots the shooter's screen
 		// drew the shot's target between.
-		if (PRT.IGPlus_bPRTInterp)
+		if (PRT.IGPlus_bPRTInterp && bbPlayer(DActual) != none)
 			D.CompStartTick(PRT.IGPlus_PRTInterpR, FMax(PRT.AverageServerDeltaTime, 0.001), PRT.IGPlus_bPRTInterpPast, PRT.IGPlus_bPRTInterpHeld, PRT.IGPlus_PRTInterpSpan);
-		else
+		// A bot: its snapshots have no tick numbers (UTPlusDummy takes them from
+		// bbPlayers only), and the shooter's game draws it the stock way, at its
+		// newest update moved on to the moment of the shot. That moment is the
+		// report's tick position plus the delay the screen drew players with.
+		else if (PRT.IGPlus_bPRTInterp) {
+			BotSeen = PRT.IGPlus_PRTSeenTime + 0.001 * PRT.IGPlus_PRTInterpDelayMs * Level.TimeDilation;
+			D.CompStartSeen(BotSeen, BotSeen);
+		} else
 			D.CompStartSeen(PRT.IGPlus_PRTSeenTime, PRT.IGPlus_PRTViewTimeNow());
 		if (PRTDebug != none && Moved == 0 && D.bCompActive) {
 			Moved = VSize(D.Location - OldLoc);
