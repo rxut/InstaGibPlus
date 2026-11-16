@@ -163,6 +163,9 @@ var Weapon IGPlus_NextTrans;          // server: next life's translocator, alrea
 var float IGPlus_InvHeadAddTS;        // server: when AddInventory last put an item at the head of our chain
 // Predicted switching (server, log only): presses that went to the stock command.
 var float IGPlus_PredSwitchLastLogTS;
+var int IGPlus_MovesHeld;            // server: moves the speed-hack check held since the last [TIMEMARGIN] line
+var float IGPlus_MovesHeldLogTS;
+var float IGPlus_MovesHeldLastTS;
 var float IGPlus_PSLastLogTS;         // server: IGPlus_PSLog's own throttle (a pipe bind's next command lands in the same tick)
 // Client: frame timestamp of the latest locally predicted Det shot.
 var float IGPlus_DetClientShotTS;
@@ -5534,6 +5537,27 @@ function IGPlus_DetTlocLog(string Event, string Details) {
 		@"lastLossAgo="$LossAgo@"ts="$CurrentTimeStamp);
 }
 
+// Server: the speed-hack check (TimeMargin over MaxTimeMargin) threw a move's
+// time away, so the player stays put. It only ever told that player, and only
+// with debug data on. A player stuck in place for 2 s after a match start
+// (MEER TDM 2, Nov 14 2026) left no trace in the server log. At most one line
+// a second, with the moves held since the last line, the move held and the
+// time stamps the check compared.
+function IGPlus_LogMoveHeld(float MoveDelta, float ServerDelta, float MoveTS) {
+	if (Level.TimeSeconds - IGPlus_MovesHeldLastTS > 1.0)
+		IGPlus_MovesHeld = 0;
+	IGPlus_MovesHeldLastTS = Level.TimeSeconds;
+	IGPlus_MovesHeld++;
+	if (Level.TimeSeconds - IGPlus_MovesHeldLogTS < 1.0)
+		return;
+	IGPlus_MovesHeldLogTS = Level.TimeSeconds;
+	IGPlus_EventLog("[TIMEMARGIN]"@PlayerReplicationInfo.PlayerName@"held="$IGPlus_MovesHeld
+		@"timeMargin="$TimeMargin@"max="$MaxTimeMargin@"moveDelta="$MoveDelta@"serverDelta="$ServerDelta
+		@"moveTS="$MoveTS@"lastTS="$CurrentTimeStamp@"serverTS="$ServerTimeStamp
+		@"ping="$PlayerReplicationInfo.Ping@"state="$GetStateName());
+	IGPlus_MovesHeld = 0;
+}
+
 // A line in the log with the machine's clock time at the end (on the server:
 // the server's), so a player's report ("around 21:15") or a demo can be
 // matched to it.
@@ -6084,6 +6108,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				MaxTimeMargin = Default.MaxTimeMargin;
 			else
 				MaxTimeMargin = 0.5;
+			IGPlus_LogMoveHeld(DeltaTime, ServerDeltaTime, SM.TimeStamp);
 			DeltaTime = 0;
 			ClientDebugMessage("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"MaxTimeMargin exceeded ("$TimeMargin$")", 'IGPlus');
 		}
@@ -7454,6 +7479,7 @@ function xxServerMoveDead(
 				MaxTimeMargin = Default.MaxTimeMargin;
 			else
 				MaxTimeMargin = 0.5;
+			IGPlus_LogMoveHeld(DeltaTime, ServerDeltaTime, TimeStamp);
 			DeltaTime = 0;
 			ClientDebugMessage("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"MaxTimeMargin exceeded ("$TimeMargin$")", 'IGPlus');
 		}
