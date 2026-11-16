@@ -698,9 +698,12 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local int OldPing, OwnPing;
 	local vector OldLoc;
 	local float Moved, MostMoved, BotSeen;
+	local int ExtraMs;
 	local string MostMovedName;
 
 	bCompensationIsActive = true;
+	if (bbPlayer(Instigator) != none)
+		ExtraMs = int(bbPlayer(Instigator).IGPlus_RewindExtraMs(1.0));
 
 	// Where everyone stands, before any lift is moved back: moving a lift
 	// (SetLocation) takes everyone standing on it off it. Riders line up with
@@ -761,12 +764,12 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 		}
 
 		if (PRT == none) {
-			D.CompStart(Ping);
+			D.CompStart(Ping, ExtraMs);
 			continue;
 		}
 		// Debug: how far this moves them from the average-ping rewind.
 		if (PRTDebug != none) {
-			D.CompStart(OldPing);
+			D.CompStart(OldPing, ExtraMs);
 			OldLoc = D.Location;
 			Moved = -1;
 			if (D.bCompActive)

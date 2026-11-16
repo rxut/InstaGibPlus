@@ -1116,6 +1116,7 @@ const IGPLUS_TI_MAX_DELAY = 10.0;
 const IGPLUS_TI_MAX_CARRY = 2.0;     // ticks a player is carried on past their newest update
 const IGPLUS_TI_MT_UNIT = 0.0005;    // seconds in one step of IGPlus_NetMoveT
 const IGPLUS_TI_MT_WRAP = 0.128;     // seconds until IGPlus_NetMoveT comes round again
+const IGPLUS_REWIND_TI_EXTRA_MS = 100.0; // most of the drawing delay that goes on top of PingCompensationMax (IGPlus_RewindExtraMs)
 const IGPLUS_TI_PACE_RATE = 0.05;    // how fast the even pace follows a player's updates, per update
 const IGPLUS_TI_MU_TIME = 0.5;       // seconds: the drawn moment is 63% of the way to the asked one after this
 const IGPLUS_TI_MU_SLEW = 0.03;      // and it runs at most this much faster or slower than real time on the way
@@ -4146,7 +4147,7 @@ function IGPlus_PRTNote(int Data) {
 	// already (IGPlus_PRTShotTargetLead): up to 50 ms ahead is fine.
 	else if (IGPlus_PRTLagMs < -50)
 		IGPlus_PRTReason = "report ahead of our clock";
-	else if (IGPlus_PRTLagMs > WS.PingCompensationMax)
+	else if (IGPlus_PRTLagMs > WS.PingCompensationMax + IGPlus_RewindExtraMs(1.0))
 		IGPlus_PRTReason = "above PingCompensationMax";
 	// (A queued move ran IGPlus_ABDelayMs after it arrived, Adaptive
 	// Buffering: the report is that much older than our ping.)
@@ -4160,6 +4161,23 @@ function IGPlus_PRTNote(int Data) {
 			|| IGPlus_PRTLagMs < IGPlus_PingLowMs() + IGPlus_ABDelayMs - WS.PreciseRewindTimeMaxDeviationMs))
 		IGPlus_PRTReason = "server ping"@int(IGPlus_PRTServerPing)@"ms";
 	IGPlus_PRTLagMs = FMax(0, IGPlus_PRTLagMs);
+}
+
+// Server: PingCompensationMax holds the shooter's ping. What our own features
+// add on top of that ping goes on top of the cap as well: the delay Adaptive
+// Buffering queued the shooter's moves by (ABShare of it, 1 for a rewind of
+// the whole way and 0.5 for a projectile's one way), and the delay Tick
+// Interpolation drew players with, at most IGPLUS_REWIND_TI_EXTRA_MS so a
+// server with slow ticks stays bounded. Counted against the cap, a player
+// under it was refused with these features on: at 155 ping and a cap of 200,
+// every report on a CTF test server.
+function float IGPlus_RewindExtraMs(float ABShare) {
+	local float Ms;
+
+	Ms = ABShare * float(IGPlus_ABDelayMs);
+	if (IGPlus_EnableTickInterp && IGPlus_bPRTInterp)
+		Ms += FClamp(IGPlus_PRTInterpDelayMs, 0.0, IGPLUS_REWIND_TI_EXTRA_MS);
+	return Ms;
 }
 
 // Server, Tick Interpolation: the report is the tick position the shooter's
@@ -4190,7 +4208,7 @@ function IGPlus_PRTNoteInterp(int Data, WeaponSettingsRepl WS) {
 		IGPlus_PRTReason = "update too old";
 	else if (IGPlus_PRTLagMs < -50)
 		IGPlus_PRTReason = "report ahead of our clock";
-	else if (IGPlus_PRTLagMs > WS.PingCompensationMax)
+	else if (IGPlus_PRTLagMs > WS.PingCompensationMax + IGPlus_RewindExtraMs(1.0))
 		IGPlus_PRTReason = "above PingCompensationMax";
 	// (Younger: against the lowest of our last readings, see IGPlus_PRTNote.)
 	else if (IGPlus_PRTServerPing > 0

@@ -115,10 +115,11 @@ function float IGPlus_GetHitscanRewindMs(Pawn Instigator) {
 function float IGPlus_GetServerPingRewindMs(bbPlayer bbP) {
 	local float Ms;
 
-	Ms = bbP.IGPlus_PingLowMs() + float(bbP.IGPlus_ABDelayMs) + IGPlus_GetTickInterpDelayMs(bbP);
+	// The cap holds the ping; the two delays go on top (bbPlayer.IGPlus_RewindExtraMs).
+	Ms = bbP.IGPlus_PingLowMs();
 	if (WSettingsRepl != None && Ms > WSettingsRepl.PingCompensationMax)
 		Ms = WSettingsRepl.PingCompensationMax;
-	return FMax(0.0, Ms);
+	return FMax(0.0, Ms + bbP.IGPlus_RewindExtraMs(1.0));
 }
 
 function float IGPlus_GetAveragePingRewindMs(Pawn Instigator) {
@@ -145,11 +146,12 @@ function float IGPlus_GetAveragePingRewindMs(Pawn Instigator) {
 			EffectivePing = (0.5 * (BasePingMs + float(bbP.IGPlus_ABDelayMs))) + InterpMs;
 	} else
 		EffectivePing = BasePingMs;
-	// (A shot whose report failed its check, with Tick Interpolation on.)
-	EffectivePing += IGPlus_GetTickInterpDelayMs(Instigator);
 
 	if (WSettingsRepl != None && EffectivePing > WSettingsRepl.PingCompensationMax)
 		EffectivePing = WSettingsRepl.PingCompensationMax;
+	// (A shot whose report failed its check, with Tick Interpolation on: the
+	// drawing delay goes on top of the cap, bbPlayer.IGPlus_RewindExtraMs.)
+	EffectivePing += bbP.IGPlus_RewindExtraMs(0.0);
 	if (EffectivePing < 0.0)
 		EffectivePing = 0.0;
 
@@ -1267,9 +1269,10 @@ function float SimulateProjectile(Projectile P, int Ping, optional float CatchUp
     SimPing = (Ping + bbPlayer(P.Instigator).IGPlus_ABDelayMs) * 0.5 + InterpMs;
   }
 
-  // Cap ping compensation
-  if (SimPing > WeaponSettings.PingCompensationMax)
-        SimPing = WeaponSettings.PingCompensationMax;
+  // Cap ping compensation: the cap holds the ping, the delays of our own
+  // features go on top (bbPlayer.IGPlus_RewindExtraMs, one way: half the queue delay).
+  if (SimPing > WeaponSettings.PingCompensationMax + bbPlayer(P.Instigator).IGPlus_RewindExtraMs(0.5))
+        SimPing = WeaponSettings.PingCompensationMax + bbPlayer(P.Instigator).IGPlus_RewindExtraMs(0.5);
 
   if (SimPing <= 0.0)
     return 0;
@@ -1324,8 +1327,9 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   // Buffering delay (see SimulateProjectile).
   SimPing = (Ping + bbPlayer(Projectiles[0].Instigator).IGPlus_ABDelayMs) * 0.5 + InterpMs;
   
-  if (SimPing > WeaponSettings.PingCompensationMax)
-    SimPing = WeaponSettings.PingCompensationMax;
+  // (The cap holds the ping, the delays go on top: see SimulateProjectile.)
+  if (SimPing > WeaponSettings.PingCompensationMax + bbPlayer(Projectiles[0].Instigator).IGPlus_RewindExtraMs(0.5))
+    SimPing = WeaponSettings.PingCompensationMax + bbPlayer(Projectiles[0].Instigator).IGPlus_RewindExtraMs(0.5);
     
   if (SimPing <= 0.0)
     return;

@@ -171,7 +171,9 @@ function vector LerpVector(float Alpha, vector A, vector B) {
     return A + (B - A) * Alpha;
 }
 
-function CompStart(int Ping)
+// ExtraMs: what the shooter's own delays add on top of PingCompensationMax
+// (bbPlayer.IGPlus_RewindExtraMs). The cap holds the ping.
+function CompStart(int Ping, optional int ExtraMs)
 {
     local float TargetTimeStamp;
     local bool  bSubTickCompensation;
@@ -186,8 +188,8 @@ function CompStart(int Ping)
     if (Actual == none || Actual.bDeleteMe || WImp == None || Actual.Health <= 0)
 		return;
 
-    if (Ping > WImp.WeaponSettings.PingCompensationMax)
-		Ping = WImp.WeaponSettings.PingCompensationMax;
+    if (Ping > WImp.WeaponSettings.PingCompensationMax + ExtraMs)
+		Ping = WImp.WeaponSettings.PingCompensationMax + ExtraMs;
 	if (Ping < 0)
 		Ping = 0;
 
