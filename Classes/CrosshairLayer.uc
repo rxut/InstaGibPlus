@@ -95,9 +95,10 @@ static function DrawShape(Canvas C, UWindowWindow Win, byte Shape, int Thickness
 	local float Left, Top;
 
 	T = class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase");
-	W = int(ScaleX + 0.5);
-	H = int(ScaleY + 0.5);
-	Left = CX - 0.5 * W * Scale;
+	// One pass per row: a size typed into the window takes any number of digits.
+	W = int(FClamp(ScaleX, 0.0, 1024.0) + 0.5);
+	H = int(FClamp(ScaleY, 0.0, 1024.0) + 0.5);
+	Left =CX - 0.5 * W * Scale;
 	Top = CY - 0.5 * H * Scale;
 
 	for (Row = 0; Row < H; Row++) {

@@ -868,7 +868,7 @@ A crosshair is made up of individual images that are drawn in a specific order p
     * 4 (`STY_Modulated`) - ?
 * `bSmooth` controls whether sharp edges should be smoothed out when `ScaleX` or `ScaleY` are greater than 1
 * `bUse` controls whether this layer should be drawn, `True` to draw, `False` to ignore
-* `Shape` draws a shape instead of the texture. `Texture` is then not used. The shape is `ScaleX` pixels wide and `ScaleY` pixels high, and a pixel is part of it when the pixel's centre is inside the shape. The edges are hard, `bSmooth` makes no difference. One of
+* `Shape` draws a shape instead of the texture. `Texture` is then not used. The shape is `ScaleX` pixels wide and `ScaleY` pixels high, at most 1024 each, and a pixel is part of it when the pixel's centre is inside the shape. The edges are hard, `bSmooth` makes no difference. One of
     * 0 - no shape, the texture is drawn
     * 1 - circle, or an ellipse when `ScaleX` and `ScaleY` differ
     * 2 - square, or a rectangle
