@@ -2296,7 +2296,7 @@ If enabled, a hitscan shot rewinds the other players to the moment the shooter's
 **Default: 60**  
 **Unit: ms**  
 
-How far a shot's [bEnablePreciseRewindTime](#benablepreciserewindtime) rewind may differ from the server's own ping measurement before the server falls back to the old rewind. Limits how much extra rewind a modified client can claim.
+How far a shot's [bEnablePreciseRewindTime](#benablepreciserewindtime) rewind may differ from the server's own ping measurement before the server does not use it. Limits how much extra rewind a modified client can claim. A rewind longer than the ping is checked against the newest reading. A shorter one is checked against the lowest of the last four readings (two a second): a moment of lag raises the readings that follow it for a while, when the player's screen is already current again, and a younger picture gives a shot no advantage.
 
 ## bEnableTrades
 
