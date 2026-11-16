@@ -22229,7 +22229,6 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("KillCamDuration");
 
 	IGPlus_ServerSendSetting("bWarmup");
-	IGPlus_ServerSendSetting("WarmupTimeLimit");
 	IGPlus_ServerSendSetting("bCoaches");
 	IGPlus_ServerSendSetting("Timeouts");
 	IGPlus_ServerSendSetting("bFastTeams");

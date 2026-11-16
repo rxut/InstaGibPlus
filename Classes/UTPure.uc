@@ -1411,7 +1411,6 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "KillCamDelay") return "KillCamDelay";
 	if (Key ~= "KillCamDuration") return "KillCamDuration";
 	if (Key ~= "bWarmup") return "bWarmup";
-	if (Key ~= "WarmupTimeLimit") return "WarmupTimeLimit";
 	if (Key ~= "bCoaches") return "bCoaches";
 	if (Key ~= "Timeouts") return "Timeouts";
 	if (Key ~= "bFastTeams") return "bFastTeams";
