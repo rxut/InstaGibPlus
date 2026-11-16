@@ -68,7 +68,6 @@ var config int    SSRRingType;
 var config EHitEffectSource HitEffectSource;
 var config float  DesiredNetUpdateRate;
 var config int    DesiredNetspeed;
-var config bool   bNoSmoothing;
 var config bool   bNoOwnFootsteps;
 var config bool   bLogClientMessages;
 var config bool   bDemoShowClientMessages;
@@ -625,7 +624,6 @@ simulated function string DumpSettings() {
 		GetSetting("SSRRingType")$
 		GetSetting("HitEffectSource")$
 		GetSetting("DesiredNetUpdateRate")$
-		GetSetting("bNoSmoothing")$
 		GetSetting("bNoOwnFootsteps")$
 		GetSetting("bLogClientMessages")$
 		GetSetting("bDemoShowClientMessages")$
@@ -739,7 +737,6 @@ defaultproperties
 	HitEffectSource=HESRC_Client
 	DesiredNetUpdateRate=200.0
 	DesiredNetspeed=25000
-	bNoSmoothing=True
 	bNoOwnFootsteps=False
 	bLogClientMessages=True
 	bDemoShowClientMessages=False
