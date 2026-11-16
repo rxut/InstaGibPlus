@@ -35,7 +35,6 @@ var config bool bDelayedPickupSpawn;	// Enable or disable delayed first pickup s
 var config bool bUseFastWeaponSwitch;
 var config bool bTellSpectators;	// Enable or disable telling spectators of reason for kicks.
 var config string PlayerPacks[8];	// Config list of supported player packs
-var config int TeleRadius;
 var config int ThrowVelocity;	// How far a player can throw weapons
 var config bool  bForceDemo;		// Forces clients to do demos.
 var config bool  bRestrictTrading;
@@ -242,7 +241,6 @@ defaultproperties
 	ImprovedHUD=1
 	bDelayedPickupSpawn=False
 	bUseFastWeaponSwitch=False
-	TeleRadius=210
 	ThrowVelocity=750
 	NNAnnouncer=True
 	MaxHitError=10000

@@ -60,7 +60,7 @@ var float	zzOrigFOV;		// Original FOV for TrackFOV = 1
 var string	FakeClass;		// Class that the model replaces
 var string	zzMyPacks;		// Defined only for defaults
 var bool	zzbBadGuy;		// BadGuy! (Avoid kick spamming)
-var int     zzRecentDmgGiven, zzRecentTeamDmgGiven, TeleRadius;
+var int     zzRecentDmgGiven, zzRecentTeamDmgGiven;
 var name    zzDefaultWeapon;
 var float   zzLastHitSound, zzLastTeamHitSound;
 var Projectile zzNN_Projectiles[256];
@@ -1305,7 +1305,6 @@ replication
 		xxSetDefaultWeapon,
 		xxSetPendingWeapon,
 		xxClientDetEntryGate,
-		xxSetTeleRadius,
 		xxSetTimes,
 		FRandValues,
 		FRandValuesIndex;
@@ -2093,9 +2092,6 @@ event Possess()
 	}
 	else
 	{
-		TeleRadius = zzUTPure.Settings.TeleRadius;
-		xxSetTeleRadius(TeleRadius);
-
 		BrightskinMode = zzUTPure.Settings.BrightskinMode;
 
 		xxSetDefaultWeapon(Level.Game.BaseMutator.MutatedDefaultWeapon().name);
@@ -8971,11 +8967,6 @@ simulated function xxNN_ClientProjExplode( int ProjIndex, optional vector HitLoc
 // Seriously.  Do something good with your time.  Build something that improves lives.
 // I understand that you are bitter, but you'll feel better if you listen to me.
 // Doing good things will make you feel good.
-
-simulated function xxSetTeleRadius(int newRadius)
-{
-	TeleRadius = newRadius;
-}
 
 simulated function xxSetDefaultWeapon(name W)
 {
@@ -22480,7 +22471,6 @@ defaultproperties
 {
 	bNewNet=True
 	HUDInfo=1
-	TeleRadius=210
 	NN_ProjLength=256
 	bIsFinishedLoading=False
 	bDrawDebugData=False
