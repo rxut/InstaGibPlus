@@ -453,6 +453,8 @@ Higher values result in less frequent acknowledgements which can result in degra
 
 If set to `True`, a correction from the server moves you to the corrected spot at once, but your camera eases there over [CameraCorrectionSmoothingTime](#cameracorrectionsmoothingtime) instead of jumping. If [bEnablePushSafeAim](#benablepushsafeaim) is on, shots still go through your crosshair while the camera catches up.
 
+A correction that comes from a push your game could not know about, such as a teammate's shot hitting you, is always eased this way, whatever this setting says. Only the server pushes you, and your game finds out about one ping later, so without the ease you would jump by the push's speed times your ping (about 90 units at 136 ping). Your position takes the push at once, and your camera follows within 0.1 s. A jump over 150 units, a teleport or translocation, or one with a wall in between still snaps.
+
 ## CameraCorrectionSmoothingTime
 **Type: float**  
 **Default: 0.1**  
