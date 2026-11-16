@@ -902,7 +902,7 @@ IG+ versions from before shapes do not know `Shape` and `Thickness`. They draw a
 
 The Crosshair Factory keeps up to 16 crosshairs, called presets. `CrosshairPreset` is the slot of the picked preset, from 0 to 15. The picked preset is the crosshair the game draws, and its layers are [CrosshairLayers](#crosshairlayers).
 
-In the Crosshair Factory window the presets are in the list on the right, each with a small picture and its name.
+In the Crosshair Factory window the presets are in the list on the right, each with a small picture and its name. The command [CrosshairPreset](#crosshairpreset-command) picks one from the console or with a key.
 
 * Click a preset to pick it. The game draws it from that click on.
 * `+` makes a new preset. It starts as a copy of the picked one and becomes the picked one.
@@ -1018,6 +1018,7 @@ Parameters marked `optional` do not have to be supplied.
 1. [Ready](#ready)
 1. [ZoomToggle](#zoomtoggle)
 1. [IGPlusMenu](#igplusmenu)
+1. [CrosshairPreset](#crosshairpreset-command)
 1. [EnableClientSideAnimations](#enableclientsideanimations)
 1. [DisableClientSideAnimations](#disableclientsideanimations)
 1. [BioClientSideAnimations](#bioclientsideanimations)
@@ -1182,6 +1183,17 @@ If `SensitivityY` is not provided by the user, it is assumed to be the same as `
 
 ## IGPlusMenu
 Opens the IG+ settings window.
+
+## CrosshairPreset (command)
+**Parameters: (optional string Which)**
+
+Picks a preset of the Crosshair Factory, see [CrosshairPreset](#crosshairpreset). It prints one line with the number and the name of the preset.
+
+* `CrosshairPreset 3` picks preset 3. The numbers go from 1 to 16, as in the list of presets. A number with no saved preset changes nothing.
+* `CrosshairPreset next` picks the next saved preset, `CrosshairPreset prev` the one before. Both go round from the last to the first.
+* `CrosshairPreset` alone names the picked preset.
+
+To switch with a key, bind it, for example `set input F5 CrosshairPreset next`.
 
 ## EnableClientSideAnimations
 Enables all per-weapon client-side animation toggles (unless forced by server).

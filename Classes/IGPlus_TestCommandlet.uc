@@ -480,6 +480,21 @@ function TestCrosshairPresets() {
 		bOK = bOK && S.NewCrosshairPreset();
 	LogTestResult(bOK && S.NewCrosshairPreset() == false && S.CrosshairPreset == 15 && S.GetCrosshairPresetName(15) == "Crosshair 16",
 		"CrosshairPresets_sixteen_slots");
+
+	// The console command. All 16 are saved and the last one is picked.
+	bOK = InStr(S.CrosshairPresetCommand("next"), "Crosshair preset 1: Crosshair 1") == 0 && S.CrosshairPreset == 0;
+	bOK = bOK && InStr(S.CrosshairPresetCommand("prev"), "Crosshair preset 16: Crosshair 16") == 0 && S.CrosshairPreset == 15;
+	bOK = bOK && InStr(S.CrosshairPresetCommand("4"), "Crosshair preset 4:") == 0 && S.CrosshairPreset == 3;
+	LogTestResult(bOK, "CrosshairPresetCommand_number_next_and_prev_wrap_around");
+
+	bOK = S.DeleteCrosshairPreset() && S.CrosshairPreset == 0; // slot 4 is free now
+	S.CrosshairPresetCommand("3");
+	bOK = bOK && InStr(S.CrosshairPresetCommand("next"), "Crosshair preset 5:") == 0 && S.CrosshairPreset == 4;
+	bOK = bOK && InStr(S.CrosshairPresetCommand("previous"), "Crosshair preset 3:") == 0;
+	bOK = bOK && InStr(S.CrosshairPresetCommand("4"), "No crosshair preset 4.") == 0 && S.CrosshairPreset == 2;
+	bOK = bOK && InStr(S.CrosshairPresetCommand("17"), "No crosshair preset") == 0 && InStr(S.CrosshairPresetCommand("x"), "No crosshair preset") == 0;
+	bOK = bOK && InStr(S.CrosshairPresetCommand(""), "Crosshair preset 3:") == 0 && S.CrosshairPreset == 2;
+	LogTestResult(bOK, "CrosshairPresetCommand_skips_free_slots_and_refuses_them");
 }
 
 // A crosshair shape as text, row after row: # for a pixel of the shape, . for none.

@@ -17386,6 +17386,11 @@ exec function ShowFPS() {
 		ClientMessage("FPS hidden!", 'IGPlus');
 }
 
+// Picks a crosshair preset: CrosshairPreset 3, CrosshairPreset next, CrosshairPreset prev.
+exec function CrosshairPreset(optional string Which) {
+	ClientMessage(Settings.CrosshairPresetCommand(Which), 'IGPlus');
+}
+
 simulated function xxDrawDebugData(canvas zzC, float zzx, float zzY) {
 	local Pawn P;
 	local int y;

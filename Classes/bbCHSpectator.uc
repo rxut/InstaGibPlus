@@ -956,6 +956,11 @@ exec function ShowFPS() {
 		ClientMessage("FPS hidden!", 'IGPlus');
 }
 
+// Picks a crosshair preset: CrosshairPreset 3, CrosshairPreset next, CrosshairPreset prev.
+exec function CrosshairPreset(optional string Which) {
+	ClientMessage(Settings.CrosshairPresetCommand(Which), 'IGPlus');
+}
+
 exec function ShowDamageNumbers() {
 	Settings.bSpectatorShowDamageNumbers = !Settings.bSpectatorShowDamageNumbers;
 	Settings.SaveConfig();

@@ -306,6 +306,37 @@ simulated function PickCrosshairPreset(int Slot) {
 	UseCrosshairPreset(Slot);
 }
 
+// The console command CrosshairPreset: the number of a saved preset (1 to 16),
+// next or prev. Without a word after it, it names the picked one. Returns the
+// line for the player.
+simulated function string CrosshairPresetCommand(string Which) {
+	local int i, Slot, Step;
+	local string Line;
+
+	Which = Caps(Which);
+	Slot = CrosshairPreset;
+	if (Which == "NEXT" || Which == "PREV" || Which == "PREVIOUS") {
+		Step = 1;
+		if (Which != "NEXT")
+			Step = arraycount(CrosshairPresets) - 1;
+		for (i = 0; i < arraycount(CrosshairPresets); i++) {
+			Slot = (Slot + Step) % arraycount(CrosshairPresets);
+			if (GetCrosshairPresetName(Slot) != "")
+				break;
+		}
+	} else if (Which != "") {
+		Slot = int(Which) - 1;
+		if (Slot < 0 || Slot >= arraycount(CrosshairPresets) || GetCrosshairPresetName(Slot) == "")
+			return "No crosshair preset"@Which$". Use the number of a saved preset (1 to 16), next or prev.";
+	}
+	PickCrosshairPreset(Slot);
+
+	Line = "Crosshair preset"@(CrosshairPreset + 1)$":"@GetCrosshairPresetName(CrosshairPreset);
+	if (bUseCrosshairFactory == false)
+		Line = Line$" (the Crosshair Factory is off, so the game draws its own crosshair)";
+	return Line;
+}
+
 // A new preset in the first free slot, picked, as a copy of the one picked
 // before. False when all slots are taken.
 simulated function bool NewCrosshairPreset() {
