@@ -107,9 +107,6 @@ var localized string GameplayText;
 var UWindowCheckbox Chk_bWarmup;
 var localized string bWarmupText;
 var localized string bWarmupHelp;
-var IGPlus_EditControl Edit_WarmupTimeLimit;
-var localized string WarmupTimeLimitText;
-var localized string WarmupTimeLimitHelp;
 var UWindowCheckbox Chk_bCoaches;
 var localized string bCoachesText;
 var localized string bCoachesHelp;
@@ -656,7 +653,6 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "bEnablePingCompensatedSpawn", BoolToString(Chk_bEnablePingCompensatedSpawn.bChecked));
 
 	SaveServerSettingIfChanged(S, "bWarmup", BoolToString(Chk_bWarmup.bChecked));
-	SaveServerSettingIfChanged(S, "WarmupTimeLimit", Edit_WarmupTimeLimit.GetValue());
 	SaveServerSettingIfChanged(S, "bCoaches", BoolToString(Chk_bCoaches.bChecked));
 	SaveServerSettingIfChanged(S, "Timeouts", Edit_Timeouts.GetValue());
 	SaveServerSettingIfChanged(S, "bFastTeams", BoolToString(Chk_bFastTeams.bChecked));
@@ -1050,7 +1046,6 @@ function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_SnapshotInterpRewindMs, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_WarpFixDelay, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_AdaptiveBufferingMax, C, ControlWidth, 80);
-	ConfigureFixedWidthEdit(Edit_WarmupTimeLimit, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_Timeouts, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MinClientRate, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MaxClientRate, C, ControlWidth, 80);
@@ -1082,7 +1077,6 @@ function LoadServerSettings() {
 	Chk_bEnablePingCompensatedSpawn.bChecked = S.bEnablePingCompensatedSpawn;
 
 	Chk_bWarmup.bChecked = S.bWarmup;
-	Edit_WarmupTimeLimit.SetValue(string(S.WarmupTimeLimit));
 	Chk_bCoaches.bChecked = S.bCoaches;
 	Edit_Timeouts.SetValue(string(S.Timeouts));
 	Chk_bFastTeams.bChecked = S.bFastTeams;
@@ -1193,7 +1187,6 @@ function Created() {
 
 	Lbl_Gameplay = CreateSeparator(GameplayText);
 	Chk_bWarmup = CreateCheckbox(bWarmupText, bWarmupHelp);
-	Edit_WarmupTimeLimit = CreateEdit(ECT_Integer, WarmupTimeLimitText, WarmupTimeLimitHelp, 6, 80);
 	Chk_bCoaches = CreateCheckbox(bCoachesText, bCoachesHelp);
 	Edit_Timeouts = CreateEdit(ECT_Integer, TimeoutsText, TimeoutsHelp, 6, 80);
 	Chk_bFastTeams = CreateCheckbox(bFastTeamsText, bFastTeamsHelp);
@@ -1345,7 +1338,6 @@ function BeforePaint(Canvas C, float X, float Y) {
 
 	LayoutControl(Lbl_Gameplay, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bWarmup, bShowSettings, WndWidth, Top);
-	LayoutControl(Edit_WarmupTimeLimit, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bCoaches, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_Timeouts, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bFastTeams, bShowSettings, WndWidth, Top);
@@ -1541,8 +1533,6 @@ defaultproperties
 	GameplayText="Gameplay"
 	bWarmupText="Enable Warmup"
 	bWarmupHelp="If checked, allows warmup period in tournament mode"
-	WarmupTimeLimitText="Warmup Time Limit"
-	WarmupTimeLimitHelp="Maximum warmup duration in seconds"
 	bCoachesText="Enable Coaches"
 	bCoachesHelp="If checked, allows coach slots in tournament team games"
 	TimeoutsText="Coach Timeouts"

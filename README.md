@@ -1440,7 +1440,6 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [MaxClientRate](#maxclientrate)
 1. [bAdvancedTeamSay](#badvancedteamsay)
 1. [bWarmup](#bwarmup)
-1. [WarmupTimeLimit](#warmuptimelimit)
 1. [bCoaches](#bcoaches)
 1. [bAutoPause](#bautopause)
 1. [PauseTotalTime](#pausetotaltime)
@@ -1631,14 +1630,6 @@ Advanced TeamSay allows showing game-information in your chat messages, by repla
 **Default: True**  
 
 Whether to allow warmup in tournament games or not.
-
-## WarmupTimeLimit
-
-**Type: int**  
-**Default: 0**  
-**Unit: s**  
-
-Maximum warmup length in seconds. `0` means no explicit warmup time limit.
 
 ### bCoaches
 

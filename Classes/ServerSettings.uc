@@ -23,7 +23,6 @@ var config int MinClientRate;		// Minimum allowed client rate.
 var config int MaxClientRate;     // Maximum allowed client rate.
 var config bool bAdvancedTeamSay;	// Enable or disable Advanced TeamSay.
 var config bool bWarmup;		// Enable or disable warmup. (bTournament only)
-var config int WarmupTimeLimit; // Warmup lasts at most this long
 var config bool bCoaches;		// Enable or disable coaching. (bTournament only)
 var config bool bAutoPause;		// Enable or disable autopause. (bTournament only)
 var config int PauseTotalTime;	// Total amount of Seconds a team may pause a game.
@@ -166,7 +165,6 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "KillCamDelay");
 	DumpSetting(P, "KillCamDuration");
 	DumpSetting(P, "bWarmup");
-	DumpSetting(P, "WarmupTimeLimit");
 	DumpSetting(P, "bCoaches");
 	DumpSetting(P, "Timeouts");
 	DumpSetting(P, "bFastTeams");
