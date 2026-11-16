@@ -130,6 +130,9 @@ var localized string MoreInformationText;
 	var UWindowCheckbox Chk_LocationOffsetFix;
 	var localized string LocationOffsetFixText;
 	var localized string LocationOffsetFixHelp;
+	var UWindowLabelControl Lbl_LocationOffsetFixNote;
+	var localized string LocationOffsetFixNoteText;
+	var localized string LocationOffsetFixNoteHelp;
 
 // NetStats
 	var UWindowLabelControl Lbl_NetStats;
@@ -965,6 +968,7 @@ function Created() {
 	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixInstant);
 	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixFinishFlip);
 	Chk_LocationOffsetFix = CreateCheckbox(LocationOffsetFixText, LocationOffsetFixHelp);
+	Lbl_LocationOffsetFixNote = CreateLabel("", LocationOffsetFixNoteHelp);
 
 	Lbl_NetStats = CreateSeparator(NetStatsText);
 	Chk_EnableNetStats = CreateCheckbox(EnableNetStatsText, EnableNetStatsHelp);
@@ -1243,6 +1247,7 @@ function Load() {
 	Chk_TranslocatorUseClientSideAnimations.bChecked = Settings.bTranslocatorUseClientSideAnimations;
 
 	LoadDeterministicTranslocator();
+	LoadOtherPlayersDrawing();
 	LoadForcedSettings();
 
 	bLoadSucceeded = true;
@@ -1278,7 +1283,7 @@ function LoadForcedSettings() {
 	LockIfForced(Chk_DemoShowClientMessages, "bDemoShowClientMessages", P);
 	LockIfForced(Chk_DebugMovement, "bDebugMovement", P);
 	LockIfForced(Chk_ShowDebugDataOnScreen, "bShowDebugDataOnScreen", P);
-	LockIfForced(Chk_LocationOffsetFix, "bEnableLocationOffsetFix", P);
+	LockIfForced(Chk_LocationOffsetFix, "bEnableLocationOffsetFix", P, true);
 	LockIfForced(Chk_EnableNetStats, "bEnableNetStats", P);
 	LockIfForced(Chk_NetStatUnconfirmedTime, "bNetStatsUnconfirmedTime", P);
 	LockIfForced(Chk_NetStatsLocationError, "bNetStatsLocationError", P);
@@ -1315,6 +1320,23 @@ function LockIfForced(UWindowCheckbox Chk, string Key, bbPlayer P, optional bool
 	bForced = P != none && P.IGPlus_IsForcedSetting(Key);
 	if (bForced || bOnlyGrayOut == false)
 		IGPlus_Checkbox(Chk).SetDisabled(bForced);
+}
+
+// On a server that draws the other players with Tick Interpolation or
+// Snapshot Interpolation, Location Offset Fix is never used (bbPlayer.IGPlus_TI_Use,
+// IGPlus_ShouldUseSnapshotInterpForProxy): grayed out with the reason under
+// it. Its value stays as it is. Runs before LoadForcedSettings.
+function LoadOtherPlayersDrawing() {
+	local bbPlayer P;
+	local bool bOwnWay;
+
+	P = bbPlayer(GetPlayerOwner());
+	bOwnWay = P != None && P.Level.NetMode == NM_Client
+		&& (P.IGPlus_EnableTickInterp || P.IGPlus_EnableSnapshotInterpolation);
+	IGPlus_Checkbox(Chk_LocationOffsetFix).SetDisabled(bOwnWay);
+	Lbl_LocationOffsetFixNote.SetText("");
+	if (bOwnWay)
+		Lbl_LocationOffsetFixNote.SetText(LocationOffsetFixNoteText);
 }
 
 function LoadDeterministicTranslocator() {
@@ -1601,6 +1623,8 @@ defaultproperties
 
 		LocationOffsetFixText="Location Offset Fix"
 		LocationOffsetFixHelp="If checked, tries to work around a UT bug that prevents synchronized player locations "
+		LocationOffsetFixNoteText="Grayed out: the server draws other players its own way"
+		LocationOffsetFixNoteHelp="This server draws other players with Tick Interpolation or Snapshot Interpolation, so Location Offset Fix changes nothing here"
 
 	NetStatsText="NetStats"
 

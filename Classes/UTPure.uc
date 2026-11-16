@@ -190,6 +190,7 @@ function PostBeginPlay()
 	local int XC_Version;
 	local string MapName;
 	local class<Info> VersionInfoClass;
+	local IGPlus_WeaponImplementation WImpEarly;
 
 	Super.PostBeginPlay();
 
@@ -198,8 +199,14 @@ function PostBeginPlay()
 		Spawn(class'IGPlus_DemoClock');
 
 	InitializeSettings();
+	// The weapon settings may have loaded before ours (ST_Mutator.PreBeginPlay):
+	// the locks of Tick Interpolation need ours (WeaponSettingsRepl.IGPlus_ApplyTickInterpLocks).
+	// Not GetWeaponImpl, which would remember a weapon implementation not spawned yet.
+	foreach AllActors(class'IGPlus_WeaponImplementation', WImpEarly)
+		if (WImpEarly.WeaponSettings != None && WImpEarly.WSettingsRepl != None)
+			WImpEarly.WSettingsRepl.InitFromWeaponSettings(WImpEarly.WeaponSettings);
 
-	VersionInfoClass = class<Info>(DynamicLoadObject(class'StringUtils'.static.GetPackage()$".VersionInfo", class'class', true));
+	VersionInfoClass =class<Info>(DynamicLoadObject(class'StringUtils'.static.GetPackage()$".VersionInfo", class'class', true));
 	VersionInfo = Spawn(VersionInfoClass);
 
 	xxLog("");
@@ -1551,6 +1558,8 @@ function IGPlus_SetServerSetting(PlayerPawn Sender, string Key, string Value, op
 	Settings.SetPropertyText(NormalKey, Value);
 	Settings.SaveConfig();
 	IGPlus_ApplyServerSettingsToPlayers();
+	// Tick Interpolation on or off changes what the weapon settings lock.
+	IGPlus_ApplyWeaponSettings();
 	if (bSendFeedback)
 		Sender.ClientMessage(NormalKey$"="$Settings.GetPropertyText(NormalKey));
 }

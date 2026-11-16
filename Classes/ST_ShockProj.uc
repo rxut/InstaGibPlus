@@ -402,7 +402,7 @@ function int IGPlus_ComboRewindMs() {
 
 	P = bbPlayer(Instigator);
 	if (P == None || IGPlus_ComboBy != P || P.RemoteRole != ROLE_AutonomousProxy || P.zzUTPure == None
-		|| WImp.WeaponSettings.bEnablePingCompensation == false || WImp.WeaponSettings.ShockComboRewindMax <= 0)
+		|| WImp.WSettingsRepl.bEnablePingCompensation == false || WImp.WeaponSettings.ShockComboRewindMax <= 0)
 		return 0;
 	return Min(int(IGPlus_WeaponImplementationBase(WImp).IGPlus_GetHitscanRewindMs(P)), WImp.WeaponSettings.ShockComboRewindMax);
 }
