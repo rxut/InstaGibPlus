@@ -2016,6 +2016,7 @@ How it works:
 * The client's own trace for the instant hit sound tests the players where the last frame drew them.
 * Players are drawn with different delays, and the server stands them all at the one moment a move reports. So a move reports the moment of the player it aims at. The rifle of NextIG and the sniper of NextSA find that player with their own trace. Every other move takes the player nearest the line of sight, which covers the weapons with no trace of their own on the client: the shock rifle, the normal sniper, the minigun, the enforcer and the pulse gun.
 * The same report carries how far behind their newest update that player was drawn. The server moves a new projectile of the shooter ahead by that delay, on top of the one-way ping, because the shooter led a target that was drawn that much in the past.
+* Bots are not drawn this way. The client draws a bot the stock way, at its newest update, moved on by its velocity. So the server stands a bot where its newest update had it, moved on to the moment of the shot. That moment is the reported one plus the reported delay.
 
 A player with `enableDebugData 1` gets one `Tick Interpolation:` line in the debug log for every other player every 30 seconds:
 
