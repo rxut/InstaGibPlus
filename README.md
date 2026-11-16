@@ -79,7 +79,6 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bPredictedTranslocation](#bpredictedtranslocation)
 1. [bPredictedDiscBoost](#bpredicteddiscboost)
 1. [bSmoothDiscCorrections](#bsmoothdisccorrections)
-1. [bNoSmoothing](#bnosmoothing)
 1. [bLogClientMessages](#blogclientmessages)
 1. [bDemoShowClientMessages](#bdemoshowclientmessages)
 1. [bDebugMovement](#bdebugmovement)
@@ -516,14 +515,6 @@ If set to `True`, your own shock beam, shock combo, shock ball, rocket, flak slu
 **Default: True**  
 
 If set to `True`, when the server moves your own translocator disc a little (up to 64 units), the disc glides there on your screen in a tenth of a second instead of jumping. After something hits your disc, its corrections glide up to 320 units until it lands: the hit reaches you a ping late, so the disc launches from where your screen had it. Bigger corrections, and any with a wall or door in the way, still jump. Only the drawing changes: where the disc is and where you translocate to stay the same. Only used with the server's [bEnableDeterministicTranslocator](#benabledeterministictranslocator). The settings menu grays it out on servers without it. Console: [ToggleSmoothDiscCorrections](#togglesmoothdisccorrections).
-
-## bNoSmoothing
-**Type: bool**  
-**Default: True**  
-
-The default mouse input smoothing algorithm always smears input over at least two frames, half the input being applied on one frame, the other half on the next frame. If set to `True`, the game will always apply all input on the current frame. If set to `False`, the default algorithm will be used.
-
-This is a backport from UT99 client version 469, where the equivalent setting is called bNoMouseSmoothing.
 
 ## bLogClientMessages
 **Type: bool**  
@@ -995,7 +986,6 @@ Parameters marked `optional` do not have to be supplied.
 1. [SetBeamScale](#setbeamscale)
 1. [MyIgSettings](#myigsettings)
 1. [SetNetUpdateRate](#setnetupdaterate)
-1. [SetMouseSmoothing](#setmousesmoothing)
 1. [SetKillCamEnabled](#setkillcamenabled)
 1. [DropFlag](#dropflag)
 1. [PureLogo](#purelogo)
@@ -1112,10 +1102,6 @@ Prints a selection of IG+ settings.
 **Parameters: (float NewVal)**
 
 Changes how often your client will send a movement update to the server. See [DesiredNetUpdateRate setting](#desirednetupdaterate).
-## SetMouseSmoothing
-**Parameters: (bool b)**
-
-Changes [bNoSmoothing setting](#bnosmoothing).
 ## SetKillCamEnabled
 **Parameters: (bool b)**
 

@@ -2913,7 +2913,7 @@ function TraceMarker_FrameBegin() {}
 
 event PlayerInput( float DeltaTime )
 {
-	local float SmoothTime, FOVScale, MouseScale, AbsSmoothX, AbsSmoothY, MouseTime;
+	local float FOVScale, MouseScale;
 	local bool bOldWasForward, bOldWasBack, bOldWasLeft, bOldWasRight;
 
 	if (DeltaTime > 0.02)
@@ -2945,7 +2945,6 @@ event PlayerInput( float DeltaTime )
 	bOldDodge = bDodge;
 
 	// Smooth and amplify mouse movement
-	SmoothTime = FMin(0.2, 3 * DeltaTime * Level.TimeDilation);
 	FOVScale = DesiredFOV * 0.01111;
 	MouseScale = MouseSensitivity * FOVScale;
 
@@ -2954,72 +2953,9 @@ event PlayerInput( float DeltaTime )
 
 //************************************************************************
 
-	AbsSmoothX = SmoothMouseX;
-	AbsSmoothY = SmoothMouseY;
-	if (Settings.bNoSmoothing) {
-		SmoothMouseX = aMouseX;
-		SmoothMouseY = aMouseY;
-		BorrowedMouseX = 0;
-		BorrowedMouseY = 0;
-	} else {
-		MouseTime = (Level.TimeSeconds - MouseZeroTime)/Level.TimeDilation;
-		if ( bMaxMouseSmoothing && (aMouseX == 0) && (MouseTime < MouseSmoothThreshold) )
-		{
-			SmoothMouseX = 0.5 * (MouseSmoothThreshold - MouseTime) * AbsSmoothX/MouseSmoothThreshold;
-			BorrowedMouseX += SmoothMouseX;
-		}
-		else
-		{
-			if ( (SmoothMouseX == 0) || (aMouseX == 0)
-					|| ((SmoothMouseX > 0) != (aMouseX > 0)) )
-			{
-				SmoothMouseX = aMouseX;
-				BorrowedMouseX = 0;
-			}
-			else
-			{
-				SmoothMouseX = 0.5 * (SmoothMouseX + aMouseX - BorrowedMouseX);
-				if ( (SmoothMouseX > 0) != (aMouseX > 0) )
-				{
-					if ( AMouseX > 0 )
-						SmoothMouseX = 1;
-					else
-						SmoothMouseX = -1;
-				}
-				BorrowedMouseX = SmoothMouseX - aMouseX;
-			}
-			AbsSmoothX = SmoothMouseX;
-		}
-		if ( bMaxMouseSmoothing && (aMouseY == 0) && (MouseTime < MouseSmoothThreshold) )
-		{
-			SmoothMouseY = 0.5 * (MouseSmoothThreshold - MouseTime) * AbsSmoothY/MouseSmoothThreshold;
-			BorrowedMouseY += SmoothMouseY;
-		}
-		else
-		{
-			if ( (SmoothMouseY == 0) || (aMouseY == 0)
-					|| ((SmoothMouseY > 0) != (aMouseY > 0)) )
-			{
-				SmoothMouseY = aMouseY;
-				BorrowedMouseY = 0;
-			}
-			else
-			{
-				SmoothMouseY = 0.5 * (SmoothMouseY + aMouseY - BorrowedMouseY);
-				if ( (SmoothMouseY > 0) != (aMouseY > 0) )
-				{
-					if ( AMouseY > 0 )
-						SmoothMouseY = 1;
-					else
-						SmoothMouseY = -1;
-				}
-				BorrowedMouseY = SmoothMouseY - aMouseY;
-			}
-			AbsSmoothY = SmoothMouseY;
-		}
-	}
-	if ( (aMouseX != 0) || (aMouseY != 0) )
-		MouseZeroTime = Level.TimeSeconds;
+	// Mouse movement counts in the frame it comes in, never spread over the next.
+	SmoothMouseX = aMouseX;
+	SmoothMouseY = aMouseY;
 
 	// adjust keyboard and joystick movements
 	aLookUp *= FOVScale;
@@ -3053,8 +2989,6 @@ event PlayerInput( float DeltaTime )
 		// Move forward/backward.
 		aForward += SmoothMouseY;
 	}
-	SmoothMouseX = AbsSmoothX;
-	SmoothMouseY = AbsSmoothY;
 
 	if ( bSnapLevel != 0 && !bAlwaysMouseLook && !zzCVDeny && (Level.TimeSeconds - zzCVTO) > zzCVDelay )
 	{
@@ -18072,16 +18006,6 @@ exec function SetMinDodgeClickTime( float f )
 	Settings.MinDodgeClickTime = f;
 	IGPlus_SaveSettings();
 	ClientMessage("MinDodgeClickTime:"@f);
-}
-
-exec function SetMouseSmoothing(bool b)
-{
-	if (IGPlus_RefuseForced("bNoSmoothing", "mouse smoothing"))
-		return;
-	Settings.bNoSmoothing = !b;
-	IGPlus_SaveSettings();
-	if (b) ClientMessage("Mouse Smoothing enabled!");
-	else   ClientMessage("Mouse Smoothing disabled!");
 }
 
 function xxServerSetForceModels(bool b)

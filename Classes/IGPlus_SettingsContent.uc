@@ -48,9 +48,6 @@ var localized string MoreInformationText;
 	var localized string SmoothFOVChangesText;
 	var localized string SmoothFOVChangesHelp;
 
-	var UWindowCheckbox Chk_NoSmoothing;
-	var localized string NoSmoothingText;
-	var localized string NoSmoothingHelp;
 
 	var UWindowCheckbox Chk_UseOldMouseInput;
 	var localized string UseOldMouseInputText;
@@ -931,7 +928,6 @@ function Created() {
 	Chk_AutoReady = CreateCheckbox(AutoReadyText, AutoReadyHelp);
 	Chk_ShowDeathReport = CreateCheckbox(ShowDeathReportText, ShowDeathReportHelp);
 	Chk_SmoothFOVChanges = CreateCheckbox(SmoothFOVChangesText, SmoothFOVChangesHelp);
-	Chk_NoSmoothing = CreateCheckbox(NoSmoothingText, NoSmoothingHelp);
 	Chk_UseOldMouseInput = CreateCheckbox(UseOldMouseInputText, UseOldMouseInputHelp);
 	Edit_MinDodgeClickTime = CreateEdit(ECT_Real, MinDodgeClickTimeText, MinDodgeClickTimeHelp, , 64);
 	Edit_DesiredNetUpdateRate = CreateEdit(ECT_Integer, DesiredNetUpdateRateText, DesiredNetUpdateRateHelp, 4, 32);
@@ -1135,7 +1131,6 @@ function Load() {
 	Chk_AutoReady.bChecked = Settings.bAutoReady;
 	Chk_ShowDeathReport.bChecked = Settings.bShowDeathReport;
 	Chk_SmoothFOVChanges.bChecked = Settings.bSmoothFOVChanges;
-	Chk_NoSmoothing.bChecked = Settings.bNoSmoothing;
 	Chk_UseOldMouseInput.bChecked = Settings.bUseOldMouseInput;
 	Edit_MinDodgeClickTime.SetValue(string(Settings.MinDodgeClickTime));
 	Edit_DesiredNetUpdateRate.SetValue(string(int(Settings.DesiredNetUpdateRate)));
@@ -1272,7 +1267,6 @@ function LoadForcedSettings() {
 	LockIfForced(Chk_AutoReady, "bAutoReady", P);
 	LockIfForced(Chk_ShowDeathReport, "bShowDeathReport", P);
 	LockIfForced(Chk_SmoothFOVChanges, "bSmoothFOVChanges", P);
-	LockIfForced(Chk_NoSmoothing, "bNoSmoothing", P);
 	LockIfForced(Chk_UseOldMouseInput, "bUseOldMouseInput", P);
 	LockIfForced(Chk_CameraCorrectionSmoothing, "bCameraCorrectionSmoothing", P);
 	LockIfForced(Chk_SmoothLiftJump, "bSmoothLiftJump", P);
@@ -1364,7 +1358,6 @@ function Save() {
 	Settings.bAutoReady = Chk_AutoReady.bChecked;
 	Settings.bShowDeathReport = Chk_ShowDeathReport.bChecked;
 	Settings.bSmoothFOVChanges = Chk_SmoothFOVChanges.bChecked;
-	Settings.bNoSmoothing = Chk_NoSmoothing.bChecked;
 	Settings.bUseOldMouseInput = Chk_UseOldMouseInput.bChecked;
 	Settings.MinDodgeClickTime = float(Edit_MinDodgeClickTime.GetValue());
 	Settings.DesiredNetUpdateRate = int(Edit_DesiredNetUpdateRate.GetValue());
@@ -1553,8 +1546,6 @@ defaultproperties
 		SmoothFOVChangesText="Smooth FOV Changes"
 		SmoothFOVChangesHelp="If checked, changes to your FOV are smoothed"
 
-		NoSmoothingText="Disable Mouse Smoothing"
-		NoSmoothingHelp="If checked, mouse movement is not smoothed at all"
 
 		UseOldMouseInputText="Use Old Mouse Input"
 		UseOldMouseInputHelp="If checked, mouse input is rounded like in v436, otherwise use v469-style mouse input"
