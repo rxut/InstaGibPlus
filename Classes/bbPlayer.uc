@@ -412,6 +412,9 @@ var bool IGPlus_AdjustLocationOverride;
 var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
 var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving lift (always eased)
+var vector IGPlus_PushCamOffset;            // camera lag after a push our client couldn't predict (always eased)
+var bool IGPlus_CAPPushed;                  // client: a correction since the last replay says a push made it
+var float IGPlus_PushEaseTS;                // server: move time of the last push the client couldn't predict
 var float IGPlus_LiftExitTS;                // when we last left a moving lift
 var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
 var Actor IGPlus_DbgLastBase;               // debug: base before the last change
@@ -3183,7 +3186,11 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 	if (bUpdatePosition == false) {
 		IGPlus_PreAdjustLocation = Location;
 		IGPlus_PreAdjustTlocCounter = TlocCounter;
+		IGPlus_CAPPushed = false;
 	}
+	// The server pushed us lately and we couldn't know (IGPlus_SendCAP).
+	if ((MiscData & IGPLUS_CAP_PUSHED) != 0)
+		IGPlus_CAPPushed = true;
 	if ( VSize(IGPlus_AdjustLocationOffset) > 0 )
 	{
 		IGPlus_AdjustLocationAlpha = 0;
@@ -3247,6 +3254,7 @@ function xxFakeCAP(float TimeStamp)
 	if (bUpdatePosition == false) {
 		IGPlus_PreAdjustLocation = Location;
 		IGPlus_PreAdjustTlocCounter = TlocCounter;
+		IGPlus_CAPPushed = false;
 	}
 	bUpdatePosition = true;
 }
@@ -3350,6 +3358,12 @@ simulated function IGPlus_CameraCorrectionDecay(float DeltaTime) {
 		if (VSize(IGPlus_LiftExitCamOffset) < 0.05)
 			IGPlus_LiftExitCamOffset = vect(0,0,0);
 	}
+	if (IGPlus_PushCamOffset != vect(0,0,0)) {
+		// ~95% gone after IGPLUS_PUSH_EASE seconds
+		IGPlus_PushCamOffset *= Exp(-3.0 * (DeltaTime / Level.TimeDilation) / IGPLUS_PUSH_EASE);
+		if (VSize(IGPlus_PushCamOffset) < 0.05)
+			IGPlus_PushCamOffset = vect(0,0,0);
+	}
 	if (IGPlus_CameraCorrectionOffset == vect(0,0,0))
 		return;
 
@@ -3370,7 +3384,8 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 	IGPlus_CameraCorrectionApplied = vect(0,0,0);
 	if (Settings.bCameraCorrectionSmoothing == false)
 		IGPlus_CameraCorrectionOffset = vect(0,0,0);
-	if (IGPlus_CameraCorrectionOffset == vect(0,0,0) && IGPlus_LiftExitCamOffset == vect(0,0,0))
+	if (IGPlus_CameraCorrectionOffset == vect(0,0,0) && IGPlus_LiftExitCamOffset == vect(0,0,0)
+		&& IGPlus_PushCamOffset == vect(0,0,0))
 		return;
 
 	IGPlus_CameraCorrectionApplied = IGPlus_ClippedCameraOffset(CameraLocation);
@@ -3378,11 +3393,11 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 }
 
 // Camera offset as rendered from Eye: the remaining correction (and lift exit
-// ease), stopped short of walls.
+// and push eases), stopped short of walls.
 simulated function vector IGPlus_ClippedCameraOffset(vector Eye) {
 	local vector Offset, Desired, HitLocation, HitNormal;
 
-	Offset = IGPlus_CameraCorrectionOffset + IGPlus_LiftExitCamOffset;
+	Offset = IGPlus_CameraCorrectionOffset + IGPlus_LiftExitCamOffset + IGPlus_PushCamOffset;
 	Desired = Eye + Offset;
 	if (Trace(HitLocation, HitNormal, Desired, Eye, false) != none)
 		Desired = HitLocation - 2.0 * Normal(Offset);
@@ -3398,6 +3413,25 @@ simulated function vector IGPlus_ClippedCameraOffset(vector Eye) {
 // server's correction arrives a ping later as one jump (90uu measured).
 
 const IGPLUS_LIFT_EXIT_EASE = 0.1;
+
+// --- Push ease -------------------------------------------------------------------
+
+// A push our client can't predict (another player's hit: a teammate's beam
+// does no damage but pushes) lands on the server at once. The client finds
+// out with the server's correction a ping later, as one jump of the push's
+// speed times the ping (about 90uu at 136 ping). The simulation takes the
+// correction at once, the camera eases the jump out, like the lift exit.
+const IGPLUS_PUSH_EASE = 0.1;           // seconds until ~95% of it is gone
+const IGPLUS_PUSH_EASE_MAX = 150.0;     // a larger jump snaps
+const IGPLUS_PUSH_EASE_WINDOW = 0.5;    // move time after the push its corrections are marked
+const IGPLUS_CAP_PUSHED = 64;           // the mark, a bit of the correction's MiscData
+
+// The jump a push's correction makes (plus what is still easing from one
+// before) goes on the camera when it is an ordinary move: not a teleport or
+// a state change, not too far, nothing between the two spots.
+static function bool IGPlus_PushEaseTakes(vector Jump, bool bTeleport, bool bClearLine) {
+	return bTeleport == false && bClearLine && VSize(Jump) <= IGPLUS_PUSH_EASE_MAX;
+}
 
 // Client: how far Lift moves over the next Ahead seconds of its current
 // keyframe move (eased like the engine's physMovingBrush), and how much faster
@@ -3737,6 +3771,9 @@ function ClientUpdatePosition()
 		// differs means the shown and corrected states are a teleport apart.
 		if (IGPlus_PredictsTranslocation())
 			IGPlus_AdjustLocationOverride = (TlocCounter != IGPlus_PreAdjustTlocCounter);
+		// A teleport: nothing of an earlier push is left to ease.
+		if (IGPlus_AdjustLocationOverride)
+			IGPlus_PushCamOffset = vect(0,0,0);
 
 		if (IGPlus_InLiftExitWindow() && IGPlus_AdjustLocationOverride == false
 			&& IGPlus_CameraCorrectionSnap == false
@@ -3747,6 +3784,19 @@ function ClientUpdatePosition()
 			IGPlus_AdjustLocationOffset = vect(0,0,0);
 			IGPlus_AdjustLocationAlpha = 0;
 			IGPlus_LiftExitCamOffset += IGPlus_PreAdjustLocation - Location;
+		} else if (IGPlus_CAPPushed && IGPlus_PushEaseTakes(IGPlus_PushCamOffset + IGPlus_PreAdjustLocation - Location,
+				IGPlus_AdjustLocationOverride || IGPlus_CameraCorrectionSnap,
+				FastTrace(Location, IGPlus_PreAdjustLocation))
+		) {
+			// A push we couldn't predict (another player's hit), found out a
+			// ping late: the simulation takes it now, the camera eases out
+			// the jump, whatever the smoothing settings. The later corrections
+			// of the same push add next to nothing, so it is one ease.
+			if (VSize(IGPlus_PreAdjustLocation - Location) > 1.0)
+				ClientDebugMessage("Push eased:"@int(VSize(IGPlus_PreAdjustLocation - Location))@"uu");
+			IGPlus_AdjustLocationOffset = vect(0,0,0);
+			IGPlus_AdjustLocationAlpha = 0;
+			IGPlus_PushCamOffset += IGPlus_PreAdjustLocation - Location;
 		} else if (Settings.bCameraCorrectionSmoothing) {
 			// Keep the corrected simulation; only the camera eases toward it.
 			IGPlus_AdjustLocationOffset = vect(0,0,0);
@@ -3779,6 +3829,7 @@ function ClientUpdatePosition()
 		// setting the lift exit ease stayed off after the first such update.
 		IGPlus_CameraCorrectionSnap = false;
 	}
+	IGPlus_CAPPushed = false;
 
 	bUpdating = false;
 	bDuck = realbDuck;
@@ -5377,6 +5428,7 @@ function IGPlus_TlocPredictTo(ST_TranslocatorTarget Disc, IGPlus_SavedMove Move)
 	// A teleport, not a correction: nothing left to ease.
 	IGPlus_CameraCorrectionOffset = vect(0,0,0);
 	IGPlus_LiftExitCamOffset = vect(0,0,0);
+	IGPlus_PushCamOffset = vect(0,0,0);
 	IGPlus_AdjustLocationOffset = vect(0,0,0);
 	IGPlus_AdjustLocationAlpha = 0;
 }
@@ -6451,6 +6503,10 @@ function IGPlus_SendCAP() {
 		ClientLoc = Location;
 
 	CAPMiscData = TlocCounter & 0x0003;
+	// A push the client couldn't predict landed lately: the jump this
+	// correction makes is eased on its camera (ClientUpdatePosition).
+	if (IGPlus_PushEaseTS > 0.0 && CurrentTimeStamp - IGPlus_PushEaseTS < IGPLUS_PUSH_EASE_WINDOW)
+		CAPMiscData = CAPMiscData | IGPLUS_CAP_PUSHED;
 
 	if (GetStateName() == 'PlayerWalking') {
 		if (Physics == PHYS_Walking) {
@@ -10415,7 +10471,7 @@ function xxReplicateMove(
 	// leave from the real position; aim them through the crosshair point.
 	if (IGPlus_PushSafeAim
 		&& ((IGPlus_CameraCorrectionOffset != vect(0,0,0) && Settings.bCameraCorrectionSmoothing)
-			|| IGPlus_LiftExitCamOffset != vect(0,0,0))
+			|| IGPlus_LiftExitCamOffset != vect(0,0,0) || IGPlus_PushCamOffset != vect(0,0,0))
 		&& (DodgeMove <= DODGE_None || DodgeMove >= DODGE_Active)
 		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
 	) {
@@ -12037,6 +12093,9 @@ function ServerAddMomentum(vector Momentum) {
 
 	if (IGPlus_PushSafeAim && Velocity != OldVelocity)
 		IGPlus_PSANotePush(Velocity - OldVelocity);
+	// Pushes our client predicts go through IGPlus_SKAddVelocity, not here.
+	if (Velocity != OldVelocity)
+		IGPlus_PushEaseTS = CurrentTimeStamp;
 }
 
 simulated function NN_Momentum( Vector momentum, name DamageType )
@@ -18079,6 +18138,7 @@ function ClientReStart()
 	zzSpawnedTime = Level.TimeSeconds;
 	IGPlus_CameraCorrectionOffset = vect(0,0,0);
 	IGPlus_LiftExitCamOffset = vect(0,0,0);
+	IGPlus_PushCamOffset = vect(0,0,0);
 	IGPlus_LiftExitTS = 0.0;
 	IGPlus_DetClientSwitchPending = none;
 	IGPlus_DetClientGateWeapon = none; // the respawn equip sends a fresh tagged gate

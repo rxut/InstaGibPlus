@@ -333,6 +333,15 @@ function TestTickInterp() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_ShotOriginIsNear(0.0) && class'bbPlayer'.static.IGPlus_ShotOriginIsNear(1.7)
 		&& class'bbPlayer'.static.IGPlus_ShotOriginIsNear(1.8) == false && class'bbPlayer'.static.IGPlus_ShotOriginIsNear(-1.0) == false,
 		"ShotOrigin_the_client_spot_counts_only_inside_the_movement_tolerance");
+	// Push ease: the jump a push's correction makes goes on the camera when it
+	// is an ordinary move. A teleport, a jump over 150 units or one through a wall snaps.
+	LogTestResult(class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(90,0,30), false, true)
+		&& class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(0,0,0), false, true)
+		&& class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(150,0,0), false, true)
+		&& class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(151,0,0), false, true) == false
+		&& class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(90,0,0), true, true) == false
+		&& class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(90,0,0), false, false) == false,
+		"PushEase_an_ordinary_push_jump_eases_a_teleport_a_long_one_or_one_through_a_wall_snaps");
 	LogTestResult(class'ClientSettings'.static.IntToHitEffectSource(0) == HESRC_Server
 		&& class'ClientSettings'.static.IntToHitEffectSource(1) == HESRC_Client
 		&& class'ClientSettings'.default.HitEffectSource == HESRC_Client
