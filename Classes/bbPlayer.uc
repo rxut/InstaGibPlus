@@ -2538,6 +2538,27 @@ function bool IGPlus_RestartedAgainByStartMatch() {
 		&& (Level.NetMode == NM_DedicatedServer || Level.NetMode == NM_ListenServer || DMP.bRestartLevel == false);
 }
 
+// Stock's "has one already" test (DeathMatchPlus.AddDefaultInventory and
+// GiveWeapon) asks for the stock class, and we hold IG+'s subclass of it
+// (ST_Translocator for Translocator, ST_enforcer for Enforcer). The second
+// restart at match start doesn't clear our weapons, so it gave us a second
+// translocator and a second Enforcer for the first life. While StartMatch
+// runs, a held subclass counts. The exact class still comes first.
+function Inventory FindInventoryType(class DesiredClass) {
+	local Inventory Inv;
+	local int Guard;
+
+	Inv = Super.FindInventoryType(DesiredClass);
+	if (Inv != none || IGPlus_RestartedAgainByStartMatch() == false || ClassIsChildOf(DesiredClass, class'Weapon') == false)
+		return Inv;
+	for (Inv = Inventory; Inv != none && Guard < 100; Inv = Inv.Inventory) {
+		Guard++;
+		if (ClassIsChildOf(Inv.Class, DesiredClass))
+			return Inv;
+	}
+	return none;
+}
+
 // Notification of other player respawning, play effects locally
 function IGPlus_NotifyPlayerRestart(vector Loc, rotator Dir, bbPlayer Other) {
 	local UTTeleportEffect PTE;
