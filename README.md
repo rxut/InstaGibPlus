@@ -559,19 +559,13 @@ In the IG+ menu this is `Show Debug Data On Screen`, under `Advanced`.
 **Type: EFlipAnimationFix**  
 **Default: FAF_FinishFlip**  
 
-What to draw when a player's model would collapse into a small lump in the air (a "pancake").
-
-The game blends a model into its next animation by moving every point of it in a straight line. The flip of a forward dodge turns the model over. When a blend of some length starts in that part of the flip, the lines cross in the middle and the model is a lump for as long as the blend takes. The usual way there is a forward dodge that lands in the middle of its flip, followed at once by a jump (a blend of 0.35 or 0.7 seconds) or by a jump pad (2 seconds).
+What to draw when a player's model would collapse into a small lump in the air. Players call it the pancake. It happens when a forward dodge lands in the middle of its flip and a jump or a jump pad follows at once. The game then blends the turned-over model straight into its next pose. The model folds up for as long as the blend takes.
 
 - `FAF_Off`: models are drawn as the game draws them.
-- `FAF_Instant`: the model takes the pose the blend ends in at once, and the game's air animations go on from there.
-- `FAF_FinishFlip`: the model plays its flip to the end at the flip's own speed. Then the blend the game is in by then takes over from its start and catches up. Every frame drawn is a frame of the stock animations.
+- `FAF_Instant`: the model takes its next pose at once.
+- `FAF_FinishFlip`: the model plays its flip to the end and then blends on. Every frame drawn is a frame of the stock animations.
 
-It acts on blends that start from the turned-over part of a flip and have more than a quarter of a second to go. The flip itself, short blends and slow blends from an upright pose are drawn as before. It works on other players, on your own model in behind view and for spectators.
-
-A model that comes into view in the middle of such a blend is drawn in the pose the blend ends in, with `FAF_Instant` and with `FAF_FinishFlip`. The game would blend it from the pose it had when you last saw it. Whether a model was on your screen is an estimate: it is inside your view and the line to it is clear.
-
-A player with [EnableDebugData](#enabledebugdata) on gets one `Flip fix:` line in the debug log for every such blend, with any value of this setting. It names the player, the animation the blend goes to, the milliseconds it had left, how much of the pose was a turned-over one (1.0 is all of it) and what was done (`off`, `instant` or `flip`). `seen again in a blend to` marks a model that came into view in the middle of the blend.
+It works on other players, on your own model in behind view and for spectators. Short blends and blends from an upright pose are drawn as before.
 
 In the IG+ menu this is `Flip Animation Fix`, under `Advanced`.
 
@@ -1080,7 +1074,6 @@ Switches between the 16 slots available for enemy hitsounds (see [sHitSound](#sh
 
 Switches between the 16 slots available for teammate hitsounds (see [sHitSound](#shitsound)). `hs` must be a value between `0` and `15`.
 
-
 ## ForceModels
 **Parameters: (bool b)**
 
@@ -1412,7 +1405,6 @@ Load one weapon mutator for the mode you want, via your map vote configuration o
 Load only one of them. With none of them loaded, players get the default UT weapons with no lag compensation.
 
 When connected to the server type **'mutate playerhelp'** in the console to view the available commands and options.
-
 
 # Admin Commands
 - ShowIPs (Shows the IP of players)
@@ -1967,19 +1959,13 @@ The amount of time that has to pass without an update from a player before forci
 
 Evens out the movement of a player whose packets arrive late or in clumps.
 
-Without it the server runs every move the moment its packet arrives. When packets come late and together, that player stands still on the server and then covers all the missed time in one tick. Other players see a stop and a jump, and the player is hard to hit.
+Without it the server runs every move the moment its packet arrives. A player whose packets come late and together stands still on the server and then covers the missed time in one tick. Other players see a stop and a jump. That player is hard to hit.
 
-If set to `True`, the server keeps the moves of such a player in a short queue. It plays them at the pace the player made them. Other players then see an even path. When the queue runs empty the player stands still until the next move arrives, and carries on from that spot. The server never guesses the missing input, so the queue gives that player no corrections.
+If set to `True`, the server queues the moves of such a player and plays them at the pace the player made them. Other players then see an even path. The server never guesses missing input. The queue causes that player no corrections.
 
-The player with the bad connection pays with delay. Their moves, shots and hit sounds come later by the time their moves wait, up to [AdaptiveBufferingMax](#adaptivebufferingmax). Their ping on the scoreboard includes that delay. The delay shrinks again once their packets arrive on time.
+The player with the bad connection pays with delay, up to [AdaptiveBufferingMax](#adaptivebufferingmax). It shows in their scoreboard ping and shrinks again once their packets arrive on time. A player whose packets arrive on time is never queued.
 
-A player whose packets arrive on time is not queued. The server runs their moves on arrival, as with the setting off.
-
-A player is queued when one of their moves arrives later than 2 server ticks plus one of their own move intervals. With [bEnableTickInterpolation](#benabletickinterpolation) on it is 4 ticks. The other clients then draw a player 2 ticks behind and carry them on for 2 more, so a move up to 4 ticks late shows as nothing, and queueing for it would only cost that player delay. They leave the queue once their usual lateness is back under 1.5 ticks plus half a move interval (3.5 ticks with Tick Interpolation) and the delay has run down.
-
-Adaptive Buffering replaces jitter bounding. [JitterBoundingMode](#jitterboundingmode) does not run while this is on. Requires bEnableInputReplication to be False. Needs a server on version 469.
-
-The server log gets a `[BUFFER]` line when a player enters or leaves the queue. It also gets a `[JITTER-SUMMARY]` line for each player at the end of a map. That line says how late the player's moves arrived, and how many of them were later than the slack that queues a player (`slackMs`, `overSlack`, and `overSlackEvents` for the times such a move came with none in the 3 seconds before it). It is written with the setting on or off.
+Adaptive Buffering replaces jitter bounding. [JitterBoundingMode](#jitterboundingmode) does not run while this is on. Requires bEnableInputReplication to be False and a server on version 469.
 
 ## AdaptiveBufferingMax
 
@@ -1994,45 +1980,19 @@ The most delay [bEnableAdaptiveBuffering](#benableadaptivebuffering) gives one p
 **Type: bool**  
 **Default: False**  
 
-If enabled, a client draws every other player between two real updates from the server, a little in the past, instead of moving them forward by a guess. Every move then tells the server the exact tick position its target was drawn at, and the server stands the players between the same two snapshots. What the shooter's screen showed is the spot the server tests, at any frame rate and any ping.
+If enabled, your game draws every other player between two real updates from the server, a little in the past. Without it your game moves them forward by a guess. A dodge can then overshoot and snap back. Every shot tells the server which moment your screen showed. The server tests the players there.
 
-How it works:
+What you notice:
 
-* The server numbers its ticks. With each player it sends the number of the tick that player's last move ran in, where the player stood at the end of that tick, and the time of that move in one byte. That costs about 12 bytes for each other player in each tick.
-* A player is drawn at an even pace. A tick's spot is where the player's last move ended, and one tick runs more of a player's move time than the next. Drawn by tick number alone, a player who moves evenly speeds up and slows down from tick to tick, more the faster they move, so most on a jump pad. The client takes the moment to draw on an even clock of the player's own move time and draws the spot between the two updates around it. The shot reports that spot as a part of the way between those two updates, and the server stands the player there as before.
-* The moment a player is drawn at runs on the client's own frame time. Each frame it moves on by exactly the time the frame took. It follows the moment the tick clock asks for only slowly, because that one shifts a little with every update that comes early or late. Close to a player's newest update it runs up to 15% slower, so a late update is met with a slightly slower body and not with one that stops.
-* A client whose own download comes late at times holds its tick clock back. A hold starts when a tick number arrives over 5 ticks later or earlier than the clock says. A late tick number still sets the clock back at once, but the players on screen do not step back for it. They run up to 15% slower until they are behind their newest update again. When the line catches up the clock stays where it is, behind the newest tick number by what the line was late, 8 ticks at most, never more. The next time the line is that late the client draws the players on from updates it already has. What no late update needed for 10 to 20 seconds is given back at 3% of real time, and with under 3 ticks in hand the hold is over. Before, the clock was set at once both times, and every player on screen stepped back and then jumped ahead. A shot reports the tick position its target was drawn at, as before, so the server tests the same picture. With the smallest drawing delay the 8 ticks are what the server accepts on top of a client's ping. The animation of the other players is shown later by the same hold, taken at its steady value, so their legs do not skip when the hold drops for a late moment. A tick number over 13 ticks early or late is a stop of the client's download that no hold can cover, as on a full line or in a short outage. Then the clock is set at once and a hold ends: the other players stand still while nothing arrives, and are drawn at the present again as soon as their updates are in. A client that never gets a tick number over 5 ticks late never starts a hold.
-* The client measures how long a server tick is from when the tick numbers arrive. A tick number that arrives over 2 ticks early or late is left out of that measure. It says how the client's line is and not how long a tick is, and counted it made the clock run slow for a while.
-* A dead player is hidden and has no updates. The server sends none while they are dead, and the client drops the ones from before. After the respawn they are drawn from their first update at the new spot, and until it arrives they are not drawn. The server tests them from that same update on.
-* A position is sent in quarters of a unit. The engine sends a position rounded to whole units, so the quarters go in a byte of their own. The client draws and tests a player between these spots, and the server tests a shot against the same rounded spots. Tested against its exact spots, a shot that grazed a player by less than the rounding could count on one side and miss on the other. In whole units alone a walking player was drawn unevenly, because each spot was up to half a unit off.
-* A client reads a player's update once per frame. When two updates arrive in one frame, or a packet is lost, it has no update for one tick and draws that player across the gap. A shot reports which two updates its target was drawn between, and the server stands the players between the same two, not between the two snapshots next to each other.
-* The client keeps each player's last 16 updates. It draws a player behind the server's tick clock by the gap between that player's updates plus one tick, 2 ticks at least and 10 at most.
-* Two updates too far apart to be movement, as after a teleporter, are not drawn as a slide. The player stays at the older one until the newer one's tick.
-* Past a player's newest update the client carries them on by their velocity for at most 2 ticks. Then they stand still until the next update arrives. The shot tells the server when that was the case.
-* A player the server holds still is not carried on at all. That is a player whose queue ran empty with [bEnableAdaptiveBuffering](#benableadaptivebuffering) on. The server says so, and the shot tells the server that the player was drawn standing.
-* The animation is drawn from the same moment as the body. The client notes the animation the engine plays in every frame and shows the one from as long ago as the body is drawn behind.
-* A hit test takes the crouch that came with the update the body is drawn from, as the server takes it from its snapshot of that tick.
-* While a player's body stands still because their updates stopped, their animation stands still too and they make no footstep sounds.
-* The client's own trace for the instant hit sound tests the players where the last frame drew them.
-* Players are drawn with different delays, and the server stands them all at the one moment a move reports. So a move reports the moment of the player it aims at. The rifle of NextIG and the sniper of NextSA find that player with their own trace. Every other move takes the player nearest the line of sight, which covers the weapons with no trace of their own on the client: the shock rifle, the normal sniper, the minigun, the enforcer and the pulse gun.
-* The same report carries how far behind their newest update that player was drawn. The server moves a new projectile of the shooter ahead by that delay, on top of the one-way ping, because the shooter led a target that was drawn that much in the past.
+* Other players run at an even pace, 2 to 10 server ticks behind their newest update. The more unevenly their updates reach you, the further behind.
+* When an update is late, your game carries the player on for 2 ticks at most. Then they stand still until it arrives. A player the server holds with [bEnableAdaptiveBuffering](#benableadaptivebuffering) is drawn standing.
+* Body, animation and crouch come from the same moment. Two updates too far apart to be movement, as after a teleporter, are not drawn as a slide.
+* When your own connection lags now and then, your game draws the other players up to 8 ticks further behind. Then they keep running evenly. Before, every player on your screen stepped back and then jumped ahead each time it lagged. After 10 to 20 seconds without a lag the extra delay goes away slowly. A lag of over 13 ticks is too long for that. The other players then stand until updates arrive. Then they are drawn where they are at once. Your shots still report what your screen showed, so the server tests the same picture. On a steady connection nothing changes.
+* A player who respawns is drawn from their first update at the new spot.
+* Your new projectiles are moved ahead by the drawing delay. You led a target that was drawn that much in the past.
 * Bots are not drawn this way. The client draws a bot the stock way, at its newest update, moved on by its velocity. So the server stands a bot where its newest update had it, moved on to the moment of the shot. That moment is the reported one plus the reported delay.
 
-A player with `enableDebugData 1` gets one `Tick Interpolation:` line in the debug log for every other player every 30 seconds:
-
-| Field | Meaning |
-| --- | --- |
-| `frames`, `updates` | Frames that player was drawn in, and updates that arrived |
-| `past` | Share of frames drawn past the newest update |
-| `stopped` | Share of frames the body stood still because no update was there |
-| `held` | Share of frames the server held the player still |
-| `delayMsAvg`, `delayMsMax` | How far behind the newest update the player was drawn |
-| `gapTicksMax` | The longest gap between two updates, in server ticks |
-| `back1`, `back3`, `backMax` | Frames that moved the body backwards by over 1 and over 3 units, and the largest such step |
-| `paceMsMax` | The furthest one update's move time was off the even pace, in milliseconds |
-| `resets`, `clockSnaps` | Times the stored updates were thrown away, and times the tick clock was set at once |
-| `recvMsAvg`, `recvMsMax` | How far the tick clock was held behind the newest tick number because the client's own download came late. 0 on a steady line |
-| `freezes` | Times the client's own download stopped for longer than a hold can cover (over 13 ticks), and the tick clock was set at once |
+It costs the server about 12 bytes for each other player in each tick.
 
 A client's Location Offset Fix setting has no effect while this is on. The picture is later than without it, by the delay above. A player whose packets stall is drawn standing still for a moment and then catches up. [bEnableAdaptiveBuffering](#benableadaptivebuffering) evens that out on the server.
 
@@ -2197,7 +2157,7 @@ If True, weapon switches start on the client the moment the key is pressed inste
 
 If True, a shot fired right after the shooter was pushed leaves from where the shooter's screen had them, not from where the push had already moved them on the server. Projectiles fired from a moving lift leave from where the shooter saw themselves on the lift, and meet the lift where the shooter saw it. With [bCameraCorrectionSmoothing](#bcameracorrectionsmoothing), shots go through the crosshair while the camera eases out a correction. Requires bEnableInputReplication to be False. The lift part needs the weapon's bEnablePingCompensation.
 
-With this setting on or off, a shot leaves from the spot the shooter's own game client had them at whenever that spot is close to the server's. Close means no further apart than the movement code allows without a correction, about 1.7 units. The shooter's screen fired from there, and from the server's own spot a beam that grazed a player by less than that could hit on the screen and miss on the server. The server's hit line for a player with `enableDebugData 1` has `originGap`, the distance between the two spots, and `origin`, which is `client`, `push` or `server`.
+With this setting on or off, a shot leaves from the spot the shooter's own game client had them at whenever that spot is close to the server's. Close means no further apart than the movement code allows without a correction, about 1.7 units. The shooter's screen fired from there, and from the server's own spot a beam that grazed a player by less than that could hit on the screen and miss on the server.
 
 ## bEnablePredictedSelfKnockback
 
@@ -2213,9 +2173,9 @@ If True, the push from your own rockets, flak slug, shock ball, ripper alt-fire 
 
 If True, translocator throws, recalls and translocations follow the same rules on client and server at the same timestamp, and you see your own disc from the moment you throw it. The server's disc follows your own moves, so TranslocatorCompensatePing is not used while this is on. Requires bEnableInputReplication to be False.
 
-Your own disc stops on another player where your screen draws them. In stock it stops on any player it touches. Your client and the server use the same test, the engine's own trace of the disc's path against the player's body. Your client runs it once a frame against the players where it draws them. The server runs it on its own disc. For that your moves carry the report of [bEnablePreciseRewindTime](#benablepreciserewindtime) while your disc flies. Each report says which frame of yours it shows. The server takes the path its own disc flew between two of your frames and tests it against the other players where that frame drew them. Your moves only say where to cut the server's path, never where the disc or a player was. With no report for a tenth of a second the server tests once a tick and rewinds the players by your ping. The disc stops on each player once and then drops through them. Your client used to stop the disc when the engine moved another player's body into it. The engine moves a body to the newest spot it received, and IG+ moves it out of the map between frames. So the disc stopped at one of those spots and not where your screen drew the player. The server then moved your disc back a moment later.
+Your own disc stops on another player where your screen shows them. The server stops it at the same spot. Your game tests the disc's path against the players as your screen draws them. The server runs the same test against the players moved back to what your screen showed. Before, your disc could vanish for about a second as it reached a player. The server could also move it after it had stopped. The disc stops on each player once and then drops through them. The test is exact with [bEnablePreciseRewindTime](#benablepreciserewindtime). Without it the server moves the players back by your ping.
 
-A translocate also telefrags the other players where your screen drew them. Your disc stops where your screen drew a player. You come out where your screen had your disc. Stock only telefrags a player whose body overlaps yours on the server at that moment. A player who runs away from you is ahead of the body your screen draws. The gap is your ping plus the drawing delay. At 100 ping that is about 50 units. A telefrag needs the two bodies to overlap. So you came out behind a running player even when you timed the telefrag right on your screen. The server now also moves the other players back to where your screen drew them. It does this for your hitscan shots too. It telefrags anyone whose body overlaps yours there. The server still telefrags anyone who stands at the spot now. Both tests also telefrag teammates. Stock does the same. Needs [bEnablePingCompensation](#benablepingcompensation).
+A translocate also telefrags the other players where your screen showed them. A player who runs away from you is ahead of what your screen shows. At 100 ping that is about 50 units. Stock only telefrags a body that overlaps yours on the server at that moment. So a translocate timed right on your screen landed behind a running player. The server now also tests the players moved back to what your screen showed, as it does for your hitscan shots. A player who stands at the spot right now is still telefragged too. Both tests telefrag teammates, as stock does. Needs [bEnablePingCompensation](#benablepingcompensation).
 
 ## bEnablePredictedTranslocation
 
@@ -2262,7 +2222,7 @@ If enabled, hitscan shots are tested against where targets were on the shooter's
 
 Upper bound on the rewind. Players above this ping are compensated as if they had this ping.
 
-The bound holds the ping only. With [bEnablePreciseRewindTime](#benablepreciserewindtime) the rewind is the age of the picture a shot was aimed at. That age is the shooter's ping, plus the delay their screen draws other players with (about 20 ms with [bEnableTickInterpolation](#benabletickinterpolation), up to 80 for a target whose updates arrive unevenly), plus the delay [bEnableAdaptiveBuffering](#benableadaptivebuffering) runs the shooter's own moves with (up to AdaptiveBufferingMax). The two delays are the server's own, so they go on top of this bound: a shot is refused only when its age is above the bound plus the queue delay plus the drawing delay, the latter counted up to 100 ms. The rewinds that do without a shot's report (the fallback, projectiles) are capped the same way. So a player with 200 ping is fully covered at 200 with both features on, and a player with 300 ping is compensated as if they had 200, with the two delays added. A refused shot falls back to the server's own reading of the ping, and the shooter's own hit sound and marker can then be wrong.
+The limit is on the shooter's ping. With [bEnableTickInterpolation](#benabletickinterpolation) and [bEnableAdaptiveBuffering](#benableadaptivebuffering) a shot also carries two small delays that the server adds itself. One is the delay the screen draws other players with, counted up to 100 ms. The other is the delay the shooter's moves were queued by, up to AdaptiveBufferingMax. Both go on top of this limit. So a player under the limit always has their shot tested where their screen showed it. You don't need to raise the limit for these two features. A player over the limit is compensated as if they had this ping.
 
 The server keeps each player's last 128 positions, one for every tick a move ran in. That is one second at 128 ticks a second and 0.64 s at 200.
 
@@ -2286,7 +2246,9 @@ If enabled, the rewound position is interpolated between the two snapshots aroun
 **Type: bool**  
 **Default: False** (True in NextIG and NextSA)  
 
-If enabled, a hitscan shot rewinds the other players to the moment the shooter's screen showed them, instead of guessing from the shooter's average ping. The server tells each player the server time of every update it sends. A shot then carries the update the shooter's screen showed and how long the screen had been moving players forward past it. The server places every player the same way: at their snapshot from that update, carried forward by their velocity for the same time. Network jitter, the wait for the server's next tick and ping changes stop moving the rewound players. Your moves also carry this report while your own [deterministic translocator](#benabledeterministictranslocator) disc flies. The server uses it to stop the disc on the other players where you saw them. It doesn't need bEnableSubTickCompensation. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them. Shots traced later in the tick than the moves arrive (minigun, pulse beam, enforcer refire) use the same report. If the shot's rewind is above PingCompensationMax, or differs from the server's own ping measurement by more than PreciseRewindTimeMaxDeviationMs, the server does not use the report. Then the shot is rewound by the server's own ping measurement, the lowest of its last four readings (two a second), plus the delay Adaptive Buffering gives the shooter and the drawing delay of Tick Interpolation. Before, that fallback used an average of the time stamps the client puts on its moves, which the client writes itself and which run late after a moment of lag. On a test rig this fallback was as close to the shot's real picture age as the old one on a steady line (11 against 12 ms at the 90th percentile), and closer for a shooter queued by Adaptive Buffering (15 against 25 ms) or whose download stopped now and then (31 against 35 ms). With Snapshot Interpolation the old fallback stays. Needs bEnablePingCompensation and bEnableInputReplication off. Not used for a player with snapshot interpolation. Console `enableDebugData 1` writes a line per hitscan shot: the rewind used, the old rewind and how far the change moved the players.
+If enabled, a hitscan shot rewinds the other players to the moment the shooter's screen showed them, instead of guessing from the shooter's average ping. Each shot tells the server which update the screen showed and how far past it the screen had moved the players. The server places every player the same way. Network jitter and ping changes then no longer move the rewound players. Your moves also carry this report while your own [deterministic translocator](#benabledeterministictranslocator) disc flies. The server uses it to stop the disc on players where you saw them. Shots traced later in the tick use the same report: minigun, pulse beam and enforcer refire. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them.
+
+The server doesn't use a report that differs from its own ping reading by more than PreciseRewindTimeMaxDeviationMs, or that is older than [PingCompensationMax](#pingcompensationmax) allows. Then it rewinds by the lowest of its last four ping readings, plus the delays of Adaptive Buffering and Tick Interpolation. Doesn't need bEnableSubTickCompensation. Needs bEnablePingCompensation and bEnableInputReplication off. Not used for a player with Snapshot Interpolation.
 
 ## PreciseRewindTimeMaxDeviationMs
 
@@ -2310,13 +2272,9 @@ NextIG and NextSA only. If True, a shot that reaches the server just after its s
 
 Fire Time Order. It acts on the rifle of NextIG and on the sniper rifle in every mode.
 
-Without it the server runs a shot the moment it reads the shot's packet. Two shots that reach the server in the same tick then run in the order their packets arrived, and the later click can win.
+Without it the server runs a shot the moment it reads the shot's packet. Two shots that reach the server in the same tick run in the order their packets arrived. The later click can then win.
 
-If set to `True`, the server notes the rifle and sniper shots of a tick and runs them once all of the tick's packets are read, the one fired first first. The fire time is the time stamp of the shot's move on the server's clock, plus half of the shooter's lowest ping of late. Two shots less than 2 ms apart keep the order they arrived in. A shooter killed by an earlier shot of the same tick loses his own shot, unless [bEnableTrades](#benabletrades) is on.
-
-It adds no delay. A shot is still traced in the tick it arrived in. `fireShared` and `fireMoved` in the `[DET-SUMMARY]` line count how often it had something to do.
-
-The server log gets one `[FIRE-ORDER]` line for each tick in which two or more such shots met. It lists the shooters in the order their shots ran, each with `agoMs`, how long before the tick the server reckons the shot was fired, and `arrived`, the place its packet had.
+If set to `True`, the server runs the shots of one tick in the order the players fired them. It adds no delay. A shooter killed by an earlier shot of the same tick loses their own shot, unless [bEnableTrades](#benabletrades) is on.
 
 ## RocketCompensatePing
 
@@ -2421,60 +2379,6 @@ The demo features only work in demos recorded on a server that runs this build.
 * The followed player's messages, chat, announcer sounds and pickup messages show, and so do the match start countdown, killing sprees and the won or lost announcer.
 
 [bDemoShowRealModels](#bdemoshowrealmodels) decides whether a demo shows forced models or the real ones.
-
-# Server Log
-
-Every IG+ event line in the server log ends with the server's clock time, for example `at=21:15:07`, so you can match a line to a player's report or to a demo.
-
-When a match ends or a player leaves, the server writes one `[DET-SUMMARY]` line for that player, unless every count is zero:
-
-| Field | Meaning |
-|---|---|
-| `throws`, `translocates` | Translocator throws and translocates |
-| `landedApart` | Landings the player saw corrected |
-| `absorbed` | Landings a little apart that the server took over, so the player saw nothing |
-| `throwApart` | Throws the server could not start from the client's spot |
-| `rejects` | Translocator actions the server refused |
-| `late` | Translocator actions that arrived through a re-send or were held back |
-| `jumpDropped` | Jumps at a landing that only the server took |
-| `shotRefused` | Shots the client showed while the server's fire window was closed |
-| `shotUnbound` | Shots the client showed while the server held another weapon |
-| `switchMismatch` | Weapon switches the two sides resolved differently |
-| `clockHolds` | Seconds in which shots were held by [DetFireClockMargin](#detfireclockmargin) |
-| `hitShots` | NextIG and NextSA: shots that carried the result of the shooter's own trace |
-| `hitNoData` | NextIG and NextSA: shots the server ran with no result from the shooter's own trace. The shot's own move was lost, and the server fired on the next one |
-| `hitBoth` | Of those, shots that hit a player in both traces |
-| `hitClientOnly` | Shots that hit a player only in the shooter's own trace. The shooter got a hit sound and the server counted a miss |
-| `hitServerOnly` | Shots that hit a player only in the server's trace. The hit sound came a ping late |
-| `hitHeadDiff` | NextSA: hits the two traces counted differently as head or body |
-| `hitDrawnDiff` | Shots where the shooter's trace against the players as drawn on screen said the opposite of its trace against them where the server places them |
-| `hitDrawnRight` | Of those, shots where the server agreed with the drawn players |
-| `deadShots` | Rifle and sniper shots the shooter's client fired when the server already had the shooter dead. The server fired nothing |
-| `fireShared` | Rifle and sniper shots that reached the server in the same tick as another player's shot. With [bEnableFireTimeOrder](#benablefiretimeorder) on, the server traces such shots once the tick's packets are all read, the one fired first first. The fire time is the move's time stamp mapped to the server's clock, less half the server's own ping measure. Shots fired less than 2 ms apart keep the order they arrived in. A shooter killed by an earlier shot of the same tick loses his own, unless trades are on. Needs a 469 server |
-| `fireMoved` | Of those, the shots that ran in another place than they arrived in |
-| `deadShotHits` | Of those, shots that hit a player in the shooter's own trace, so a hit sound played for a shot that did not count |
-| `eyeUsed` | Rifle and sniper shots the server started at the eye height the shooter's client sent |
-| `eyeRefused` | Shots whose sent eye height was more than 24 units from the server's own. The server used its own |
-| `eyeDiffAvg`, `eyeDiffMax` | How far the sent eye height was from the server's own, in units |
-| `originFar`, `originGapMax` | Rifle and sniper shots fired while the shooter's own spot was further from the server's than the movement code allows without a correction, and the largest such distance, in units |
-| `ping`, `lostMoves` | The player's ping and lost moves |
-
-The single lines behind the shot and switch counts are only written while [TraceInput](#traceinput) is on for that player.
-
-Every shot counted in `hitClientOnly`, `hitServerOnly`, `hitDrawnDiff` or `deadShots` also writes one `[DET-HIT]` line. Its first word says which: `clientOnly`, `serverOnly`, `drawnOnly` (only the drawn players were hit), `drawnMissed` (only the drawn players were missed) or `deadShot`. It names the weapon, the nearest player on the server's line, the distance to that player and that player's speed, the rewind used and the shooter's ping. For a `clientOnly` line, `gapXY` and `gapZ` say by how many units the server's line passed that player's rewound body, and `blocked=True` means something solid was in between. `eyeDiff` is the shooter's eye height minus the server's own for that shot. A shooter with `enableDebugData 1` gets the same line in the debug log.
-
-A player with `enableDebugData 1` also gets lines about their own movement, to show why the server corrected their position:
-
-| Line | Meaning |
-| --- | --- |
-| `Dodge done`, `Dodge refused` | A dodge that happened, or one that could not (in the air with no wall near, or crouching). The number after it is the direction |
-| `Jump done`, `Jump refused` | A jump that happened, or a jump key pressed while not on the ground |
-| `Landed` | A landing |
-| `Send CAP:` | The server corrected the position. The values are the move time, the server's physics, the client's physics, the square of the distance between the two positions, the limit, the server's speed (`sv`) and the speed the client reported (`cv`) |
-
-Each of the first three kinds comes twice: `(client)` for what the player's own game did, and `(server)` for what the server did with the same move. Each side decides on its own copy of the player whether a dodge or a jump is possible. Where a pair differs, one side dodged or jumped alone, and corrections follow until the client has the server's state again, about one ping later.
-
-The IG+ SuperShockRifle and the IG+ sniper start a shot at the shooter's eye. The client sends its eye height with the shot, and the server starts its trace there. Each side works out the eye height on its own, and only the client's follows view shake, so without this the server's line can be above or below the crosshair's line right after a hit, a landing or a step.
 
 # Building
 
