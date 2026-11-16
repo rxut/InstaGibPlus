@@ -687,7 +687,8 @@ function IGPlus_UnlinkProjDummy(ST_ProjectileDummy PD) {
 
 // bHitscan: the deterministic translocator's own disc is tested where its
 // thrower saw it (ST_Translocator.IGPlus_DetOwnShotLocation), not ping-rewound.
-function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan) {
+// bQuiet: no debug line (the deterministic disc's sweep, every tick or move).
+function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan, optional bool bQuiet) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
@@ -715,7 +716,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	if (bHitscan && bbPlayer(Instigator) != none && bbPlayer(Instigator).GetWeaponSettings() != none
 		&& bbPlayer(Instigator).GetWeaponSettings().bEnablePreciseRewindTime) {
 		PRT = bbPlayer(Instigator);
-		if (PRT.bDrawDebugData)
+		if (PRT.bDrawDebugData && bQuiet == false)
 			PRTDebug = PRT;
 		if (PRT.IGPlus_PRTUsable() == false || int(PRT.IGPlus_PRTLagMs) != Ping)
 			PRT = none;

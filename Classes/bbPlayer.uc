@@ -4143,6 +4143,22 @@ function bool IGPlus_PRTUsable() {
 	return IGPlus_PRTFresh() && IGPlus_PRTReason == "";
 }
 
+// Server: we took the report of a move with time stamp TS while our
+// deterministic disc flies. The report shows the frame before the move's, and
+// our client's disc there had flown TS minus the throw's time stamp (it flies
+// in the frame of the throw too), as for its shots at it (ST_Translocator.IGPlus_DetSeenAge).
+// It meets the other players in that picture, on the path it flew on our
+// screen up to that frame (ST_TranslocatorTarget.IGPlus_DetReportSweep).
+function IGPlus_DetReportSweep(float TS) {
+	local ST_Translocator TL;
+
+	if (IGPlus_DetTranslocator == false || IGPlus_PRTUsable() == false)
+		return;
+	TL = ST_Translocator(FindInventoryType(class'ST_Translocator'));
+	if (TL != None && ST_TranslocatorTarget(TL.TTarget) != None && TL.TTarget.bDeleteMe == false)
+		ST_TranslocatorTarget(TL.TTarget).IGPlus_DetReportSweep(TS - TL.IGPlus_ThrowTS);
+}
+
 // The report's view time for a shot traced now: as far past it as the
 // tick has run since the report arrived (the rewind stays the same).
 function float IGPlus_PRTViewTimeNow() {
@@ -6061,8 +6077,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	LastServerMoveParams.Physics = ClientPhysics;
 	LastServerMoveParams.TlocCounter = ClientTlocCounter;
 	// Precise Rewind Time: when this move's shots saw the other players.
-	if ((SM.PRTData & 0x8000) != 0)
+	if ((SM.PRTData & 0x8000) != 0) {
 		IGPlus_PRTNote(SM.PRTData);
+		IGPlus_DetReportSweep(SM.TimeStamp);
+	}
 	IGPlus_DetPrevClientVel = IGPlus_DetClientVel;
 	IGPlus_DetPrevClientPhys = IGPlus_DetClientPhys;
 	IGPlus_DetClientVel = SM.ClientVelocity;
@@ -10833,9 +10851,14 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		IGPlus_DetRedoView = ViewPacked;
 	}
 
-	// Precise Rewind Time: only moves that can shoot carry what we saw.
+	// Precise Rewind Time: only moves that can shoot carry what we saw, and
+	// those while our own deterministic disc flies: the server stops its copy
+	// on the other players where we saw them (ST_TranslocatorTarget.IGPlus_DetRewoundStop).
 	WS = GetWeaponSettings();
-	if ((Move.bFire || Move.bAltFire) && WS != none
+	if ((Move.bFire || Move.bAltFire
+			|| (IGPlus_DetTloc != none && IGPlus_DetTloc.IGPlus_bDetOut && IGPlus_DetTloc.IGPlus_DetLocalDisc != none
+				&& IGPlus_DetTloc.IGPlus_DetLocalDisc.Physics != PHYS_None))
+		&& WS != none
 		&& WS.bEnablePreciseRewindTime && IGPlus_EnableSnapshotInterpolation == false)
 		PRTData = Move.IGPlus_PRTData;
 
@@ -15421,6 +15444,10 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 		D.bCollideWorld = false;
 		D.SetCollision(false, false, false);
 	}
+
+	// Everyone stands where they are drawn: our own deterministic disc meets them there.
+	if (IGPlus_DetTloc != none && IGPlus_DetTloc.bDeleteMe == false)
+		IGPlus_DetTloc.IGPlus_DetClientSweep();
 }
 
 // This event is only executed on Pawns with Role=ROLE_SimulatedProxy

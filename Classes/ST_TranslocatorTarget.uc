@@ -35,11 +35,15 @@ var int IGPlus_DetServerPathEvents;
 var int IGPlus_DetClientPathEvents;
 var Actor IGPlus_DetLastEncroacher;
 var string IGPlus_DetLastTouch;
-// Server, deterministic: where the last Tick had the disc, and the player who
-// last stopped it (IGPlus_DetRewoundStop).
+// Deterministic: where the last sweep had the disc (the server's each Tick,
+// the thrower's client each frame), and the player who last stopped it
+// (IGPlus_DetSweep).
 var vector IGPlus_DetPrevLoc;
 var bool IGPlus_bDetPrevLoc;
+var float IGPlus_DetPrevTime;   // when that was
 var Pawn IGPlus_DetStoppedBy;
+var float IGPlus_DetReportAge;  // server: the thrower's disc age the last report's sweep reached
+var float IGPlus_DetReportTime; // server: when that was
 var bool IGPlus_bDetSweeping;   // server: inside IGPlus_DetRewoundStop's own rewind
 var float SimulationStartTime;     // When simulation began
 var float TotalSimulationTime;     // Total ping time simulated
@@ -496,45 +500,145 @@ function bool IGPlus_DetJudgesRewound() {
 		&& P.GetWeaponSettings().bEnablePingCompensation;
 }
 
-// Server: this frame's path from From against the other players, rewound to
-// where the thrower saw them: a ping and their interp late, as for its
-// hitscan. Stock stops a flying disc on the first player it touches, at that
-// player's spot (TranslocatorTarget.Touch).
-function IGPlus_DetRewoundStop(vector From) {
+// The first other player the disc's path from From meets, and where it stops
+// on them: their spot, at the height it met them. Stock stops a flying disc on
+// the first player it touches, at that player's spot (TranslocatorTarget.Touch).
+// Cls: the server's stand-ins rewound to where the thrower saw the players
+// (UTPlusDummy), or the pawns where the thrower's client draws them. The
+// engine's own trace on both sides, so both test the same shape the same way.
+simulated function Pawn IGPlus_DetSweep(vector From, vector To, class<Actor> Cls, out vector NewPos, optional out float HitT) {
+	local Actor A;
+	local Pawn P;
+	local vector HitLocation, HitNormal, Extent;
+
+	Extent.X = CollisionRadius;
+	Extent.Y = CollisionRadius;
+	Extent.Z = CollisionHeight;
+	foreach TraceActors(Cls, A, HitLocation, HitNormal, To, From, Extent) {
+		P = Pawn(A);
+		if (UTPlusDummy(A) != None)
+			P = UTPlusDummy(A).Actual;
+		// Not again by the one it just stopped on (it drops through them).
+		if (P != None && P != Instigator && P != IGPlus_DetStoppedBy && P.Health > 0 && P.PlayerReplicationInfo != None) {
+			NewPos = A.Location;
+			NewPos.Z = HitLocation.Z;
+			HitT = VSize(HitLocation - From) / FMax(VSize(To - From), 0.001);
+			return P;
+		}
+	}
+	return None;
+}
+
+// Server, on a move of the thrower's whose report of what its screen drew we
+// took: the path its disc flew on that screen since the last report, up to
+// the frame the report shows (Age), against the players where that frame drew
+// them. The same path against the same picture as the thrower's client tested
+// (IGPlus_DetClientSweep). Tested once a tick against the newest report, the
+// disc's path and the picture were a client frame or a server tick apart, here
+// one way and there the other, and a disc that grazed a player stopped on one
+// side only (test rig: 1 to 4 times in 59 throws at a strafing player).
+function IGPlus_DetReportSweep(float Age) {
+	local vector From, To;
+	local byte bLanded;
+
+	if (Physics != PHYS_Falling || IGPlus_bRebasing || IGPlus_DetJudgesRewound() == false)
+		return;
+	// Our own disc's path, split at the client's frames. The client's clock
+	// picks only where: not past our disc by more than the record flies on
+	// (IGPlus_GetHistoryAt), so no time stamp skips a part of the path.
+	Age = FMin(Age, IGPlus_CurrentAge() + 0.05);
+	if (Age <= IGPlus_DetReportAge)
+		return;
+	To = IGPlus_GetHistoryAt(Age, bLanded);
+	if (IGPlus_DetReportAge > 0.0 && bLanded == 0) {
+		From = IGPlus_GetHistoryAt(IGPlus_DetReportAge, bLanded);
+		// Not across a jump (a re-fly or a correction moved it).
+		if (VSize(To - From) <= 2.0 * VSize(Velocity) * (Age - IGPlus_DetReportAge) + 16.0)
+			IGPlus_DetRewoundStop(From, To, IGPlus_DetReportAge, Age);
+	}
+	IGPlus_DetReportAge = Age;
+	IGPlus_DetReportTime = Level.TimeSeconds;
+}
+
+// Server: the disc's path from From to To against the other players, rewound
+// to where the thrower saw them, as for its hitscan: by the picture its moves
+// report while its disc flies, else by its ping (Tick, when no report came).
+// FromAge and ToAge: the disc's ages there, when the path is one it flew
+// before now (IGPlus_DetReportSweep). Its record from the stop on is then
+// flown again from the stop.
+function IGPlus_DetRewoundStop(vector From, vector To, optional float FromAge, optional float ToAge) {
 	local bbPlayer P;
 	local IGPlus_WeaponImplementationBase WImpBase;
-	local UTPlusDummy D, Hit;
-	local vector HitLocation, HitNormal, Extent, NewPos;
+	local Pawn Hit;
+	local vector NewPos;
+	local float HitT;
 
 	P = bbPlayer(Instigator);
 	WImpBase = P.IGPlus_GetWeaponImplementationBase();
 	if (WImpBase == None)
 		return;
-	Extent.X = CollisionRadius;
-	Extent.Y = CollisionRadius;
-	Extent.Z = CollisionHeight;
 	// The rewind moves ridden lifts to their old spot and back, switching
 	// their collision off and on: nothing it brings here touches the disc.
+	// Quiet: this runs every tick or move, no debug line each time.
 	IGPlus_bDetSweeping = true;
-	P.zzUTPure.CompensateFor(int(WImpBase.IGPlus_GetAveragePingRewindMs(P)), P);
-	foreach TraceActors(class'UTPlusDummy', D, HitLocation, HitNormal, Location, From, Extent) {
-		// Not again by the one it just stopped on (it drops through them).
-		if (D.Actual != None && D.Actual != Instigator && D.Actual != IGPlus_DetStoppedBy && D.Actual.Health > 0) {
-			Hit = D;
-			NewPos = D.Location;
-			NewPos.Z = HitLocation.Z;
-			break;
-		}
-	}
+	P.zzUTPure.CompensateFor(int(WImpBase.IGPlus_GetHitscanRewindMs(P)), P, true, true);
+	Hit = IGPlus_DetSweep(From, To, class'UTPlusDummy', NewPos, HitT);
 	P.zzUTPure.EndCompensation();
 	IGPlus_bDetSweeping = false;
 	if (Hit == None)
 		return;
-	IGPlus_DetStoppedBy = Hit.Actual;
+	if (ToAge > 0.0)
+		IGPlus_TruncateHistory(FromAge + HitT * (ToAge - FromAge));
+	IGPlus_DetStoppedBy = Hit;
 	SetLocation(NewPos);
 	Velocity = vect(0,0,0);
-	IGPlus_DetNoteTouch("stopped-by-rewound-player", Hit.Actual);
+	IGPlus_DetNoteTouch("stopped-by-rewound-player", Hit);
 	IGPlus_NoteChanged();
+}
+
+// The thrower's client, once a frame, when every other player stands where
+// the screen draws them (bbPlayer.IGPlus_LocationOffsetFix_AfterAll): our own
+// disc's path since the last frame against them, with the server's test.
+// The engine's touches don't do: they come when a player is moved, to their
+// newest received spot or out of the map and back, with Location still the
+// old spot (ULevel::FarMoveActor), and again every frame while
+// the disc is inside a body.
+simulated function IGPlus_DetClientSweep() {
+	local Pawn Hit;
+	local vector NewPos;
+
+	if (Physics != PHYS_Falling || IGPlus_bRebasing)
+		return;
+	// Not across a jump (a correction moved it), as on the server.
+	if (IGPlus_DetPathJumped() == false) {
+		Hit = IGPlus_DetSweep(IGPlus_DetPrevLoc, Location, class'Pawn', NewPos);
+		if (Hit != None) {
+			IGPlus_DetStoppedBy = Hit;
+			SetLocation(NewPos);
+			Velocity = vect(0,0,0);
+			// Ask the server where its copy is, a little later in the disc's
+			// life: its tick finds the player up to a tick or two after our
+			// frame does. Asked for this moment, it answers with its disc still
+			// flying, and ours would follow that through the player until the
+			// server's stop came a moment later.
+			if (ST_Translocator(Master) != None)
+				ST_Translocator(Master).IGPlus_DetLocalDiscBounced(0.05);
+		}
+	}
+	IGPlus_DetNoteSwept();
+}
+
+// No path to test since the last sweep: none yet, or the disc jumped (a
+// re-fly or correction moved it).
+simulated function bool IGPlus_DetPathJumped() {
+	return IGPlus_bDetPrevLoc == false
+		|| VSize(Location - IGPlus_DetPrevLoc) > 2.0 * VSize(Velocity) * (Level.TimeSeconds - IGPlus_DetPrevTime) + 16.0;
+}
+
+simulated function IGPlus_DetNoteSwept() {
+	IGPlus_DetPrevLoc = Location;
+	IGPlus_DetPrevTime = Level.TimeSeconds;
+	IGPlus_bDetPrevLoc = true;
 }
 
 auto state Pickup {
@@ -575,13 +679,18 @@ auto state Pickup {
 				if (IGPlus_bResyncAfterHit)
 					IGPlus_SyncAge = Age + 0.05;
 			}
-			// Other players stop it where the thrower saw them. Not across a
-			// jump (a re-fly or correction moved it).
+			// Other players stop it where the thrower saw them: on the moves
+			// that report what its screen drew (IGPlus_DetReportSweep), else
+			// here each tick by its ping. Not across a jump (a re-fly or
+			// correction moved it).
 			if (Physics == PHYS_Falling && IGPlus_bRebasing == false && IGPlus_DetJudgesRewound()) {
-				if (IGPlus_bDetPrevLoc && VSize(Location - IGPlus_DetPrevLoc) <= 2.0 * VSize(Velocity) * DeltaTime + 16.0)
-					IGPlus_DetRewoundStop(IGPlus_DetPrevLoc);
-				IGPlus_DetPrevLoc = Location;
-				IGPlus_bDetPrevLoc = true;
+				if (IGPlus_DetPathJumped() == false && Level.TimeSeconds - IGPlus_DetReportTime >= 0.1) {
+					IGPlus_DetRewoundStop(IGPlus_DetPrevLoc, Location);
+					// The next report's path starts at its own frame, not
+					// back where the reports stopped (tested here since).
+					IGPlus_DetReportAge = 0.0;
+				}
+				IGPlus_DetNoteSwept();
 			}
 			if (DesiredTarget == None || Master == None)
 				return;
@@ -726,10 +835,9 @@ auto state Pickup {
 		local Pawn ActualPawn;
 		local vector OldVelocity;
 		
-		// The thrower's own client disc: stopped by the players on its screen,
-		// as stock stops a flying disc on any player but the thrower. The
-		// server stops its copy on them where the thrower saw them
-		// (IGPlus_DetRewoundStop). Nothing else here touches it.
+		// The thrower's own client disc. Other players stop it where the
+		// screen draws them (IGPlus_DetClientSweep), not here, and the server
+		// stops its copy where the thrower saw them (IGPlus_DetRewoundStop).
 		if (IGPlus_bLocalDisc) {
 			// The thrower walks onto its landed disc: picked up, and the
 			// server picks its copy up on the same move (stock, below, or
@@ -744,13 +852,6 @@ auto state Pickup {
 				ST_Translocator(Master).IGPlus_DetClientPickedUp();
 				return;
 			}
-			if (Other.bIsPawn && Other != Instigator && Physics != PHYS_None && IGPlus_bRebasing == false) {
-				NewPos = Other.Location;
-				NewPos.Z = Location.Z;
-				SetLocation(NewPos);
-				Velocity = vect(0,0,0);
-				IGPlus_PathEvent(false); // asks the server where its copy is
-			}
 			// Stock bounces a flying disc off other actors (a CTF flag at its
 			// base, 96uu wide): ours too, or it flies through and is pulled
 			// back a ping later. Only off what the server has as well (not
@@ -758,7 +859,7 @@ auto state Pickup {
 			// Not off projectiles either (stock does): they are somewhere
 			// else on the server by the time its disc gets here, so our
 			// bounce would be a guess. The server's disc tells us of its own.
-			else if (Other.bIsPawn == false && Physics == PHYS_Falling
+			if (Other.bIsPawn == false && Physics == PHYS_Falling
 				&& Other.Role < ROLE_Authority && Mover(Other) == None && Projectile(Other) == None
 				&& Other.IsA('Inventory') == false && Other.IsA('Triggers') == false
 				&& Other.IsA('NavigationPoint') == false)
