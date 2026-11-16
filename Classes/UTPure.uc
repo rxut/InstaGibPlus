@@ -1463,7 +1463,6 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 	for (P = Level.PawnList; P != None; P = P.NextPawn) {
 		BP = bbPlayer(P);
 		if (BP != None) {
-			BP.TeleRadius = Settings.TeleRadius;
 			BP.BrightskinMode = Settings.BrightskinMode;
 			BP.KillCamDelay = FMax(0.0, Settings.KillCamDelay);
 			BP.KillCamDuration = Settings.KillCamDuration;

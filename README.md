@@ -1458,7 +1458,6 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bUseFastWeaponSwitch](#busefastweaponswitch)
 1. [bTellSpectators](#btellspectators)
 1. [PlayerPacks](#playerpacks)
-1. [TeleRadius](#teleradius)
 1. [ThrowVelocity](#throwvelocity)
 1. [bForceDemo](#bforcedemo)
 1. [bRestrictTrading](#brestricttrading)
@@ -1743,14 +1742,6 @@ Determines how server-side hit feedback is handled.
 * `HFM_Disabled`: No feedback to clients
 * `HFM_VisibleOnly`: Feedback only if client can see the victim
 * `HFM_Always`: Feedback always provided
-
-## TeleRadius
-
-**Type: int**  
-**Default: 210**  
-**Unit: uu**  
-
-Radius within which to telefrag enemies using translocator.
 
 ## ThrowVelocity
 
