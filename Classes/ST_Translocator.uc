@@ -1753,9 +1753,11 @@ simulated function IGPlus_DetPredictBoost(vector Momentum) {
 // player running away is ahead of the drawn body by the ping and the drawing
 // delay, about 50 units at 100 ping, and a telefrag needs the bodies to
 // overlap. So the players are rewound as for a hitscan shot of the thrower,
-// and whoever overlaps us there is telefragged, as stock does with anyone it
-// meets (teammates too). Stock's own telefrag stays: someone standing here now
-// is telefragged as before. The client sends nothing for this.
+// and whoever overlaps us there is telefragged. Never a teammate in a team
+// game: stock refuses a move into a teammate's body (TournamentPlayer.EncroachingOn),
+// so it never telefrags one, and gibbedBy goes straight to Died, past that
+// test and past the team damage rule. Stock's own telefrag stays: someone
+// standing here now is telefragged as before. The client sends nothing for this.
 function IGPlus_DetRewoundTelefrag(bbPlayer P) {
 	local IGPlus_WeaponImplementationBase WImpBase;
 	local UTPlusDummy D;
@@ -1773,6 +1775,10 @@ function IGPlus_DetRewoundTelefrag(bbPlayer P) {
 	NearGap = 1000000.0;
 	for (D = P.zzUTPure.CompDummies; D != None && n < ArrayCount(Victims); D = D.Next) {
 		if (D.bCompActive == false || D.Actual == None || D.Actual == P || D.Actual.Health <= 0)
+			continue;
+		// A teammate (the test of TournamentPlayer.EncroachingOn).
+		if (P.GameReplicationInfo != None && P.GameReplicationInfo.bTeamGame && P.PlayerReplicationInfo != None
+			&& D.Actual.PlayerReplicationInfo != None && D.Actual.PlayerReplicationInfo.Team == P.PlayerReplicationInfo.Team)
 			continue;
 		Gap = VSize((D.Location - P.Location) * vect(1,1,0));
 		if (Gap < NearGap) {
