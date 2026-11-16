@@ -694,7 +694,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
     local Pawn DActual;
 	local Actor ShooterBase;
 	local bbPlayer PRT, PRTDebug;
-	local int OldPing;
+	local int OldPing, OwnPing;
 	local vector OldLoc;
 	local float Moved, MostMoved;
 	local string MostMovedName;
@@ -719,8 +719,10 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 			PRTDebug = PRT;
 		if (PRT.IGPlus_PRTUsable() == false || int(PRT.IGPlus_PRTLagMs) != Ping)
 			PRT = none;
-		else if (PRTDebug != none)
+		else if (PRTDebug != none) {
 			OldPing = int(PRTDebug.IGPlus_GetWeaponImplementationBase().IGPlus_GetAveragePingRewindMs(PRTDebug));
+			OwnPing = int(PRTDebug.IGPlus_GetWeaponImplementationBase().IGPlus_GetServerPingRewindMs(PRTDebug));
+		}
 	}
 
     for (D = CompDummies; D != none; D = D.Next) {
@@ -787,7 +789,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 
 	if (PRTDebug != none) {
 		if (PRT != none)
-			PRTDebug.ClientDebugMessage("Precise rewind (server):"@int(PRT.IGPlus_PRTLagMs)@"ms, average-ping rewind"@OldPing@"ms, server ping"@int(PRT.IGPlus_PRTServerPing)@"ms, screen"
+			PRTDebug.ClientDebugMessage("Precise rewind (server):"@int(PRT.IGPlus_PRTLagMs)@"ms, average-ping rewind"@OldPing@"ms, server-ping rewind"@OwnPing@"ms, server ping"@int(PRT.IGPlus_PRTServerPing)@"ms, screen"
 				@int(1000.0 * (PRT.IGPlus_PRTViewTimeNow() - PRT.IGPlus_PRTSeenTime) / Level.TimeDilation)@"ms past its update, players moved up to"@int(MostMoved)@"uu"@MostMovedName);
 		else if (PRTDebug.IGPlus_PRTFresh() == false)
 			PRTDebug.ClientDebugMessage("Precise rewind (server): not used, no report this tick, rewind"@Ping@"ms");
