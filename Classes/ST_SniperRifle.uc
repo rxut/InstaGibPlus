@@ -483,7 +483,9 @@ function bool CheckHeadShot(Pawn P, vector HitLocation, vector BulletDir) {
     if (WImp.WeaponSettings.SniperUseReducedHitbox == false)
         return (HitLocation.Z - Loc.Z > 0.62 * P.CollisionHeight);
 
-	if (WImp.WSettingsRepl.bEnablePingCompensation)
+	// A shooter with no rewind (a bot) found no dummy: its trace tested the
+	// target where it is now, so the head is tested there too.
+	if (Dummy != none)
 		return WImp.CheckHeadShotCompensated(Dummy, HitLocation, BulletDir);
 
     return WImp.CheckHeadShot(P, HitLocation, BulletDir);
