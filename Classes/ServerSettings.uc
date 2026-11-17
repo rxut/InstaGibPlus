@@ -138,9 +138,16 @@ function bool DeterministicTranslocatorActive() {
 	return bEnableDeterministicTranslocator && !bEnableInputReplication;
 }
 
-// Tick Interpolation uses the ServerMove path and has its own drawing.
+// Tick Interpolation uses the ServerMove path and has its own drawing. It wins
+// over Snapshot Interpolation, which is experimental.
 function bool TickInterpolationActive() {
-	return bEnableTickInterpolation && !bEnableSnapshotInterpolation && !bEnableInputReplication;
+	return bEnableTickInterpolation && !bEnableInputReplication;
+}
+
+// Snapshot Interpolation draws the other players its own way, unless Tick
+// Interpolation does.
+function bool SnapshotInterpolationActive() {
+	return bEnableSnapshotInterpolation && !TickInterpolationActive();
 }
 
 // Adaptive Buffering is built on the ServerMove path.

@@ -1901,7 +1901,7 @@ If enabled, clients use snapshot interpolation for simulated proxies.
 
 This feature is highly experimental and should be enabled only for controlled testing.
 
-While it is on, [bEnableTickInterpolation](#benabletickinterpolation) is off. The Server tab shows it unticked and grayed out.
+It is not used while [bEnableTickInterpolation](#benabletickinterpolation) is on. The Server tab then shows it unticked and grayed out.
 
 ## SnapshotInterpSendHz
 
@@ -1978,7 +1978,7 @@ It costs the server about 12 bytes for each other player in each tick.
 
 A client's Location Offset Fix setting has no effect while this is on. The picture is later than without it, by the delay above. A player whose packets stall is drawn standing still for a moment and then catches up. [bEnableAdaptiveBuffering](#benableadaptivebuffering) evens that out on the server.
 
-Keeps [bEnablePingCompensation](#benablepingcompensation) and [bEnablePreciseRewindTime](#benablepreciserewindtime) on while it is on, whatever the weapon settings say. Without them the server would test your shots against where the players are now. The ini keeps its own values. The Weapon Settings tab of the IG+ menu shows both ticked and grayed out. Not used with [bEnableSnapshotInterpolation](#benablesnapshotinterpolation) or bEnableInputReplication. Players on lifts are drawn the same way, with no lift handling of their own yet.
+Keeps [bEnablePingCompensation](#benablepingcompensation) and [bEnablePreciseRewindTime](#benablepreciserewindtime) on while it is on, whatever the weapon settings say. Without them the server would test your shots against where the players are now. The ini keeps its own values. The Weapon Settings tab of the IG+ menu shows both ticked and grayed out. Not used with bEnableInputReplication. Players on lifts are drawn the same way, with no lift handling of their own yet.
 
 ## KillCamDelay
 
@@ -2348,7 +2348,8 @@ Radius of the head cylinder of the reduced hitbox.
 **Type: bool**  
 **Default: False**  
 
-If enabled, the head cylinder of the reduced hitbox follows the player's animation, so it sits where the model's head is.
+If enabled, the head cylinder of the reduced hitbox follows the player's animation, so it sits where the model's head is.  
+It only changes anything while [SniperUseReducedHitbox](#sniperusereducedhitbox), [ShockBeamUseReducedHitbox](#shockbeamusereducedhitbox) or [EnforcerUseReducedHitbox](#enforcerusereducedhitbox) is on. The full hitbox has no head cylinder. With all three off the Weapon Settings tab grays it out.
 
 # Demos
 

@@ -234,7 +234,7 @@ var UWindowCheckbox Chk_bEnableTickInterpolation;
 var localized string bEnableTickInterpolationText;
 var localized string bEnableTickInterpolationHelp;
 var localized string InputReplicationOffHelp;
-var localized string SnapshotInterpolationOffHelp;
+var localized string TickInterpOnHelp;
 var localized string AdaptiveBufferingMaxText;
 var localized string AdaptiveBufferingMaxHelp;
 
@@ -639,28 +639,27 @@ function SaveBoxIfOpen(ServerSettings S, string Key, UWindowCheckbox Chk) {
 }
 
 // Input Replication turns off what is built on the normal move path, and
-// Snapshot Interpolation turns off Tick Interpolation (ServerSettings.*Active).
+// Tick Interpolation turns off Snapshot Interpolation (ServerSettings.*Active).
 // Those boxes show it: unticked and grayed out, with the reason as help. Runs
-// when the window loads and when either box is clicked.
+// when the window loads and when the Input Replication or Tick Interpolation
+// box is clicked.
 function ApplyServerLocks() {
 	local ServerSettings S;
-	local bool bIR, bSI;
+	local bool bIR, bTI;
 
 	S = FindServerSettingsObject();
 	if (S == none)
 		return;
 	bIR = Chk_bEnableInputReplication.bChecked;
-	bSI = Chk_bEnableSnapshotInterpolation.bChecked;
 	IGPlus_Checkbox(Chk_bEnablePredictedSwitching).SetLock(bIR, false, S.bEnablePredictedSwitching, bEnablePredictedSwitchingHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnablePredictedTranslocation).SetLock(bIR, false, S.bEnablePredictedTranslocation, bEnablePredictedTranslocationHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnablePredictedSelfKnockback).SetLock(bIR, false, S.bEnablePredictedSelfKnockback, bEnablePredictedSelfKnockbackHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnablePushSafeAim).SetLock(bIR, false, S.bEnablePushSafeAim, bEnablePushSafeAimHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnableDeterministicTranslocator).SetLock(bIR, false, S.bEnableDeterministicTranslocator, bEnableDeterministicTranslocatorHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnableAdaptiveBuffering).SetLock(bIR, false, S.bEnableAdaptiveBuffering, bEnableAdaptiveBufferingHelp, InputReplicationOffHelp);
-	if (bIR)
-		IGPlus_Checkbox(Chk_bEnableTickInterpolation).SetLock(true, false, S.bEnableTickInterpolation, bEnableTickInterpolationHelp, InputReplicationOffHelp);
-	else
-		IGPlus_Checkbox(Chk_bEnableTickInterpolation).SetLock(bSI, false, S.bEnableTickInterpolation, bEnableTickInterpolationHelp, SnapshotInterpolationOffHelp);
+	IGPlus_Checkbox(Chk_bEnableTickInterpolation).SetLock(bIR, false, S.bEnableTickInterpolation, bEnableTickInterpolationHelp, InputReplicationOffHelp);
+	bTI = bIR == false && Chk_bEnableTickInterpolation.bChecked;
+	IGPlus_Checkbox(Chk_bEnableSnapshotInterpolation).SetLock(bTI, false, S.bEnableSnapshotInterpolation, bEnableSnapshotInterpolationHelp, TickInterpOnHelp);
 }
 
 function SaveServerSettings() {
@@ -720,7 +719,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "JitterBoundingMode", JitterBoundingModeIndexToValue(Cmb_JitterBoundingMode.GetSelectedIndex()));
 	SaveServerSettingIfChanged(S, "MaxJitterTime", Edit_MaxJitterTime.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableInputReplication", BoolToString(Chk_bEnableInputReplication.bChecked));
-	SaveServerSettingIfChanged(S, "bEnableSnapshotInterpolation", BoolToString(Chk_bEnableSnapshotInterpolation.bChecked));
+	SaveBoxIfOpen(S, "bEnableSnapshotInterpolation", Chk_bEnableSnapshotInterpolation);
 	SaveServerSettingIfChanged(S, "SnapshotInterpSendHz", Edit_SnapshotInterpSendHz.GetValue());
 	SaveServerSettingIfChanged(S, "SnapshotInterpRewindMs", Edit_SnapshotInterpRewindMs.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableWarpFix", BoolToString(Chk_bEnableWarpFix.bChecked));
@@ -1431,7 +1430,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 function Notify(UWindowDialogControl C, byte E) {
 	super.Notify(C, E);
 
-	if (E == DE_Change && (C == Chk_bEnableInputReplication || C == Chk_bEnableSnapshotInterpolation))
+	if (E == DE_Change && (C == Chk_bEnableInputReplication || C == Chk_bEnableTickInterpolation))
 		ApplyServerLocks();
 	if (E == DE_Click && C == Btn_AdminAuth) {
 		if (HasServerAdminAccess())
@@ -1653,9 +1652,9 @@ defaultproperties
 	bEnableAdaptiveBufferingHelp="If checked, the server evens out the movement of a player whose packets arrive late or in clumps. Their moves wait in a short queue and play at the pace they were made, so other players see an even path instead of a stop and a jump. That player gets extra delay, up to Adaptive Buffering Max, and no corrections from it. A player whose packets arrive on time is not queued and plays as before. Replaces jitter bounding, which does not run while this is on. Has no effect with input replication."
 	AdaptiveBufferingMaxText="Adaptive Buffering Max"
 	bEnableTickInterpolationText="Tick Interpolation"
-	bEnableTickInterpolationHelp="If checked, clients draw other players between two server updates, a little in the past, and a shot is tested against the exact spot the shooter's screen drew. Keeps ping compensation and Precise Rewind Time on. Not with Snapshot Interpolation or Input Replication."
-	InputReplicationOffHelp="Server setting: off while Input Replication is on, which doesn't use it"
-	SnapshotInterpolationOffHelp="Server setting: off while Snapshot Interpolation is on, which draws players its own way"
+	bEnableTickInterpolationHelp="If checked, clients draw other players between two server updates, a little in the past, and a shot is tested against the exact spot the shooter's screen drew. Keeps ping compensation and Precise Rewind Time on. Not with Input Replication."
+	InputReplicationOffHelp="Server setting: off because Input Replication is on"
+	TickInterpOnHelp="Server setting: off because Tick Interpolation is on"
 	AdaptiveBufferingMaxHelp="The most delay Adaptive Buffering gives one player, in milliseconds. Movement that arrives later than this runs at once, as without Adaptive Buffering."
 
 	ClientEnforcementText="Client Enforcement"

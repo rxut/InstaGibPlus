@@ -87,6 +87,7 @@ var localized string bEnablePreciseRewindTimeText;
 var localized string bEnablePreciseRewindTimeHelp;
 var localized string TickInterpLockHelp;
 var localized string NeedsPingCompHelp;
+var localized string ReducedHitboxOffHelp;
 var UWindowCheckbox Chk_bEnableTrades;
 var localized string bEnableTradesText;
 var localized string bEnableTradesHelp;
@@ -913,7 +914,8 @@ function SaveWeaponSettings() {
 	SaveWeaponSettingIfChanged(S, "bEnableFireTimeOrder", BoolToString(Chk_bEnableFireTimeOrder.bChecked));
 	SaveWeaponSettingIfChanged(S, "PreciseRewindTimeMaxDeviationMs", Edit_PreciseRewindTimeMaxDeviationMs.GetValue());
 	SaveWeaponSettingIfChanged(S, "PingCompensationMax", Edit_PingCompensationMax.GetValue());
-	SaveWeaponSettingIfChanged(S, "bEnableAnimationAdaptiveHeadHitbox", BoolToString(Chk_bEnableAnimationAdaptiveHeadHitbox.bChecked));
+	if (Chk_bEnableAnimationAdaptiveHeadHitbox.bDisabled == false)
+		SaveWeaponSettingIfChanged(S, "bEnableAnimationAdaptiveHeadHitbox", BoolToString(Chk_bEnableAnimationAdaptiveHeadHitbox.bChecked));
 	SaveWeaponSettingIfChanged(S, "InvisibilityDuration", Edit_InvisibilityDuration.GetValue());
 	SaveWeaponSettingIfChanged(S, "ShieldBeltCharge", Edit_ShieldBeltCharge.GetValue());
 	SaveWeaponSettingIfChanged(S, "ArmorCharge", Edit_ArmorCharge.GetValue());
@@ -1509,14 +1511,18 @@ function bool TickInterpLocks() {
 	return ResolveOwnerBBPlayer() != none && ResolveOwnerBBPlayer().IGPlus_EnableTickInterp;
 }
 
-// What other settings make of three boxes (IGPlus_Checkbox.SetLock). Tick
+// What other settings make of four boxes (IGPlus_Checkbox.SetLock). Tick
 // Interpolation keeps ping compensation and Precise Rewind Time on. Without
 // ping compensation nothing is rewound, so Precise Rewind Time and sub-tick
-// compensation do nothing. Runs when the window loads and when the ping
-// compensation box is clicked. The window stays open across servers.
+// compensation do nothing. The animation adaptive head hitbox moves the head
+// cylinder of the reduced hitbox (IGPlus_WeaponImplementationBase.CheckHeadShot
+// and CheckHeadShotCompensated, which only the reduced hitbox traces call), so
+// with the sniper's, the shock beam's and the enforcer's reduced hitbox all off
+// it does nothing. Runs when the window loads and when one of those boxes is
+// clicked. The window stays open across servers.
 function ApplyWeaponLocks() {
 	local WeaponSettings S;
-	local bool bTI, bPC;
+	local bool bTI, bPC, bRH;
 
 	S = FindWeaponSettingsObject();
 	if (S == none)
@@ -1529,6 +1535,8 @@ function ApplyWeaponLocks() {
 	else
 		IGPlus_Checkbox(Chk_bEnablePreciseRewindTime).SetLock(bPC == false, false, S.bEnablePreciseRewindTime, bEnablePreciseRewindTimeHelp, NeedsPingCompHelp);
 	IGPlus_Checkbox(Chk_bEnableSubTickCompensation).SetLock(bPC == false, false, S.bEnableSubTickCompensation, bEnableSubTickCompensationHelp, NeedsPingCompHelp);
+	bRH = Chk_SniperUseReducedHitbox.bChecked || Chk_ShockBeamUseReducedHitbox.bChecked || Chk_EnforcerUseReducedHitbox.bChecked;
+	IGPlus_Checkbox(Chk_bEnableAnimationAdaptiveHeadHitbox).SetLock(bRH == false, false, S.bEnableAnimationAdaptiveHeadHitbox, bEnableAnimationAdaptiveHeadHitboxHelp, ReducedHitboxOffHelp);
 }
 
 function LoadWeaponSettings() {
@@ -1558,7 +1566,6 @@ function LoadWeaponSettings() {
 	Edit_PreciseRewindTimeMaxDeviationMs.SetValue(string(S.PreciseRewindTimeMaxDeviationMs));
 	Edit_PingCompensationMax.SetValue(string(S.PingCompensationMax));
 	Chk_bEnableAnimationAdaptiveHeadHitbox.bChecked = S.bEnableAnimationAdaptiveHeadHitbox;
-	ApplyWeaponLocks();
 	Edit_InvisibilityDuration.SetValue(string(S.InvisibilityDuration));
 	Edit_ShieldBeltCharge.SetValue(string(S.ShieldBeltCharge));
 	Edit_ArmorCharge.SetValue(string(S.ArmorCharge));
@@ -1694,6 +1701,8 @@ function LoadWeaponSettings() {
 	Edit_TranslocatorDownTime.SetValue(string(S.TranslocatorDownTime));
 	Edit_TranslocatorHealth.SetValue(string(S.TranslocatorHealth));
 	Chk_TranslocatorCompensatePing.bChecked = S.TranslocatorCompensatePing;
+	// After every box is loaded: the locks read the reduced hitbox boxes too.
+	ApplyWeaponLocks();
 
 	bLoadSucceeded = true;
 }
@@ -2181,7 +2190,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 
 function Notify(UWindowDialogControl C, byte E) {
 	super.Notify(C, E);
-	if (E == DE_Change && C == Chk_bEnablePingCompensation)
+	if (E == DE_Change && (C == Chk_bEnablePingCompensation || C == Chk_SniperUseReducedHitbox
+			|| C == Chk_ShockBeamUseReducedHitbox || C == Chk_EnforcerUseReducedHitbox))
 		ApplyWeaponLocks();
 	if (E == DE_Click && C == Btn_AdminAuth) {
 		if (HasServerAdminAccess())
@@ -2298,8 +2308,9 @@ defaultproperties
 	bEnableSubTickCompensationHelp="Weapon setting: Enable Sub Tick Compensation"
 	bEnablePreciseRewindTimeText="Enable Precise Rewind Time"
 	bEnablePreciseRewindTimeHelp="Weapon setting: rewind hitscan shots to the moment the shooter's screen showed"
-	TickInterpLockHelp="Weapon setting: always on while the server's Tick Interpolation is on, which needs it"
-	NeedsPingCompHelp="Weapon setting: off while Ping Compensation is off. Without it nothing is rewound"
+	TickInterpLockHelp="Weapon setting: on because Tick Interpolation is on"
+	NeedsPingCompHelp="Weapon setting: off because Ping Compensation is off"
+	ReducedHitboxOffHelp="Weapon setting: off because every Use Reduced Hitbox setting is off"
 	bEnableTradesText="Enable Trades"
 	bEnableTradesHelp="Weapon setting: a shot from a player who just died still counts. NextIG and NextSA read this in place of the server setting"
 	bEnableFireTimeOrderText="Enable Fire Time Order"
