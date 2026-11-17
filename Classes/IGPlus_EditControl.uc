@@ -7,8 +7,13 @@ var float EditBoxMaxWidth;
 var float EditBoxWidthFraction;
 
 function Created() {
-	Super.Created();
-	
+	// Not UWindowEditControl.Created: it makes a stock edit box as large as the
+	// whole control. The one made here took its place in EditBox, and the stock
+	// one stayed under it, invisible, over the label. A click on the label gave
+	// it the keyboard: the typing was drawn over the label, changed nothing, and
+	// the box now lay on top of the real one, which took no click any more.
+	Super(UWindowDialogControl).Created();
+
 	EditBox = IGPlus_EditBox(CreateWindow(class'IGPlus_EditBox', 0, 0, WinWidth, WinHeight)); 
 	EditBox.NotifyOwner = Self;
 	EditBox.bSelectOnFocus = True;

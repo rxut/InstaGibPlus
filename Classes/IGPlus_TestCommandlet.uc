@@ -428,6 +428,7 @@ function TestPRTRulePos() {
 function TestCrosshairPresets() {
 	local Object Helper;
 	local ClientSettings S;
+	local ClientSettings.CrosshairLayerDescr D;
 	local string Dump;
 	local int i;
 	local bool bOK;
@@ -517,6 +518,44 @@ function TestCrosshairPresets() {
 	bOK = bOK && InStr(S.CrosshairPresetCommand("17"), "No crosshair preset") == 0 && InStr(S.CrosshairPresetCommand("x"), "No crosshair preset") == 0;
 	bOK = bOK && InStr(S.CrosshairPresetCommand(""), "Crosshair preset 3:") == 0 && S.CrosshairPreset == 2;
 	LogTestResult(bOK, "CrosshairPresetCommand_skips_free_slots_and_refuses_them");
+
+	// The Crosshair Factory's Save writes any preset. Preset 3 is picked here.
+	D = S.CrosshairPresets[0].GetLayer(0);
+	D.bUse = true;
+	D.ScaleX = 21;
+	S.SetCrosshairPresetLayer(0, 0, D);
+	S.SaveCrosshairPreset(0, "Other");
+	bOK = S.GetCrosshairPresetName(0) == "Other" && S.CrosshairPresets[0].GetLayer(0).ScaleX == 21
+		&& S.GetCrosshairLayer(0).ScaleX != 21 && S.BottomLayer.ScaleX != 21;
+	D.ScaleX = 22;
+	S.SetCrosshairPresetLayer(2, 0, D);
+	S.SaveCrosshairPreset(2, "");
+	LogTestResult(bOK && S.CrosshairPreset == 2 && S.GetCrosshairPresetName(2) == "Crosshair 3" && S.CrosshairPresets[2].GetLayer(0).ScaleX == 22
+		&& S.GetCrosshairLayer(0).ScaleX == 22 && S.BottomLayer.ScaleX == 22,
+		"CrosshairPresets_the_window_saves_a_preset_that_is_not_picked_and_the_picked_one_is_drawn");
+}
+
+// How a layer's style and alpha reach the Canvas.
+function TestCrosshairLayerCanvas() {
+	local Canvas C;
+	local color Col;
+	local bool bOK;
+
+	C = new(none) class'Canvas';
+	Col.R = 200;
+	Col.G = 100;
+	Col.B = 50;
+	Col.A = 128;
+	class'CrosshairLayer'.static.SetupCanvas(C, 3, Col, false);
+	LogTestResult(C.Style == 3 && C.DrawColor.R == 100 && C.DrawColor.G == 50 && C.DrawColor.B == 25 && C.DrawColor.A == 255 && C.bNoSmooth,
+		"CrosshairLayer_a_translucent_layer_is_darker_by_its_alpha");
+	class'CrosshairLayer'.static.SetupCanvas(C, 1, Col, true);
+	bOK = C.Style == 1 && C.DrawColor.R == 200 && C.DrawColor.B == 50 && C.DrawColor.A == 255 && C.bNoSmooth == false;
+	Col.A = 0;
+	class'CrosshairLayer'.static.SetupCanvas(C, 3, Col, false);
+	bOK = bOK && C.DrawColor.R == 200 && C.DrawColor.G == 100;
+	class'CrosshairLayer'.static.SetupCanvas(C, 0, Col, false);
+	LogTestResult(bOK && C.Style == 1, "CrosshairLayer_alpha_is_for_translucent_only_and_0_counts_as_255");
 }
 
 // A crosshair shape as text, row after row: # for a pixel of the shape, . for none.
@@ -581,5 +620,6 @@ event int main(string Params) {
 	TestTickInterp();
 	TestCrosshairPresets();
 	TestCrosshairShapes();
+	TestCrosshairLayerCanvas();
 	return 0;
 }

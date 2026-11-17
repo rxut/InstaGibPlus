@@ -36,11 +36,11 @@ defaultproperties
 	BackgroundBrightness=48
 
 	ClientClass=class'IGPlus_CrosshairSettingsContent'
-	WindowTitle="IG+ Crosshair Factory Settings"
+	WindowTitle="IG+ Crosshair Factory"
 	bSizable=False
-	bStatusBar=False
+	bStatusBar=True
 	WinWidth=602
-	WinHeight=476
+	WinHeight=489
 	MinWinWidth=602
-	MinWinHeight=476
+	MinWinHeight=489
 }
