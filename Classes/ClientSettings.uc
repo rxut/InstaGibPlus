@@ -193,7 +193,9 @@ simulated function CrosshairLayer MakeCrosshairLayer(CrosshairLayerDescr D) {
 
 	L = new(none) class'CrosshairLayer';
 	if (D.Texture != "")
-		L.Texture = Texture(DynamicLoadObject(D.Texture, class'Texture'));
+		L.Texture = Texture(DynamicLoadObject(D.Texture, class'Texture', true));
+	if (L.Texture == none) // a name that does not exist: the white pixel, as for no name
+		L.Texture = L.default.Texture;
 	L.OffsetX = D.OffsetX;
 	L.OffsetY = D.OffsetY;
 	L.ScaleX = D.ScaleX;
@@ -257,32 +259,29 @@ simulated function StoreCrosshairPreset(optional string NewName) {
 	CrosshairPresets[CrosshairPreset].SaveConfig();
 }
 
+// The Crosshair Factory saves a preset, picked or not: one layer at a time,
+// then SaveCrosshairPreset. The picked preset's layers are CrosshairLayers
+// too, which is what the game draws.
+simulated function SetCrosshairPresetLayer(int Slot, int i, CrosshairLayerDescr D) {
+	CrosshairPresets[Slot].SetLayer(i, D);
+	if (Slot == CrosshairPreset)
+		CrosshairLayers[i] = D;
+}
+
+// An empty name keeps the preset's name.
+simulated function SaveCrosshairPreset(int Slot, string NewName) {
+	if (NewName != "")
+		CrosshairPresets[Slot].PresetName = NewName;
+	CrosshairPresets[Slot].SaveConfig();
+	if (Slot == CrosshairPreset)
+		CreateCrosshairLayers();
+}
+
 // The name of the preset in a slot, empty for a free slot.
 simulated function string GetCrosshairPresetName(int Slot) {
 	if (Slot < 0 || Slot >= arraycount(CrosshairPresets))
 		return "";
 	return CrosshairPresets[Slot].PresetName;
-}
-
-// A preset's layers as drawn layers, bottom first, for its picture in the
-// Crosshair Factory.
-simulated function CrosshairLayer CreateCrosshairPresetLayers(int Slot) {
-	local int i;
-	local CrosshairLayerDescr D;
-	local CrosshairLayer First, Last, L;
-
-	for (i = 0; i < arraycount(CrosshairLayers); i++) {
-		D = CrosshairPresets[Slot].GetLayer(i);
-		if (D.bUse == false)
-			continue;
-		L = MakeCrosshairLayer(D);
-		if (First == none)
-			First = L;
-		else
-			Last.Next = L;
-		Last = L;
-	}
-	return First;
 }
 
 // A preset's layers into CrosshairLayers.
