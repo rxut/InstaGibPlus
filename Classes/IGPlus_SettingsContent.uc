@@ -133,6 +133,7 @@ var localized string MoreInformationText;
 	var UWindowLabelControl Lbl_LocationOffsetFixNote;
 	var localized string LocationOffsetFixNoteText;
 	var localized string LocationOffsetFixNoteHelp;
+	var localized string LocationOffsetFixNoteSIText;
 
 // NetStats
 	var UWindowLabelControl Lbl_NetStats;
@@ -1324,8 +1325,10 @@ function LockIfForced(UWindowCheckbox Chk, string Key, bbPlayer P, optional bool
 
 // On a server that draws the other players with Tick Interpolation or
 // Snapshot Interpolation, Location Offset Fix is never used (bbPlayer.IGPlus_TI_Use,
-// IGPlus_ShouldUseSnapshotInterpForProxy): grayed out with the reason under
-// it. Its value stays as it is. Runs before LoadForcedSettings.
+// IGPlus_ShouldUseSnapshotInterpForProxy): grayed out with the setting that
+// does it named under it. At most one of the two is active: Tick Interpolation
+// turns Snapshot Interpolation off (ServerSettings.SnapshotInterpolationActive).
+// Its value stays as it is. Runs before LoadForcedSettings.
 function LoadOtherPlayersDrawing() {
 	local bbPlayer P;
 	local bool bOwnWay;
@@ -1335,8 +1338,13 @@ function LoadOtherPlayersDrawing() {
 		&& (P.IGPlus_EnableTickInterp || P.IGPlus_EnableSnapshotInterpolation);
 	IGPlus_Checkbox(Chk_LocationOffsetFix).SetDisabled(bOwnWay);
 	Lbl_LocationOffsetFixNote.SetText("");
-	if (bOwnWay)
+	if (bOwnWay && P.IGPlus_EnableTickInterp) {
 		Lbl_LocationOffsetFixNote.SetText(LocationOffsetFixNoteText);
+		Lbl_LocationOffsetFixNote.SetHelpText(LocationOffsetFixNoteText);
+	} else if (bOwnWay) {
+		Lbl_LocationOffsetFixNote.SetText(LocationOffsetFixNoteSIText);
+		Lbl_LocationOffsetFixNote.SetHelpText(LocationOffsetFixNoteSIText);
+	}
 }
 
 function LoadDeterministicTranslocator() {
@@ -1596,8 +1604,8 @@ defaultproperties
 		PredictedDiscBoostHelp="If checked, your own shock beam, combos, shock balls, rockets, flak slugs and ripper alt blades push your own disc on your screen right away, where the server allows it. Off: the push shows when the server's arrives, a ping later"
 		SmoothDiscCorrectionsText="Smooth Disc Corrections"
 		SmoothDiscCorrectionsHelp="If checked, when the server moves your own disc a little (up to 64 units, or 320 after a hit), it glides there in a tenth of a second instead of jumping. Not through walls. Only with the Deterministic Translocator"
-		SmoothDiscCorrectionsNoteText="Grayed out: needs the server's Deterministic Translocator"
-		SmoothDiscCorrectionsNoteHelp="Only the Deterministic Translocator has the server correct your own disc. This server doesn't use it, so there is nothing to smooth"
+		SmoothDiscCorrectionsNoteText="Grayed out: Deterministic Translocator is off"
+		SmoothDiscCorrectionsNoteHelp="Grayed out: Deterministic Translocator is off"
 
 		CameraCorrectionSmoothingTimeText="Camera Smoothing Time"
 		CameraCorrectionSmoothingTimeHelp="Seconds until a correction is (nearly) gone from the camera"
@@ -1623,8 +1631,9 @@ defaultproperties
 
 		LocationOffsetFixText="Location Offset Fix"
 		LocationOffsetFixHelp="If checked, tries to work around a UT bug that prevents synchronized player locations "
-		LocationOffsetFixNoteText="Grayed out: the server draws other players its own way"
-		LocationOffsetFixNoteHelp="This server draws other players with Tick Interpolation or Snapshot Interpolation, so Location Offset Fix changes nothing here"
+		LocationOffsetFixNoteText="Grayed out: Tick Interpolation is on"
+		LocationOffsetFixNoteHelp="Grayed out: Tick Interpolation is on"
+		LocationOffsetFixNoteSIText="Grayed out: Snapshot Interpolation is on"
 
 	NetStatsText="NetStats"
 
@@ -1911,8 +1920,8 @@ defaultproperties
 
 		TranslocatorUseClientSideAnimationsText="Client-Side Animations Translocator"
 		TranslocatorUseClientSideAnimationsHelp="If checked, use client-side animations for Translocator"
-		TranslocatorUseClientSideAnimationsNoteText="Grayed out: the server uses the Deterministic Translocator"
-		TranslocatorUseClientSideAnimationsNoteHelp="The Deterministic Translocator always shows your own disc the moment you throw, so this setting changes nothing on this server"
+		TranslocatorUseClientSideAnimationsNoteText="Grayed out: Deterministic Translocator is on"
+		TranslocatorUseClientSideAnimationsNoteHelp="Grayed out: Deterministic Translocator is on"
 
 	PaddingX=20
 	PaddingY=20

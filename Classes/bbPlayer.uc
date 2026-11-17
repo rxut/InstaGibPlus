@@ -2141,7 +2141,7 @@ event Possess()
 		IGPlus_ServerSettingsName = string(zzUTPure.Settings.Name);
 		IGPlus_WeaponSettingsName = zzUTPure.IGPlus_WeaponSettingsName();
 		IGPlus_WeaponSettingsMode = zzUTPure.IGPlus_WeaponSettingsMode();
-		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
+		IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.SnapshotInterpolationActive();
 		IGPlus_EnableTickInterp = zzUTPure.Settings.TickInterpolationActive();
 
 		ShowDamageNumberMode = zzUTPure.IGPlus_DamageNumberMode();
@@ -22274,7 +22274,7 @@ function IGPlus_ApplyNetcodeSettingsToPlayers() {
 		BP.IGPlus_DetTranslocator = zzUTPure.Settings.DeterministicTranslocatorActive();
 		BP.IGPlus_PredictedDiscBoost = zzUTPure.Settings.bEnablePredictedDiscBoost;
 		bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
-		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.bEnableSnapshotInterpolation;
+		BP.IGPlus_EnableSnapshotInterpolation = zzUTPure.Settings.SnapshotInterpolationActive();
 		BP.IGPlus_EnableTickInterp = zzUTPure.Settings.TickInterpolationActive();
 
 		if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {

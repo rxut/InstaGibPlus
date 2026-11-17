@@ -1507,7 +1507,7 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.zzMaximumNetspeed = Settings.MaxClientRate;
 			BP.zzbNoMultiWeapon = !Settings.bAllowMultiWeapon;
 			bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
-			BP.IGPlus_EnableSnapshotInterpolation = Settings.bEnableSnapshotInterpolation;
+			BP.IGPlus_EnableSnapshotInterpolation = Settings.SnapshotInterpolationActive();
 			if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {
 				BP.IGPlus_SnapInterp_ServerNextTime = 0;
 				BP.IGPlus_SnapInterp_ServerHasLast = false;
