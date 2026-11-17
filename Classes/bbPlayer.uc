@@ -16286,10 +16286,15 @@ simulated function IGPlus_TI_AnimAfter(float Delay) {
 	if (IGPlus_TI_bAnimSwapped)
 		return;
 	T = Level.TimeSeconds;
-	if (IGPlus_TI_AnimNum > 0 && T < IGPlus_TI_AnimTimeH[(IGPlus_TI_AnimHead - 1) & 63])
+	// A dead player is hidden, and what their body played until the respawn is not
+	// drawn after it: the notes start again with the first frame they are shown, as
+	// their spots do (IGPlus_TI_After). Kept, the first drawing delay after a respawn
+	// showed the hidden body's pose at the spawn spot.
+	if (bHidden || (IGPlus_TI_AnimNum > 0 && T < IGPlus_TI_AnimTimeH[(IGPlus_TI_AnimHead - 1) & 63]))
 		IGPlus_TI_AnimNum = 0;
 	// At most one note every 2 ms, so 64 of them cover the longest delay at any frame rate.
-	if (IGPlus_TI_AnimNum == 0 || T - IGPlus_TI_AnimTimeH[(IGPlus_TI_AnimHead - 1) & 63] >= 0.002) {
+	if (bHidden == false
+		&& (IGPlus_TI_AnimNum == 0 || T - IGPlus_TI_AnimTimeH[(IGPlus_TI_AnimHead - 1) & 63] >= 0.002)) {
 		IGPlus_TI_AnimSeqH[IGPlus_TI_AnimHead & 63] = AnimSequence;
 		IGPlus_TI_AnimFrameH[IGPlus_TI_AnimHead & 63] = AnimFrame;
 		IGPlus_TI_AnimTimeH[IGPlus_TI_AnimHead & 63] = T;
@@ -16304,7 +16309,11 @@ simulated function IGPlus_TI_AnimAfter(float Delay) {
 	if (AnimSequence == 'Flip' && AnimRate > 0.0)
 		IGPlus_FlipFix_FlipRate = AnimRate;
 
-	if (IGPlus_TI_bStopped == false || IGPlus_TI_ShownSeq == '') {
+	if (IGPlus_TI_AnimNum == 0) {
+		IGPlus_TI_ShownSeq = AnimSequence;
+		IGPlus_TI_ShownFrame = AnimFrame;
+		IGPlus_TI_ShownTween = TweenRate;
+	} else if (IGPlus_TI_bStopped == false || IGPlus_TI_ShownSeq == '') {
 		T -= Delay;
 		A = -1;
 		for (i = IGPlus_TI_AnimNum - 1; i >= 0; i--) {
