@@ -1014,6 +1014,8 @@ simulated function IGPlus_DetClientThrow(bbPlayer P, float TS) {
 	IGPlus_DetThrowTS = TS;
 	IGPlus_DetLastFireTS = TS;
 	P.IGPlus_DetTloc = self;
+	// For a resend, should this move be lost (bbPlayer.SendSavedMove).
+	P.IGPlus_DetThrowLoc = Owner.Location;
 
 	// Same start as ThrowTarget (whose X/Y/Z are unset there as well).
 	Start = Owner.Location + CalcDrawOffsetClient();
