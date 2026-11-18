@@ -10312,8 +10312,9 @@ simulated function IGPlus_DetNoteShot(float TS, float FireAnimTime) {
 }
 
 // Client: the server ran our last shot on another move than we did, later by
-// Delta (the rifle, the sniper, and the shock rifle, flak cannon and ripper,
-// whose own shot and the server's then leave at different times). That
+// Delta (the rifle, the sniper, and the shock rifle, flak cannon, ripper and
+// bio rifle, whose own shot and the server's then leave at different times.
+// The rocket launcher has its own: ST_UT_Eightball.ClientDetVolleyReady). That
 // happens when the shot's own move is lost: with
 // the button held the server fires on the next move that arrives. Its refire
 // clock then runs Delta behind ours, and it stays there for as long as the
@@ -10336,6 +10337,7 @@ function IGPlus_DetSyncShotClock(float ServerTS) {
 	local ST_ShockRifle SR;
 	local ST_UT_FlakCannon FC;
 	local ST_ripper RP;
+	local ST_ut_biorifle BR;
 
 	Delta = ServerTS - IGPlus_DetClientShotTS;
 	if (Abs(Delta) < 0.0008 || Abs(Delta) > 0.25)
@@ -10345,6 +10347,7 @@ function IGPlus_DetSyncShotClock(float ServerTS) {
 	SR = ST_ShockRifle(Weapon);
 	FC = ST_UT_FlakCannon(Weapon);
 	RP = ST_ripper(Weapon);
+	BR = ST_ut_biorifle(Weapon);
 	if (SSR != None) {
 		Due = SSR.DetShotDueTS;
 		Interval = SSR.ShotInterval();
@@ -10365,6 +10368,12 @@ function IGPlus_DetSyncShotClock(float ServerTS) {
 		Due = RP.DetShotDueTS;
 		Interval = RP.DetShotInterval;
 		OldNext = RP.NextDetFireTS;
+	} else if (BR != None && BR.DetShotInterval > 0.0) {
+		// The bio rifle's primary and its glob at the release. Not while an
+		// alt charge is under way: its start is no shot.
+		Due = BR.DetShotDueTS;
+		Interval = BR.DetShotInterval;
+		OldNext = BR.NextDetFireTS;
 	} else {
 		return;
 	}
@@ -10381,8 +10390,10 @@ function IGPlus_DetSyncShotClock(float ServerTS) {
 		SR.NextDetFireTS = NewNext;
 	else if (FC != None)
 		FC.NextDetFireTS = NewNext;
-	else
+	else if (RP != None)
 		RP.NextDetFireTS = NewNext;
+	else
+		BR.NextDetFireTS = NewNext;
 	// The switch hold after the shot starts at the server's step too. For the
 	// rifle and the sniper that is the interval, as before.
 	IGPlus_DetClientShotTS = ServerTS;

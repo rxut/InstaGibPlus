@@ -28,6 +28,8 @@ var float DetLastStepDelta;
 // The step time at which the cooldown ran out. What starts on a step less
 // than a held button's carry after it counts from there (DetTakeCarry).
 var float DetReadyTS;
+// The step time of the last volley on this machine (DetNoteVolley).
+var float DetLastVolleyTS;
 // Client: the rocket the loading animation is at. The Rotate and Load
 // sequences follow each other as in stock, whatever the count is.
 var int DetAnimLoaded;
@@ -390,7 +392,7 @@ replication
 {
 	// Reliable: a lost confirm leaves predicted load state stale.
 	reliable if(Role == ROLE_Authority)
-		ClientDetPrimaryShotConfirm;
+		ClientDetPrimaryShotConfirm, ClientDetVolleyReady;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -563,6 +565,7 @@ simulated function float DetVolleyAnimTime(int NumRockets) {
 
 simulated function DetNoteVolley(float TS, int NumRockets) {
 	DetVolleyHoldUntil = TS + DetVolleyAnimTime(NumRockets);
+	DetLastVolleyTS = TS;
 }
 
 simulated function DetAdvanceStepClock(float StepTS) {
@@ -601,8 +604,60 @@ simulated function DetAdvanceStepClock(float StepTS) {
 		DetAltLoadElapsed += StepDelta;
 }
 
+// Every cooldown follows a volley. The server tells the client the step time
+// its own ends at (ClientDetVolleyReady).
 simulated function DetStartCooldown(float Interval) {
 	DetCooldownRemaining = FMax(0.0, Interval);
+	DetReadyTS = 0.0;
+	if (Role == ROLE_Authority && bbPlayer(Owner) != none)
+		ClientDetVolleyReady(DetLastStepTS + DetCooldownRemaining);
+}
+
+// What the client's cooldown has left once it takes over the server's ready
+// time, or -1 when that time is not for it to take: it is the word on an
+// older volley come in after the client fired again (a cooldown is never
+// shorter than 0.87 s, so the right one is at least 0.8 s past the client's
+// last volley), it is already past, or it is further off than any cooldown.
+static final function float DetReadyLeft(float ReadyTS, float LastVolleyTS, float LastStepTS) {
+	local float Left;
+
+	if (ReadyTS < LastVolleyTS + 0.8)
+		return -1.0;
+	Left = ReadyTS - LastStepTS;
+	if (Left <= 0.0 || Left > 1.2)
+		return -1.0;
+	return Left;
+}
+
+// Server -> client after every volley: the step time the server's cooldown
+// ends at. The client's own ends at another time when the server ran the
+// volley on a later move than the client did (the volley's own move was
+// lost), fired a volley the client did not have (the two disagreed about the
+// ammo), or the client showed one the server did not run. From then on every
+// load started at a different time on the two machines, for as long as the
+// button was held: the client showed its volleys up to 0.8 s before the
+// server's rockets. The server decides when a volley leaves, so the client
+// takes over its ready time, and both find the next load due on the same step.
+simulated function ClientDetVolleyReady(float ReadyTS) {
+	local float Left;
+
+	if (Role == ROLE_Authority || !IsDetActive())
+		return;
+	Left = DetReadyLeft(ReadyTS, DetLastVolleyTS, DetLastStepTS);
+	if (Left < 0.0 || Abs(Left - DetCooldownRemaining) < 0.0008)
+		return;
+	if (bbPlayer(Owner) != none && bbPlayer(Owner).bDrawDebugData)
+		bbPlayer(Owner).ClientDebugMessage("Rocket clock: the server is ready"@bbPlayer(Owner).IGPlus_Fmt1(1000.0 * (Left - DetCooldownRemaining))@"ms off our own time, taken over");
+	// We already started the next load (this word came very late): the
+	// server starts its own at the ready time, so ours counts from there.
+	if (bDetPrimaryCycleActive || bDetWasAltHeld) {
+		if (bDetPrimaryCycleActive)
+			DetPrimaryLoadElapsed = -Left;
+		if (bDetWasAltHeld)
+			DetAltLoadElapsed = -Left;
+		return;
+	}
+	DetCooldownRemaining = Left;
 	DetReadyTS = 0.0;
 }
 
@@ -1103,6 +1158,7 @@ simulated function DetResetDeterministicState() {
 	DetResetAltCycle(true);
 	DetCooldownRemaining = 0.0;
 	DetReadyTS = 0.0;
+	DetLastVolleyTS = 0.0;
 	DetLastStepTS = 0.0;
 	DetLastStepDelta = 0.0;
 	DetCachedChargeData = 0;

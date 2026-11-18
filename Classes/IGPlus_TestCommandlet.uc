@@ -170,6 +170,11 @@ function bool TestDetEffectiveAnimTime() {
 		&& class'ST_ut_biorifle'.static.DetChargeSteps(4.49) == 8, "Det_bio_charge_a_step_every_0.5");
 	LogTestResult(class'ST_ut_biorifle'.static.DetChargeSteps(4.51) == 9
 		&& class'ST_ut_biorifle'.static.DetChargeSteps(60.0) == 9, "Det_bio_charge_nine_steps_at_most");
+	// The launcher's client takes over the server's ready time after a volley.
+	LogTestResult(Abs(class'ST_UT_Eightball'.static.DetReadyLeft(100.98, 100.0, 100.4) - 0.58) < 0.0001, "Det_rockets_ready_time_taken_over");
+	LogTestResult(class'ST_UT_Eightball'.static.DetReadyLeft(100.05, 100.0, 100.01) < 0.0, "Det_rockets_ready_time_of_an_older_volley_ignored");
+	LogTestResult(class'ST_UT_Eightball'.static.DetReadyLeft(100.9, 99.0, 101.0) < 0.0
+		&& class'ST_UT_Eightball'.static.DetReadyLeft(103.0, 100.0, 100.5) < 0.0, "Det_rockets_ready_time_past_or_too_far_ignored");
 	return true;
 }
 
