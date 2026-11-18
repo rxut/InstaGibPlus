@@ -9,6 +9,10 @@ var WeaponSettingsRepl WSettings;
 
 
 var float NextDetFireTS;
+// The time the last shot was due and the interval that followed it, for the
+// shot clock the server corrects (bbPlayer.IGPlus_DetSyncShotClock).
+var float DetShotDueTS;
+var float DetShotInterval;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -43,6 +47,8 @@ simulated function bool IsDetActive() {
 // One owner's deterministic state must never transfer to the next.
 simulated function DetResetDeterministicState() {
 	NextDetFireTS = 0.0;
+	DetShotDueTS = 0.0;
+	DetShotInterval = 0.0;
 }
 
 function GiveTo(Pawn Other) {
@@ -55,13 +61,17 @@ function DropFrom(vector StartLocation) {
 	Super.DropFrom(StartLocation);
 }
 
-// 'Fire' anim: 15 frames at 30fps; UE plays to the last frame index, so refire = 14/(30*PlayRate).
+// 'Fire' anim: 15 frames at 30fps. Stock and IG+ without ping compensation
+// loop it, and a held refire comes once a loop: 15/(30*PlayRate). On a rig
+// that is 0.385 s for the primary and 0.714 s for the alt. Only the first
+// refire after a press is longer there (0.41 s for the primary on a rig, the
+// 0.05 tween and one frame less): that one is not copied here.
 simulated function float PrimaryShotInterval() {
-	return FClamp(14.0 / (30.0 * (0.7 + 0.6 * FireAdjust)), 0.05, 2.0);
+	return FClamp(15.0 / (30.0 * (0.7 + 0.6 * FireAdjust)), 0.05, 2.0);
 }
 
 simulated function float AltShotInterval() {
-	return FClamp(14.0 / (30.0 * (0.4 + 0.3 * FireAdjust)), 0.05, 2.0);
+	return FClamp(15.0 / (30.0 * (0.4 + 0.3 * FireAdjust)), 0.05, 2.0);
 }
 
 simulated function DetPlayFireAnim(bool bAlt) {
@@ -126,7 +136,9 @@ simulated function bool DetProcessStep(
 		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
 
-	NextDetFireTS = StepTS + Interval;
+	DetShotDueTS = NextDetFireTS;
+	DetShotInterval = Interval;
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, Interval);
 	return true;
 }
 

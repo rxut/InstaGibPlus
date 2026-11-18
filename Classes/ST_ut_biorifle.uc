@@ -81,10 +81,12 @@ function DropFrom(vector StartLocation) {
 	Super.DropFrom(StartLocation);
 }
 
-// Primary fire interval: Fire anim = 9 frames at 30fps base, but Unreal play
-// duration lands on the last frame index, so stock timing is 8 / (30 * rate).
+// Primary fire interval: Fire anim = 9 frames at 30fps base. Stock and IG+
+// without ping compensation loop it, and a held refire comes once a loop:
+// 9 / (30 * rate), 0.286 s on a rig. Only the first refire after a press
+// takes the 0.05 tween and one frame less there: that one is not copied here.
 simulated function float PrimaryShotInterval() {
-	return 8.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
+	return 9.0 / (30.0 * (0.65 + 0.4 * FireAdjust));
 }
 
 // Stock alt burst: 9-frame Fire sequence at 30 fps, played at rate 0.4.
@@ -257,7 +259,7 @@ simulated function bool DetProcessStep(
 		HandleDetClientFire(StepView, StepLoc);
 	}
 
-	NextDetFireTS = StepTS + PrimaryShotInterval();
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, PrimaryShotInterval());
 	return true;
 }
 

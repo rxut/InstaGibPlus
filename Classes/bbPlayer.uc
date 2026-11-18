@@ -552,6 +552,10 @@ var int IGPlus_PingRingAt;
 // server takes it only within IGPLUS_EYE_MAX_DIFF of its own (one step
 // height: more than shake and smoothing make, little for a client that lies).
 const IGPLUS_EYE_MAX_DIFF = 24.0;
+// A deterministic shot that ran within this long after it was due was waited
+// for with the button held (IGPlus_DetNextShotTS). Longer than a frame at 20
+// frames a second, far shorter than any weapon's interval.
+const IGPLUS_DET_CARRY_MAX = 0.06;
 var int IGPlus_ShotEyeByte;       // client: the last shot's, until its move takes it. Server: the running move's. 0: none
 // Client, Hit Effect Source on Server: the ring that waits for the server's
 // hit message (IGPlus_RingHold, IGPlus_RingConfirm).
@@ -9936,6 +9940,23 @@ simulated function int IGPlus_DetIntervalShotDue(
 	return 1;
 }
 
+// When the next shot is due, after a shot that ran on the step at StepTS and
+// was due at DueTS. With the button held a shot runs on the first step at or
+// after its due time, up to one client frame late. The interval then counts
+// from the due time, so that frame's leftover time is not lost and the rate
+// is the same at every frame rate. Stock and IG+ without ping compensation
+// time a held refire by the fire animation, and the engine carries a frame's
+// leftover time into the next animation. A shot that ran later than
+// IGPLUS_DET_CARRY_MAX after its due time (a press on a weapon that was
+// ready, the first shot) counts from its own step. Only these two times
+// decide it, and client and server have the same two: the shot's frame ends
+// its move (bForcePacketSplit in xxReplicateMove).
+static final function float IGPlus_DetNextShotTS(float StepTS, float DueTS, float Interval) {
+	if (DueTS > 0.0 && StepTS - DueTS < IGPLUS_DET_CARRY_MAX)
+		return DueTS + Interval;
+	return StepTS + Interval;
+}
+
 simulated function bool IGPlus_DetIsWeaponReady(Weapon W) {
 	local Pawn PawnOwner;
 	local TournamentPlayer TP;
@@ -10239,8 +10260,10 @@ simulated function IGPlus_DetNoteShot(float TS, float FireAnimTime) {
 		IGPlus_DetServerShotTS = TS;
 }
 
-// Client: the server ran our last rifle or sniper shot on another move than
-// we did, later by Delta. That happens when the shot's own move is lost: with
+// Client: the server ran our last shot on another move than we did, later by
+// Delta (the rifle, the sniper, and the shock rifle, flak cannon and ripper,
+// whose own shot and the server's then leave at different times). That
+// happens when the shot's own move is lost: with
 // the button held the server fires on the next move that arrives. Its refire
 // clock then runs Delta behind ours, and it stays there for as long as the
 // button is held: every later shot runs a move late on the server, on a move
@@ -10248,28 +10271,78 @@ simulated function IGPlus_DetNoteShot(float TS, float FireAnimTime) {
 // height, the frame its target was carried on by). A rig with 5% of the
 // shooter's packets lost showed 23 shots in a row like that (Nov 13 2026).
 // The server decides when a shot runs, so we take over its clock: the same
-// sum from the same two numbers as on the server, so both sides find the next
-// shot due on the same move.
+// sum from the same numbers as on the server (IGPlus_DetNextShotTS, with the
+// server's step and the time the shot was due), so both sides find the next
+// shot due on the same move. A shot the server ran a move late but still
+// within IGPLUS_DET_CARRY_MAX of its due time leaves the clock where it is:
+// both sides count the next interval from the due time. A shot it ran later
+// than that counts from the server's step there, and without this it would
+// stay that much behind us for as long as the button is held.
 function IGPlus_DetSyncShotClock(float ServerTS) {
-	local float Delta, Interval;
+	local float Delta, Due, Interval, OldNext, NewNext;
+	local ST_SuperShockRifle SSR;
+	local ST_SniperRifle SN;
+	local ST_ShockRifle SR;
+	local ST_UT_FlakCannon FC;
+	local ST_ripper RP;
 
 	Delta = ServerTS - IGPlus_DetClientShotTS;
 	if (Abs(Delta) < 0.0008 || Abs(Delta) > 0.25)
 		return;
-	if (ST_SuperShockRifle(Weapon) != None) {
-		Interval = ST_SuperShockRifle(Weapon).ShotInterval();
-		ST_SuperShockRifle(Weapon).NextDetFireTS = ServerTS + Interval;
-	} else if (ST_SniperRifle(Weapon) != None) {
-		Interval = ST_SniperRifle(Weapon).PrimaryShotInterval();
-		ST_SniperRifle(Weapon).NextDetFireTS = ServerTS + Interval;
+	SSR = ST_SuperShockRifle(Weapon);
+	SN = ST_SniperRifle(Weapon);
+	SR = ST_ShockRifle(Weapon);
+	FC = ST_UT_FlakCannon(Weapon);
+	RP = ST_ripper(Weapon);
+	if (SSR != None) {
+		Due = SSR.DetShotDueTS;
+		Interval = SSR.ShotInterval();
+		OldNext = SSR.NextDetFireTS;
+	} else if (SN != None) {
+		Due = SN.DetShotDueTS;
+		Interval = SN.PrimaryShotInterval();
+		OldNext = SN.NextDetFireTS;
+	} else if (SR != None) {
+		Due = SR.DetShotDueTS;
+		Interval = SR.DetShotInterval;
+		OldNext = SR.NextDetFireTS;
+	} else if (FC != None) {
+		Due = FC.DetShotDueTS;
+		Interval = FC.DetShotInterval;
+		OldNext = FC.NextDetFireTS;
+	} else if (RP != None) {
+		Due = RP.DetShotDueTS;
+		Interval = RP.DetShotInterval;
+		OldNext = RP.NextDetFireTS;
 	} else {
 		return;
 	}
+	// The server's word on the shot before our last one, come in after we
+	// fired again: it can not have run our last shot before that was due.
+	if (ServerTS + 0.001 < Due)
+		return;
+	NewNext = IGPlus_DetNextShotTS(ServerTS, Due, Interval);
+	if (SSR != None)
+		SSR.NextDetFireTS = NewNext;
+	else if (SN != None)
+		SN.NextDetFireTS = NewNext;
+	else if (SR != None)
+		SR.NextDetFireTS = NewNext;
+	else if (FC != None)
+		FC.NextDetFireTS = NewNext;
+	else
+		RP.NextDetFireTS = NewNext;
+	// The switch hold after the shot starts at the server's step too. For the
+	// rifle and the sniper that is the interval, as before.
 	IGPlus_DetClientShotTS = ServerTS;
 	IGPlus_DetLastShotTS = ServerTS;
-	IGPlus_DetHolsterHoldUntilTS = ServerTS + Interval;
-	if (bDrawDebugData)
-		ClientDebugMessage("Shot clock: the server ran the last shot"@IGPlus_Fmt1(1000.0 * Delta)@"ms off our move, clock moved");
+	IGPlus_DetHolsterHoldUntilTS += Delta;
+	if (bDrawDebugData) {
+		if (NewNext == OldNext)
+			ClientDebugMessage("Shot clock: the server ran the last shot"@IGPlus_Fmt1(1000.0 * Delta)@"ms off our move, clock kept");
+		else
+			ClientDebugMessage("Shot clock: the server ran the last shot"@IGPlus_Fmt1(1000.0 * Delta)@"ms off our move, clock moved");
+	}
 }
 
 simulated function bool IGPlus_DetSwitchDeferActive() {
