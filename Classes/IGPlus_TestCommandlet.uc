@@ -163,6 +163,13 @@ function bool TestDetEffectiveAnimTime() {
 	LogTestResult(class'ST_UT_Eightball'.static.DetCarryOf(0.07) == 0.0
 		&& class'ST_UT_Eightball'.static.DetCarryOf(-0.5) == 0.0
 		&& class'ST_UT_Eightball'.static.DetCarryOf(0.0) == 0.0, "Det_rockets_no_carry_for_a_later_press");
+	// The bio rifle's alt charge: one step for every 0.5 s held, nine at most.
+	LogTestResult(class'ST_ut_biorifle'.static.DetChargeSteps(0.49) == 0
+		&& class'ST_ut_biorifle'.static.DetChargeSteps(0.51) == 1, "Det_bio_charge_first_step_after_0.5");
+	LogTestResult(class'ST_ut_biorifle'.static.DetChargeSteps(3.6) == 7
+		&& class'ST_ut_biorifle'.static.DetChargeSteps(4.49) == 8, "Det_bio_charge_a_step_every_0.5");
+	LogTestResult(class'ST_ut_biorifle'.static.DetChargeSteps(4.51) == 9
+		&& class'ST_ut_biorifle'.static.DetChargeSteps(60.0) == 9, "Det_bio_charge_nine_steps_at_most");
 	return true;
 }
 
