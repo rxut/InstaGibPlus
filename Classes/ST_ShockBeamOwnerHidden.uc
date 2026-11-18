@@ -41,7 +41,8 @@ simulated function Tick(float F)
 {
     Super.Tick(F);
     
-    if(!bAlreadyHidden && Owner.IsA('bbPlayer') && bbPlayer(Owner).Player != None)
+    // (Owner is None once the shooter has left: this beam outlives them by up to its 0.27 s.)
+    if(!bAlreadyHidden && Owner != None && Owner.IsA('bbPlayer') && bbPlayer(Owner).Player != None)
     {
 
         if((Level.NetMode == NM_Client))

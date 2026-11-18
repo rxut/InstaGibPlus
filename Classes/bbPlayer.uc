@@ -944,6 +944,8 @@ var bool IGPlus_bPRTRulePlaced;
 // Client, on another player's pawn: where our last frame drew them, and which frame that was (PreRender).
 var vector IGPlus_ShownLoc;
 var int IGPlus_ShownFrame;
+// Client, on another player's pawn: that frame drew them (they were not hidden then).
+var bool IGPlus_bShownVisible;
 // Client, on another player's pawn: the last frame drew them held still, and where (IGPlus_ApplyWarpFix).
 var bool IGPlus_bPRTRuleHeld;
 var vector IGPlus_PRTRuleHeldLoc;
@@ -8120,7 +8122,8 @@ simulated function IGPlus_PRTRulePlace(float ShownTime, int ShownTick, bool bWar
 	IGPlus_bPRTRuleDbgValid = false;
 	IGPlus_bPRTRuleDbgPrev = false;
 	IGPlus_PRTRuleDbgLead = 0.0;
-	if (IGPlus_LocationOffsetFix_ServerLocationTime <= 0.0 || bHidden || Health <= 0
+	// (Not by Health: it arrives up to four updates after a respawn, see IGPlus_ClientShotTrace.)
+	if (IGPlus_LocationOffsetFix_ServerLocationTime <= 0.0 || bHidden || IGPlus_bShownVisible == false
 		|| IGPlus_LocationOffsetFix_WasOnMover || IGPlus_LocationOffsetFix_IsOnMover())
 		return;
 	Loc = IGPlus_LocationOffsetFix_ServerLocation;
@@ -8170,7 +8173,8 @@ simulated function IGPlus_PRTPicturePlace(int Frame, float Lead) {
 	IGPlus_bPRTRuleDbgValid = false;
 	IGPlus_bPRTRuleDbgPrev = false;
 	IGPlus_PRTRuleDbgLead = 0.0;
-	if (IGPlus_ShownFrame != Frame || bHidden || Health <= 0)
+	// (Not by Health: it arrives up to four updates after a respawn, see IGPlus_ClientShotTrace.)
+	if (IGPlus_ShownFrame != Frame || bHidden || IGPlus_bShownVisible == false)
 		return;
 	IGPlus_PRTRuleSavedLoc = Location;
 	IGPlus_PRTRuleDbgLoc = IGPlus_ShownLoc;
@@ -8450,6 +8454,9 @@ function Actor IGPlus_ClientShotTrace(
 	local vector DrawnLoc, DrawnNormal;
 	local bool bRule, bPicture;
 	local bbPlayer ShotTarget;
+	local int i, NumSwitched, SwitchedFlags[32];
+	local PlayerReplicationInfo PRI;
+	local Pawn P, Switched[32];
 
 	IGPlus_bShotDrawnDiffers = false;
 	IGPlus_PRTShotR = 0.0;
@@ -8458,6 +8465,49 @@ function Actor IGPlus_ClientShotTrace(
 	bPicture = bRule == false && IGPlus_PRTPictureUsable();
 
 	IGPlus_LocationOffsetFix_RestoreAll();
+	// For the traces below a player's collision follows what this client
+	// shows: hidden, it can not be hit, and shown, it can. The server hides a
+	// killed player and takes their collision away in one tick, and shows a
+	// respawned one and gives it back in one tick. But the engine sends another
+	// player's bHidden with every update and bCollideActors and Health only
+	// with every fifth (APawn::GetOptimizedRepList). So for up to four updates
+	// after a kill the body is hidden here and still collides, and our trace
+	// hit it: a hit sound and marker on a player someone else had just killed,
+	// and the server refused the hit. And for up to four updates after a
+	// respawn the player is drawn here and has no collision: our beam went
+	// through them and the server's hit came a ping late. Hidden bodies are out
+	// of the trace, so the beam goes on to what is behind them, as the
+	// server's does. Players our last frame drew are in it.
+	if (GameReplicationInfo != None) {
+		for (i = 0; i < arraycount(GameReplicationInfo.PRIArray); ++i) {
+			PRI = GameReplicationInfo.PRIArray[i];
+			if (PRI == None) break;
+			P = Pawn(PRI.Owner);
+			if (P == None || P == self) continue;
+			if (P.bHidden) {
+				if (P.bCollideActors == false) continue;
+				if (bDrawDebugData)
+					ClientDebugMessage("Hidden body left out of our trace:"@PRI.PlayerName
+						@"gap="$IGPlus_Fmt1(IGPlus_LineCylinderGap(StartTrace, Normal(EndTrace - StartTrace), P.Location, P.CollisionRadius, P.CollisionHeight)));
+			} else {
+				// Shown: with a mesh (a waiting player has none), no spectator, and
+				// drawn by the frame this shot was aimed in.
+				if (P.bCollideActors || P.Mesh == None || PRI.bIsSpectator || PRI.bWaitingPlayer)
+					continue;
+				if (bbPlayer(P) != None && (bbPlayer(P).IGPlus_ShownFrame != IGPlus_FrameCount - 1 || bbPlayer(P).IGPlus_bShownVisible == false))
+					continue;
+				if (bDrawDebugData)
+					ClientDebugMessage("Shown body taken into our trace:"@PRI.PlayerName);
+			}
+			Switched[NumSwitched] = P;
+			SwitchedFlags[NumSwitched] = int(P.bCollideActors) + 2 * int(P.bBlockActors) + 4 * int(P.bBlockPlayers);
+			NumSwitched++;
+			if (P.bHidden)
+				P.SetCollision(false, P.bBlockActors, P.bBlockPlayers);
+			else
+				P.SetCollision(true, true, true);
+		}
+	}
 	if (bRule) {
 		// First against the bodies as drawn, for the count only.
 		Drawn = IGPlus_ClientShotTraceOnce(DrawnLoc, DrawnNormal, EndTrace, StartTrace, WB);
@@ -8501,6 +8551,8 @@ function Actor IGPlus_ClientShotTrace(
 	}
 	if (bDrawDebugData)
 		IGPlus_ClientShotTraceDebug(Other, Drawn, bRule || bPicture, StartTrace, EndTrace, bPicture);
+	for (i = 0; i < NumSwitched; ++i)
+		Switched[i].SetCollision((SwitchedFlags[i] & 1) != 0, (SwitchedFlags[i] & 2) != 0, (SwitchedFlags[i] & 4) != 0);
 	IGPlus_LocationOffsetFix_UndoRestoreAll();
 	return Other;
 }
@@ -8691,6 +8743,10 @@ function IGPlus_HitCompare(Actor Other, bool bHead, vector Start, vector Dir, ve
 			D = zzUTPure.FindDummy(Best);
 		if (D != None)
 			S = S@"srvLoc="$IGPlus_FmtVec1(D.Location)@"srvVel="$IGPlus_FmtVec1(D.Velocity)@"srvDuck="$int(255.0 * D.DuckFraction);
+		// The shot pointed at a moment that player could not be hit in, and
+		// we stood them at the first one they could (UTPlusDummy.CompSwap).
+		if (D != None && D.bCompFirstHittable)
+			S = S@"firstHittable";
 		// srvGap: how old our snapshot of that player was at the time the
 		// shooter saw. srvCarry: for how long we carried it on.
 		if (IGPlus_PRTUsable()) {
@@ -15720,6 +15776,7 @@ event PreRender( canvas zzCanvas )
 			if (zzPRI.Owner != self && bbPlayer(zzPRI.Owner) != none && zzPRI.Owner.Role == ROLE_SimulatedProxy) {
 				bbPlayer(zzPRI.Owner).IGPlus_ShownLoc = zzPRI.Owner.Location;
 				bbPlayer(zzPRI.Owner).IGPlus_ShownFrame = IGPlus_FrameCount;
+				bbPlayer(zzPRI.Owner).IGPlus_bShownVisible = zzPRI.Owner.bHidden == false;
 				bbPlayer(zzPRI.Owner).IGPlus_ShownR = bbPlayer(zzPRI.Owner).IGPlus_TI_DrawnR;
 				bbPlayer(zzPRI.Owner).IGPlus_bShownPast = bbPlayer(zzPRI.Owner).IGPlus_TI_bDrawnPast;
 				bbPlayer(zzPRI.Owner).IGPlus_ShownSpan = bbPlayer(zzPRI.Owner).IGPlus_TI_DrawnSpan;

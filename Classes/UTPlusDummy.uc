@@ -23,6 +23,9 @@ var bool bCompActive;
 var float CompGap, CompCarry;
 // The last rewind by a tick position: the ticks of the two snapshots used (the second is 0 for a carry).
 var int CompTickA, CompTickB;
+// The last rewind pointed at a moment in which the player could not be hit,
+// and the first snapshot in which they could was taken (CompSwap).
+var bool bCompFirstHittable;
 // A rewind by a tick position (CompStartTick). A client with Tick
 // Interpolation knows no holds, it draws between the updates it got. So the
 // held mark is left out. And the spots it got are in quarters of a unit, so
@@ -185,6 +188,7 @@ function CompStart(int Ping, optional int ExtraMs)
     local vector SnapDelta;
     local float MaxTravelDistanceSq;
 
+	bCompFirstHittable = false;
     if (Actual == none || Actual.bDeleteMe || WImp == None || Actual.Health <= 0)
 		return;
 
@@ -255,6 +259,7 @@ function CompStartSeen(float SeenTime, float ViewTime) {
 	local int Idx, Scans;
 	local UTPlusSnapshot Snap, Oldest;
 
+	bCompFirstHittable = false;
 	if (Actual == none || Actual.bDeleteMe || Actual.Health <= 0)
 		return;
 
@@ -294,6 +299,7 @@ function CompStartTick(float R, float TickLen, optional bool bPast, optional boo
 	local UTPlusSnapshot Snap, A, B;
 	local bool bHoldAfter;
 
+	bCompFirstHittable = false;
 	if (Actual == none || Actual.bDeleteMe || Actual.Health <= 0)
 		return;
 
@@ -358,6 +364,21 @@ function TakeDamage(
     }
 }
 
+// The first snapshot after From in which the player could be hit.
+function UTPlusSnapshot FirstHittableAfter(UTPlusSnapshot From) {
+	local int i;
+	local UTPlusSnapshot S, Best;
+
+	for (i = 0; i < arraycount(Data); i++) {
+		S = Data[i];
+		if (S == None || S.ServerTimeStamp <= From.ServerTimeStamp || S.bSnapCollideActors == false)
+			continue;
+		if (Best == None || S.ServerTimeStamp < Best.ServerTimeStamp)
+			Best = S;
+	}
+	return Best;
+}
+
 function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float TargetTimeStamp) {
 	local vector TargetLoc, LocA, LocB;
 	local vector TargetVel;
@@ -368,6 +389,25 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 
 	if (Actual == None || Actual.bDeleteMe || SnapA == None || bCompActive)
 		return;
+
+	// A player is never put back to a moment in which they could not be hit.
+	// With Ping Compensated Spawn a respawned player is hidden and without
+	// collision until their first move as alive, and the moves their client
+	// still sends as dead make snapshots in that time. A shot at a player the
+	// shooter's screen had just begun to show can report a moment before that
+	// first move: a screen with Tick Interpolation draws a new player at once,
+	// 2 to 3 ticks ahead of its drawing clock. The stand-in then stood there
+	// with no collision, and the shot missed a player the shooter saw. The
+	// first snapshot after it in which they can be hit is taken, as it is.
+	// With none yet, the player stays where they are and is tested there.
+	if (SnapA.bSnapCollideActors == false) {
+		SnapA = FirstHittableAfter(SnapA);
+		if (SnapA == None)
+			return;
+		SnapB = None;
+		Alpha = 0.0;
+		bCompFirstHittable = true;
+	}
 
 	LocA = SnapA.Loc;
 	if (SnapB != None)

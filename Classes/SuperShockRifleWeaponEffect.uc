@@ -22,7 +22,7 @@ static function Play(
 
 	if (Player.Level.NetMode == NM_DedicatedServer) return;
 
-	if (SourcePRI.Owner != none && Settings.BeamOriginMode == 1) {
+	if (SourcePRI != none && SourcePRI.Owner != none && Settings.BeamOriginMode == 1) {
 		SmokeLocation = GetPlayerLocation(SourcePRI.Owner) + SourceOffset;
 	} else {
 		SmokeLocation = SourceLocation;
@@ -53,6 +53,15 @@ static function PlayBeam(
 	local int NumPoints;
 	local rotator SmokeRotation;
 	local vector MoveAmount;
+	local int Team;
+
+	// The shooter's scoreboard entry can be missing: a beam that arrives in the
+	// first moment after joining a running match names an entry this client
+	// has not received yet. Its team then read 0, and a team coloured beam
+	// showed red whoever fired it. Such a beam gets the default look.
+	Team = -1;
+	if (SourcePRI != none)
+		Team = SourcePRI.Team;
 
 	DVector = HitLocation - SmokeLocation;
 	NumPoints = VSize(DVector) / 135.0;
@@ -62,7 +71,7 @@ static function PlayBeam(
 	SmokeRotation.roll = Rand(65535);
 
 	if (Settings.cShockBeam == 3) return;
-	if (Settings.bHideOwnBeam &&
+	if (Settings.bHideOwnBeam && SourcePRI != none &&
 		(SourcePRI.Owner == Player || SourcePRI.Owner == Player.ViewTarget) &&
 		Player.bBehindView == false)
 		return;
@@ -85,7 +94,7 @@ static function PlayBeam(
 
 	} else if (Settings.cShockBeam == 2) {
 		Smoke.SetProperties(
-			SourcePRI.Team,
+			Team,
 			Settings.BeamScale,
 			Settings.BeamFadeCurve,
 			Settings.BeamDuration,
@@ -95,7 +104,7 @@ static function PlayBeam(
 
 	} else if (Settings.cShockBeam == 4) {
 		Smoke.SetProperties(
-			SourcePRI.Team,
+			Team,
 			Settings.BeamScale,
 			Settings.BeamFadeCurve,
 			Settings.BeamDuration,
@@ -110,7 +119,7 @@ static function PlayBeam(
 			Smoke.SetLocation(SmokeLocation);
 			Smoke.SetRotation(SmokeRotation);
 			Smoke.SetProperties(
-				SourcePRI.Team,
+				Team,
 				Settings.BeamScale,
 				Settings.BeamFadeCurve,
 				Settings.BeamDuration,
@@ -143,7 +152,7 @@ static function PlayRing(
 			A.RemoteRole = ROLE_None;
 			break;
 		case 2:
-			if (SourcePRI.Team == 1) {
+			if (SourcePRI != none && SourcePRI.Team == 1) {
 				A = Player.Spawn(class'NN_UT_RingExplosion',,, HitLocation+HitNormal*8,rotator(HitNormal));
 				A.RemoteRole = ROLE_None;
 				A = Player.Spawn(class'EnergyImpact',,, HitLocation,rotator(HitNormal));
