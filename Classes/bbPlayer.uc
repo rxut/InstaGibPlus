@@ -6173,6 +6173,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bDetWholeMove;
 	local IGPlus_WeaponImplementationBase WImpBase;
 	local bool bDetBlockLegacyFire;
+	local bool bDetCarryFire;
 	local Weapon DetWeapon;
 	local bool bDetMoveAcceptedForFire;
 	local bool bDetFirePress;
@@ -6384,9 +6385,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	DetWeapon = IGPlus_DetResolveBoundWeapon(SM.DetWeaponIndex, true);
 	// Hard-block legacy fire fallback for deterministic weapons.
 	// A resolved DetWeapon is active by construction.
-	bDetBlockLegacyFire = (DetWeapon != none) || IGPlus_IsDetActiveWeapon(Weapon)
-		|| IGPlus_DetKindEnabled(SM.DetWeaponIndex)
-		|| (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode());
+	bDetCarryFire = IGPlus_DetCarriesFire(DetWeapon);
+	bDetBlockLegacyFire = bDetCarryFire == false && ((DetWeapon != none) || IGPlus_IsDetActiveWeapon(Weapon)
+		|| IGPlus_DetStaleBindingBlocks(SM.DetWeaponIndex)
+		|| (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()));
 
 	// A new fire press: for the deterministic translocator's pose below.
 	bDetFirePress = bFired && IGPlus_LastFireEndHeld == false;
@@ -6447,8 +6449,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		IGPlus_ShotEyeByte = 0;
 		// Deterministic weapons execute shots directly from step processing.
 		// Keep fire latches cleared to avoid legacy state-machine refire.
-		bFire = 0;
-		bAltFire = 0;
+		// (Not when the buttons also go to the classic weapon in hand.)
+		if (bDetCarryFire == false) {
+			bFire = 0;
+			bAltFire = 0;
+		}
 	}
 
 	// Deterministic translocator: the client's action, before this move's
@@ -6547,7 +6552,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			else
 				DoDodge = DODGE_None;
 
-			if (MoveIndex == FireIndex && !bDetWholeMove) {
+			if (MoveIndex == FireIndex && (!bDetWholeMove || bDetCarryFire)) {
 				if (bDetBlockLegacyFire) {
 					bFire = 0;
 				} else {
@@ -6563,7 +6568,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				}
 			}
 
-				if (MoveIndex == AltFireIndex && !bDetWholeMove) {
+				if (MoveIndex == AltFireIndex && (!bDetWholeMove || bDetCarryFire)) {
 					if (bDetBlockLegacyFire) {
 						bAltFire = 0;
 					} else {
@@ -9259,6 +9264,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	local byte OldRun, OldDuck;
 	local bool bDetDispatch;
 	local bool bBlockLegacyFire;
+	local bool bDetCarryFire;
 	local bool bInputFireHeld;
 	local bool bInputAltHeld;
 	local bool bInputForceFire;
@@ -9321,8 +9327,9 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 
 	DetWeapon = IGPlus_DetResolveBoundWeapon(I.DetWeaponIndex, RemoteRole == ROLE_AutonomousProxy);
 	bDetDispatch = DetWeapon != none;
-	bBlockLegacyFire = bDetDispatch || IGPlus_IsDetActiveWeapon(Weapon)
-		|| IGPlus_DetKindEnabled(I.DetWeaponIndex);
+	bDetCarryFire = IGPlus_DetCarriesFire(DetWeapon);
+	bBlockLegacyFire = bDetCarryFire == false && (bDetDispatch || IGPlus_IsDetActiveWeapon(Weapon)
+		|| IGPlus_DetStaleBindingBlocks(I.DetWeaponIndex));
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -9363,9 +9370,12 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 				I.bDetEightballInstant
 			);
 			// Keep legacy fire latches clear; the step path is authoritative.
-			bFire = 0;
-			bAltFire = 0;
-		} else {
+			if (bDetCarryFire == false) {
+				bFire = 0;
+				bAltFire = 0;
+			}
+		}
+		if (bDetDispatch == false || bDetCarryFire) {
 					// handle firing and alt-firing on server
 					if (bInputFireHeld) {
 						if (bFire == 0) {
@@ -9592,6 +9602,42 @@ function bool IGPlus_DetKindEnabled(int Index) {
 		return false;
 	return IGPlus_DetKindRuns(Index, WS.bEnablePingCompensation, WS.RipperCompensatePing,
 		WS.FlakCompensatePing, WS.BioCompensatePing, WS.RocketCompensatePing);
+}
+
+// Server: a move names a deterministic weapon and its binding did not resolve,
+// so we hold another weapon by now. May that move's fire input reach the
+// classic fire path of the weapon we hold?
+// With Predicted Switching the client can be ahead of us: its input is for a
+// weapon we do not hold yet and must not fire the one we still have.
+// Without it the client only follows our switch, a round trip later. Until
+// then its moves name the old weapon, and its held button is for the weapon
+// we have, as on master. This used to block those moves too, so a
+// translocator switched to with fire held threw one round trip late.
+// The hammer stays blocked: it fires on the release, and a hold let go
+// before the client's own hammer is up must not blast.
+static final function bool IGPlus_DetStaleBlockRule(bool bPredictedSwitching, bool bHammer) {
+	return bPredictedSwitching || bHammer;
+}
+
+function bool IGPlus_DetStaleBindingBlocks(int Index) {
+	if (IGPlus_DetKindEnabled(Index) == false)
+		return false;
+	return IGPlus_DetStaleBlockRule(IGPlus_PredictedSwitching, ImpactHammer(Weapon) != none);
+}
+
+// Server: this move steps the weapon we just switched away from (the grace
+// of IGPlus_DetServerBindingValid, about one round trip), and the weapon in
+// hand is of the classic kind. Its buttons go to the weapon in hand as well,
+// by the rule above: the step alone used to keep them from it, so the new
+// weapon got no fire input until the client's own switch had come back.
+function bool IGPlus_DetCarriesFire(Weapon StepWeapon) {
+	if (StepWeapon == none || StepWeapon == Weapon || StepWeapon != IGPlus_DetPrevWeapon)
+		return false;
+	if (Weapon == none || IGPlus_IsDetActiveWeapon(Weapon))
+		return false;
+	if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode())
+		return false;
+	return IGPlus_DetStaleBlockRule(IGPlus_PredictedSwitching, ImpactHammer(Weapon) != none) == false;
 }
 
 // Binding, then activation; none if any gate fails.
