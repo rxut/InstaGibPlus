@@ -54,6 +54,9 @@ var bool bDetSuppressPrimaryFirstBudgetAuto;
 var int DetPrimaryCycleId;
 var bool bDetPrimaryCycleActive;
 var int DetPrimaryCycleStartBudget;
+// The ammo at the start of a grenade load, 0 when none is under way: what
+// that load may take (DetRefreshInternalBudget).
+var int DetAltCycleStartBudget;
 var int DetPrimaryPredictedLoaded;
 var bool bDetPrimaryLatchedInstant;
 var int DetPrimaryLastPredictedCycleId;
@@ -178,6 +181,7 @@ simulated function DetResetPrimaryCycle(optional bool bClearHeld) {
 simulated function DetResetAltCycle(optional bool bClearHeld) {
 	if (bClearHeld) {
 		bDetWasAltHeld = false;
+		DetAltCycleStartBudget = 0;
 	}
 	DetAltLoadElapsed = 0.0;
 	DetResetClientAmmoTracking();
@@ -228,6 +232,14 @@ simulated function DetRefreshInternalBudget() {
 	// arrive while client-side load animations are running.
 	if (bDetPrimaryCycleActive && DetPrimaryCycleStartBudget > 0) {
 		DetInternalBudget = DetPrimaryCycleStartBudget;
+		return;
+	}
+	// The same for a grenade load. Without it the client took the ammo it
+	// had left, which it counts down as the grenades go in, while the server
+	// takes its ammo at the volley: with three rockets left the client fired
+	// two grenades after 0.9 s and the server three after 1.8 s.
+	if (DetAltCycleStartBudget > 0) {
+		DetInternalBudget = DetAltCycleStartBudget;
 		return;
 	}
 
@@ -973,6 +985,7 @@ simulated function bool DetProcessStep(
 		// in FireRockets on the !bFireLoad path.
 		bLockedOn = false;
 		DetAltLoadElapsed = DetTakeCarry(StepTS);
+		DetAltCycleStartBudget = Max(1, AmmoType.AmmoAmount);
 		DetCachedChargeData = 1;
 		if (bServerSide)
 			DetPlayServerChargeSound(true);
@@ -1008,6 +1021,7 @@ simulated function bool DetProcessStep(
 				DetStartCooldown(DetPostFireInterval(NumRockets) - DetFullLoadCarry(NumRockets, DetAltLoadElapsed));
 				bDetWasAltHeld = false;
 				DetAltLoadElapsed = 0.0;
+				DetAltCycleStartBudget = 0;
 			}
 
 		return true;
@@ -1024,6 +1038,7 @@ simulated function bool DetProcessStep(
 			else HandleDetClientLoadedFire(true, NumRockets, false);
 			DetStartCooldown(DetPostFireInterval(NumRockets));
 			DetAltLoadElapsed = 0.0;
+			DetAltCycleStartBudget = 0;
 			return true;
 		}
 
