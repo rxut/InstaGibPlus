@@ -190,6 +190,12 @@ function bool TestDetEffectiveAnimTime() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_DetStaleBlockRule(false, false) == false, "Det_stale_binding_lets_held_fire_through_without_predicted_switching");
 	LogTestResult(class'bbPlayer'.static.IGPlus_DetStaleBlockRule(true, false), "Det_stale_binding_blocks_with_predicted_switching");
 	LogTestResult(class'bbPlayer'.static.IGPlus_DetStaleBlockRule(false, true), "Det_stale_binding_blocks_for_the_hammer");
+	// The deterministic translocator's bring-up is its animation: Select, or the tween to ThrownFrame with a disc out.
+	LogTestResult(class'ST_Translocator'.static.IGPlus_DetBringUpOver('Select', true) == false
+		&& class'ST_Translocator'.static.IGPlus_DetBringUpOver('ThrownFrame', true) == false, "Det_tloc_bring_up_lasts_while_its_animation_plays");
+	LogTestResult(class'ST_Translocator'.static.IGPlus_DetBringUpOver('Select', false)
+		&& class'ST_Translocator'.static.IGPlus_DetBringUpOver('ThrownFrame', false), "Det_tloc_bring_up_is_over_when_its_animation_has_ended");
+	LogTestResult(class'ST_Translocator'.static.IGPlus_DetBringUpOver('Still', true), "Det_tloc_bring_up_is_over_once_another_animation_plays");
 	return true;
 }
 

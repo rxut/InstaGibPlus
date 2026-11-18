@@ -848,6 +848,12 @@ function bool IGPlus_IsDetMode() {
 		&& Owner.RemoteRole == ROLE_AutonomousProxy && Class == class'ST_Translocator';
 }
 
+// Client: is the bring-up's animation over? PlaySelect plays Select, or
+// tweens to ThrownFrame with a disc out.
+static final function bool IGPlus_DetBringUpOver(name Seq, bool bAnimating) {
+	return bAnimating == false || (Seq != 'Select' && Seq != 'ThrownFrame');
+}
+
 // Client, at the start of its frame (before movement): decide and act.
 // Returns the action for the move, 0 for none.
 simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePress, bool bFireHeld, bool bAltPress, bool bAltHeld) {
@@ -861,6 +867,20 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 	// We hold one the same way while a translocate we didn't make ourselves
 	// is on its way: the server has us at the disc, we still stand here, and
 	// a throw would leave from here on our screen, from the disc on its.
+	// The bring-up is its animation (PlaySelect). ClientActive can outlast it:
+	// stock's PlayPostSelect takes true from ClientFire and ClientAltFire for
+	// "the weapon went on to fire", and ours only says "keep the press", so
+	// with a button held the weapon stays in that state. A disc out with
+	// TranslocatorOutSelectTime 0 has no animation whose end would call it at
+	// all. The weapon then left the state through the stock stand-still check
+	// in bbPlayer.xxReplicateMove: at once, or 0.1 s later when the server's
+	// weapon update (RealWeapon, TweenToStill) got there first and that check
+	// had to wait for the tween. So after a switch the server drove, a throw
+	// or a translocate with the button held came 0.1 s late most times.
+	if (IsInState('ClientActive') && IGPlus_DetBringUpOver(AnimSequence, IsAnimating())) {
+		bWeaponUp = true;
+		GotoState('');
+	}
 	if (IsInState('ClientActive') || IGPlus_DetTlocPending()) {
 		// Stock's bring-up keeps both and fires first (bForceFire wins).
 		if (bFirePress || (bAltPress && IGPlus_DetLatchedPress != 1)) {
