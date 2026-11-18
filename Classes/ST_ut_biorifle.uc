@@ -20,6 +20,11 @@ var int DetCachedChargeData;
 var int DetAltAmmoSpent;
 var int DetClientPredictedAmmo;
 var float DetAltChargeStartTS;
+// The time the last shot was due and the interval that followed it, for the
+// shot clock the server corrects (bbPlayer.IGPlus_DetSyncShotClock). The
+// interval is 0 while there is no shot to correct (an alt charge under way).
+var float DetShotDueTS;
+var float DetShotInterval;
 // Client: the charge steps paid for in this charge (ClientAltFiring).
 var int DetClientChargeSteps;
 
@@ -72,6 +77,8 @@ simulated function DetResetDeterministicState() {
 	DetClientPredictedAmmo = 0;
 	DetAltChargeStartTS = 0.0;
 	DetClientChargeSteps = 0;
+	DetShotDueTS = 0.0;
+	DetShotInterval = 0.0;
 }
 
 function GiveTo(Pawn Other) {
@@ -182,6 +189,7 @@ simulated function bool DetProcessStep(
 		DetCachedChargeData = 0;
 		DetAltChargeStartTS = 0.0;
 		NextDetFireTS = StepTS + AltShotInterval();
+		DetShotInterval = 0.0;
 		return true;
 	}
 
@@ -221,6 +229,9 @@ simulated function bool DetProcessStep(
 				// this frame so the server releases at the same timestamp.
 				bbPlayer(Owner).IGPlus_DetNoteShot(StepTS, 0.30);
 			}
+			// A glob has no due time: the next shot counts from its step.
+			DetShotDueTS = 0.0;
+			DetShotInterval = AltShotInterval();
 			NextDetFireTS = StepTS + AltShotInterval();
 			return true;
 		}
@@ -234,6 +245,7 @@ simulated function bool DetProcessStep(
 			return true;
 
 		DetAltChargeStartTS = StepTS;
+		DetShotInterval = 0.0;
 		if (bServerSide) {
 			if (AmmoType != none && AmmoType.AmmoAmount > 0) {
 				AmmoType.UseAmmo(1);
@@ -272,7 +284,9 @@ simulated function bool DetProcessStep(
 		HandleDetClientFire(StepView, StepLoc);
 	}
 
-	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, PrimaryShotInterval());
+	DetShotDueTS = NextDetFireTS;
+	DetShotInterval = PrimaryShotInterval();
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, DetShotInterval);
 	return true;
 }
 
