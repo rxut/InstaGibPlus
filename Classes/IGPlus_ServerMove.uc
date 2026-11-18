@@ -19,6 +19,10 @@ var int DetChargeData;
 // see bbPlayer.SendSavedMove.
 var float DetRedoTS;
 var int DetRedoData;
+// The action before that one, while the server may have neither. It comes in
+// a call of its own just ahead of the move (bbPlayer.xxServerDetRedoMore).
+var float DetRedo2TS;
+var int DetRedo2Data;
 // Precise Rewind Time: what the shooter's screen showed (bbPlayer.IGPlus_PRTNote).
 var int PRTData;
 // The eye height the client traced this move's hitscan shot from (bbPlayer.IGPlus_EyePack). 0: none.
