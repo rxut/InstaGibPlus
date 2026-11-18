@@ -182,6 +182,50 @@ function float SimFireClockLead(float ClientRate, float Seconds, optional float 
 	return MaxLead;
 }
 
+// The next shot's due time (bbPlayer.IGPlus_DetNextShotTS): a held refire
+// counts from when the shot was due, a later one from its own step.
+function float SimHeldRefireGap(float FrameTime, float Interval, int Shots) {
+	local float T, Due, First;
+	local int N;
+
+	// Frames of FrameTime, the button held, as bbPlayer.IGPlus_DetIntervalShotDue decides.
+	T = 100.0;
+	while (N <= Shots) {
+		if (T + 0.0001 >= Due) {
+			if (N == 0)
+				First = T;
+			Due = class'bbPlayer'.static.IGPlus_DetNextShotTS(T, Due, Interval);
+			N++;
+		}
+		if (N <= Shots)
+			T += FrameTime;
+	}
+	return (T - First) / float(Shots);
+}
+
+function TestDetNextShot() {
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_DetNextShotTS(10.0, 0.0, 1.0) - 11.0) < 0.0001,
+		"DetNextShot_first_shot_counts_from_its_step");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_DetNextShotTS(10.03, 10.0, 1.0) - 11.0) < 0.0001,
+		"DetNextShot_a_frame_late_counts_from_the_due_time");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_DetNextShotTS(9.99995, 10.0, 1.0) - 11.0) < 0.0001,
+		"DetNextShot_inside_the_due_tolerance_counts_from_the_due_time");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_DetNextShotTS(10.2, 10.0, 1.0) - 11.2) < 0.0001,
+		"DetNextShot_a_later_press_counts_from_its_step");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_DetNextShotTS(10.07, 10.0, 1.0) - 11.07) < 0.0001,
+		"DetNextShot_past_the_carry_limit_counts_from_its_step");
+	// The rifle's interval at 30, 60 and 500 frames a second: the same rate at each.
+	LogTestResult(Abs(SimHeldRefireGap(1.1 / 30.0, 1.0727, 200) - 1.0727) < 0.0005,
+		"DetNextShot_held_rate_at_30_fps_is_the_interval");
+	LogTestResult(Abs(SimHeldRefireGap(1.1 / 60.0, 1.0727, 200) - 1.0727) < 0.0005,
+		"DetNextShot_held_rate_at_60_fps_is_the_interval");
+	LogTestResult(Abs(SimHeldRefireGap(1.1 / 500.0, 1.0727, 200) - 1.0727) < 0.0005,
+		"DetNextShot_held_rate_at_500_fps_is_the_interval");
+	// The ripper's interval at 30 frames a second.
+	LogTestResult(Abs(SimHeldRefireGap(1.1 / 30.0, 0.3846, 400) - 0.3846) < 0.0005,
+		"DetNextShot_short_interval_at_30_fps_is_the_interval");
+}
+
 function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.0, 10.0) < 0.02, "FireClockLead_synced_clock_stays_near_zero");
 	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.05, "FireClockLead_small_drift_is_absorbed");
@@ -572,6 +616,7 @@ event int main(string Params) {
 	TestDetEffectiveAnimTime();
 	TestTranslocatorFireMerging();
 	TestTelefragOverlap();
+	TestDetNextShot();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
 	TestTradeReach();

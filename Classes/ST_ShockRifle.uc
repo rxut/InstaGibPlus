@@ -14,6 +14,10 @@ var ST_ShockProj LocalDummy;
 var vector PendingSmokeLocation;
 
 var float NextDetFireTS;
+// The time the last shot was due and the interval that followed it, for the
+// shot clock the server corrects (bbPlayer.IGPlus_DetSyncShotClock).
+var float DetShotDueTS;
+var float DetShotInterval;
 var vector IGPlus_OwnDiscBeamEnd; // client: our own disc, where this beam met it
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -50,6 +54,8 @@ simulated function bool IsDetActive() {
 // (dropped weapons are reused as pickups — SpawnCopy returns self).
 simulated function DetResetDeterministicState() {
 	NextDetFireTS = 0.0;
+	DetShotDueTS = 0.0;
+	DetShotInterval = 0.0;
 }
 
 function GiveTo(Pawn Other) {
@@ -122,7 +128,9 @@ simulated function bool DetProcessStep(
 		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
 
-	NextDetFireTS = StepTS + Interval;
+	DetShotDueTS = NextDetFireTS;
+	DetShotInterval = Interval;
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, Interval);
 	return true;
 }
 

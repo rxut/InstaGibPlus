@@ -23,6 +23,9 @@ var Rotator GV;
 var float yMod; // For handedness calculations
 
 var float NextDetFireTS;
+// The time the last shot was due, for the shot clock the server corrects
+// (bbPlayer.IGPlus_DetSyncShotClock).
+var float DetShotDueTS;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -58,6 +61,7 @@ simulated function bool IsDetActive() {
 // (dropped weapons are reused as pickups — SpawnCopy returns self).
 simulated function DetResetDeterministicState() {
 	NextDetFireTS = 0.0;
+	DetShotDueTS = 0.0;
 }
 
 function GiveTo(Pawn Other) {
@@ -70,15 +74,19 @@ function DropFrom(vector StartLocation) {
 	Super.DropFrom(StartLocation);
 }
 
-// The legacy path refires at fire-anim end, and SniperReloadAnimSpeed scales
-// the anim so its duration equals the configured SniperReloadTime (stock 2/3s).
+// The legacy path refires at fire-anim end: a 0.05 tween plus nine frames
+// of Rifle2m's fire anims at 15 a second, played at SniperReloadAnimSpeed.
+// That is 0.65 s at the default SniperReloadTime, not the 2/3 s the setting
+// names (stock and IG+ without ping compensation measured 0.650 on a rig).
 simulated function float PrimaryShotInterval() {
 	local WeaponSettingsRepl WS;
+	local float AnimSpeed;
 
 	WS = GetWeaponSettings();
-	if (WS == none)
-		return class'WeaponSettingsRepl'.default.SniperReloadTime;
-	return FClamp(WS.SniperReloadTime, 0.05, 2.0);
+	AnimSpeed = 1.0;
+	if (WS != none)
+		AnimSpeed = WS.SniperReloadAnimSpeed();
+	return FClamp(0.05 + 9.0 / (15.0 * AnimSpeed), 0.05, 2.0);
 }
 
 // Deterministic step processing — called from bbPlayer.IGPlus_DetProcessStep.
@@ -125,7 +133,8 @@ simulated function bool DetProcessStep(
 		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
 
-	NextDetFireTS = StepTS + Interval;
+	DetShotDueTS = NextDetFireTS;
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, Interval);
 	return true;
 }
 

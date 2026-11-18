@@ -14,6 +14,10 @@ var bool IGPlus_bLocalSlugGone;    // our copy hit something before the server's
 
 // Det deterministic fire state
 var float NextDetFireTS;
+// The time the last shot was due and the interval that followed it, for the
+// shot clock the server corrects (bbPlayer.IGPlus_DetSyncShotClock).
+var float DetShotDueTS;
+var float DetShotInterval;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -57,6 +61,8 @@ simulated function bool IsDetActive() {
 // One owner's deterministic state must never transfer to the next.
 simulated function DetResetDeterministicState() {
 	NextDetFireTS = 0.0;
+	DetShotDueTS = 0.0;
+	DetShotInterval = 0.0;
 }
 
 function GiveTo(Pawn Other) {
@@ -72,20 +78,23 @@ function DropFrom(vector StartLocation) {
 // Flakm mesh: 'Fire'    = 10 frames, base rate 30fps (no RATE directive, default)
 // Flakm mesh: 'AltFire' = 10 frames, base rate 24fps (RATE=24)
 // Flakm mesh: 'Loading' = 15 frames, base rate 30fps (no RATE directive, default)
-// Duration = NumFrames / (BaseRate * PlayRate)
+// An anim played once takes its 0.05 tween plus (NumFrames - 1) / (BaseRate * PlayRate).
 
+// Stock and IG+ without ping compensation refire when Fire and then Loading
+// have played (NormalFire.AnimEnd), 0.767 s on a rig.
 simulated function float PrimaryShotInterval() {
-	// Fire: 10 / (30 * 0.9) = 0.370s
-	// Loading: 15 / (30 * 1.4) = 0.357s
-	// Total: 0.727s
-	return 10.0 / (30.0 * 0.9) + 15.0 / (30.0 * 1.4);
+	// Fire: 0.05 + 9 / (30 * 0.9) = 0.383s
+	// Loading: 0.05 + 14 / (30 * 1.4) = 0.383s
+	// Total: 0.767s
+	return (0.05 + 9.0 / (30.0 * 0.9)) + (0.05 + 14.0 / (30.0 * 1.4));
 }
 
+// The same for AltFire and then Loading (AltFiring.AnimEnd), 1.055 s on a rig.
 simulated function float AltShotInterval() {
-	// AltFire: 10 / (24 * 1.3) = 0.321s
-	// Loading: 15 / (30 * 0.7) = 0.714s
-	// Total: 1.035s
-	return 10.0 / (24.0 * 1.3) + 15.0 / (30.0 * 0.7);
+	// AltFire: 0.05 + 9 / (24 * 1.3) = 0.338s
+	// Loading: 0.05 + 14 / (30 * 0.7) = 0.717s
+	// Total: 1.055s
+	return (0.05 + 9.0 / (24.0 * 1.3)) + (0.05 + 14.0 / (30.0 * 0.7));
 }
 
 // Deterministic step processing — called from bbPlayer.IGPlus_DetProcessStep.
@@ -136,7 +145,9 @@ simulated function bool DetProcessStep(
 		BP.IGPlus_DetHandleOutOfAmmo(self);
 	}
 
-	NextDetFireTS = StepTS + Interval;
+	DetShotDueTS = NextDetFireTS;
+	DetShotInterval = Interval;
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, Interval);
 	return true;
 }
 

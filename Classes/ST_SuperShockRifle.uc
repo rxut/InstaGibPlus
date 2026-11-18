@@ -12,6 +12,9 @@ var float yMod;
 var vector CDO;
 
 var float NextDetFireTS;
+// The time the last shot was due, for the shot clock the server corrects
+// (bbPlayer.IGPlus_DetSyncShotClock).
+var float DetShotDueTS;
 
 // Server: this shot is a deterministic one (DeterministicTraceFire), and
 // where this shot's beam starts (set by both trace functions).
@@ -56,6 +59,7 @@ simulated function bool IsDetActive() {
 // (dropped weapons are reused as pickups: SpawnCopy returns self).
 simulated function DetResetDeterministicState() {
 	NextDetFireTS = 0.0;
+	DetShotDueTS = 0.0;
 }
 
 function GiveTo(Pawn Other) {
@@ -68,10 +72,11 @@ function DropFrom(vector StartLocation) {
 	Super.DropFrom(StartLocation);
 }
 
-// Stock refires when the fire anim is over (NormalFire: FinishAnim, Finish),
-// and holds a weapon switch for the same time. That is the 0.05 tween plus
+// The NewNet rifle refires when its fire anim is over, and holds a weapon
+// switch for the same time. That is the 0.05 tween plus
 // (frames-1)/(seqRate*playRate) of sshockm's Fire1, 10 frames at 22 a second:
-// 1.07 s for a player. Both buttons play Fire1.
+// 1.07 s for a player. Both buttons play Fire1. Stock's own rifle loops the
+// anim and refires once a loop with the button held, 1.14 s.
 simulated function float ShotInterval() {
 	return FClamp(0.05 + 9.0 / (22.0 * (0.20 + 0.20 * FireAdjust)), 0.05, 2.0);
 }
@@ -112,7 +117,8 @@ simulated function bool DetProcessStep(
 	else
 		HandleDetClientFire(StepView, StepLoc);
 
-	NextDetFireTS = StepTS + Interval;
+	DetShotDueTS = NextDetFireTS;
+	NextDetFireTS = class'bbPlayer'.static.IGPlus_DetNextShotTS(StepTS, NextDetFireTS, Interval);
 	return true;
 }
 
