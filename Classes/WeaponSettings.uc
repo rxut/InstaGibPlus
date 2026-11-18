@@ -241,8 +241,9 @@ function TrimConfigTo(int Mode) {
 	ClearConfig("SplashWraparoundRadiusScale");
 	ClearConfig("WarheadSelectTime");
 	ClearConfig("WarheadDownTime");
-	if (Mode != 2) ClearConfig("SniperSelectTime");
-	if (Mode != 2) ClearConfig("SniperDownTime");
+	// The Next rifles come up as the NewNet rifles do, with no setting.
+	ClearConfig("SniperSelectTime");
+	ClearConfig("SniperDownTime");
 	if (Mode != 2) ClearConfig("SniperDamage");
 	if (Mode != 2) ClearConfig("SniperHeadshotDamage");
 	if (Mode != 2) ClearConfig("SniperMomentum");
@@ -312,8 +313,8 @@ function TrimConfigTo(int Mode) {
 	ClearConfig("PulseBoltGrowthDelay");
 	ClearConfig("PulseBoltMaxSegments");
 	ClearConfig("PulseCompensatePing");
-	if (Mode != 1) ClearConfig("ShockSelectTime");
-	if (Mode != 1) ClearConfig("ShockDownTime");
+	ClearConfig("ShockSelectTime");
+	ClearConfig("ShockDownTime");
 	ClearConfig("ShockBeamDamage");
 	ClearConfig("ShockBeamMomentum");
 	if (Mode != 1) ClearConfig("ShockBeamUseReducedHitbox");

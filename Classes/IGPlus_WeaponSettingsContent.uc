@@ -1991,7 +1991,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	bShowOther = bShowSettings && Mode == 0;
 	bShowPickups = bShowSettings && Mode != 1; // instagib has no pickups
 	bShowSniper = bShowSettings && (Mode == 0 || Mode == 2);
-	bShowRifle = bShowSettings && (Mode == 0 || Mode == 1); // the instagib rifle: shock select, down, reduced hitbox
+	bShowRifle = bShowSettings && (Mode == 0 || Mode == 1); // the instagib rifle: reduced hitbox (its select and down have no setting in NextIG)
 
 	LayoutControl(Lbl_Header, true, WndWidth, Top);
 	LayoutControl(Lbl_Status, true, WndWidth, Top);
@@ -2036,8 +2036,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_WarheadDownTime, bShowOther, WndWidth, Top);
 
 	LayoutControl(Lbl_Sniper, bShowSniper, WndWidth, Top);
-	LayoutControl(Edit_SniperSelectTime, bShowSniper, WndWidth, Top);
-	LayoutControl(Edit_SniperDownTime, bShowSniper, WndWidth, Top);
+	LayoutControl(Edit_SniperSelectTime, bShowOther, WndWidth, Top);
+	LayoutControl(Edit_SniperDownTime, bShowOther, WndWidth, Top);
 	LayoutControl(Edit_SniperDamage, bShowSniper, WndWidth, Top);
 	LayoutControl(Edit_SniperHeadshotDamage, bShowSniper, WndWidth, Top);
 	LayoutControl(Edit_SniperMomentum, bShowSniper, WndWidth, Top);
@@ -2119,8 +2119,8 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Chk_PulseCompensatePing, bShowOther, WndWidth, Top);
 
 	LayoutControl(Lbl_Shock, bShowRifle, WndWidth, Top);
-	LayoutControl(Edit_ShockSelectTime, bShowRifle, WndWidth, Top);
-	LayoutControl(Edit_ShockDownTime, bShowRifle, WndWidth, Top);
+	LayoutControl(Edit_ShockSelectTime, bShowOther, WndWidth, Top);
+	LayoutControl(Edit_ShockDownTime, bShowOther, WndWidth, Top);
 	LayoutControl(Edit_ShockBeamDamage, bShowOther, WndWidth, Top);
 	LayoutControl(Edit_ShockBeamMomentum, bShowOther, WndWidth, Top);
 	LayoutControl(Chk_ShockBeamUseReducedHitbox, bShowRifle, WndWidth, Top);

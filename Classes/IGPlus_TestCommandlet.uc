@@ -136,6 +136,19 @@ function bool TestDetEffectiveAnimTime() {
 		Abs(class'bbPlayer'.static.IGPlus_DetFlakPostSelectTime(100.0) - 0.054667) < 0.0001,
 		"Det_flak_post_select_speed_cap"
 	);
+	// The NewNet rifles' select and down: 1.35, a 0.05 tween on the down only.
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetNewNetAnimTime(15, 30.0, 0.0) - 0.345679) < 0.0001,
+		"Det_newnet_select_instagib_rifle"
+	);
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetNewNetAnimTime(17, 28.0, 0.0) - 0.423280) < 0.0001,
+		"Det_newnet_select_sniper"
+	);
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetNewNetAnimTime(7, 27.0, 0.05) - 0.214609) < 0.0001,
+		"Det_newnet_down_instagib_rifle"
+	);
 	return true;
 }
 
