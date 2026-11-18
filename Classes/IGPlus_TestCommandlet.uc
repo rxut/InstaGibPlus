@@ -196,6 +196,14 @@ function bool TestDetEffectiveAnimTime() {
 	LogTestResult(class'ST_Translocator'.static.IGPlus_DetBringUpOver('Select', false)
 		&& class'ST_Translocator'.static.IGPlus_DetBringUpOver('ThrownFrame', false), "Det_tloc_bring_up_is_over_when_its_animation_has_ended");
 	LogTestResult(class'ST_Translocator'.static.IGPlus_DetBringUpOver('Still', true), "Det_tloc_bring_up_is_over_once_another_animation_plays");
+	// A resent translocator action: packed with its view, and due for a move between the last one run and this one.
+	LogTestResult((class'bbPlayer'.static.IGPlus_DetPackRedo(7, (0x1230 << 16) | 0xABC0) & 7) == 7
+		&& class'bbPlayer'.static.IGPlus_DetUnpackRedoView(class'bbPlayer'.static.IGPlus_DetPackRedo(1, (0x1230 << 16) | 0xABC0)) == ((0x1230 << 16) | 0xABC0),
+		"Det_tloc_resend_keeps_action_and_view");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetRedoDue(1, 5.2, 5.0, 5.5)
+		&& class'bbPlayer'.static.IGPlus_DetRedoDue(1, 4.9, 5.0, 5.5) == false
+		&& class'bbPlayer'.static.IGPlus_DetRedoDue(1, 5.6, 5.0, 5.5) == false
+		&& class'bbPlayer'.static.IGPlus_DetRedoDue(0, 5.2, 5.0, 5.5) == false, "Det_tloc_resend_is_due_between_the_last_move_and_this_one");
 	return true;
 }
 

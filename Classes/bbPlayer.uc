@@ -584,6 +584,14 @@ var int IGPlus_DetRedoAction;         // client: last action (0: none to resend)
 var float IGPlus_DetRedoTS;           // client: its move's time stamp
 var int IGPlus_DetRedoView;           // client: its move's view (a throw aims with it)
 var ST_Translocator IGPlus_DetRedoTloc;
+// The action before the last one, while the server may have neither: a throw
+// and the translocate after it can both be lost in one burst, and the second
+// then took the first one's place here.
+var int IGPlus_DetRedo2Action;        // client
+var float IGPlus_DetRedo2TS;
+var int IGPlus_DetRedo2View;
+var float IGPlus_DetRedoMoreTS;       // server: as it came in, for the move that follows (xxServerDetRedoMore)
+var int IGPlus_DetRedoMoreData;
 var float IGPlus_DetLastActionSeenTS; // server: newest action handled
 // Server: actions from moves we didn't run (paused, warp fix), oldest first.
 var int IGPlus_DetHeldCount;
@@ -1392,7 +1400,8 @@ replication
 		ServerApplyInput,
 		xxServerCheater,
 		xxServerMove,
-		xxServerMoveDead;
+		xxServerMoveDead,
+		xxServerDetRedoMore;
 
 	reliable if ( Role < ROLE_Authority )
 		xxServerWeaponCommand,
@@ -6179,6 +6188,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bDetFirePress;
 	local float PSAPrevTS;
 	local int RedoAction;
+	local int Redo2Action;
 	local float OldTS;
 
 	debugServerMoveCallsReceived += 1;
@@ -6252,22 +6262,35 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// order with the old move below (the gap's movement after both). Only for
 	// a move we run: a throttled one (too far ahead) loses its actions.
 	RedoAction = 0;
+	Redo2Action = 0;
 	if (IGPlus_DetTranslocator) {
 		// A resend is for a move between the last one we had and this one.
-		if ((SM.DetRedoData & 3) != 0 && SM.DetRedoTS > CurrentTimeStamp && SM.DetRedoTS < SM.TimeStamp)
+		if (IGPlus_DetRedoDue(SM.DetRedoData, SM.DetRedoTS, CurrentTimeStamp, SM.TimeStamp))
 			RedoAction = SM.DetRedoData & 7;
+		// So is the action before it, lost with it. That one runs first.
+		if (IGPlus_DetRedoDue(SM.DetRedo2Data, SM.DetRedo2TS, CurrentTimeStamp, SM.TimeStamp)
+			&& (RedoAction == 0 || SM.DetRedo2TS < SM.DetRedoTS))
+			Redo2Action = SM.DetRedo2Data & 7;
 		OldTS = IGPlus_OldMoveTimeStamp(SM.TimeStamp, SM.OldMoveData1);
-		if (RedoAction != 0 || IGPlus_DetHeldCount > 0) {
+		if (RedoAction != 0 || Redo2Action != 0 || IGPlus_DetHeldCount > 0) {
 			if (Level.Pauser != "" || IGPlus_SkipMovesUntilNextTick) {
+				if (Redo2Action != 0)
+					IGPlus_DetHoldAction(Redo2Action, SM.DetRedo2TS, IGPlus_DetUnpackRedoView(SM.DetRedo2Data), Level.Pauser == "");
 				if (RedoAction != 0)
 					IGPlus_DetHoldAction(RedoAction, SM.DetRedoTS, IGPlus_DetUnpackRedoView(SM.DetRedoData), Level.Pauser == "");
 				RedoAction = 0;
+				Redo2Action = 0;
 			} else if (IGPlus_DetWouldThrottle(SM.TimeStamp, ServerDeltaTime, FMax(CurrentTimeStamp, OldTS), SM.MoveDeltaTime)) {
 				RedoAction = 0;
+				Redo2Action = 0;
 			} else {
 				UndoExtrapolation();
 				IGPlus_DetRunHeld(SM.TimeStamp);
-				if (RedoAction != 0 && (OldTS <= CurrentTimeStamp || SM.DetRedoTS < OldTS)) {
+				if (Redo2Action != 0 && (OldTS <= CurrentTimeStamp || SM.DetRedo2TS < OldTS)) {
+					IGPlus_DetRunAction(Redo2Action, SM.DetRedo2TS, IGPlus_DetUnpackRedoView(SM.DetRedo2Data), SM.TimeStamp);
+					Redo2Action = 0;
+				}
+				if (RedoAction != 0 && Redo2Action == 0 && (OldTS <= CurrentTimeStamp || SM.DetRedoTS < OldTS)) {
 					IGPlus_DetRunAction(RedoAction, SM.DetRedoTS, IGPlus_DetUnpackRedoView(SM.DetRedoData), SM.TimeStamp);
 					RedoAction = 0;
 				}
@@ -6281,7 +6304,9 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			LastCAPTime = Level.TimeSeconds;
 		}
 	}
-	// The resent action came after the old move: now.
+	// A resent action that came after the old move: now, the older one first.
+	if (Redo2Action != 0)
+		IGPlus_DetRunAction(Redo2Action, SM.DetRedo2TS, IGPlus_DetUnpackRedoView(SM.DetRedo2Data), SM.TimeStamp);
 	if (RedoAction != 0)
 		IGPlus_DetRunAction(RedoAction, SM.DetRedoTS, IGPlus_DetUnpackRedoView(SM.DetRedoData), SM.TimeStamp);
 
@@ -7125,6 +7150,7 @@ function IGPlus_ABIntercept(
 	SM.DetRedoTS = DetRedoTS;
 	SM.DetRedoData = DetRedoData;
 	SM.PRTData = PRTData;
+	IGPlus_DetTakeRedoMore(SM);
 
 	// Oldest first: packets can arrive out of order.
 	if (IGPlus_ABHead == none || TimeStamp < IGPlus_ABHead.TimeStamp) {
@@ -7163,6 +7189,8 @@ function IGPlus_ABRunHead() {
 	IGPlus_ABHeld = false;
 	IGPlus_ABLastRun = Level.TimeSeconds;
 	IGPlus_ABPlaying = true;
+	IGPlus_DetRedoMoreTS = SM.DetRedo2TS;
+	IGPlus_DetRedoMoreData = SM.DetRedo2Data;
 	xxServerMove(
 		SM.TimeStamp,
 		SM.RawDelta,
@@ -7622,11 +7650,46 @@ function xxServerMove(
 	SM.DetRedoTS = DetRedoTS;
 	SM.DetRedoData = DetRedoData;
 	SM.PRTData = PRTData;
+	IGPlus_DetTakeRedoMore(SM);
 
 	IGPlus_ApplyServerMove(SM);
 	IGPlus_DestroyServerMove(SM);
 
 	IGPlus_WarpFixUpdate = true;
+}
+
+// Client to server, just ahead of a move: the deterministic translocator
+// action before the last one (SendSavedMove). xxServerMove has no room for
+// it, 16 parameters are all a function can have. We keep it for the move
+// that follows. It can get here without its move or the move without it:
+// only its time stamp decides whether it still runs (IGPlus_ApplyServerMove).
+function xxServerDetRedoMore(float OlderTS, int OlderData) {
+	IGPlus_DetRedoMoreTS = OlderTS;
+	IGPlus_DetRedoMoreData = OlderData;
+}
+
+// Server: the move that follows takes it along (through the Adaptive
+// Buffering queue too), and it is used up.
+function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
+	SM.DetRedo2TS = IGPlus_DetRedoMoreTS;
+	SM.DetRedo2Data = IGPlus_DetRedoMoreData;
+	IGPlus_DetRedoMoreTS = 0.0;
+	IGPlus_DetRedoMoreData = 0;
+}
+
+// A resent action as it travels: bits 0-2 the action (bit 2: refused), bits
+// 8-19 the yaw and 20-31 the pitch of its move's view, 12 bits each
+// (IGPlus_DetUnpackRedoView).
+static final function int IGPlus_DetPackRedo(int Action, int ViewPacked) {
+	return (Action & 7)
+		| (((ViewPacked & 0xFFFF) >>> 4) << 8)
+		| ((((ViewPacked >>> 16) & 0xFFFF) >>> 4) << 20);
+}
+
+// Server: is a resent action for a move between the last one we ran and
+// this one?
+static final function bool IGPlus_DetRedoDue(int Data, float TS, float LastTS, float MoveTS) {
+	return (Data & 3) != 0 && TS > LastTS && TS < MoveTS;
 }
 
 function xxServerMoveDead(
@@ -11300,14 +11363,25 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 	if (IGPlus_DetRedoAction != 0 && (IGPlus_DetRedoTloc == none || IGPlus_DetRedoTloc.bDeleteMe
 		|| IGPlus_DetRedoTloc.IGPlus_DetServer.MoveTS >= IGPlus_DetRedoTS || Move.TimeStamp - IGPlus_DetRedoTS > 1.0))
 		IGPlus_DetRedoAction = 0;
+	if (IGPlus_DetRedo2Action != 0 && (IGPlus_DetRedoTloc == none || IGPlus_DetRedoTloc.bDeleteMe
+		|| IGPlus_DetRedoTloc.IGPlus_DetServer.MoveTS >= IGPlus_DetRedo2TS || Move.TimeStamp - IGPlus_DetRedo2TS > 1.0))
+		IGPlus_DetRedo2Action = 0;
 	if (IGPlus_DetRedoAction != 0 && IGPlus_DetRedoTS < Move.TimeStamp) {
 		RedoTS = IGPlus_DetRedoTS;
-		RedoData = IGPlus_DetRedoAction
-			| (((IGPlus_DetRedoView & 0xFFFF) >>> 4) << 8)
-			| ((((IGPlus_DetRedoView >>> 16) & 0xFFFF) >>> 4) << 20);
+		RedoData = IGPlus_DetPackRedo(IGPlus_DetRedoAction, IGPlus_DetRedoView);
 	}
+	// The action before that one goes ahead of the move in a call of its own.
+	if (IGPlus_DetRedo2Action != 0)
+		xxServerDetRedoMore(IGPlus_DetRedo2TS, IGPlus_DetPackRedo(IGPlus_DetRedo2Action, IGPlus_DetRedo2View));
 	if (Move.DetChargeData <= 7 && (Move.DetChargeData & 3) != 0 && Move.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& ST_Translocator(Move.IGPlus_SavedWeapon) != none) {
+		// The last action keeps riding along until the server is past it:
+		// this one's own move may be lost with it.
+		if (IGPlus_DetRedoAction != 0) {
+			IGPlus_DetRedo2Action = IGPlus_DetRedoAction;
+			IGPlus_DetRedo2TS = IGPlus_DetRedoTS;
+			IGPlus_DetRedo2View = IGPlus_DetRedoView;
+		}
 		IGPlus_DetRedoAction = Move.DetChargeData;
 		IGPlus_DetRedoTS = Move.TimeStamp;
 		IGPlus_DetRedoTloc = ST_Translocator(Move.IGPlus_SavedWeapon);
