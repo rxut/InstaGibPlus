@@ -25,6 +25,12 @@ var float DetPrimaryLoadElapsed;
 var float DetAltLoadElapsed;
 var float DetLastStepTS;
 var float DetLastStepDelta;
+// The step time at which the cooldown ran out. What starts on a step less
+// than a held button's carry after it counts from there (DetTakeCarry).
+var float DetReadyTS;
+// Client: the rocket the loading animation is at. The Rotate and Load
+// sequences follow each other as in stock, whatever the count is.
+var int DetAnimLoaded;
 var bool bDetWasFireHeld;
 var bool bDetWasAltHeld;
 var int DetCachedChargeData;
@@ -580,7 +586,14 @@ simulated function DetAdvanceStepClock(float StepTS) {
 	StepDelta = FMax(StepDelta, 0.0);
 	DetLastStepDelta = StepDelta;
 
-	DetCooldownRemaining = FMax(0.0, DetCooldownRemaining - StepDelta);
+	if (DetCooldownRemaining > 0.0) {
+		DetCooldownRemaining -= StepDelta;
+		if (DetCooldownRemaining <= 0.0001) {
+			// It ran out inside this step: keep the moment.
+			DetReadyTS = StepTS + FMin(DetCooldownRemaining, 0.0);
+			DetCooldownRemaining = 0.0;
+		}
+	}
 
 	if (bDetPrimaryCycleActive)
 		DetPrimaryLoadElapsed += StepDelta;
@@ -590,6 +603,38 @@ simulated function DetAdvanceStepClock(float StepTS) {
 
 simulated function DetStartCooldown(float Interval) {
 	DetCooldownRemaining = FMax(0.0, Interval);
+	DetReadyTS = 0.0;
+}
+
+// How much of Late the next count takes over: all of it when it is less than
+// a held button's carry, nothing otherwise. The limit is the one of
+// bbPlayer.IGPlus_DetNextShotTS, which counts from the due time when the step
+// is less than that past it. With the button held the launcher fires and loads
+// on the first client frame at or after a time is up. Counting on from that
+// frame lost up to a frame each time, so the rate fell with the frame rate.
+static final function float DetCarryOf(float Late) {
+	if (Late <= 0.0)
+		return 0.0;
+	return FMax(0.0, (2.0 + Late) - class'bbPlayer'.static.IGPlus_DetNextShotTS(1.0 + Late, 1.0, 1.0));
+}
+
+// The carry for what starts on this step: how far the step is past the moment
+// the cooldown ran out. Taken once.
+simulated function float DetTakeCarry(float StepTS) {
+	local float Carry;
+
+	if (DetReadyTS > 0.0)
+		Carry = DetCarryOf(StepTS - DetReadyTS);
+	DetReadyTS = 0.0;
+	return Carry;
+}
+
+// A held button fires a full load on the first step at or after
+// DetFullLoadTime. The cooldown counts from that time.
+simulated function float DetFullLoadCarry(int NumRockets, float LoadElapsed) {
+	if (NumRockets < 6)
+		return 0.0;
+	return DetCarryOf(LoadElapsed - DetFullLoadTime);
 }
 
 simulated function DetPlayServerChargeSound(bool bRotate) {
@@ -604,11 +649,23 @@ simulated function DetPlayServerChargeSound(bool bRotate) {
 
 // DetProcessStep runs on both sides: the server spawns authoritative
 // rockets; the client tracks edges/clocks and drives animation states only.
+//
+// Stock loads the first rocket at the press and one more with every Rotate
+// and Load animation, 0.45 s each (a 0.05 tween and six frames at 15 a
+// second). Load6 has a frame less, so the sixth rocket is in 0.8333 s after
+// the fifth, and a held button fires a full load 4.4333 s after the press.
 const DetChargeInterval = 0.9;
+const DetFullLoadTime = 4.43333;
+
+static final function int DetRocketsForLoadTime(float LoadElapsed) {
+	if (LoadElapsed >= DetFullLoadTime)
+		return 6;
+	return Clamp(1 + int(LoadElapsed / DetChargeInterval), 1, 5);
+}
 
 simulated function int DetCalculateCharge(float LoadElapsed) {
 	DetRefreshInternalBudget();
-	return Min(Clamp(1 + int(LoadElapsed / DetChargeInterval), 1, 6), Max(1, DetInternalBudget));
+	return Min(DetRocketsForLoadTime(LoadElapsed), Max(1, DetInternalBudget));
 }
 
 simulated function int DetResolvePrimaryEdgeCharge(optional int MoveChargeData) {
@@ -652,6 +709,7 @@ simulated function bool DetProcessStep(
 	local bool bMoveInstant;
 	local bool bOwnerInstantSetting;
 	local bool bBudgetLimitReached;
+	local float Carry;
 
 	DetAdvanceStepClock(StepTS);
 
@@ -768,6 +826,7 @@ simulated function bool DetProcessStep(
 		DetPrimaryStartCycle(bMoveInstant, bServerSide);
 		bDetWasFireHeld = true;
 		DetMarkClientEdge(bServerSide, StepTS);
+		Carry = DetTakeCarry(StepTS);
 		if (bDetPrimaryLatchedInstant) {
 			if (bServerSide) {
 				HandleDetServerFire(StepView, StepLoc, 1, bAltHeld);
@@ -776,10 +835,11 @@ simulated function bool DetProcessStep(
 				DetPrimaryRecordPrediction(1, false);
 				HandleDetClientFire();
 			}
-			DetStartCooldown(DetPostFireInterval(1));
+			DetStartCooldown(DetPostFireInterval(1) - Carry);
 			bDetWasFireHeld = false;
 			DetResetPrimaryCycle(false);
 		} else {
+			DetPrimaryLoadElapsed = Carry;
 			if (bServerSide)
 				DetPlayServerChargeSound(true);
 			else
@@ -826,7 +886,7 @@ simulated function bool DetProcessStep(
 				DetPrimaryRecordPrediction(NumRockets, true);
 				HandleDetClientLoadedFire(false, NumRockets, bDetPrimaryTightLatched || bAltHeld);
 			}
-			DetStartCooldown(DetPostFireInterval(NumRockets));
+			DetStartCooldown(DetPostFireInterval(NumRockets) - DetFullLoadCarry(NumRockets, DetPrimaryLoadElapsed));
 			bDetWasFireHeld = false;
 			DetResetPrimaryCycle(false);
 		}
@@ -857,7 +917,7 @@ simulated function bool DetProcessStep(
 		// Stock's AltFiring.Begin drops the icon here; LockedTarget itself dies
 		// in FireRockets on the !bFireLoad path.
 		bLockedOn = false;
-		DetAltLoadElapsed = 0.0;
+		DetAltLoadElapsed = DetTakeCarry(StepTS);
 		DetCachedChargeData = 1;
 		if (bServerSide)
 			DetPlayServerChargeSound(true);
@@ -890,7 +950,7 @@ simulated function bool DetProcessStep(
 		if (NumRockets >= 6 || bBudgetLimitReached) {
 				if (bServerSide) HandleDetServerAltFire(StepView, StepLoc, NumRockets);
 				else HandleDetClientLoadedFire(true, NumRockets, false);
-				DetStartCooldown(DetPostFireInterval(NumRockets));
+				DetStartCooldown(DetPostFireInterval(NumRockets) - DetFullLoadCarry(NumRockets, DetAltLoadElapsed));
 				bDetWasAltHeld = false;
 				DetAltLoadElapsed = 0.0;
 			}
@@ -959,9 +1019,11 @@ simulated function HandleDetClientLoadedFire(bool bAlt, int NumRockets, optional
 	DetNoteVolley(Level.TimeSeconds, NumRockets);
 
 	// Primary-only: if authoritative auto-fire interrupts during rotate,
-	// the final load sound may never be reached via AnimEnd.
+	// the final load sound may never be reached via AnimEnd. DetAnimLoaded
+	// is the rocket whose load sound has played. ClientRocketsLoaded trails
+	// it by half a step, so a release during a rotate played the sound twice.
 	if (Role < ROLE_Authority && !bAlt && IsDetActive() && IsInState('ClientFiring')
-		&& bRotated && NumRockets > ClientRocketsLoaded
+		&& bRotated && NumRockets > DetAnimLoaded
 		&& Owner != None && Pawn(Owner) != None)
 		Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 
@@ -1040,6 +1102,7 @@ simulated function DetResetDeterministicState() {
 	DetResetPrimaryCycle(true);
 	DetResetAltCycle(true);
 	DetCooldownRemaining = 0.0;
+	DetReadyTS = 0.0;
 	DetLastStepTS = 0.0;
 	DetLastStepDelta = 0.0;
 	DetCachedChargeData = 0;
@@ -1763,7 +1826,9 @@ simulated function PlayLoading(float rate, int num)
 	if (Owner == None)
 		return;
 
-	PlayAnim(LoadAnim[num], rate, 0.05);
+	// The rate is not used, as in stock: every load animation plays at 1.0.
+	// The launcher's times, here and in the deterministic code, are those.
+	PlayAnim(LoadAnim[num],, 0.05);
 	Owner.PlayOwnedSound(CockingSound, SLOT_None, Pawn(Owner).SoundDampening);
 }
 
@@ -1804,9 +1869,12 @@ simulated function bool DetHandleClientLoadAnimEnd(bool bAltLoad) {
 		TargetLoaded = Clamp(DetPrimaryPredictedLoaded, 1, LoadBudget);
 	}
 
+	// The animations follow stock's order by their own number (Rotate1,
+	// Load2, Rotate2 .. Load6). The count below follows the load time.
 	if (bRotated) {
-		PlayLoading(1.1, ClientRocketsLoaded);
+		PlayLoading(1.1, DetAnimLoaded);
 		bRotated = false;
+		DetAnimLoaded++;
 		if (ClientRocketsLoaded > TargetLoaded) {
 			ClientRocketsLoaded = TargetLoaded;
 		} else if (TargetLoaded > ClientRocketsLoaded) {
@@ -1820,10 +1888,10 @@ simulated function bool DetHandleClientLoadAnimEnd(bool bAltLoad) {
 	}
 
 	DetCachedChargeData = Clamp(ClientRocketsLoaded, 0, 7);
-	if (ClientRocketsLoaded >= LoadBudget)
+	if (DetAnimLoaded >= LoadBudget)
 		return true;
 
-	PlayRotating(ClientRocketsLoaded - 1);
+	PlayRotating(DetAnimLoaded - 1);
 	bRotated = true;
 	return true;
 }
@@ -1912,6 +1980,7 @@ state ClientFiring
 	simulated function BeginState()
 	{
 		bFireLoad = true;
+		DetAnimLoaded = 1;
 		if (IsDetActive())
 			Disable('Tick');
 
@@ -2002,6 +2071,7 @@ state ClientAltFiring
 	simulated function BeginState()
 	{
 		bFireLoad = false;
+		DetAnimLoaded = 1;
 		if (IsDetActive())
 			Disable('Tick');
 		
