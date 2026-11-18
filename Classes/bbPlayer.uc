@@ -6774,6 +6774,7 @@ function IGPlus_CheckClientError() {
 	local float MaxLocError;
 	local bool bForceUpdate;
 	local bool bLandingTaken;
+	local bool bTlocHeld;
 
 	if (bHaveReceivedServerMove == false)
 		return;
@@ -6789,7 +6790,13 @@ function IGPlus_CheckClientError() {
 	ClientLocError = LocDelta Dot LocDelta;
 	debugClientLocError = ClientLocError;
 	bLandingTaken = IGPlus_DetTakeClientLanding(ClientTlocCounter, ClientPhysics, ClientLocAbs, ClientLocError);
-	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken, LocDelta);
+	// A translocate we hold for our switch to the translocator
+	// (IGPlus_DetNotHeld): the client is at its disc already. We follow when
+	// ours is up, or refuse and correct then. A correction now put the client
+	// back for those moves and our own translocate sent it there again.
+	bTlocHeld = IGPlus_DetHoldsTloc(IGPlus_DetSwitchHeldAction, ClientTlocCounter, TlocCounter);
+	if (bTlocHeld == false)
+		IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken, LocDelta);
 	if (bLandingTaken)
 		ClientLocError = 0.0;
 
@@ -6805,7 +6812,7 @@ function IGPlus_CheckClientError() {
 
 	debugClientForceUpdate = bForceUpdate;
 
-	if (bForceUpdate) {
+	if (bForceUpdate && bTlocHeld == false) {
 		// (sv, cv: our speed and the one the client's last move reported.)
 		if (bDrawDebugData)
 			ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError
@@ -7800,6 +7807,12 @@ function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
 // translocator has none, so a respawn click still down threw at once.
 // ponytail: the stamp comes from ServerReStartPlayer only. A match start
 // (no stamp sent) has no wait.
+// Server: is a translocate held for a switch (3: translocate) and the client
+// one translocate ahead of us?
+static final function bool IGPlus_DetHoldsTloc(int HeldAction, int ClientCount, int ServerCount) {
+	return (HeldAction & 3) == 3 && ((ClientCount - ServerCount) & 3) == 1;
+}
+
 static final function bool IGPlus_DetSpawnWaitOver(float TS, float SpawnTS, float Need) {
 	return SpawnTS <= 0.0 || TS - SpawnTS >= Need;
 }
