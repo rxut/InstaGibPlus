@@ -353,6 +353,7 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 	local actor Other;
 	local Pawn PawnOwner;
 	local float RewindMs;
+	local bool bHead;
 
 	PawnOwner = Pawn(Owner);
 
@@ -382,8 +383,9 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 	if (bUseAdjustAim == false && bbPlayer(PawnOwner) != None) {
 		if (Other == None)
 			HitLocation = EndTrace;
-		bbPlayer(PawnOwner).IGPlus_HitCompare(
-			Other, Pawn(Other) != None && CheckHeadShot(Pawn(Other), HitLocation, X), StartTrace, X, HitLocation);
+		bHead = Pawn(Other) != None && CheckHeadShot(Pawn(Other), HitLocation, X);
+		bbPlayer(PawnOwner).IGPlus_SDNoteShot(Other, bHead, StartTrace, AdjustedAim, HitLocation, 1);
+		bbPlayer(PawnOwner).IGPlus_HitCompare(Other, bHead, StartTrace, X, HitLocation);
 	}
 	ProcessTraceHit(Other, HitLocation, HitNormal, X,Y,Z);
 }

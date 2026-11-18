@@ -280,6 +280,25 @@ var byte IGPlus_DemoFlags;       // 1 = written by a server with this code
 var byte IGPlus_DemoFOV;
 var bool IGPlus_DemoZoomed;
 var Sound IGPlus_DemoWeaponAmbient;
+// Server -> server demo only, for tools that measure aim. The view of the
+// newest move the server ran for this player and that move's client time
+// stamp, as they arrived (DemoViewPitch/Yaw are re-timed and blended for
+// watching, 10 to 100 ms behind). A tick with no new move leaves both as
+// they were. The time stamp is the client's Level.TimeSeconds (it runs with
+// the game speed), the same clock as a shot record's (IGPlus_DemoShot).
+var int IGPlus_DemoRawView;      // (Pitch << 16) | Yaw, 16 bits each
+var float IGPlus_DemoRawTS;
+// Playback: the newest shot record of this player (IGPlus_DemoShot). A tool
+// reads these when IGPlus_DemoShotCount changes.
+var int IGPlus_DemoShotCount;
+var float IGPlus_DemoShotTS;
+var int IGPlus_DemoShotView;     // (Pitch << 16) | Yaw
+var vector IGPlus_DemoShotOrigin;
+var vector IGPlus_DemoShotHit;
+var PlayerReplicationInfo IGPlus_DemoShotTarget;
+var int IGPlus_DemoShotData;
+var vector IGPlus_DemoShotBodyOff;
+var int IGPlus_DemoShotBody;
 // Playback: this player's server positions by server time.
 var float IGPlus_SDHistTime[128];
 var vector IGPlus_SDHistLoc[128];
@@ -529,6 +548,8 @@ var Weapon IGPlus_PendShotWeapon;
 var rotator IGPlus_PendShotView;
 var vector IGPlus_PendShotLoc;
 var float IGPlus_PendShotAgo;        // how long before now the shot was fired, by our estimate
+var float IGPlus_PendShotTS;         // the shot's client time stamp (IGPlus_DetLastShotTS is the newest shot's)
+var float IGPlus_SDShotTS;           // server: the same for the shot being traced now. 0: not a waiting shot
 var float IGPlus_PendPRTNoteTS, IGPlus_PendPRTSeenTime, IGPlus_PendPRTViewTime, IGPlus_PendPRTLagMs;
 var int IGPlus_PendPRTNoteTick;
 var string IGPlus_PendPRTReason;
@@ -1311,7 +1332,9 @@ replication
 		IGPlus_DemoFlags,
 		IGPlus_DemoFOV,
 		IGPlus_DemoZoomed,
-		IGPlus_DemoWeaponAmbient;
+		IGPlus_DemoWeaponAmbient,
+		IGPlus_DemoRawView,
+		IGPlus_DemoRawTS;
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Functions Server -> Client
@@ -1354,7 +1377,8 @@ replication
 		IGPlus_DemoLocalizedMessage,
 		IGPlus_DemoClientMessage,
 		IGPlus_DemoTeamMessage,
-		IGPlus_DemoWeaponEffect;
+		IGPlus_DemoWeaponEffect,
+		IGPlus_DemoShot;
 
 	reliable if (RemoteRole == ROLE_AutonomousProxy)
 		IGPlus_ForcedSettingsInit,
@@ -7356,6 +7380,7 @@ function bool IGPlus_QueueShot(Weapon W, rotator View, vector Loc) {
 	IGPlus_PendShotView = View;
 	IGPlus_PendShotLoc = Loc;
 	IGPlus_PendShotAgo = IGPlus_ShotAgo(IGPlus_DetLastShotTS);
+	IGPlus_PendShotTS = IGPlus_DetLastShotTS;
 	IGPlus_PendPRTNoteTS = IGPlus_PRTNoteTS;
 	IGPlus_PendPRTNoteTick = IGPlus_PRTNoteTick;
 	IGPlus_PendPRTSeenTime = IGPlus_PRTSeenTime;
@@ -7437,10 +7462,12 @@ function IGPlus_RunPendingShot() {
 	IGPlus_ShotOriginGap = IGPlus_PendShotOriginGap;
 	IGPlus_ShotOriginFrom = IGPlus_PendShotOriginFrom;
 
+	IGPlus_SDShotTS = IGPlus_PendShotTS;
 	if (ST_SuperShockRifle(W) != None)
 		ST_SuperShockRifle(W).DeterministicTraceFire(IGPlus_PendShotView, IGPlus_PendShotLoc);
 	else if (ST_SniperRifle(W) != None)
 		ST_SniperRifle(W).DeterministicTraceFire(IGPlus_PendShotView, IGPlus_PendShotLoc);
+	IGPlus_SDShotTS = 0.0;
 
 	IGPlus_PRTNoteTS = NoteTS;
 	IGPlus_PRTNoteTick = NoteTick;
@@ -20060,6 +20087,9 @@ function IGPlus_SDServerRecord(float DeltaTime) {
 		}
 		IGPlus_SDRecView[IGPlus_SDRecHead] = ((ViewRotation.Pitch & 0xFFFF) << 16) | (ViewRotation.Yaw & 0xFFFF);
 		IGPlus_SDRecEye[IGPlus_SDRecHead] = EyeHeight;
+		// The same move as it arrived, for tools that measure aim.
+		IGPlus_DemoRawView = IGPlus_SDRecView[IGPlus_SDRecHead];
+		IGPlus_DemoRawTS = CurrentTimeStamp;
 		IGPlus_SDRecHead++;
 		if (IGPlus_SDRecHead >= IGPLUS_SD_RECSIZE)
 			IGPlus_SDRecHead = 0;
@@ -20183,6 +20213,142 @@ function vector IGPlus_SDRecPos(int Idx) {
 	if (IGPlus_SDRecBase[Idx] != none && IGPlus_SDRecBase[Idx].bDeleteMe == false)
 		return IGPlus_SDRecRel[Idx] + IGPlus_SDRecBase[Idx].Location;
 	return IGPlus_SDRecLoc[Idx];
+}
+
+// Server: one record of a deterministic rifle or sniper shot for the server
+// demo, hit or miss, called before the damage. For tools that measure aim:
+// nothing in the game reads it. View is the exact view the shot left with,
+// Start where its trace began, WeaponId 0 the rifle (ST_SuperShockRifle) and
+// 1 the sniper (ST_SniperRifle).
+function IGPlus_SDNoteShot(Actor Other, bool bHead, vector Start, rotator View, vector HitLocation, int WeaponId) {
+	local PlayerReplicationInfo TargetPRI;
+	local IGPlus_WeaponImplementationBase WB;
+	local WeaponSettingsRepl WS;
+	local int Result, Client, RewindMs, PingMs;
+	local float TS;
+	local Pawn TP;
+	local UTPlusDummy BD;
+	local vector BodyOff;
+	local int Body;
+
+	if (Pawn(Other) != None)
+		TargetPRI = Pawn(Other).PlayerReplicationInfo;
+	if (TargetPRI != None) {
+		if (bHead)
+			Result = 2;
+		else
+			Result = 1;
+	}
+	// What the shooter's own trace said (IGPLUS_HIT_MISS, _BODY, _HEAD).
+	if (IGPlus_ClientHitVerdict >= IGPLUS_HIT_MISS && IGPlus_ClientHitVerdict <= IGPLUS_HIT_HEAD)
+		Client = IGPlus_ClientHitVerdict - IGPLUS_HIT_MISS + 1;
+	// Nothing is rewound with ping compensation off.
+	WS = GetWeaponSettings();
+	WB = IGPlus_GetWeaponImplementationBase();
+	if (WS != None && WS.bEnablePingCompensation && WB != None)
+		RewindMs = Clamp(int(WB.IGPlus_GetHitscanRewindMs(self) + 0.5), 0, 1023);
+	if (PlayerReplicationInfo != None)
+		PingMs = Clamp(PlayerReplicationInfo.Ping, 0, 1023);
+	// A shot that waited for the end of the tick has its own time stamp with
+	// it: a later shot of ours has replaced IGPlus_DetLastShotTS by then.
+	TS = IGPlus_SDShotTS;
+	if (TS == 0.0)
+		TS = IGPlus_DetLastShotTS;
+
+	// Where the hit sits on the body the server tested: the target's rewound
+	// copy if the hit lies on it, else the target where it stands now (a
+	// target with no history yet). Neither: the fields stay 0.
+	TP = Pawn(Other);
+	if (TP != None) {
+		if (WS != None && WS.bEnablePingCompensation && zzUTPure != None)
+			BD = zzUTPure.FindDummy(TP);
+		if (BD != None && IGPlus_SDOnBody(HitLocation - BD.Location, BD)) {
+			BodyOff = HitLocation - BD.Location;
+			Body = 1 | (int(FClamp(BD.DuckFraction, 0.0, 1.0) * 255.0) << 2) | ((BD.Rotation.Yaw & 0xFFFF) << 16);
+		} else if (IGPlus_SDOnBody(HitLocation - TP.Location, TP)) {
+			BodyOff = HitLocation - TP.Location;
+			Body = 2 | ((TP.Rotation.Yaw & 0xFFFF) << 16);
+			if (WB != None)
+				Body = Body | (int(FClamp(WB.GetPawnDuckFraction(TP), 0.0, 1.0) * 255.0) << 2);
+		}
+	}
+
+	IGPlus_DemoShot(
+		TS,
+		((View.Pitch & 0xFFFF) << 16) | (View.Yaw & 0xFFFF),
+		Start.X, Start.Y, Start.Z,
+		HitLocation,
+		TargetPRI,
+		(WeaponId & 1) | (Result << 1) | (Client << 3) | (RewindMs << 5) | (PingMs << 15),
+		BodyOff.X, BodyOff.Y, BodyOff.Z,
+		Body);
+}
+
+// Whether a hit point lies on this body. The game pushes a hit point half a
+// radius into the body along the shot (AdjustHitLocation), so it can sit
+// that far outside the cylinder.
+function bool IGPlus_SDOnBody(vector Off, Actor A) {
+	local float R;
+
+	R = 1.5 * A.CollisionRadius + 1.0;
+	return Abs(Off.Z) <= A.CollisionHeight + 0.5 * A.CollisionRadius + 1.0 && Off.X * Off.X + Off.Y * Off.Y <= R * R;
+}
+
+// A shot record, written to a server demo only (IGPlus_SDNoteShot). This
+// format is in every demo recorded from here on, so it only grows at the end.
+//   TS       the shot's client time stamp, the clock of IGPlus_DemoRawTS
+//   View     (Pitch << 16) | Yaw, 16 bits each
+//   Origin   where the trace began, exact (a vector goes in whole units)
+//   HitLoc   where the trace ended, in whole units
+//   Target   the player the server hit, None for a miss
+//   Data     bit 0      weapon: 0 rifle, 1 sniper
+//            bits 1-2   server: 0 miss, 1 body, 2 head
+//            bits 3-4   the shooter's own trace: 0 none sent, 1 miss, 2 body, 3 head
+//            bits 5-14  the server's rewind figure, ms (0 to 1023): what
+//                       IGPlus_GetHitscanRewindMs gave, the number [DET-HIT]
+//                       prints. 0 with ping compensation off
+//            bits 15-24 the shooter's ping, ms (0 to 1023)
+//   BodyX/Y/Z  a hit on a player: the hit point minus the middle of the
+//            body the server tested, in world axes, exact. The hit point
+//            sits half a radius inside that body along the shot
+//            (AdjustHitLocation). Turned by the yaw below it gives where
+//            on the body the hit sits
+//   Body     bits 0-1   which body: 0 no player hit, 1 the target's
+//                       rewound copy, 2 the target where it stood
+//            bits 2-9   that body's crouch, 0 to 255 (255 fully crouched)
+//            bits 16-31 that body's yaw
+// Playback keeps the newest one and counts them.
+// ponytail: one record held, not a list. These weapons fire slower than a
+// tick, so a tool that looks every frame sees each one.
+simulated function IGPlus_DemoShot(
+	float TS,
+	int View,
+	float OriginX,
+	float OriginY,
+	float OriginZ,
+	vector HitLoc,
+	PlayerReplicationInfo Target,
+	int Data,
+	float BodyX,
+	float BodyY,
+	float BodyZ,
+	int Body
+) {
+	if (Role == ROLE_Authority || Level.NetMode != NM_Client)
+		return;
+	IGPlus_DemoShotTS = TS;
+	IGPlus_DemoShotView = View;
+	IGPlus_DemoShotOrigin.X = OriginX;
+	IGPlus_DemoShotOrigin.Y = OriginY;
+	IGPlus_DemoShotOrigin.Z = OriginZ;
+	IGPlus_DemoShotHit = HitLoc;
+	IGPlus_DemoShotTarget = Target;
+	IGPlus_DemoShotData = Data;
+	IGPlus_DemoShotBodyOff.X = BodyX;
+	IGPlus_DemoShotBodyOff.Y = BodyY;
+	IGPlus_DemoShotBodyOff.Z = BodyZ;
+	IGPlus_DemoShotBody = Body;
+	IGPlus_DemoShotCount++;
 }
 
 // Server: a personal message, written to a server demo only. Stock
