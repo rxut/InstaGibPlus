@@ -881,7 +881,13 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		bWeaponUp = true;
 		GotoState('');
 	}
-	if (IsInState('ClientActive') || IGPlus_DetTlocPending()) {
+	// A predicted switch to us has one finish time both sides know
+	// (bbPlayer.IGPlus_PSEquipTS), and the server brings us up on it. Here the
+	// holster animation ends a frame or two sooner. An action in between went
+	// to a server that still held the other weapon: it held the action, sent
+	// us back, then translocated and sent us to the disc a second time.
+	if (IsInState('ClientActive') || IGPlus_DetTlocPending()
+		|| (P.IGPlus_PSActive && P.IGPlus_PSTarget == self && TS < P.IGPlus_PSEquipTS)) {
 		// Stock's bring-up keeps both and fires first (bForceFire wins).
 		if (bFirePress || (bAltPress && IGPlus_DetLatchedPress != 1)) {
 			if (bFirePress)
