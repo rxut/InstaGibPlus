@@ -186,6 +186,10 @@ function bool TestDetEffectiveAnimTime() {
 		&& class'bbPlayer'.static.IGPlus_DetKindRuns(6, true, false, false, false, false)
 		&& class'bbPlayer'.static.IGPlus_DetKindRuns(7, false, true, true, true, true) == false
 		&& class'bbPlayer'.static.IGPlus_DetKindRuns(0, true, true, true, true, true) == false, "Det_kind_rifles_by_the_main_setting");
+	// A move that still names a deterministic weapon we no longer hold: (Predicted Switching, hammer in hand).
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetStaleBlockRule(false, false) == false, "Det_stale_binding_lets_held_fire_through_without_predicted_switching");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetStaleBlockRule(true, false), "Det_stale_binding_blocks_with_predicted_switching");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetStaleBlockRule(false, true), "Det_stale_binding_blocks_for_the_hammer");
 	return true;
 }
 
