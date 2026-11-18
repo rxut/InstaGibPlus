@@ -53,6 +53,9 @@ var float IGPlus_DemoCheckTime;
 var string IGPlus_DemoRealSkinKey;
 var Texture IGPlus_DemoRealMultiSkins[8];
 var float IGPlus_GameEndedTime;
+var bool IGPlus_AutoDebugData;    // server: Settings.bAutoDebugData, set after the warmup countdown (as zzbForceDemo)
+var bool IGPlus_AutoDebugStarted; // Auto Debug Data ran this map
+var float IGPlus_AutoDebugEndTime;
 
 // Stuff
 var float	zzDesiredFOV;		// Needed ?
@@ -1292,6 +1295,7 @@ replication
 		RespawnDelay,
 		TimeBetweenNetUpdates,
 		zzbForceDemo,
+		IGPlus_AutoDebugData,
 		zzbGameStarted,
 		zzbForceModels,
 		zzbIsWarmingUp,
@@ -15222,6 +15226,23 @@ function xxPlayerTickEvents(float DeltaTime)
 			ConsoleCommand("StopDemo");
 	}
 
+	// Auto Debug Data (server setting): on once per map when the server says
+	// the match runs, off 2 s after it ends, which saves the file. Once per
+	// map, so enableDebugData 0 during the match stays off.
+	if (IGPlus_AutoDebugData && IGPlus_AutoDebugStarted == false
+		&& Viewport(Player) != none && IGPlus_InDemoPlayback() == false
+	) {
+		IGPlus_AutoDebugStarted = true;
+		if (bDrawDebugData == false)
+			enableDebugData(true);
+	}
+	if (IGPlus_AutoDebugStarted && bDrawDebugData && GameReplicationInfo.GameEndedComments != "") {
+		if (IGPlus_AutoDebugEndTime == 0)
+			IGPlus_AutoDebugEndTime = Level.TimeSeconds;
+		else if (Level.TimeSeconds >= IGPlus_AutoDebugEndTime + 2.0)
+			enableDebugData(false);
+	}
+
 	// Recording a client demo: our clock goes into it from its first frame
 	// (IGPlus_ClientDemoClock). After AutoDemo, which may just have started one.
 	if (IGPlus_DemoRecClock == none && Level.NetMode == NM_Client && PureLevel != None && PureLevel.zzDemoRecDriver != None)
@@ -23020,6 +23041,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("PauseTotalTime");
 	IGPlus_ServerSendSetting("PauseTime");
 	IGPlus_ServerSendSetting("bForceDemo");
+	IGPlus_ServerSendSetting("bAutoDebugData");
 	IGPlus_ServerSendSetting("bRestrictTrading");
 	IGPlus_ServerSendSetting("MaxTradeTimeMargin");
 	IGPlus_ServerSendSetting("TradePingMargin");
