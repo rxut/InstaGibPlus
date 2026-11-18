@@ -1198,6 +1198,7 @@ function ModifyPlayer(Pawn Other)
 			if (zzDMP.CountDown < 1) {
 				// only set on first spawn after warmup
 				zzP.zzbForceDemo = Settings.bForceDemo;
+				zzP.IGPlus_AutoDebugData = Settings.bAutoDebugData;
 				zzP.zzbGameStarted = True;
 			}
 			zzP.SetLocation(zzP.Location);
@@ -1411,6 +1412,7 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "PauseTotalTime") return "PauseTotalTime";
 	if (Key ~= "PauseTime") return "PauseTime";
 	if (Key ~= "bForceDemo") return "bForceDemo";
+	if (Key ~= "bAutoDebugData") return "bAutoDebugData";
 	if (Key ~= "bRestrictTrading") return "bRestrictTrading";
 	if (Key ~= "MaxTradeTimeMargin") return "MaxTradeTimeMargin";
 	if (Key ~= "TradePingMargin") return "TradePingMargin";

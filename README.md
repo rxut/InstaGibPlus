@@ -1453,6 +1453,7 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [PlayerPacks](#playerpacks)
 1. [ThrowVelocity](#throwvelocity)
 1. [bForceDemo](#bforcedemo)
+1. [bAutoDebugData](#bautodebugdata)
 1. [bRestrictTrading](#brestricttrading)
 1. [bEnableAllWeaponTrades](#benableallweapontrades)
 1. [MaxTradeTimeMargin](#maxtradetimemargin)
@@ -1742,6 +1743,17 @@ Horizontal speed with which to throw weapons.
 **Default: False**  
 
 Forces clients to do demos.
+
+## bAutoDebugData
+
+**Type: bool**  
+**Default: False**  
+
+If `True`, debug data turns on for every player when a match starts, the same as each player typing `enableDebugData 1`. It turns off 2 seconds after the match ends, which saves the debug log file in each player's UT Logs folder, named IGPlusDebug_\<date\>_\<time\>.log. Players who join during the match get it from their first spawn. It starts after the warmup countdown, the same as [bForceDemo](#bforcedemo), so it only runs on servers with bTournament on. It does not run during warmup.
+
+It starts once per map. A player who types `enableDebugData 0` during a match stays off until the next map.
+
+In the IG+ server settings menu this is `Auto Debug Data`.
 
 ## MaxHitError
 

@@ -1084,6 +1084,7 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("PauseTotalTime");
 	IGPlus_ServerSendSetting("PauseTime");
 	IGPlus_ServerSendSetting("bForceDemo");
+	IGPlus_ServerSendSetting("bAutoDebugData");
 	IGPlus_ServerSendSetting("bRestrictTrading");
 	IGPlus_ServerSendSetting("MaxTradeTimeMargin");
 	IGPlus_ServerSendSetting("TradePingMargin");
