@@ -20,6 +20,8 @@ var int DetCachedChargeData;
 var int DetAltAmmoSpent;
 var int DetClientPredictedAmmo;
 var float DetAltChargeStartTS;
+// Client: the charge steps paid for in this charge (ClientAltFiring).
+var int DetClientChargeSteps;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -69,6 +71,7 @@ simulated function DetResetDeterministicState() {
 	DetAltAmmoSpent = 0;
 	DetClientPredictedAmmo = 0;
 	DetAltChargeStartTS = 0.0;
+	DetClientChargeSteps = 0;
 }
 
 function GiveTo(Pawn Other) {
@@ -92,6 +95,16 @@ simulated function float PrimaryShotInterval() {
 // Stock alt burst: 9-frame Fire sequence at 30 fps, played at rate 0.4.
 simulated function float AltShotInterval() {
 	return 8.0 / (30.0 * 0.4);
+}
+
+// The alt charge grows by one step for every 0.5 s the button is held, nine
+// steps at most (stock's 4.1 after about 4.5 s). Server and client both count
+// by the time since the press. Stock counts on the server's ticks and starts
+// again from zero after each step, so a step there takes 0.5 s and up to a
+// tick more. The client used to count that way on its own frames, and its
+// count may lower the server's: at 30 frames a second a step took 0.53 s.
+static final function int DetChargeSteps(float Held) {
+	return Clamp(int(Held / 0.5), 0, 9);
 }
 
 // Half-step charge ticks: 0..8 = 0.0..4.0, 9 = the 4.1 stock max (~4.5s).
@@ -182,7 +195,7 @@ simulated function bool DetProcessStep(
 	if (bDetWasAltHeld) {
 		if (bServerSide) {
 			// Stock cadence: 1 ammo + 1 per 0.5s; client report may only lower it.
-			TargetAmmoSpent = 1 + Clamp(int((StepTS - DetAltChargeStartTS) / 0.5), 0, 9);
+			TargetAmmoSpent = 1 + DetChargeSteps(StepTS - DetAltChargeStartTS);
 			TargetAmmoSpent = Min(TargetAmmoSpent, 1 + Clamp(DetChargeData, 0, 9));
 			while (DetAltAmmoSpent < TargetAmmoSpent
 				&& AmmoType != none
@@ -502,6 +515,7 @@ state ClientAltFiring
 	{
 		local Pawn PawnOwner;
 		local bbPlayer bbP;
+		local int Steps;
 
 		PawnOwner = Pawn(Owner);
 		if (PawnOwner == None) {
@@ -514,7 +528,21 @@ state ClientAltFiring
 			return;
 		}
 
-		if (ChargeSize < 4.1) {
+		if (IsDetActive()) {
+			// By the time since the press, as the server counts
+			// (DetChargeSteps). Not in the frame the button came up: the
+			// move of that frame carries the count of the frame before, and
+			// the glob we show has to be the one the server fires.
+			if (bDetWasAltHeld && PawnOwner.bAltFire != 0) {
+				Steps = DetChargeSteps(Level.TimeSeconds - DetAltChargeStartTS);
+				while (DetClientChargeSteps < Steps && AmmoType != None && AmmoType.AmmoAmount > 0) {
+					AmmoType.UseAmmo(1);
+					DetClientPredictedAmmo = AmmoType.AmmoAmount;
+					DetClientChargeSteps++;
+				}
+				ChargeSize = FMin(DetClientChargeSteps * 0.5, 4.1);
+			}
+		} else if (ChargeSize < 4.1) {
 			Count += DeltaTime;
 			if (Count > 0.5 && AmmoType != None && AmmoType.AmmoAmount > 0) {
 				AmmoType.UseAmmo(1);
@@ -570,6 +598,7 @@ state ClientAltFiring
 		Count = 0.0;
 		DetCachedChargeData = 0;
 		DetClientPredictedAmmo = -1;
+		DetClientChargeSteps = 0;
 	}
 }
 
