@@ -175,6 +175,17 @@ function bool TestDetEffectiveAnimTime() {
 	LogTestResult(class'ST_UT_Eightball'.static.DetReadyLeft(100.05, 100.0, 100.01) < 0.0, "Det_rockets_ready_time_of_an_older_volley_ignored");
 	LogTestResult(class'ST_UT_Eightball'.static.DetReadyLeft(100.9, 99.0, 101.0) < 0.0
 		&& class'ST_UT_Eightball'.static.DetReadyLeft(103.0, 100.0, 100.5) < 0.0, "Det_rockets_ready_time_past_or_too_far_ignored");
+	// Which kinds of weapon run deterministic: 3 the flak cannon, 2 the ripper, 4 the bio rifle, 5 the launcher,
+	// 1, 6 and 7 the shock rifle, the sniper and the instagib rifle.
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetKindRuns(3, true, true, false, true, true) == false
+		&& class'bbPlayer'.static.IGPlus_DetKindRuns(3, false, false, true, false, false), "Det_kind_flak_by_its_own_setting");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetKindRuns(2, true, false, true, true, true) == false
+		&& class'bbPlayer'.static.IGPlus_DetKindRuns(4, true, true, true, false, true) == false
+		&& class'bbPlayer'.static.IGPlus_DetKindRuns(5, true, true, true, true, false) == false, "Det_kind_ripper_bio_rockets_by_their_own");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetKindRuns(1, true, false, false, false, false)
+		&& class'bbPlayer'.static.IGPlus_DetKindRuns(6, true, false, false, false, false)
+		&& class'bbPlayer'.static.IGPlus_DetKindRuns(7, false, true, true, true, true) == false
+		&& class'bbPlayer'.static.IGPlus_DetKindRuns(0, true, true, true, true, true) == false, "Det_kind_rifles_by_the_main_setting");
 	return true;
 }
 
