@@ -438,6 +438,7 @@ var bool IGPlus_AdjustLocationOverride;
 // corrections land in the simulation at once, the camera eases after them.
 var vector IGPlus_CameraCorrectionOffset;  // camera lag behind the corrected position
 var vector IGPlus_CameraCorrectionApplied; // part of it used this frame, after wall clipping
+var vector IGPlus_CameraOffsetDrawn;       // the same, kept until the next frame's view (Push-Safe Aim)
 var vector IGPlus_LiftExitCamOffset;        // camera lag after leaving a moving lift (always eased)
 var vector IGPlus_PushCamOffset;            // camera lag after a push our client couldn't predict (always eased)
 var bool IGPlus_CAPPushed;                  // client: a correction since the last replay says a push made it
@@ -3431,6 +3432,7 @@ simulated function IGPlus_ApplyCameraCorrection(out vector CameraLocation) {
 		return;
 
 	IGPlus_CameraCorrectionApplied = IGPlus_ClippedCameraOffset(CameraLocation);
+	IGPlus_CameraOffsetDrawn = IGPlus_CameraCorrectionApplied;
 	CameraLocation += IGPlus_CameraCorrectionApplied;
 }
 
@@ -3767,12 +3769,19 @@ simulated function bool IGPlus_InLiftExitWindow() {
 // Push-Safe Aim, client: the view that sends a shot from the real position
 // through the point under the crosshair of the (offset) rendered camera. The
 // unshifted shot would hit D*Dir + Offset from the real origin.
+// The offset is the one the last frame drew, where the player aimed. The
+// offset now has eased on since: by 6 of 30 units in the first frame of a
+// correction at 110 fps. With it the shot left that far beside the crosshair,
+// and on a rig, 30 uu corrections, a click on the first frame, aimed at the
+// middle of a running target 600 uu away, it missed 9 of 64 shots, all where
+// the target turned (drawn up to 13 uu from where the server has them). With
+// the drawn offset 128 of 128 hit.
 simulated function bool IGPlus_PSAAimView(out rotator AimView) {
 	local vector Dir, Eye, Offset, HitLocation, HitNormal;
 	local float D;
 
 	Eye = Location + EyeHeight * vect(0,0,1) + WalkBob;
-	Offset = IGPlus_ClippedCameraOffset(Eye);
+	Offset = IGPlus_CameraOffsetDrawn;
 	if (Offset == vect(0,0,0))
 		return false;
 
@@ -3781,7 +3790,11 @@ simulated function bool IGPlus_PSAAimView(out rotator AimView) {
 		return false; // nothing under the crosshair: parallel is right
 
 	D = (HitLocation - (Eye + Offset)) dot Dir;
-	if (D < 50.0)
+	// Any distance: the shot still goes through the point under the
+	// crosshair. This was 50, and a player whose front was closer than that
+	// (27 uu at 40 uu apart on a rig, a 25 uu correction) was missed 32 of 32
+	// times with the crosshair on their middle. Now 32 of 32 hit.
+	if (D < 1.0)
 		return false;
 
 	AimView = rotator(D * Dir + Offset);
@@ -12513,6 +12526,8 @@ function xxCalcBehindView(out vector CameraLocation, out rotator CameraRotation,
 simulated event PlayerCalcView(out actor ViewActor, out vector CameraLocation, out rotator CameraRotation )
 {
 	local Pawn PTarget;
+
+	IGPlus_CameraOffsetDrawn = vect(0,0,0); // set again by IGPlus_ApplyCameraCorrection
 
 	// Only demo playback calls this on a recorded player (udemo following
 	// them). Before this was simulated the call was dropped, and udemo showed
