@@ -153,7 +153,7 @@ var float IGPlus_PSGate;
 var float IGPlus_PSPrevGate;          // client: From's gate, restored on cancel
 var bool bPSHolsterStarted;
 var bool bPSForcing;                  // server: the timeline's own ChangedWeapon
-var float IGPlus_PSSpawnTS;           // client: our timestamp the server had reached when it respawned us
+var float IGPlus_PSSpawnTS;           // our client's timestamp the server had reached when it respawned us (both sides)
 var Weapon IGPlus_PSKeep;             // client: weapon the timeline put up (vs stale echoes)
 var Weapon IGPlus_PSFiltFrom[8];      // client: server ClientPutDowns to drop (see IGPlus_PSFilterDrops)
 var Weapon IGPlus_PSFiltT1[8];
@@ -7794,6 +7794,16 @@ function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
 
 // Which press a click is for the translocator: 1 fire, 2 alt-fire, 0 none.
 // Fire first, as stock's bring-up does (bForceFire).
+// The deterministic translocator's first throw of a life waits 0.5s from the
+// respawn, as master's does: its throw timer (ServerTimeSinceLastFire > 0.5)
+// starts when the weapon is made. Ours ran from the last throw, and a new
+// translocator has none, so a respawn click still down threw at once.
+// ponytail: the stamp comes from ServerReStartPlayer only. A match start
+// (no stamp sent) has no wait.
+static final function bool IGPlus_DetSpawnWaitOver(float TS, float SpawnTS, float Need) {
+	return SpawnTS <= 0.0 || TS - SpawnTS >= Need;
+}
+
 static final function int IGPlus_DetPressOf(bool bFirePress, bool bAltPress) {
 	if (bFirePress)
 		return 1;
@@ -14512,6 +14522,7 @@ state Dying
 				PlaySpawn();
 
 			IGPlus_ClientReStart(Physics, Location, Rotation, IGPlus_RestartedAgainByStartMatch());
+			IGPlus_PSSpawnTS = CurrentTimeStamp;
 			xxClientPSSpawn(CurrentTimeStamp);
 
 			IGPlus_DetClearSwitchTrustState();
