@@ -1,22 +1,17 @@
+// One layer of a crosshair in the Crosshair Factory window. A list of these is
+// a crosshair as the window shows it, bottom layer first.
 class IGPlus_CrosshairLayersListItem extends UWindowListBoxItem;
 
-var() int    Index;
 var() string Texture;
 var() int    OffsetX, OffsetY;
 var() float  ScaleX, ScaleY;
 var() color  Color;
 var() byte   Style;
 var() bool   bSmooth;
-var() bool   bUse;
 var() byte   Shape;
 var() int    Thickness;
 
+// The image of Texture, looked up once for each name (IGPlus_CrosshairLayersListBox.LayerTex).
 var Texture Tex;
-
-function int Compare(UWindowList T, UWindowList B) {
-	local IGPlus_CrosshairLayersListItem Lhs, Rhs;
-	Lhs = IGPlus_CrosshairLayersListItem(T);
-	Rhs = IGPlus_CrosshairLayersListItem(B);
-
-	return Lhs.Index - Rhs.Index;
-}
+var string TexName;
+var bool bTexLooked;

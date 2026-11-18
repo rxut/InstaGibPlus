@@ -860,13 +860,11 @@ A crosshair is made up of individual images that are drawn in a specific order p
 * `Texture` refers to the image to draw. If left empty, a 1x1 white pixel will be used.
 * `OffsetX` and `OffsetY` is the offset from the center of the screen in pixels where the image should be drawn
 * `ScaleX` and `ScaleY` represent how large the image should be
-* `Color` is the color in RGB that should be used to draw the image
+* `Color` is the color in RGB that should be used to draw the image. `A` is the alpha. Only `Style` 3 uses it.
 * `Style` is the drawing style to use for the image, one of
-    * 0 (`STY_None`) - equivalent to 1 (`STY_Normal`) for our purposes here
-    * 1 (`STY_Normal`) - RGB image (no transparency)
-    * 2 (`STY_Masked`) - Paletted image, first color in palette is transparent (?)
-    * 3 (`STY_Translucent`) - Greyscale image, brightness is opacity, used for default crosshairs
-    * 4 (`STY_Modulated`) - ?
+    * 0 (`STY_None`), 1 (`STY_Normal`) and 2 (`STY_Masked`) - solid. The layer covers the game behind it. The game draws all three the same way. A texture with transparent parts keeps them in all three.
+    * 3 (`STY_Translucent`) - the layer adds its color to the game behind it as light. White is the strongest. Darker colors are weaker and black is invisible. `A` of `Color` sets the strength from 1 to 255. 255 is full strength. A lower number lets more of the game show through. 0 counts as 255.
+    * 4 (`STY_Modulated`) - the layer multiplies the game behind it by the image. A filled rectangle or a shape makes it twice as bright. This style does not use `Color`.
 * `bSmooth` controls whether sharp edges should be smoothed out when `ScaleX` or `ScaleY` are greater than 1
 * `bUse` controls whether this layer should be drawn, `True` to draw, `False` to ignore
 * `Shape` draws a shape instead of the texture. `Texture` is then not used. The shape is `ScaleX` pixels wide and `ScaleY` pixels high, at most 1024 each, and a pixel is part of it when the pixel's centre is inside the shape. The edges are hard, `bSmooth` makes no difference. One of
@@ -878,9 +876,20 @@ A crosshair is made up of individual images that are drawn in a specific order p
     * 5 - triangle pointing down
 * `Thickness` is the width of a shape's outline in pixels. 0 fills the shape. A shape too small for the outline is filled.
 
-In the Crosshair Factory window these are `Shape` and `Thickness`, under `Smooth`.
+The Crosshair Factory window shows only the values that do something for the selected layer:
+
+* `Shape` is always there. Shape 0 is called `Rectangle`.
+* `Texture` shows for a rectangle. `Smooth` shows once a texture is named.
+* `ScaleX` and `ScaleY` are called `Width` and `Height`, in pixels. With a texture named they are `Scale X` and `Scale Y`. They multiply the size of the image then.
+* `Thickness` shows for every shape but the rectangle.
+* `Style` offers `Solid` (1), `Translucent` (3) and `Modulated` (4). A layer saved with style 0 or 2 shows as `Solid` and keeps its number until you pick another style.
+* `Red`, `Green` and `Blue` do not show for `Modulated`. `Alpha` shows for `Translucent` only.
+
+The line at the bottom of the window explains the value under the mouse. The preview shows the crosshair at 4 times its size. It draws a crosshair too large for that smaller. The corner of the preview names the zoom.
 
 IG+ versions from before shapes do not know `Shape` and `Thickness`. They draw a shape layer as its texture, which is a filled rectangle of the same size when `Texture` is empty. If you save your IG+ settings in such a version, the shapes of your picked preset become filled rectangles in newer versions too.
+
+IG+ versions from before `A` did something draw a `Style` 3 layer at full strength, whatever its `A`. In this version a layer saved with `Style` 3 and an `A` from 1 to 254 is weaker than it was before.
 
 `CrosshairLayers` holds the layers of the picked preset, see [CrosshairPreset](#crosshairpreset).
 
@@ -892,11 +901,13 @@ The Crosshair Factory keeps up to 16 crosshairs, called presets. `CrosshairPrese
 
 In the Crosshair Factory window the presets are in the list on the right, each with a small picture and its name. The command [CrosshairPreset](#crosshairpreset-command) picks one from the console or with a key.
 
-* Click a preset to pick it. The game draws it from that click on.
-* `+` makes a new preset. It starts as a copy of the picked one and becomes the picked one.
+* Click a preset to pick it. The game draws its saved version from that click on.
+* `+` makes a new preset and picks it. It starts as a copy of the crosshair the window shows. Changes that are not saved are copied too.
 * `-` deletes the picked preset. You can not delete the last preset.
 * `Name` is the name of the picked preset.
-* `Save` writes the layers and the name into the picked preset. If you pick another preset before you save, your changes to the layers are gone.
+* Changes to the layers and the name stay with their preset while the window is open. They are still there when you click another preset and come back. A preset with changes that are not saved has a `*` after its name.
+* `Save` writes every preset marked with a `*`.
+* Closing the window drops the changes that are not saved.
 
 A crosshair you made before presets existed is your first preset, named `Crosshair 1`.
 

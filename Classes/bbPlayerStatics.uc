@@ -109,9 +109,7 @@ static function DrawCrosshair(Canvas C, ClientSettings Settings) {
 	class'CanvasUtils'.static.SaveCanvas(C);
 
 	for (L = Settings.BottomLayer; L != none; L = L.Next) {
-		C.Style = L.Style;
-		C.bNoSmooth = (L.bSmooth == false);
-		C.DrawColor = L.Color;
+		class'CrosshairLayer'.static.SetupCanvas(C, L.Style, L.Color, L.bSmooth);
 		if (L.Shape != 0) {
 			class'CrosshairLayer'.static.DrawShape(C, none, L.Shape, L.Thickness, L.ScaleX, L.ScaleY, X + L.OffsetX, Y + L.OffsetY, 1.0);
 			continue;
