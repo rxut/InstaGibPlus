@@ -288,8 +288,10 @@ var Sound IGPlus_DemoWeaponAmbient;
 // the game speed), the same clock as a shot record's (IGPlus_DemoShot).
 var int IGPlus_DemoRawView;      // (Pitch << 16) | Yaw, 16 bits each
 var float IGPlus_DemoRawTS;
-// Playback: the newest shot record of this player (IGPlus_DemoShot). A tool
-// reads these when IGPlus_DemoShotCount changes.
+// The newest shot record of this player (IGPlus_DemoShot), in playback and on
+// the server. A tool reads these when IGPlus_DemoShotCount changes. Stats
+// mutators read them by name (GetPropertyText) on the server, where the
+// record of a shot is written before its damage: keep the names.
 var int IGPlus_DemoShotCount;
 var float IGPlus_DemoShotTS;
 var int IGPlus_DemoShotView;     // (Pitch << 16) | Yaw
@@ -20317,7 +20319,7 @@ function bool IGPlus_SDOnBody(vector Off, Actor A) {
 //                       rewound copy, 2 the target where it stood
 //            bits 2-9   that body's crouch, 0 to 255 (255 fully crouched)
 //            bits 16-31 that body's yaw
-// Playback keeps the newest one and counts them.
+// Playback and the server keep the newest one and count them.
 // ponytail: one record held, not a list. These weapons fire slower than a
 // tick, so a tool that looks every frame sees each one.
 simulated function IGPlus_DemoShot(
@@ -20334,8 +20336,6 @@ simulated function IGPlus_DemoShot(
 	float BodyZ,
 	int Body
 ) {
-	if (Role == ROLE_Authority || Level.NetMode != NM_Client)
-		return;
 	IGPlus_DemoShotTS = TS;
 	IGPlus_DemoShotView = View;
 	IGPlus_DemoShotOrigin.X = OriginX;
