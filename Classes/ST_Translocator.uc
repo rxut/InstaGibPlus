@@ -927,7 +927,7 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 
 	if (bFireIn) {
 		if (IGPlus_bDetOut == false) {
-			if (TS - IGPlus_DetLastFireTS >= 0.5)
+			if (TS - IGPlus_DetLastFireTS >= 0.5 && P.IGPlus_DetSpawnWaitOver(TS, P.IGPlus_PSSpawnTS, 0.5))
 				Action = IGPLUS_DETTLOC_THROW;
 		} else if (TS - IGPlus_DetThrowTS >= 0.8) {
 			Action = IGPLUS_DETTLOC_RECALL;
@@ -1246,11 +1246,14 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	}
 
 	if (Action == IGPLUS_DETTLOC_THROW) {
-		if (TTarget != None || TS - IGPlus_DetLastFireTS < 0.499) {
+		if (TTarget != None || TS - IGPlus_DetLastFireTS < 0.499
+			|| P.IGPlus_DetSpawnWaitOver(TS, P.IGPlus_PSSpawnTS, 0.499) == false) {
 			if (TTarget != None)
 				Reason = "disc-already-out";
-			else
+			else if (TS - IGPlus_DetLastFireTS < 0.499)
 				Reason = "0.5s-throw-timer";
+			else
+				Reason = "0.5s-after-spawn";
 			IGPlus_DetReject(Action, TS, Reason);
 			return;
 		}
