@@ -9628,6 +9628,28 @@ static final function float IGPlus_DetFlakPostSelectTime(float AnimSpeed) {
 	return 0.05 + 14.0 / (30.0 * FMax(AnimSpeed, 0.01));
 }
 
+// NextIG and NextSA have one weapon, like NewNetIG and NewNetSA, and their
+// rifle comes up after a spawn as the NewNet rifles do, with no setting: the
+// Select animation at 1.35 (NN_WeaponFunctions.PlaySelect). NewNet passes a
+// 0.05 tween with it, which the engine drops on a weapon that has played no
+// animation yet (execPlayAnim), and a weapon from a spawn has played none. So
+// the select has no tween here. The Down animation has its 0.05. The NewNet
+// rifles also add the player's ping in seconds to the speed. That part is
+// left out here: client and server would not get the same number, and the
+// gate has to be the same on both.
+static final function float IGPlus_DetNewNetAnimTime(int Frames, float Rate, float Tween) {
+	return Tween + float(Frames - 1) / (Rate * 1.35);
+}
+
+// The NextIG rifle. ST_Mutator also puts ST_SuperShockRifle in place of a
+// stock instagib rifle in a game with other weapons: there it switches like
+// them, by the shock settings.
+simulated function bool IGPlus_NewNetRifleTiming(Weapon W) {
+	if (SA_SniperRifle(W) != none)
+		return true;
+	return ST_SuperShockRifle(W) != none && IGPlus_WeaponSettingsMode == 1;
+}
+
 // Select duration of a v4 weapon from replicated config — the entry gate is
 // computed once server-side from this and replicated verbatim, so client and
 // server hold the same timestamp instead of re-deriving it from each side's
@@ -9637,6 +9659,12 @@ static final function float IGPlus_DetFlakPostSelectTime(float AnimSpeed) {
 simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 	local WeaponSettingsRepl WS;
 
+	// Rifle2m's and sshockm's Select: 17 frames at 28 a second, 15 at 30.
+	if (IGPlus_NewNetRifleTiming(W)) {
+		if (SA_SniperRifle(W) != none)
+			return IGPlus_DetNewNetAnimTime(17, 28.0, 0.0);
+		return IGPlus_DetNewNetAnimTime(15, 30.0, 0.0);
+	}
 	WS = GetWeaponSettings();
 	if (WS == none)
 		return IGPlus_DetEntryGateSeconds();
@@ -9653,7 +9681,8 @@ simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 		return IGPlus_DetSelectAnimTime(WS.EightballSelectTime, WS.default.EightballSelectTime, 20);
 	if (ST_SniperRifle(W) != none)
 		return IGPlus_DetSelectAnimTime(WS.SniperSelectTime, WS.default.SniperSelectTime, 17);
-	// The instagib rifle plays its select and down anims by the shock settings.
+	// The instagib rifle among other weapons plays its select and down anims
+	// by the shock settings.
 	if (ST_SuperShockRifle(W) != none)
 		return IGPlus_DetSelectAnimTime(WS.ShockSelectTime, WS.default.ShockSelectTime, 15);
 	return IGPlus_DetEntryGateSeconds();
@@ -18474,6 +18503,12 @@ simulated function float IGPlus_PSDownTimeFor(Weapon W) {
 
 	if (IGPlus_UseFastWeaponSwitch)
 		return 0.0;
+	// Rifle2m's and sshockm's Down: 7 frames at 30 a second, 7 at 27.
+	if (IGPlus_NewNetRifleTiming(W)) {
+		if (SA_SniperRifle(W) != none)
+			return IGPlus_DetNewNetAnimTime(7, 30.0, 0.05);
+		return IGPlus_DetNewNetAnimTime(7, 27.0, 0.05);
+	}
 	WS = GetWeaponSettings();
 	if (WS == none)
 		return 0.1;

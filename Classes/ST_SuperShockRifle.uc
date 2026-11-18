@@ -590,12 +590,24 @@ function SetSwitchPriority(pawn Other)
 	}
 }
 
+// In NextIG the rifle is the only weapon and comes up as the NewNet rifle
+// does (bbPlayer.IGPlus_NewNetRifleTiming): no select or down setting.
+simulated function bool IGPlus_NewNetTiming() {
+	if (bbPlayer(Owner) != none)
+		return bbPlayer(Owner).IGPlus_NewNetRifleTiming(self);
+	return WImp != none && WImp.IGPlus_bNextMode; // a bot's rifle, on the server
+}
+
 simulated function PlaySelect() {
 	bForceFire = false;
 	bForceAltFire = false;
 	bCanClientFire = false;
-	if ( !IsAnimating() || (AnimSequence != 'Select') )
-		PlayAnim('Select',GetWeaponSettings().ShockSelectAnimSpeed(),0.0);
+	if ( !IsAnimating() || (AnimSequence != 'Select') ) {
+		if (IGPlus_NewNetTiming())
+			PlayAnim('Select', 1.35, 0.0);
+		else
+			PlayAnim('Select',GetWeaponSettings().ShockSelectAnimSpeed(),0.0);
+	}
 	Owner.PlaySound(SelectSound, SLOT_Misc, Pawn(Owner).SoundDampening);
 }
 
@@ -607,6 +619,13 @@ simulated function TweenDown() {
 	if (Owner != none && Owner.IsA('bbPlayer') && bbPlayer(Owner).IGPlus_UseFastWeaponSwitch)
 		TweenTime = 0.00;
 
+	if (IGPlus_NewNetTiming()) {
+		if ( IsAnimating() && (AnimSequence != '') && (GetAnimGroup(AnimSequence) == 'Select') )
+			TweenAnim( AnimSequence, AnimFrame * 0.4 );
+		else
+			PlayAnim('Down', 1.35, TweenTime);
+		return;
+	}
 	if ( IsAnimating() && (AnimSequence != '') && (GetAnimGroup(AnimSequence) == 'Select') )
 		TweenAnim( AnimSequence, AnimFrame * GetWeaponSettings().ShockDownTime );
 	else
