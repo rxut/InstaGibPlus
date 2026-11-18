@@ -204,6 +204,8 @@ function bool TestDetEffectiveAnimTime() {
 		&& class'bbPlayer'.static.IGPlus_DetRedoDue(1, 4.9, 5.0, 5.5) == false
 		&& class'bbPlayer'.static.IGPlus_DetRedoDue(1, 5.6, 5.0, 5.5) == false
 		&& class'bbPlayer'.static.IGPlus_DetRedoDue(0, 5.2, 5.0, 5.5) == false, "Det_tloc_resend_is_due_between_the_last_move_and_this_one");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetPressOf(true, true) == 1 && class'bbPlayer'.static.IGPlus_DetPressOf(false, true) == 2
+		&& class'bbPlayer'.static.IGPlus_DetPressOf(false, false) == 0, "Det_tloc_early_click_fire_first");
 	return true;
 }
 

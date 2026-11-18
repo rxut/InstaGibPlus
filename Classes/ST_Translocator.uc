@@ -892,6 +892,16 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		}
 		return 0;
 	}
+	// A click made while the switch to us was still on its way (the server
+	// had us up a round trip before we came up here): it counts as one made
+	// during the bring-up (bbPlayer.IGPlus_DetEarlyPress).
+	if (P.IGPlus_DetEarlyPress != 0 && P.IGPlus_DetTlocAsked == self && IGPlus_DetLatchedPress == 0
+		&& Level.TimeSeconds - P.IGPlus_DetTlocAskedTS < 2.0) {
+		IGPlus_DetLatchedPress = P.IGPlus_DetEarlyPress;
+		IGPlus_DetLatchTS = TS;
+	}
+	P.IGPlus_DetEarlyPress = 0;
+	P.IGPlus_DetTlocAsked = none;
 	if (IGPlus_DetLatchedPress != 0) {
 		if (bFirePress == false && bAltPress == false && TS - IGPlus_DetLatchTS < 0.5) {
 			bFirePress = (IGPlus_DetLatchedPress == 1);
