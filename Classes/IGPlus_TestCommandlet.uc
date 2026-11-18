@@ -114,6 +114,28 @@ function bool TestDetEffectiveAnimTime() {
 		Abs(class'bbPlayer'.static.IGPlus_DetEffectiveAnimTime(0.001, 0.5) - 0.005) < 0.0001,
 		"Det_anim_time_tiny_config_hits_speed_cap"
 	);
+	// The select animation ends one frame short of the configured time.
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetSelectAnimTime(0.6, 0.5, 15) - 0.56) < 0.0001,
+		"Det_select_time_shock_15_frames"
+	);
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetSelectAnimTime(0.6, 0.607143, 17) - 0.564706) < 0.0001,
+		"Det_select_time_sniper_17_frames"
+	);
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetSelectAnimTime(0.0, 0.75, 30) - 0.00725) < 0.0001,
+		"Det_select_time_zero_config_hits_speed_cap"
+	);
+	// The flak cannon's Loading after the select: stock speed 1.3, and the speed cap.
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetFlakPostSelectTime(1.3) - 0.408974) < 0.0001,
+		"Det_flak_post_select_stock_speed"
+	);
+	LogTestResult(
+		Abs(class'bbPlayer'.static.IGPlus_DetFlakPostSelectTime(100.0) - 0.054667) < 0.0001,
+		"Det_flak_post_select_speed_cap"
+	);
 	return true;
 }
 

@@ -9609,10 +9609,31 @@ static final function float IGPlus_DetEffectiveAnimTime(float ConfigTime, float 
 	return FMax(ConfigTime, DefaultTime * 0.01);
 }
 
+// How long a weapon's Select animation takes. IG+ plays it with no tween at
+// FMin(100, Default/Config), and Default is the sequence's frame count over
+// its rate. An animation played once ends on its last frame, one frame short
+// of that, so the weapon is up after Config * (Frames - 1) / Frames. Stock and
+// IG+ without ping compensation fire a held button at that moment (the Active
+// state's FinishAnim), measured on a test rig: 0.565 s for a shock rifle with
+// ShockSelectTime 0.6, not 0.6.
+static final function float IGPlus_DetSelectAnimTime(float ConfigTime, float DefaultTime, int Frames) {
+	return IGPlus_DetEffectiveAnimTime(ConfigTime, DefaultTime) * float(Frames - 1) / float(Frames);
+}
+
+// The flak cannon's Loading animation after its select (PlayPostSelect): a
+// 0.05 tween and 14 of its 15 frames at 30 a second, at FlakPostSelectAnimSpeed.
+// The cannon is up only once this has played too, also with FlakPostSelectTime 0
+// (the tween is not sped up).
+static final function float IGPlus_DetFlakPostSelectTime(float AnimSpeed) {
+	return 0.05 + 14.0 / (30.0 * FMax(AnimSpeed, 0.01));
+}
+
 // Select duration of a v4 weapon from replicated config — the entry gate is
 // computed once server-side from this and replicated verbatim, so client and
 // server hold the same timestamp instead of re-deriving it from each side's
-// own anim state machine.
+// own anim state machine. It is the time the weapon's own select animation
+// takes (frame counts of the first-person meshes' Select sequences), so the
+// gate opens when the gun on screen is up.
 simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 	local WeaponSettingsRepl WS;
 
@@ -9620,20 +9641,21 @@ simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 	if (WS == none)
 		return IGPlus_DetEntryGateSeconds();
 	if (ST_ShockRifle(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.ShockSelectTime, WS.default.ShockSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.ShockSelectTime, WS.default.ShockSelectTime, 15);
 	if (ST_ripper(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.RipperSelectTime, WS.default.RipperSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.RipperSelectTime, WS.default.RipperSelectTime, 30);
 	if (ST_UT_FlakCannon(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.FlakSelectTime, WS.default.FlakSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.FlakSelectTime, WS.default.FlakSelectTime, 30)
+			+ IGPlus_DetFlakPostSelectTime(WS.FlakPostSelectAnimSpeed());
 	if (ST_ut_biorifle(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.BioSelectTime, WS.default.BioSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.BioSelectTime, WS.default.BioSelectTime, 22);
 	if (ST_UT_Eightball(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.EightballSelectTime, WS.default.EightballSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.EightballSelectTime, WS.default.EightballSelectTime, 20);
 	if (ST_SniperRifle(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.SniperSelectTime, WS.default.SniperSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.SniperSelectTime, WS.default.SniperSelectTime, 17);
 	// The instagib rifle plays its select and down anims by the shock settings.
 	if (ST_SuperShockRifle(W) != none)
-		return IGPlus_DetEffectiveAnimTime(WS.ShockSelectTime, WS.default.ShockSelectTime);
+		return IGPlus_DetSelectAnimTime(WS.ShockSelectTime, WS.default.ShockSelectTime, 15);
 	return IGPlus_DetEntryGateSeconds();
 }
 
