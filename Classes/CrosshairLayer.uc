@@ -8,7 +8,7 @@ var float ScaleY;
 var color Color;
 var byte Style;
 var bool bSmooth;
-// 0: the texture. Else a shape ScaleX by ScaleY pixels, drawn one pixel row at a time:
+// 0: the texture, a filled rectangle when it is the white pixel. Else a shape ScaleX by ScaleY pixels, drawn one pixel row at a time:
 // 1 circle, 2 square, 3 diamond, 4 triangle pointing up, 5 triangle pointing down.
 var byte Shape;
 var int Thickness; // of a shape's outline in pixels, 0 fills the shape
@@ -78,6 +78,24 @@ static function bool ShapeRow(byte Shape, int W, int H, int Thickness, int Row, 
 	return true;
 }
 
+// Sets the Canvas up for a layer. Canvas draws Normal and Masked the same (a
+// texture's own masked flag decides), never reads the alpha of its colour, and
+// draws a Modulated tile without its colour. A Translucent layer adds its
+// colour to the picture as light, so its alpha is applied here: the colour is
+// made darker by it. An alpha of 0 counts as 255: an ini line without A, or a
+// layer from when Alpha did nothing.
+static function SetupCanvas(Canvas C, byte Style, Object.Color Col, bool bSmooth) {
+	if (Style == 3 && Col.A != 0 && Col.A != 255) {
+		Col.R = int(Col.R) * Col.A / 255;
+		Col.G = int(Col.G) * Col.A / 255;
+		Col.B = int(Col.B) * Col.A / 255;
+	}
+	Col.A = 255;
+	C.Style = Max(1, Style);
+	C.DrawColor = Col;
+	C.bNoSmooth = (bSmooth == false);
+}
+
 static function DrawShapeTile(Canvas C, UWindowWindow Win, Texture T, float X, float Y, float W, float H) {
 	if (Win != none) {
 		Win.DrawStretchedTexture(C, X, Y, W, H, T);
@@ -127,7 +145,7 @@ DefaultProperties
 	bSmooth=false
 	Shape=0
 	Thickness=0
-	ShapeNames(0)="Texture"
+	ShapeNames(0)="Rectangle"
 	ShapeNames(1)="Circle"
 	ShapeNames(2)="Square"
 	ShapeNames(3)="Diamond"

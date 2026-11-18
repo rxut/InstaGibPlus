@@ -1,4 +1,16 @@
-class IGPlus_CrosshairSettingsContent extends UMenuPageWindow;
+// The Crosshair Factory window: the layers of a crosshair on the left with a
+// large preview under them, the selected layer's values in the middle, the
+// presets on the right.
+//
+// Every preset has its own list of layers here (IGPlus_CrosshairPresetsListItem.Layers),
+// loaded when the window opens. The player's changes go into these lists and
+// nowhere else, so they stay when another preset is clicked. Save writes every
+// preset that changed. Opening the window again loads everything anew, so
+// closing it drops what was not saved.
+//
+// Only the values that do something for the selected layer are shown.
+class IGPlus_CrosshairSettingsContent extends UMenuPageWindow
+	dependson(ClientSettings);
 
 var IGPlus_CrosshairSettingsDialog ParentDialog;
 var ClientSettings Settings;
@@ -6,18 +18,32 @@ var bool bUpdatingControls;
 
 var IGPlus_Button Btn_AddLayer;
 var IGPlus_Button Btn_RemLayer;
+var IGPlus_Label Lbl_Layers;
+var localized string LayersText;
+var localized string LayersHelp;
+var localized string AddLayerHelp;
+var localized string RemLayerHelp;
 
 var IGPlus_CrosshairLayersListBox LB_Layers;
 var UWindowList LastSelected;
+var bool bRefill; // the boxes get the selected layer's values again
+
+var IGPlus_Label Lbl_NoLayer;
+var localized string NoLayerText;
 
 // Presets: the list, + for a new one, - to delete the picked one, and its name.
 var IGPlus_Button Btn_AddPreset;
 var IGPlus_Button Btn_RemPreset;
 var IGPlus_Label Lbl_Presets;
 var localized string PresetsText;
+var localized string PresetsHelp;
+var localized string AddPresetHelp;
+var localized string RemPresetHelp;
 var IGPlus_CrosshairPresetsListBox LB_Presets;
+var IGPlus_CrosshairPresetsListItem CurPreset; // the one whose layers are shown
 var IGPlus_EditControl Edit_PresetName;
 var localized string PresetNameText;
+var localized string PresetNameHelp;
 
 var IGPlus_Label Lbl_Scale;
 var localized string ScaleText;
@@ -33,18 +59,48 @@ var IGPlus_BtnDown Btn_OffsetDown;
 var IGPlus_BtnLeft Btn_OffsetLeft;
 var IGPlus_BtnRight Btn_OffsetRight;
 
+var IGPlus_ComboBox Cmb_Shape;
+var localized string ShapeText;
+var localized string ShapeHelp;
+
 var IGPlus_EditControl Edit_Texture;
 var localized string TextureText;
+var localized string TextureHelp;
+
+var IGPlus_Checkbox Chk_Smooth;
+var localized string SmoothText;
+var localized string SmoothHelp;
+
+// A shape and a filled rectangle have a width and a height in pixels. An
+// image has a scale, as multiples of its own size.
+var IGPlus_EditControl Edit_ScaleX;
+var localized string ScaleXText;
+var localized string ScaleXHelp;
+var localized string WidthText;
+var localized string WidthHelp;
+var IGPlus_EditControl Edit_ScaleY;
+var localized string ScaleYText;
+var localized string ScaleYHelp;
+var localized string HeightText;
+var localized string HeightHelp;
 
 var IGPlus_EditControl Edit_OffsetX;
 var localized string OffsetXText;
+var localized string OffsetXHelp;
 var IGPlus_EditControl Edit_OffsetY;
 var localized string OffsetYText;
+var localized string OffsetYHelp;
 
-var IGPlus_EditControl Edit_ScaleX;
-var localized string ScaleXText;
-var IGPlus_EditControl Edit_ScaleY;
-var localized string ScaleYText;
+var IGPlus_EditControl Edit_Thickness;
+var localized string ThicknessText;
+var localized string ThicknessHelp;
+
+var IGPlus_ComboBox Cmb_Style;
+var localized string StyleText;
+var localized string StyleHelp;
+var localized string StyleNormal;
+var localized string StyleTranslucent;
+var localized string StyleModulated;
 
 var IGPlus_EditControl Edit_ColorRed;
 var localized string ColorRedText;
@@ -52,32 +108,191 @@ var IGPlus_EditControl Edit_ColorGreen;
 var localized string ColorGreenText;
 var IGPlus_EditControl Edit_ColorBlue;
 var localized string ColorBlueText;
+var localized string ColorHelp;
 var IGPlus_EditControl Edit_ColorAlpha;
 var localized string ColorAlphaText;
+var localized string ColorAlphaHelp;
 
-var IGPlus_ComboBox Cmb_Style;
-var localized string StyleText;
-var localized string StyleNormal;
-var localized string StyleMasked;
-var localized string StyleTranslucent;
-var localized string StyleModulated;
-
-var IGPlus_Checkbox Chk_Smooth;
-var localized string SmoothText;
-
-var IGPlus_ComboBox Cmb_Shape;
-var localized string ShapeText;
-var IGPlus_EditControl Edit_Thickness;
-var localized string ThicknessText;
+var localized string ZoomText;
 
 var UWindowSmallCloseButton Btn_Close;
-var UwindowSmallButton Btn_Save;
+var UWindowSmallButton Btn_Save;
+var localized string SaveHelp;
+var localized string CloseHelp;
 
-function CopyCrosshairLayers() {
+function int MaxLayers() {
+	if (Settings == none)
+		return 0;
+	return Settings.CrosshairLayerCount();
+}
+
+function IGPlus_CrosshairLayersListItem Sel() {
+	return IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem);
+}
+
+function SelectLayer(IGPlus_CrosshairLayersListItem L) {
+	if (L != none)
+		LB_Layers.SetSelectedItem(L);
+	else
+		LB_Layers.SelectedItem = none;
+}
+
+function IGPlus_CrosshairLayersListItem NewLayer() {
+	local IGPlus_CrosshairLayersListItem L;
+
+	L = new class'IGPlus_CrosshairLayersListItem';
+	L.ScaleX = 1;
+	L.ScaleY = 1;
+	L.Color.R = 255;
+	L.Color.G = 255;
+	L.Color.B = 255;
+	L.Color.A = 255;
+	L.Style = 1;
+	return L;
+}
+
+// A layer of the window as it is saved. None: a layer that is not used, as
+// Save has always written it.
+function ClientSettings.CrosshairLayerDescr Descr(IGPlus_CrosshairLayersListItem L) {
+	local ClientSettings.CrosshairLayerDescr D;
+
+	if (L == none) {
+		D.ScaleX = 1;
+		D.ScaleY = 1;
+		D.Color.R = 255;
+		D.Color.G = 255;
+		D.Color.B = 255;
+		D.Color.A = 255;
+		return D;
+	}
+	D.bUse = true;
+	D.Texture = L.Texture;
+	D.OffsetX = L.OffsetX;
+	D.OffsetY = L.OffsetY;
+	D.ScaleX = L.ScaleX;
+	D.ScaleY = L.ScaleY;
+	D.Color = L.Color;
+	D.Style = L.Style;
+	D.bSmooth = L.bSmooth;
+	D.Shape = L.Shape;
+	D.Thickness = L.Thickness;
+	return D;
+}
+
+// A preset's row, with its layers as they are saved.
+function IGPlus_CrosshairPresetsListItem NewPresetItem(int Slot) {
+	local IGPlus_CrosshairPresetsListItem P;
+	local IGPlus_CrosshairLayersListItem L;
+	local ClientSettings.CrosshairLayerDescr D;
+	local int i;
+
+	P = new class'IGPlus_CrosshairPresetsListItem';
+	P.Slot = Slot;
+	P.PresetName = Settings.GetCrosshairPresetName(Slot);
+	P.Layers = new class'IGPlus_CrosshairLayersListItem';
+	P.Layers.SetupSentinel();
+	for (i = 0; i < MaxLayers(); ++i) {
+		D = Settings.CrosshairPresets[Slot].GetLayer(i);
+		if (D.bUse == false)
+			continue;
+
+		L = NewLayer();
+		L.Texture = D.Texture;
+		L.OffsetX = D.OffsetX;
+		L.OffsetY = D.OffsetY;
+		L.ScaleX = D.ScaleX;
+		L.ScaleY = D.ScaleY;
+		L.Color = D.Color;
+		L.Style = D.Style;
+		L.bSmooth = D.bSmooth;
+		L.Shape = D.Shape;
+		L.Thickness = D.Thickness;
+		P.Layers.AppendItem(L);
+	}
+	return P;
+}
+
+// Is a preset in the window not what is saved?
+function bool IsDirty(IGPlus_CrosshairPresetsListItem P) {
+	local IGPlus_CrosshairLayersListItem L;
+	local ClientSettings.CrosshairLayerDescr D;
+	local int i;
+
+	if (P.PresetName != Settings.GetCrosshairPresetName(P.Slot))
+		return true;
+
+	L = IGPlus_CrosshairLayersListItem(P.Layers.Next);
+	for (i = 0; i < MaxLayers(); ++i) {
+		D = Settings.CrosshairPresets[P.Slot].GetLayer(i);
+		if (D.bUse == false)
+			continue;
+		if (L == none || D != Descr(L))
+			return true;
+		L = IGPlus_CrosshairLayersListItem(L.Next);
+	}
+	return L != none;
+}
+
+// Writes every preset that changed, the picked one and the others.
+function Save() {
+	local IGPlus_CrosshairPresetsListItem P;
+	local IGPlus_CrosshairLayersListItem L;
+	local int i;
+
+	for (P = IGPlus_CrosshairPresetsListItem(LB_Presets.Items.Next); P != none; P = IGPlus_CrosshairPresetsListItem(P.Next)) {
+		if (IsDirty(P) == false)
+			continue;
+
+		i = 0;
+		for (L = IGPlus_CrosshairLayersListItem(P.Layers.Next); L != none && i < MaxLayers(); L = IGPlus_CrosshairLayersListItem(L.Next))
+			Settings.SetCrosshairPresetLayer(P.Slot, i++, Descr(L));
+		while (i < MaxLayers())
+			Settings.SetCrosshairPresetLayer(P.Slot, i++, Descr(none));
+
+		Settings.SaveCrosshairPreset(P.Slot, P.PresetName);
+		P.PresetName = Settings.GetCrosshairPresetName(P.Slot); // an empty name was not taken
+		P.bDirty = false;
+	}
+	Settings.SaveConfig();
+
+	if (CurPreset != none && Edit_PresetName.GetValue() != CurPreset.PresetName) {
+		bUpdatingControls = true;
+		Edit_PresetName.SetValue(CurPreset.PresetName);
+		bUpdatingControls = false;
+	}
+}
+
+function IGPlus_CrosshairPresetsListItem FindPreset(int Slot) {
+	local IGPlus_CrosshairPresetsListItem P;
+
+	for (P = IGPlus_CrosshairPresetsListItem(LB_Presets.Items.Next); P != none; P = IGPlus_CrosshairPresetsListItem(P.Next))
+		if (P.Slot == Slot)
+			return P;
+	return none;
+}
+
+// Shows a preset's layers and its name. What the window showed before stays
+// in the list of the preset it belongs to.
+function ShowPreset(IGPlus_CrosshairPresetsListItem P) {
+	if (P == none)
+		return;
+
+	bUpdatingControls = true;
+	CurPreset = P;
+	LB_Presets.SetSelectedItem(P);
+	LB_Layers.Items = P.Layers;
+	LB_Layers.VertSB.Pos = 0;
+	SelectLayer(IGPlus_CrosshairLayersListItem(P.Layers.Next));
+	bRefill = true;
+	Edit_PresetName.SetValue(P.PresetName);
+	bUpdatingControls = false;
+}
+
+// The window was opened: every preset as it is saved.
+function Load() {
 	local bbPlayer P;
 	local bbCHSpectator Spec;
 	local int i;
-	local IGPlus_CrosshairLayersListItem Item;
 
 	P = bbPlayer(GetPlayerOwner());
 	if (P == none) {
@@ -91,123 +306,144 @@ function CopyCrosshairLayers() {
 	if (Settings == none)
 		return;
 
-	for (i = 0; i < MaxLayers(); ++i) {
-		if (Settings.GetCrosshairLayer(i).bUse == false)
-			continue;
-
-		Item = IGPlus_CrosshairLayersListItem(LB_Layers.Items.CreateItem(LB_Layers.ListClass));
-		if (Item == none)
-			continue;
-
-		Item.Index   = i;
-		Item.Texture = Settings.GetCrosshairLayer(i).Texture;
-		Item.ScaleX  = Settings.GetCrosshairLayer(i).ScaleX;
-		Item.ScaleY  = Settings.GetCrosshairLayer(i).ScaleY;
-		Item.OffsetX = Settings.GetCrosshairLayer(i).OffsetX;
-		Item.OffsetY = Settings.GetCrosshairLayer(i).OffsetY;
-		Item.Color   = Settings.GetCrosshairLayer(i).Color;
-		Item.Style   = Settings.GetCrosshairLayer(i).Style;
-		Item.bSmooth = Settings.GetCrosshairLayer(i).bSmooth;
-		Item.Shape   = Settings.GetCrosshairLayer(i).Shape;
-		Item.Thickness = Settings.GetCrosshairLayer(i).Thickness;
-
-		if (Item.Style == 0)
-			Item.Style = 1;
-
-		LB_Layers.Items.AppendItem(Item);
-	}
-}
-
-function Save() {
-	local int i;
-	local IGPlus_CrosshairLayersListItem L;
-	local color White;
-
-	White.R = 255;
-	White.G = 255;
-	White.B = 255;
-	White.A = 255;
-
-	i = 0;
-	for (L = IGPlus_CrosshairLayersListItem(LB_Layers.Items.Next); L != none && i < MaxLayers(); L = IGPlus_CrosshairLayersListItem(L.Next)) {
-		Settings.SetCrosshairLayerUse(i, true);
-
-		Settings.SetCrosshairLayerTexture(i, L.Texture);
-		Settings.SetCrosshairLayerOffsetX(i, L.OffsetX);
-		Settings.SetCrosshairLayerOffsetY(i, L.OffsetY);
-		Settings.SetCrosshairLayerScaleX(i, L.ScaleX);
-		Settings.SetCrosshairLayerScaleY(i, L.ScaleY);
-		Settings.SetCrosshairLayerColor(i, L.Color);
-		Settings.SetCrosshairLayerStyle(i, L.Style);
-		Settings.SetCrosshairLayerSmooth(i, L.bSmooth);
-		Settings.SetCrosshairLayerShape(i, L.Shape);
-		Settings.SetCrosshairLayerThickness(i, L.Thickness);
-
-		i++;
-	}
-
-	while(i < MaxLayers()) {
-		Settings.SetCrosshairLayerUse(i, false);
-
-		Settings.SetCrosshairLayerTexture(i, "");
-		Settings.SetCrosshairLayerOffsetX(i, 0);
-		Settings.SetCrosshairLayerOffsetY(i, 0);
-		Settings.SetCrosshairLayerScaleX(i, 1);
-		Settings.SetCrosshairLayerScaleY(i, 1);
-		Settings.SetCrosshairLayerColor(i, White);
-		Settings.SetCrosshairLayerStyle(i, 0);
-		Settings.SetCrosshairLayerSmooth(i, false);
-		Settings.SetCrosshairLayerShape(i, 0);
-		Settings.SetCrosshairLayerThickness(i, 0);
-
-		i++;
-	}
-
-	Settings.CreateCrosshairLayers();
-	Settings.StoreCrosshairPreset(Edit_PresetName.GetValue());
-	Settings.SaveConfig();
-}
-
-// The list of presets, with the picked one selected and its name in the box.
-function LoadPresets() {
-	local int i;
-	local string PresetName;
-	local IGPlus_CrosshairPresetsListItem Item;
-
-	if (Settings == none)
-		return;
-
-	bUpdatingControls = true;
 	LB_Presets.Items.Clear();
 	LB_Presets.SelectedItem = none;
-	for (i = 0; i < arraycount(Settings.CrosshairPresets); ++i) {
-		PresetName = Settings.GetCrosshairPresetName(i);
-		if (PresetName == "")
-			continue;
+	CurPreset = none;
+	for (i = 0; i < arraycount(Settings.CrosshairPresets); ++i)
+		if (Settings.GetCrosshairPresetName(i) != "")
+			LB_Presets.Items.AppendItem(NewPresetItem(i));
 
-		Item = IGPlus_CrosshairPresetsListItem(LB_Presets.Items.CreateItem(LB_Presets.ListClass));
-		if (Item == none)
-			continue;
+	ShowPreset(FindPreset(Settings.CrosshairPreset));
 
-		Item.Slot = i;
-		Item.PresetName = PresetName;
-		Item.Layers = Settings.CreateCrosshairPresetLayers(i);
-		LB_Presets.Items.AppendItem(Item);
-
-		if (i == Settings.CrosshairPreset) {
-			LB_Presets.SetSelectedItem(Item);
-			Edit_PresetName.SetValue(PresetName);
-		}
-	}
-	bUpdatingControls = false;
+	// The keyboard goes to the list of layers (arrow keys walk through it).
+	// Left alone it goes to the topmost box, and the first key typed would
+	// replace what is in it.
+	LB_Layers.ActivateWindow(0, false);
 }
 
-function Load() {
-	LB_Layers.Items.Clear();
+// A new preset in the first free slot. It starts as a copy of the one shown,
+// with the changes that are not saved yet.
+function AddPreset() {
+	local IGPlus_CrosshairPresetsListItem P, After;
+	local IGPlus_CrosshairLayersListItem L, Copy;
+
+	if (CurPreset == none || Settings.NewCrosshairPreset() == false)
+		return;
+
+	P = NewPresetItem(Settings.CrosshairPreset);
+	P.Layers.Clear();
+	for (L = IGPlus_CrosshairLayersListItem(CurPreset.Layers.Next); L != none; L = IGPlus_CrosshairLayersListItem(L.Next)) {
+		Copy = NewLayer();
+		Copy.Texture = L.Texture;
+		Copy.OffsetX = L.OffsetX;
+		Copy.OffsetY = L.OffsetY;
+		Copy.ScaleX = L.ScaleX;
+		Copy.ScaleY = L.ScaleY;
+		Copy.Color = L.Color;
+		Copy.Style = L.Style;
+		Copy.bSmooth = L.bSmooth;
+		Copy.Shape = L.Shape;
+		Copy.Thickness = L.Thickness;
+		P.Layers.AppendItem(Copy);
+	}
+	P.bDirty = IsDirty(P);
+
+	// The rows are in the order of the slots.
+	for (After = IGPlus_CrosshairPresetsListItem(LB_Presets.Items.Next); After != none; After = IGPlus_CrosshairPresetsListItem(After.Next))
+		if (After.Slot > P.Slot)
+			break;
+	if (After != none)
+		After.InsertItemBefore(P);
+	else
+		LB_Presets.Items.AppendItem(P);
+
+	ShowPreset(P);
+}
+
+function RemPreset() {
+	if (CurPreset == none || Settings.DeleteCrosshairPreset() == false)
+		return;
+
+	CurPreset.Remove();
+	LB_Presets.SelectedItem = none;
+	CurPreset = none;
+	ShowPreset(FindPreset(Settings.CrosshairPreset));
+}
+
+function AddLayer() {
+	local IGPlus_CrosshairLayersListItem L;
+
+	L = NewLayer();
+	LB_Layers.Items.AppendItem(L);
+	SelectLayer(L);
+	LB_Layers.MakeSelectedVisible();
+}
+
+// The layer after the removed one is selected next, or the one before it.
+function RemLayer() {
+	local IGPlus_CrosshairLayersListItem L, Next;
+
+	L = Sel();
+	if (L == none)
+		return;
+	Next = IGPlus_CrosshairLayersListItem(L.Next);
+	if (Next == none && L.Prev != LB_Layers.Items)
+		Next = IGPlus_CrosshairLayersListItem(L.Prev);
+	L.Remove();
 	LB_Layers.SelectedItem = none;
-	LastSelected = none;
-	CopyCrosshairLayers();
-	LoadPresets();
+	SelectLayer(Next);
+}
+
+function IGPlus_EditControl NewEdit(string Label, string Help, float BoxWidth, int MaxLength) {
+	local IGPlus_EditControl E;
+
+	E = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 80, 150, 16));
+	E.SetText(Label);
+	E.SetHelpText(Help);
+	E.SetFont(F_Normal);
+	E.Align = TA_Left;
+	E.SetNumericOnly(true);
+	E.SetMaxLength(MaxLength);
+	E.EditBoxWidthFraction = BoxWidth / 150.0;
+	E.EditBoxMinWidth = BoxWidth;
+	E.EditBoxMaxWidth = BoxWidth;
+	E.EditBoxWidth = BoxWidth;
+	return E;
+}
+
+function IGPlus_ComboBox NewCombo(string Label, string Help) {
+	local IGPlus_ComboBox Cmb;
+
+	Cmb = IGPlus_ComboBox(CreateControl(class'IGPlus_ComboBox', 276, 80, 150, 16));
+	Cmb.SetText(Label);
+	Cmb.SetHelpText(Help);
+	Cmb.SetFont(F_Normal);
+	Cmb.Align = TA_Left;
+	Cmb.SetEditable(false);
+	Cmb.EditBoxWidthFraction = (2.0/3.0);
+	Cmb.EditBoxMinWidth = 100;
+	Cmb.EditBoxMaxWidth = 100;
+	Cmb.EditBoxWidth = 100;
+	return Cmb;
+}
+
+function IGPlus_Label NewLabel(float X, float Y, float W, string Label, string Help) {
+	local IGPlus_Label Lbl;
+
+	Lbl = IGPlus_Label(CreateControl(class'IGPlus_Label', X, Y, W, 16));
+	Lbl.SetText(Label);
+	Lbl.SetHelpText(Help);
+	Lbl.SetFont(F_Normal);
+	return Lbl;
+}
+
+function IGPlus_Button NewButton(float X, float Y, string Label, string Help) {
+	local IGPlus_Button B;
+
+	B = IGPlus_Button(CreateControl(class'IGPlus_Button', X, Y, 16, 16));
+	B.SetText(Label);
+	B.SetHelpText(Help);
+	return B;
 }
 
 function Created() {
@@ -217,596 +453,450 @@ function Created() {
 
 	ParentDialog = IGPlus_CrosshairSettingsDialog(ParentWindow);
 
+	// Left: the layers.
+	Btn_AddLayer = NewButton(10, 10, "+", AddLayerHelp);
+	Btn_RemLayer = NewButton(30, 10, "-", RemLayerHelp);
+	Lbl_Layers = NewLabel(54, 10, 212, LayersText, LayersHelp);
 	LB_Layers = IGPlus_CrosshairLayersListBox(CreateControl(class'IGPlus_CrosshairLayersListBox', 10, 30, 256, 150));
+	LB_Layers.SetHelpText(LayersHelp);
 
-	Btn_AddLayer = IGPlus_Button(CreateControl(class'IGPlus_Button', 10, 10, 16, 16));
-	Btn_AddLayer.SetText("+");
-	Btn_RemLayer = IGPlus_Button(CreateControl(class'IGPlus_Button', 30, 10, 16, 16));
-	Btn_RemLayer.SetText("-");
+	// Middle: the selected layer.
+	Lbl_NoLayer = NewLabel(276, 10, 150, NoLayerText, "");
 
-	Lbl_Scale = IGPlus_Label(CreateControl(class'IGPlus_Label', 276, 10, 64, 16));
-	Lbl_Scale.SetText(ScaleText);
-	Lbl_Scale.SetHelpText("");
-	Lbl_Scale.SetFont(F_Normal);
+	Lbl_Scale = NewLabel(276, 10, 64, ScaleText, "");
 	Lbl_Scale.Align = TA_Center;
-
 	Btn_ScaleUp = IGPlus_BtnUp(CreateControl(class'IGPlus_BtnUp', 302, 30, 12, 10));
 	Btn_ScaleDown = IGPlus_BtnDown(CreateControl(class'IGPlus_BtnDown', 302, 60, 12, 10));
 	Btn_ScaleLeft = IGPlus_BtnLeft(CreateControl(class'IGPlus_BtnLeft', 288, 44, 10, 12));
 	Btn_ScaleRight = IGPlus_BtnRight(CreateControl(class'IGPlus_BtnRight', 318, 44, 10, 12));
 
-	Lbl_Offset = IGPlus_Label(CreateControl(class'IGPlus_Label', 344, 10, 64, 16));
-	Lbl_Offset.SetText(OffsetText);
-	Lbl_Offset.SetHelpText("");
-	Lbl_Offset.SetFont(F_Normal);
+	Lbl_Offset = NewLabel(344, 10, 64, OffsetText, "");
 	Lbl_Offset.Align = TA_Center;
-
 	Btn_OffsetUp = IGPlus_BtnUp(CreateControl(class'IGPlus_BtnUp', 370, 30, 12, 10));
 	Btn_OffsetDown = IGPlus_BtnDown(CreateControl(class'IGPlus_BtnDown', 370, 60, 12, 10));
 	Btn_OffsetLeft = IGPlus_BtnLeft(CreateControl(class'IGPlus_BtnLeft', 356, 44, 10, 12));
 	Btn_OffsetRight = IGPlus_BtnRight(CreateControl(class'IGPlus_BtnRight', 386, 44, 10, 12));
 
-	Edit_Texture = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 80, 150, 16));
-	Edit_Texture.SetText(TextureText);
-	Edit_Texture.SetFont(F_Normal);
-	Edit_Texture.Align = TA_Left;
-	Edit_Texture.SetHistory(true);
-	Edit_Texture.SetDelayedNotify(true);
-	Edit_Texture.SetNumericOnly(false);
-	Edit_Texture.SetNumericFloat(false);
-	Edit_Texture.EditBoxWidthFraction = (2.0/3.0);
-	Edit_Texture.EditBoxWidth = 100;
-
-	Edit_OffsetX = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 100, 150, 16));
-	Edit_OffsetX.SetText(OffsetXText);
-	Edit_OffsetX.SetFont(F_Normal);
-	Edit_OffsetX.Align = TA_Left;
-	Edit_OffsetX.SetHistory(true);
-	Edit_OffsetX.SetDelayedNotify(true);
-	Edit_OffsetX.SetNumericOnly(true);
-	Edit_OffsetX.SetNumericFloat(false);
-	Edit_OffsetX.SetNumericNegative(true);
-	Edit_OffsetX.EditBoxWidthFraction = (1.0/3.0);
-	Edit_OffsetX.EditBoxWidth = 50;
-
-	Edit_OffsetY = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 120, 150, 16));
-	Edit_OffsetY.SetText(OffsetYText);
-	Edit_OffsetY.SetFont(F_Normal);
-	Edit_OffsetY.Align = TA_Left;
-	Edit_OffsetY.SetHistory(true);
-	Edit_OffsetY.SetDelayedNotify(true);
-	Edit_OffsetY.SetNumericOnly(true);
-	Edit_OffsetY.SetNumericFloat(false);
-	Edit_OffsetY.SetNumericNegative(true);
-	Edit_OffsetY.EditBoxWidthFraction = (1.0/3.0);
-	Edit_OffsetY.EditBoxWidth = 50;
-
-	Edit_ScaleX = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 140, 150, 16));
-	Edit_ScaleX.SetText(ScaleXText);
-	Edit_ScaleX.SetFont(F_Normal);
-	Edit_ScaleX.Align = TA_Left;
-	Edit_ScaleX.SetHistory(true);
-	Edit_ScaleX.SetDelayedNotify(true);
-	Edit_ScaleX.SetNumericOnly(true);
-	Edit_ScaleX.SetNumericFloat(true);
-	Edit_ScaleX.EditBoxWidthFraction = (1.0/3.0);
-	Edit_ScaleX.EditBoxWidth = 50;
-
-	Edit_ScaleY = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 160, 150, 16));
-	Edit_ScaleY.SetText(ScaleYText);
-	Edit_ScaleY.SetFont(F_Normal);
-	Edit_ScaleY.Align = TA_Left;
-	Edit_ScaleY.SetHistory(true);
-	Edit_ScaleY.SetDelayedNotify(true);
-	Edit_ScaleY.SetNumericOnly(true);
-	Edit_ScaleY.SetNumericFloat(true);
-	Edit_ScaleY.EditBoxWidthFraction = (1.0/3.0);
-	Edit_ScaleY.EditBoxWidth = 50;
-
-	Edit_ColorRed = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 180, 150, 16));
-	Edit_ColorRed.SetText(ColorRedText);
-	Edit_ColorRed.SetFont(F_Normal);
-	Edit_ColorRed.Align = TA_Left;
-	Edit_ColorRed.SetHistory(true);
-	Edit_ColorRed.SetDelayedNotify(true);
-	Edit_ColorRed.SetNumericOnly(true);
-	Edit_ColorRed.SetNumericFloat(false);
-	Edit_ColorRed.SetMaxLength(3);
-	Edit_ColorRed.EditBoxWidthFraction = (1.0/6.0);
-	Edit_ColorRed.EditBoxWidth = 25;
-
-	Edit_ColorGreen = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 200, 150, 16));
-	Edit_ColorGreen.SetText(ColorGreenText);
-	Edit_ColorGreen.SetFont(F_Normal);
-	Edit_ColorGreen.Align = TA_Left;
-	Edit_ColorGreen.SetHistory(true);
-	Edit_ColorGreen.SetDelayedNotify(true);
-	Edit_ColorGreen.SetNumericOnly(true);
-	Edit_ColorGreen.SetNumericFloat(false);
-	Edit_ColorGreen.SetMaxLength(3);
-	Edit_ColorGreen.EditBoxWidthFraction = (1.0/6.0);
-	Edit_ColorGreen.EditBoxWidth = 25;
-
-	Edit_ColorBlue = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 220, 150, 16));
-	Edit_ColorBlue.SetText(ColorBlueText);
-	Edit_ColorBlue.SetFont(F_Normal);
-	Edit_ColorBlue.Align = TA_Left;
-	Edit_ColorBlue.SetHistory(true);
-	Edit_ColorBlue.SetDelayedNotify(true);
-	Edit_ColorBlue.SetNumericOnly(true);
-	Edit_ColorBlue.SetNumericFloat(false);
-	Edit_ColorBlue.SetMaxLength(3);
-	Edit_ColorBlue.EditBoxWidthFraction = (1.0/6.0);
-	Edit_ColorBlue.EditBoxWidth = 25;
-
-	Edit_ColorAlpha = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 240, 150, 16));
-	Edit_ColorAlpha.SetText(ColorAlphaText);
-	Edit_ColorAlpha.SetFont(F_Normal);
-	Edit_ColorAlpha.Align = TA_Left;
-	Edit_ColorAlpha.SetHistory(true);
-	Edit_ColorAlpha.SetDelayedNotify(true);
-	Edit_ColorAlpha.SetNumericOnly(true);
-	Edit_ColorAlpha.SetNumericFloat(false);
-	Edit_ColorAlpha.SetMaxLength(3);
-	Edit_ColorAlpha.EditBoxWidthFraction = (1.0/6.0);
-	Edit_ColorAlpha.EditBoxWidth = 25;
-
-	Cmb_Style = IGPlus_ComboBox(CreateControl(class'IGPlus_ComboBox', 276, 260, 150, 16));
-	Cmb_Style.SetText(StyleText);
-	Cmb_Style.SetFont(F_Normal);
-	Cmb_Style.Align = TA_Left;
-	Cmb_Style.SetEditable(false);
-	Cmb_Style.EditBoxWidthFraction = (2.0/3.0);
-	Cmb_Style.EditBoxWidth = 100;
-	Cmb_Style.AddItem(StyleNormal, "1");
-	Cmb_Style.AddItem(StyleMasked, "2");
-	Cmb_Style.AddItem(StyleTranslucent, "3");
-	Cmb_Style.AddItem(StyleModulated, "4");
-
-	Chk_Smooth = IGPlus_Checkbox(CreateControl(class'IGPlus_Checkbox', 276, 280, 150, 16));
-	Chk_Smooth.SetText(SmoothText);
-	Chk_Smooth.SetFont(F_Normal);
-	Chk_Smooth.Align = TA_Left;
-
-	Cmb_Shape = IGPlus_ComboBox(CreateControl(class'IGPlus_ComboBox', 276, 300, 150, 16));
-	Cmb_Shape.SetText(ShapeText);
-	Cmb_Shape.SetFont(F_Normal);
-	Cmb_Shape.Align = TA_Left;
-	Cmb_Shape.SetEditable(false);
-	Cmb_Shape.EditBoxWidthFraction = (2.0/3.0);
-	Cmb_Shape.EditBoxWidth = 100;
+	// (PlaceRows puts these under each other, the ones the layer uses.)
+	Cmb_Shape = NewCombo(ShapeText, ShapeHelp);
 	for (i = 0; i < arraycount(class'CrosshairLayer'.default.ShapeNames); i++)
 		Cmb_Shape.AddItem(class'CrosshairLayer'.default.ShapeNames[i], string(i));
 
-	Edit_Thickness = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 276, 320, 150, 16));
-	Edit_Thickness.SetText(ThicknessText);
-	Edit_Thickness.SetFont(F_Normal);
-	Edit_Thickness.Align = TA_Left;
-	Edit_Thickness.SetDelayedNotify(true);
-	Edit_Thickness.SetNumericOnly(true);
-	Edit_Thickness.SetNumericFloat(false);
-	Edit_Thickness.SetMaxLength(2);
-	Edit_Thickness.EditBoxWidthFraction = (1.0/6.0);
-	Edit_Thickness.EditBoxWidth = 25;
+	Edit_Texture = NewEdit(TextureText, TextureHelp, 100, 255);
+	Edit_Texture.SetNumericOnly(false);
 
-	Btn_AddPreset = IGPlus_Button(CreateControl(class'IGPlus_Button', 436, 10, 16, 16));
-	Btn_AddPreset.SetText("+");
-	Btn_RemPreset = IGPlus_Button(CreateControl(class'IGPlus_Button', 456, 10, 16, 16));
-	Btn_RemPreset.SetText("-");
+	Chk_Smooth = IGPlus_Checkbox(CreateControl(class'IGPlus_Checkbox', 276, 80, 150, 16));
+	Chk_Smooth.SetText(SmoothText);
+	Chk_Smooth.SetHelpText(SmoothHelp);
+	Chk_Smooth.SetFont(F_Normal);
+	Chk_Smooth.Align = TA_Left;
 
-	Lbl_Presets = IGPlus_Label(CreateControl(class'IGPlus_Label', 480, 10, 106, 16));
-	Lbl_Presets.SetText(PresetsText);
-	Lbl_Presets.SetHelpText("");
-	Lbl_Presets.SetFont(F_Normal);
-	Lbl_Presets.Align = TA_Left;
+	Edit_ScaleX = NewEdit(WidthText, WidthHelp, 50, 9);
+	Edit_ScaleX.SetNumericFloat(true);
+	Edit_ScaleY = NewEdit(HeightText, HeightHelp, 50, 9);
+	Edit_ScaleY.SetNumericFloat(true);
+
+	Edit_OffsetX = NewEdit(OffsetXText, OffsetXHelp, 50, 6);
+	Edit_OffsetX.SetNumericNegative(true);
+	Edit_OffsetY = NewEdit(OffsetYText, OffsetYHelp, 50, 6);
+	Edit_OffsetY.SetNumericNegative(true);
+
+	Edit_Thickness = NewEdit(ThicknessText, ThicknessHelp, 50, 2);
+
+	// The engine's Canvas draws Masked as Normal, so the list has no Masked. A
+	// layer saved with it keeps it and shows as the first entry.
+	Cmb_Style = NewCombo(StyleText, StyleHelp);
+	Cmb_Style.AddItem(StyleNormal, "1");
+	Cmb_Style.AddItem(StyleTranslucent, "3");
+	Cmb_Style.AddItem(StyleModulated, "4");
+
+	Edit_ColorRed = NewEdit(ColorRedText, ColorHelp, 50, 3);
+	Edit_ColorGreen = NewEdit(ColorGreenText, ColorHelp, 50, 3);
+	Edit_ColorBlue = NewEdit(ColorBlueText, ColorHelp, 50, 3);
+	Edit_ColorAlpha = NewEdit(ColorAlphaText, ColorAlphaHelp, 50, 3);
+
+	// Right: the presets.
+	Btn_AddPreset = NewButton(436, 10, "+", AddPresetHelp);
+	Btn_RemPreset = NewButton(456, 10, "-", RemPresetHelp);
+	Lbl_Presets = NewLabel(480, 10, 106, PresetsText, PresetsHelp);
 
 	LB_Presets = IGPlus_CrosshairPresetsListBox(CreateControl(class'IGPlus_CrosshairPresetsListBox', 436, 30, 150, 374));
 	LB_Presets.BackgroundBrightness = ParentDialog.BackgroundBrightness;
+	LB_Presets.SetHelpText(PresetsHelp);
 
-	Edit_PresetName = IGPlus_EditControl(CreateControl(class'IGPlus_EditControl', 436, 408, 150, 16));
-	Edit_PresetName.SetText(PresetNameText);
-	Edit_PresetName.SetFont(F_Normal);
-	Edit_PresetName.Align = TA_Left;
-	Edit_PresetName.SetDelayedNotify(true);
+	Edit_PresetName = NewEdit(PresetNameText, PresetNameHelp, 112, 32);
+	Edit_PresetName.WinLeft = 436;
+	Edit_PresetName.WinTop = 408;
 	Edit_PresetName.SetNumericOnly(false);
-	Edit_PresetName.SetNumericFloat(false);
-	Edit_PresetName.SetMaxLength(32);
-	Edit_PresetName.EditBoxWidthFraction = (3.0/4.0);
-	Edit_PresetName.EditBoxWidth = 112;
 
 	Btn_Close = UWindowSmallCloseButton(CreateControl(class'UWindowSmallCloseButton', 554, 430, 32, 16));
+	Btn_Close.SetHelpText(CloseHelp);
 	Btn_Save = UWindowSmallButton(CreateControl(class'UWindowSmallButton', 518, 430, 32, 16));
 	Btn_Save.SetText(class'IGPlus_SettingsScroll'.default.SaveButtonText);
+	Btn_Save.SetHelpText(SaveHelp);
 }
 
-function int MaxLayers() {
-	if (Settings == none)
-		return 0;
-	return Settings.CrosshairLayerCount();
+function ShowControl(UWindowWindow W, bool bShow) {
+	if (bShow && W.bWindowVisible == false)
+		W.ShowWindow();
+	else if (bShow == false && W.bWindowVisible)
+		W.HideWindow();
 }
 
-function int FindHighestIndex() {
-	local int i;
-	local IGPlus_CrosshairLayersListItem Item;
-
-	i = -1;
-	for (Item = IGPlus_CrosshairLayersListItem(LB_Layers.Items.Next); Item != none; Item = IGPlus_CrosshairLayersListItem(Item.Next))
-		i = Max(i, Item.Index);
-
-	return i;
+function PlaceRow(UWindowDialogControl C, bool bShow, out float Y) {
+	ShowControl(C, bShow);
+	if (bShow) {
+		C.WinTop = Y;
+		Y += 20;
+	}
 }
 
-function AddLayer() {
-	local IGPlus_CrosshairLayersListItem Item;
-
-	Item = IGPlus_CrosshairLayersListItem(LB_Layers.Items.CreateItem(LB_Layers.ListClass));
-	if (Item == none)
-		return;
-
-	Item.Index   = FindHighestIndex()+1;
-	Item.Texture = "";
-	Item.ScaleX  = 1;
-	Item.ScaleY  = 1;
-	Item.OffsetX = 0;
-	Item.OffsetY = 0;
-	Item.Color.R = 255;
-	Item.Color.G = 255;
-	Item.Color.B = 255;
-	Item.Color.A = 255;
-	Item.Style   = 1;
-	Item.bSmooth = false;
-	Item.Shape   = 0;
-	Item.Thickness = 0;
-
-	LB_Layers.Items.AppendItem(Item);
+function SetLabel(UWindowDialogControl C, string Label, string Help) {
+	if (C.Text != Label) {
+		C.SetText(Label);
+		C.SetHelpText(Help);
+	}
 }
 
-function RemLayer() {
-	LB_Layers.SelectedItem.Remove();
-	LB_Layers.SelectedItem = none;
+// Shows the values the selected layer uses, under each other.
+//   Texture: only without a shape. Smooth: only for an image, a filled
+//   rectangle and a shape have no pixels to smooth.
+//   Thickness: only for a shape.
+//   Colour: not for Modulated, which is drawn without it.
+//   Alpha: only for Translucent, the one style it does something for.
+function PlaceRows(IGPlus_CrosshairLayersListItem L) {
+	local bool bLayer, bImage;
+	local float Y;
+
+	bLayer = L != none;
+	bImage = bLayer && class'IGPlus_CrosshairLayersListBox'.static.HasImage(L);
+
+	ShowControl(Lbl_NoLayer, bLayer == false);
+	ShowControl(Lbl_Scale, bLayer);
+	ShowControl(Btn_ScaleUp, bLayer);
+	ShowControl(Btn_ScaleDown, bLayer);
+	ShowControl(Btn_ScaleLeft, bLayer);
+	ShowControl(Btn_ScaleRight, bLayer);
+	ShowControl(Lbl_Offset, bLayer);
+	ShowControl(Btn_OffsetUp, bLayer);
+	ShowControl(Btn_OffsetDown, bLayer);
+	ShowControl(Btn_OffsetLeft, bLayer);
+	ShowControl(Btn_OffsetRight, bLayer);
+
+	if (bImage) {
+		SetLabel(Edit_ScaleX, ScaleXText, ScaleXHelp);
+		SetLabel(Edit_ScaleY, ScaleYText, ScaleYHelp);
+	} else {
+		SetLabel(Edit_ScaleX, WidthText, WidthHelp);
+		SetLabel(Edit_ScaleY, HeightText, HeightHelp);
+	}
+
+	Y = 80;
+	PlaceRow(Cmb_Shape, bLayer, Y);
+	PlaceRow(Edit_Texture, bLayer && L.Shape == 0, Y);
+	PlaceRow(Chk_Smooth, bImage, Y);
+	PlaceRow(Edit_ScaleX, bLayer, Y);
+	PlaceRow(Edit_ScaleY, bLayer, Y);
+	PlaceRow(Edit_OffsetX, bLayer, Y);
+	PlaceRow(Edit_OffsetY, bLayer, Y);
+	PlaceRow(Edit_Thickness, bLayer && L.Shape != 0, Y);
+	PlaceRow(Cmb_Style, bLayer, Y);
+	PlaceRow(Edit_ColorRed, bLayer && L.Style != 4, Y);
+	PlaceRow(Edit_ColorGreen, bLayer && L.Style != 4, Y);
+	PlaceRow(Edit_ColorBlue, bLayer && L.Style != 4, Y);
+	PlaceRow(Edit_ColorAlpha, bLayer && L.Style == 3, Y);
 }
 
 function FillControlsFor(IGPlus_CrosshairLayersListItem L) {
-	if (L == none) {
-		Edit_Texture.Clear();
+	if (L == none)
+		return;
 
-		Edit_OffsetX.Clear();
-		Edit_OffsetY.Clear();
-		Edit_ScaleX.Clear();
-		Edit_ScaleY.Clear();
+	bUpdatingControls = true;
 
-		Edit_ColorRed.Clear();
-		Edit_ColorGreen.Clear();
-		Edit_ColorBlue.Clear();
-		Edit_ColorAlpha.Clear();
+	Cmb_Shape.SetSelectedIndex(Min(L.Shape, 5));
+	Edit_Texture.SetValue(L.Texture);
+	Chk_Smooth.bChecked = L.bSmooth;
 
-		Cmb_Style.ClearValue();
-		Cmb_Shape.ClearValue();
-		Edit_Thickness.Clear();
-	} else {
-		Edit_Texture.SetValue(L.Texture);
+	Edit_ScaleX.SetValue(class'IGPlus_CrosshairLayersListBox'.static.Num(L.ScaleX));
+	Edit_ScaleY.SetValue(class'IGPlus_CrosshairLayersListBox'.static.Num(L.ScaleY));
+	Edit_OffsetX.SetValue(string(L.OffsetX));
+	Edit_OffsetY.SetValue(string(L.OffsetY));
+	Edit_Thickness.SetValue(string(L.Thickness));
 
-		Edit_OffsetX.SetValue(string(L.OffsetX));
-		Edit_OffsetY.SetValue(string(L.OffsetY));
-		Edit_ScaleX.SetValue(string(L.ScaleX));
-		Edit_ScaleY.SetValue(string(L.ScaleY));
+	if (L.Style == 3)
+		Cmb_Style.SetSelectedIndex(1);
+	else if (L.Style == 4)
+		Cmb_Style.SetSelectedIndex(2);
+	else
+		Cmb_Style.SetSelectedIndex(0);
 
-		Edit_ColorRed.SetValue(string(L.Color.R));
-		Edit_ColorGreen.SetValue(string(L.Color.G));
-		Edit_ColorBlue.SetValue(string(L.Color.B));
+	Edit_ColorRed.SetValue(string(L.Color.R));
+	Edit_ColorGreen.SetValue(string(L.Color.G));
+	Edit_ColorBlue.SetValue(string(L.Color.B));
+	if (L.Color.A == 0) // drawn as 255, see CrosshairLayer.SetupCanvas
+		Edit_ColorAlpha.SetValue("255");
+	else
 		Edit_ColorAlpha.SetValue(string(L.Color.A));
 
-		Cmb_Style.SetSelectedIndex(L.Style - 1);
-		Chk_Smooth.bChecked = L.bSmooth;
-		Cmb_Shape.SetSelectedIndex(Min(L.Shape, 5));
-		Edit_Thickness.SetValue(string(L.Thickness));
-	}
+	bUpdatingControls = false;
 }
 
-// A colour box holds 0 to 255. A larger number typed in becomes 255, in the box too.
+// A colour box holds 0 to 255. A larger number typed in becomes 255, in the
+// box too. (Nothing else is written back: the box is being typed in.)
 function byte ColorValue(IGPlus_EditControl E) {
-	local int V;
 	local bool bWas;
 
-	V = Clamp(int(E.GetValue()), 0, 255);
-	if (string(V) != E.GetValue()) {
+	if (int(E.GetValue()) > 255) {
 		bWas = bUpdatingControls;
 		bUpdatingControls = true;
-		E.SetValue(string(V));
+		E.SetValue("255");
 		bUpdatingControls = bWas;
 	}
-	return V;
+	return Clamp(int(E.GetValue()), 0, 255);
 }
 
 function Notify(UWindowDialogControl C, byte E) {
-	local int Slot;
+	local IGPlus_CrosshairLayersListItem L;
+	local IGPlus_CrosshairPresetsListItem P;
 
-	if (bUpdatingControls)
+	// The help of the control under the mouse, in the window's bottom line.
+	if (E == DE_MouseEnter)
+		ToolTip(C.HelpText);
+	else if (E == DE_MouseLeave)
+		ToolTip("");
+
+	if (bUpdatingControls || Settings == none)
 		return;
 
+	L = Sel();
 	if (E == DE_Click) {
-		if (C == Btn_AddLayer && Btn_AddLayer.bDisabled == false) {
-			AddLayer();
-		} else if (C == Btn_RemLayer && Btn_RemLayer.bDisabled == false) {
-			RemLayer();
-		} else if (C == Btn_AddPreset && Btn_AddPreset.bDisabled == false) {
-			// The new preset is a copy. The layers shown stay as they are,
-			// and Save writes them into the new preset.
-			if (Settings.NewCrosshairPreset())
-				LoadPresets();
-		} else if (C == Btn_RemPreset && Btn_RemPreset.bDisabled == false) {
-			if (Settings.DeleteCrosshairPreset())
-				Load();
-		} else if (C == LB_Presets && LB_Presets.SelectedItem != none) {
+		if (C == Btn_AddLayer) {
+			if (Btn_AddLayer.bDisabled == false)
+				AddLayer();
+		} else if (C == Btn_RemLayer) {
+			if (Btn_RemLayer.bDisabled == false)
+				RemLayer();
+		} else if (C == Btn_AddPreset) {
+			if (Btn_AddPreset.bDisabled == false)
+				AddPreset();
+		} else if (C == Btn_RemPreset) {
+			if (Btn_RemPreset.bDisabled == false)
+				RemPreset();
+		} else if (C == LB_Presets) {
 			// Another preset: drawn in the game from this click on.
-			Slot = IGPlus_CrosshairPresetsListItem(LB_Presets.SelectedItem).Slot;
-			if (Slot != Settings.CrosshairPreset) {
-				Settings.PickCrosshairPreset(Slot);
-				Load();
+			P = IGPlus_CrosshairPresetsListItem(LB_Presets.SelectedItem);
+			if (P != none && P != CurPreset) {
+				Settings.PickCrosshairPreset(P.Slot);
+				ShowPreset(P);
 			}
-		} else if (C == Btn_ScaleUp && Btn_ScaleUp.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleY += 1;
-			bUpdatingControls = true;
-			Edit_ScaleY.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleY));
-			bUpdatingControls = false;
-		} else if (C == Btn_ScaleDown && Btn_ScaleDown.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleY -= 1;
-			bUpdatingControls = true;
-			Edit_ScaleY.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleY));
-			bUpdatingControls = false;
-		} else if (C == Btn_ScaleLeft && Btn_ScaleLeft.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleX -= 1;
-			bUpdatingControls = true;
-			Edit_ScaleX.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleX));
-			bUpdatingControls = false;
-		} else if (C == Btn_ScaleRight && Btn_ScaleRight.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleX += 1;
-			bUpdatingControls = true;
-			Edit_ScaleX.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleX));
-			bUpdatingControls = false;
-		} else if (C == Btn_OffsetUp && Btn_OffsetUp.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetY -= 1;
-			bUpdatingControls = true;
-			Edit_OffsetY.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetY));
-			bUpdatingControls = false;
-		} else if (C == Btn_OffsetDown && Btn_OffsetDown.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetY += 1;
-			bUpdatingControls = true;
-			Edit_OffsetY.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetY));
-			bUpdatingControls = false;
-		} else if (C == Btn_OffsetLeft && Btn_OffsetLeft.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetX -= 1;
-			bUpdatingControls = true;
-			Edit_OffsetX.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetX));
-			bUpdatingControls = false;
-		} else if (C == Btn_OffsetRight && Btn_OffsetRight.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetX += 1;
-			bUpdatingControls = true;
-			Edit_OffsetX.SetValue(string(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetX));
-			bUpdatingControls = false;
-		} else if (C == LB_Layers && LastSelected != LB_Layers.SelectedItem) {
-			bUpdatingControls = true;
-			FillControlsFor(IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem));
-			LastSelected = LB_Layers.SelectedItem;
-			bUpdatingControls = false;
 		} else if (C == Btn_Save) {
 			Save();
-			Load();
+		} else if (L != none) {
+			if (C == Btn_ScaleUp)
+				L.ScaleY += 1;
+			else if (C == Btn_ScaleDown)
+				L.ScaleY -= 1;
+			else if (C == Btn_ScaleLeft)
+				L.ScaleX -= 1;
+			else if (C == Btn_ScaleRight)
+				L.ScaleX += 1;
+			else if (C == Btn_OffsetUp)
+				L.OffsetY -= 1;
+			else if (C == Btn_OffsetDown)
+				L.OffsetY += 1;
+			else if (C == Btn_OffsetLeft)
+				L.OffsetX -= 1;
+			else if (C == Btn_OffsetRight)
+				L.OffsetX += 1;
+			else
+				return;
+			bRefill = true;
 		}
+		// After a button the keyboard would go to whichever box is topmost,
+		// marked as if it were being typed in. It goes to the list of layers.
+		if (UWindowButton(C) != none && C != Btn_Close)
+			LB_Layers.ActivateWindow(0, false);
 	} else if (E == DE_Change) {
-		if (C == Edit_Texture && Edit_Texture.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Texture = Edit_Texture.GetValue();
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Tex = none;
-		} else if (C == Edit_OffsetX && Edit_OffsetX.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetX = int(Edit_OffsetX.GetValue());
-		} else if (C == Edit_OffsetY && Edit_OffsetY.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).OffsetY = int(Edit_OffsetY.GetValue());
-		} else if (C == Edit_ScaleX && Edit_ScaleX.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleX = float(Edit_ScaleX.GetValue());
-		} else if (C == Edit_ScaleY && Edit_ScaleY.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).ScaleY = float(Edit_ScaleY.GetValue());
-		} else if (C == Edit_ColorRed && Edit_ColorRed.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.R = ColorValue(Edit_ColorRed);
-		} else if (C == Edit_ColorGreen && Edit_ColorGreen.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.G = ColorValue(Edit_ColorGreen);
-		} else if (C == Edit_ColorBlue && Edit_ColorBlue.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.B = ColorValue(Edit_ColorBlue);
-		} else if (C == Edit_ColorAlpha && Edit_ColorAlpha.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Color.A = ColorValue(Edit_ColorAlpha);
-		} else if (C == Cmb_Style && LB_Layers.SelectedItem != none) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Style = int(Cmb_Style.GetValue2()); // the entry's style, 1 to 4
-		} else if (C == Chk_Smooth && Chk_Smooth.bDisabled == false) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).bSmooth = Chk_Smooth.bChecked;
-		} else if (C == Cmb_Shape && LB_Layers.SelectedItem != none) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Shape = Max(0, Cmb_Shape.GetSelectedIndex());
-		} else if (C == Edit_Thickness && Edit_Thickness.EditBox.bCanEdit) {
-			IGPlus_CrosshairLayersListItem(LB_Layers.SelectedItem).Thickness = Max(0, int(Edit_Thickness.GetValue()));
+		if (C == Edit_PresetName) {
+			if (CurPreset != none)
+				CurPreset.PresetName = Edit_PresetName.GetValue();
+		} else if (L == none) {
+			return;
+		} else if (C == Cmb_Shape) {
+			L.Shape = Max(0, Cmb_Shape.GetSelectedIndex());
+		} else if (C == Edit_Texture) {
+			L.Texture = Edit_Texture.GetValue();
+		} else if (C == Chk_Smooth) {
+			L.bSmooth = Chk_Smooth.bChecked;
+		} else if (C == Edit_ScaleX) {
+			L.ScaleX = float(Edit_ScaleX.GetValue());
+		} else if (C == Edit_ScaleY) {
+			L.ScaleY = float(Edit_ScaleY.GetValue());
+		} else if (C == Edit_OffsetX) {
+			L.OffsetX = int(Edit_OffsetX.GetValue());
+		} else if (C == Edit_OffsetY) {
+			L.OffsetY = int(Edit_OffsetY.GetValue());
+		} else if (C == Edit_Thickness) {
+			L.Thickness = Max(0, int(Edit_Thickness.GetValue()));
+		} else if (C == Cmb_Style) {
+			L.Style = int(Cmb_Style.GetValue2()); // the entry's style: 1, 3 or 4
+			bRefill = true; // Alpha comes into view with its value
+		} else if (C == Edit_ColorRed) {
+			L.Color.R = ColorValue(Edit_ColorRed);
+		} else if (C == Edit_ColorGreen) {
+			L.Color.G = ColorValue(Edit_ColorGreen);
+		} else if (C == Edit_ColorBlue) {
+			L.Color.B = ColorValue(Edit_ColorBlue);
+		} else if (C == Edit_ColorAlpha) {
+			L.Color.A = Max(1, ColorValue(Edit_ColorAlpha)); // 0 would count as 255
 		}
 	}
 }
 
 function BeforePaint(Canvas C, float X, float Y) {
-	local bool HaveSelectedItem;
-	local bool HaveNoSelectedItem;
+	local IGPlus_CrosshairLayersListItem L;
 
 	super.BeforePaint(C, X, Y);
 
-	HaveSelectedItem = LB_Layers.SelectedItem != none;
-	HaveNoSelectedItem = LB_Layers.SelectedItem == none;
+	if (Settings == none)
+		return;
+
+	// The console command CrosshairPreset can pick another preset while the window is open.
+	if (CurPreset != none && CurPreset.Slot != Settings.CrosshairPreset)
+		ShowPreset(FindPreset(Settings.CrosshairPreset));
+
+	// A layer is always selected when there is one, so the boxes are never dead.
+	L = Sel();
+	if (L == none && LB_Layers.Items.Next != none) {
+		SelectLayer(IGPlus_CrosshairLayersListItem(LB_Layers.Items.Next));
+		L = Sel();
+	}
+	if (L != LastSelected || bRefill) {
+		LastSelected = L;
+		bRefill = false;
+		FillControlsFor(L);
+	}
+	PlaceRows(L);
 
 	Btn_AddLayer.bDisabled = LB_Layers.Items.Count() >= MaxLayers();
-	Btn_RemLayer.bDisabled = (LB_Layers.Items.Count() <= 0 || HaveNoSelectedItem);
-
-	Btn_AddPreset.bDisabled = LB_Presets.Items.Count() >= 16;
+	Btn_RemLayer.bDisabled = L == none;
+	Btn_AddPreset.bDisabled = LB_Presets.Items.Count() >= arraycount(Settings.CrosshairPresets);
 	Btn_RemPreset.bDisabled = LB_Presets.Items.Count() <= 1;
 
-	Btn_ScaleUp.bDisabled = HaveNoSelectedItem;
-	Btn_ScaleDown.bDisabled = HaveNoSelectedItem;
-	Btn_ScaleLeft.bDisabled = HaveNoSelectedItem;
-	Btn_ScaleRight.bDisabled = HaveNoSelectedItem;
-
-	Btn_OffsetUp.bDisabled = HaveNoSelectedItem;
-	Btn_OffsetDown.bDisabled = HaveNoSelectedItem;
-	Btn_OffsetLeft.bDisabled = HaveNoSelectedItem;
-	Btn_OffsetRight.bDisabled = HaveNoSelectedItem;
-
-	Edit_Texture.EditBox.bCanEdit = HaveSelectedItem;
-
-	Edit_OffsetX.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_OffsetY.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_ScaleX.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_ScaleY.EditBox.bCanEdit = HaveSelectedItem;
-
-	Edit_ColorRed.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_ColorGreen.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_ColorBlue.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_ColorAlpha.EditBox.bCanEdit = HaveSelectedItem;
-	Edit_Thickness.EditBox.bCanEdit = HaveSelectedItem;
-
-	if (Edit_Texture.EditBox.bCanEdit == false)
-		Edit_Texture.Clear();
-
-	if (Edit_OffsetX.EditBox.bCanEdit == false)
-		Edit_OffsetX.Clear();
-	if (Edit_OffsetY.EditBox.bCanEdit == false)
-		Edit_OffsetY.Clear();
-	if (Edit_ScaleX.EditBox.bCanEdit == false)
-		Edit_ScaleX.Clear();
-	if (Edit_ScaleY.EditBox.bCanEdit == false)
-		Edit_ScaleY.Clear();
-
-	if (Edit_ColorRed.EditBox.bCanEdit == false)
-		Edit_ColorRed.Clear();
-	if (Edit_ColorGreen.EditBox.bCanEdit == false)
-		Edit_ColorGreen.Clear();
-	if (Edit_ColorBlue.EditBox.bCanEdit == false)
-		Edit_ColorBlue.Clear();
-	if (Edit_ColorAlpha.EditBox.bCanEdit == false)
-		Edit_ColorAlpha.Clear();
-	if (Edit_Thickness.EditBox.bCanEdit == false)
-		Edit_Thickness.Clear();
-
-	Chk_Smooth.bDisabled = HaveNoSelectedItem;
+	// Only the preset shown can change, the others keep their mark.
+	if (CurPreset != none)
+		CurPreset.bDirty = IsDirty(CurPreset);
 }
 
-function DrawCrosshairLayer(Canvas C, IGPlus_CrosshairLayersListItem L) {
-	local float Scal;
-	local float LenX, LenY;
-
-	Scal = 4;
-
-	if (L.Tex == none) {
-		if (L.Texture == "")
-			L.Tex = class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase");
-		else
-			L.Tex = Texture(DynamicLoadObject(L.Texture, class'Texture'));
-	}
-
-	if (L.Style == 0)
-		L.Style = 1;
-
-	C.Style = L.Style;
-	C.DrawColor = L.Color;
-	C.bNoSmooth = (L.bSmooth == false);
-
-	if (L.Shape != 0) {
-		class'CrosshairLayer'.static.DrawShape(C, Self, L.Shape, L.Thickness, L.ScaleX, L.ScaleY, 128 + L.OffsetX*Scal, 128 + L.OffsetY*Scal, Scal);
-		if (L == LB_Layers.SelectedItem) {
-			// The selected one gets a frame in the opposite colour around its square.
-			LenX = int(L.ScaleX + 0.5) * Scal;
-			LenY = int(L.ScaleY + 0.5) * Scal;
-			C.DrawColor.R = L.Color.R ^ 0xFF;
-			C.DrawColor.G = L.Color.G ^ 0xFF;
-			C.DrawColor.B = L.Color.B ^ 0xFF;
-			C.DrawColor.A = 255;
-			C.Style = 1;
-			DrawStretchedTexture(C, 128 - 0.5*LenX + L.OffsetX*Scal, 128 - 0.5*LenY + L.OffsetY*Scal, LenX, 1, L.Tex);
-			DrawStretchedTexture(C, 128 - 0.5*LenX + L.OffsetX*Scal, 128 + 0.5*LenY + L.OffsetY*Scal - 1, LenX, 1, L.Tex);
-			DrawStretchedTexture(C, 128 - 0.5*LenX + L.OffsetX*Scal, 128 - 0.5*LenY + L.OffsetY*Scal, 1, LenY, L.Tex);
-			DrawStretchedTexture(C, 128 + 0.5*LenX + L.OffsetX*Scal - 1, 128 - 0.5*LenY + L.OffsetY*Scal, 1, LenY, L.Tex);
-		}
-		return;
-	}
-
-	LenX = L.ScaleX * L.Tex.USize * Scal;
-	LenY = L.ScaleY * L.Tex.VSize * Scal;
-
-	if (L == LB_Layers.SelectedItem) {
-		C.DrawColor = L.Color;
-		C.DrawColor.R = C.DrawColor.R ^ 0xFF;
-		C.DrawColor.G = C.DrawColor.G ^ 0xFF;
-		C.DrawColor.B = C.DrawColor.B ^ 0xFF;
-		C.DrawColor.A = C.DrawColor.A ^ 0xFF;
-		DrawStretchedTexture(C, 128 - 0.5*LenX + (L.OffsetX*Scal), 128 - 0.5*LenY + (L.OffsetY*Scal), LenX, LenY, L.Tex);
-
-		C.DrawColor = L.Color;
-		DrawStretchedTexture(C, 128 - 0.5*LenX + (L.OffsetX*Scal) + 1, 128 - 0.5*LenY + (L.OffsetY*Scal) + 1, LenX-2, LenY-2, L.Tex);
-	} else {
-		DrawStretchedTexture(C, 128 - 0.5*LenX + (L.OffsetX*Scal), 128 - 0.5*LenY + (L.OffsetY*Scal), LenX, LenY, L.Tex);
-	}
-}
-
-function DrawCrosshair(Canvas C) {
-	local IGPlus_CrosshairLayersListItem L;
-
-	for (L = IGPlus_CrosshairLayersListItem(LB_Layers.Items.Next); L != none; L = IGPlus_CrosshairLayersListItem(L.Next))
-		DrawCrosshairLayer(C, L);
-}
-
+// The large preview: the crosshair four times its size, or as much smaller as
+// it takes to fit. Nothing is drawn outside the square.
 function Paint(Canvas C, float X, float Y) {
+	local Region All, Pic;
+	local float Zoom, Reach;
+
 	super.Paint(C, X, Y);
 
 	class'CanvasUtils'.static.SaveCanvas(C);
 
-	C.OrgX += int(10 * Root.GUIScale);
-	C.OrgY += int(190 * Root.GUIScale);
+	Pic.X = 10;
+	Pic.Y = 190;
+	Pic.W = 256;
+	Pic.H = 256;
+	All = ClippingRegion;
+	ClippingRegion = Pic;
 
-	C.ClipX = 256 * Root.GUIScale;
-	C.ClipY = 256 * Root.GUIScale;
-
+	C.Style = 1;
 	C.DrawColor.R = ParentDialog.BackgroundBrightness;
 	C.DrawColor.G = ParentDialog.BackgroundBrightness;
 	C.DrawColor.B = ParentDialog.BackgroundBrightness;
 	C.DrawColor.A = 255;
-	DrawStretchedTexture(C, 0, 0, 256, 256, Texture'WhiteTexture');
+	DrawStretchedTexture(C, Pic.X, Pic.Y, Pic.W, Pic.H, Texture'WhiteTexture');
 
+	// The middle of the screen.
 	C.DrawColor.R = C.DrawColor.R ^ 0xFF;
 	C.DrawColor.G = C.DrawColor.G ^ 0xFF;
 	C.DrawColor.B = C.DrawColor.B ^ 0xFF;
-	C.DrawColor.A = 255;
-	DrawStretchedTexture(C, 127, 0, 2, 256, class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase"));
-	DrawStretchedTexture(C, 0, 127, 256, 2, class'IGPlus_Assets'.static.Tex(Texture'CrossHairBase', "CrossHairBase"));
+	DrawStretchedTexture(C, Pic.X + 127, Pic.Y, 2, Pic.H, Texture'WhiteTexture');
+	DrawStretchedTexture(C, Pic.X, Pic.Y + 127, Pic.W, 2, Texture'WhiteTexture');
 
-	DrawCrosshair(C);
+	Zoom = 4;
+	Reach = class'IGPlus_CrosshairLayersListBox'.static.Reach(LB_Layers.Items);
+	while (Zoom > 1 && Reach * Zoom > 124)
+		Zoom -= 1;
+	if (Reach * Zoom > 124)
+		Zoom = 124 / Reach;
+	class'IGPlus_CrosshairLayersListBox'.static.DrawLayers(C, Self, LB_Layers.Items, Pic.X + 128, Pic.Y + 128, Zoom, LB_Layers.SelectedItem);
 
+	C.Style = 1;
+	C.DrawColor.R = ParentDialog.BackgroundBrightness ^ 0xFF;
+	C.DrawColor.G = ParentDialog.BackgroundBrightness ^ 0xFF;
+	C.DrawColor.B = ParentDialog.BackgroundBrightness ^ 0xFF;
+	C.Font = Root.Fonts[F_Normal];
+	if (Zoom >= 1)
+		ClipText(C, Pic.X + 4, Pic.Y + Pic.H - 14, ZoomText @ int(Zoom) $ "x");
+	else
+		ClipText(C, Pic.X + 4, Pic.Y + Pic.H - 14, ZoomText @ class'StringUtils'.static.FormatFloat(Zoom, 2) $ "x");
+
+	ClippingRegion = All;
 	class'CanvasUtils'.static.RestoreCanvas(C);
 }
 
 defaultproperties {
-	ScaleText="Scale"
+	LayersText="Layers"
+	LayersHelp="The game draws a lower row over the rows above it. Drag a row to move it."
+	AddLayerHelp="Adds a layer."
+	RemLayerHelp="Removes the selected layer."
+	NoLayerText="Press + to add a layer."
+
+	ScaleText="Size"
 	OffsetText="Offset"
+
+	ShapeText="Shape"
+	ShapeHelp="What the layer draws. Every shape but Rectangle can be an outline."
 	TextureText="Texture"
+	TextureHelp="Draws an image in place of the rectangle. Type its name as Package.Texture. Example: Botpack.CHair1"
+	SmoothText="Smooth"
+	SmoothHelp="Smooths the image when the layer is larger than the image."
+
+	WidthText="Width"
+	WidthHelp="Width in pixels."
+	HeightText="Height"
+	HeightHelp="Height in pixels."
+	ScaleXText="Scale X"
+	ScaleXHelp="Width as a multiple of the width of the image."
+	ScaleYText="Scale Y"
+	ScaleYHelp="Height as a multiple of the height of the image."
 
 	OffsetXText="Offset X"
+	OffsetXHelp="Pixels to the right of the middle of the screen. A negative number moves it left."
 	OffsetYText="Offset Y"
-	ScaleXText="Scale X"
-	ScaleYText="Scale Y"
+	OffsetYHelp="Pixels below the middle of the screen. A negative number moves it up."
+
+	ThicknessText="Thickness"
+	ThicknessHelp="Width of the outline in pixels. 0 fills the shape."
+
+	StyleText="Style"
+	StyleHelp="Solid covers the game. Translucent adds its color as light. Modulated makes the game behind it brighter."
+	StyleNormal="Solid"
+	StyleTranslucent="Translucent"
+	StyleModulated="Modulated"
 
 	ColorRedText="Red"
 	ColorGreenText="Green"
 	ColorBlueText="Blue"
+	ColorHelp="0 to 255."
 	ColorAlphaText="Alpha"
-
-	StyleText="Style"
-	StyleNormal="Normal"
-	StyleMasked="Masked"
-	StyleTranslucent="Translucent"
-	StyleModulated="Modulated"
-
-	SmoothText="Smooth"
-	ShapeText="Shape"
-	ThicknessText="Thickness"
+	ColorAlphaHelp="Strength of the light from 1 to 255. A lower number lets more of the game show through."
 
 	PresetsText="Presets"
+	PresetsHelp="Click a crosshair to use it. Changes you have not saved stay until you close the window."
+	AddPresetHelp="Makes a new crosshair as a copy of this one."
+	RemPresetHelp="Deletes this crosshair."
 	PresetNameText="Name"
+	PresetNameHelp="The name of this crosshair."
+
+	ZoomText="Zoom"
+
+	SaveHelp="Saves every crosshair marked with a *."
+	CloseHelp="Closes the window. You lose the changes you have not saved."
 }
