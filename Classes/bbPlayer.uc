@@ -6385,7 +6385,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// Hard-block legacy fire fallback for deterministic weapons.
 	// A resolved DetWeapon is active by construction.
 	bDetBlockLegacyFire = (DetWeapon != none) || IGPlus_IsDetActiveWeapon(Weapon)
-		|| (SM.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation)
+		|| IGPlus_DetKindEnabled(SM.DetWeaponIndex)
 		|| (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode());
 
 	// A new fire press: for the deterministic translocator's pose below.
@@ -9322,7 +9322,7 @@ function PlayBackInput(IGPlus_SavedInput Old, IGPlus_SavedInput I) {
 	DetWeapon = IGPlus_DetResolveBoundWeapon(I.DetWeaponIndex, RemoteRole == ROLE_AutonomousProxy);
 	bDetDispatch = DetWeapon != none;
 	bBlockLegacyFire = bDetDispatch || IGPlus_IsDetActiveWeapon(Weapon)
-		|| (I.DetWeaponIndex != IGPLUS_DetWEAPON_None && GetWeaponSettings().bEnablePingCompensation);
+		|| IGPlus_DetKindEnabled(I.DetWeaponIndex);
 
 	if (RemoteRole == ROLE_AutonomousProxy) {
 
@@ -9558,6 +9558,40 @@ function bool IGPlus_DetServerBindingValid(Weapon W) {
 	if (W == Weapon || W == PendingWeapon)
 		return true;
 	return W == IGPlus_DetPrevWeapon && CurrentTimeStamp <= IGPlus_DetPrevWeaponUntilTS;
+}
+
+// Whether a weapon of this kind (IGPLUS_DetWEAPON_) runs deterministic with
+// these settings: the rifle, the shock rifle and the sniper by the main ping
+// compensation setting, the ripper, flak cannon, bio rifle and rocket
+// launcher each by its own, as their IsPingCompEnabled says.
+static final function bool IGPlus_DetKindRuns(int Index, bool bMain, bool bRipper, bool bFlak, bool bBio, bool bRocket) {
+	if (Index == IGPLUS_DetWEAPON_None)
+		return false;
+	if (Index == IGPLUS_DetWEAPON_Ripper)
+		return bRipper;
+	if (Index == IGPLUS_DetWEAPON_FlakCannon)
+		return bFlak;
+	if (Index == IGPLUS_DetWEAPON_BioRifle)
+		return bBio;
+	if (Index == IGPLUS_DetWEAPON_Eightball)
+		return bRocket;
+	return bMain;
+}
+
+// Server: a move names the kind of weapon its fire input was for. When that
+// kind runs deterministic the input must not reach the classic fire path of
+// whatever weapon is up now. This used to ask the main setting alone, so with
+// it on and a projectile weapon's own setting off the weapon was not
+// deterministic, its classic fire path was blocked all the same, and the
+// server never fired it while the client showed every shot.
+function bool IGPlus_DetKindEnabled(int Index) {
+	local WeaponSettingsRepl WS;
+
+	WS = GetWeaponSettings();
+	if (WS == none)
+		return false;
+	return IGPlus_DetKindRuns(Index, WS.bEnablePingCompensation, WS.RipperCompensatePing,
+		WS.FlakCompensatePing, WS.BioCompensatePing, WS.RocketCompensatePing);
 }
 
 // Binding, then activation; none if any gate fails.
