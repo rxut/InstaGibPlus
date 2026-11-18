@@ -149,6 +149,20 @@ function bool TestDetEffectiveAnimTime() {
 		Abs(class'bbPlayer'.static.IGPlus_DetNewNetAnimTime(7, 27.0, 0.05) - 0.214609) < 0.0001,
 		"Det_newnet_down_instagib_rifle"
 	);
+	// The rocket launcher loads as stock's animations do: one more rocket
+	// every 0.9 s, the sixth 0.8333 s after the fifth.
+	LogTestResult(class'ST_UT_Eightball'.static.DetRocketsForLoadTime(0.0) == 1, "Det_rockets_one_at_the_press");
+	LogTestResult(class'ST_UT_Eightball'.static.DetRocketsForLoadTime(0.89) == 1
+		&& class'ST_UT_Eightball'.static.DetRocketsForLoadTime(0.91) == 2, "Det_rockets_second_after_0.9");
+	LogTestResult(class'ST_UT_Eightball'.static.DetRocketsForLoadTime(3.61) == 5
+		&& class'ST_UT_Eightball'.static.DetRocketsForLoadTime(4.42) == 5, "Det_rockets_five_until_the_sixth_is_in");
+	LogTestResult(class'ST_UT_Eightball'.static.DetRocketsForLoadTime(4.44) == 6
+		&& class'ST_UT_Eightball'.static.DetRocketsForLoadTime(60.0) == 6, "Det_rockets_sixth_at_4.4333");
+	// What the launcher's next count takes over from a late step.
+	LogTestResult(Abs(class'ST_UT_Eightball'.static.DetCarryOf(0.03) - 0.03) < 0.0001, "Det_rockets_carry_a_held_frame");
+	LogTestResult(class'ST_UT_Eightball'.static.DetCarryOf(0.07) == 0.0
+		&& class'ST_UT_Eightball'.static.DetCarryOf(-0.5) == 0.0
+		&& class'ST_UT_Eightball'.static.DetCarryOf(0.0) == 0.0, "Det_rockets_no_carry_for_a_later_press");
 	return true;
 }
 
