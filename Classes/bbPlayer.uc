@@ -604,6 +604,15 @@ var float IGPlus_DetRedoMoreSpotTS;   // server: as it came in, for the move tha
 var vector IGPlus_DetRedoMoreSpot;
 var float IGPlus_DetLateSpotTS;       // server: the spot of the move being run, for IGPlus_DetRunAction
 var vector IGPlus_DetLateSpot;
+// Deterministic translocator without a predicted switch: the server brings
+// the translocator up a round trip before we see it. A click in that time
+// is for the translocator (on master the server's own bring-up keeps it),
+// but our translocator's step is not running yet. We keep it here and the
+// step takes it once the weapon is up (ST_Translocator.IGPlus_DetClientStep).
+var ST_Translocator IGPlus_DetTlocAsked; // client: the translocator our last switch command asked for
+var float IGPlus_DetTlocAskedTS;
+var int IGPlus_DetEarlyPress;            // client: 1 fire, 2 alt, pressed while that switch was on its way
+var bool IGPlus_bDetEarlyFireWas, IGPlus_bDetEarlyAltWas; // client: the buttons a frame ago
 var float IGPlus_DetLastActionSeenTS; // server: newest action handled
 // Server: actions from moves we didn't run (paused, warp fix), oldest first.
 var int IGPlus_DetHeldCount;
@@ -7752,6 +7761,16 @@ function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
 	IGPlus_DetRedoMoreSpotTS = 0.0;
 }
 
+// Which press a click is for the translocator: 1 fire, 2 alt-fire, 0 none.
+// Fire first, as stock's bring-up does (bForceFire).
+static final function int IGPlus_DetPressOf(bool bFirePress, bool bAltPress) {
+	if (bFirePress)
+		return 1;
+	if (bAltPress)
+		return 2;
+	return 0;
+}
+
 // A resent action as it travels: bits 0-2 the action (bit 2: refused), bits
 // 8-19 the yaw and 20-31 the pitch of its move's view, 12 bits each
 // (IGPlus_DetUnpackRedoView).
@@ -11100,7 +11119,20 @@ function xxReplicateMove(
 			self, Level.TimeSeconds, bJustFired, bFire != 0, bJustAltFired, bAltFire != 0);
 		if (TlocAction != 0)
 			bForcePacketSplit = true;
+	} else if (IGPlus_DetTranslocator && Level.NetMode == NM_Client
+		&& IGPlus_DetTlocAsked != none && Weapon != IGPlus_DetTlocAsked
+		&& Level.TimeSeconds - IGPlus_DetTlocAskedTS < 2.0 && IGPlus_DetEarlyPress != 1) {
+		// A click while our switch to the translocator is on its way. The
+		// button itself counts, not what the weapon in hand made of it: one
+		// that is going down already takes no click (bJustFired stays false).
+		TlocAction = IGPlus_DetPressOf(bJustFired || (bFire != 0 && IGPlus_bDetEarlyFireWas == false),
+			bJustAltFired || (bAltFire != 0 && IGPlus_bDetEarlyAltWas == false));
+		if (TlocAction != 0)
+			IGPlus_DetEarlyPress = TlocAction;
+		TlocAction = 0;
 	}
+	IGPlus_bDetEarlyFireWas = bFire != 0;
+	IGPlus_bDetEarlyAltWas = bAltFire != 0;
 
 	// Get a SavedMove actor to store the movement in.
 	if ( PendingMove != None )
@@ -19530,6 +19562,12 @@ simulated function IGPlus_ClientWeaponCommand(byte Kind, byte F, class<Weapon> C
 		&& !(bKnown && (Predicted == none || Predicted == Weapon)))
 		IGPlus_DetTlocSwitchSentUntil = Level.TimeSeconds
 			+ PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.25;
+	IGPlus_DetTlocAsked = none;
+	IGPlus_DetEarlyPress = 0;
+	if (IGPlus_DetTranslocator && bKnown && ST_Translocator(Predicted) != none && Predicted != Weapon) {
+		IGPlus_DetTlocAsked = ST_Translocator(Predicted);
+		IGPlus_DetTlocAskedTS = Level.TimeSeconds;
+	}
 	xxServerWeaponCommand(Kind, F, C, bKnown, Predicted, Weapon, ClientPend);
 }
 
