@@ -497,6 +497,7 @@ var int IGPlus_DetStatThrows, IGPlus_DetStatTlocs;
 var int IGPlus_DetStatApart, IGPlus_DetStatAbsorbed; // landings over 8uu apart: corrected, taken by the 16uu bubble
 var int IGPlus_DetStatThrowApart, IGPlus_DetStatRejects, IGPlus_DetStatLate;
 var int IGPlus_DetStatJumpDropped; // jumps at a landing that only the server took, dropped
+var int IGPlus_DetStatLateSpot;    // late throws that left from the thrower's own spot (IGPlus_DetLateSpotTaken)
 // Shots the client showed and the server did not fire (refused: the fire
 // window was closed, unbound: the server held another weapon), switch
 // commands the two sides resolved differently, and seconds with shots held
@@ -592,6 +593,17 @@ var float IGPlus_DetRedo2TS;
 var int IGPlus_DetRedo2View;
 var float IGPlus_DetRedoMoreTS;       // server: as it came in, for the move that follows (xxServerDetRedoMore)
 var int IGPlus_DetRedoMoreData;
+// A throw's own move tells the server where the thrower stood, and the
+// server's disc leaves from there (IGPlus_DetThrowOrigin). A resent throw
+// brings that spot along, or the two discs start apart by as far as the
+// thrower moved since the last move the server has.
+var vector IGPlus_DetThrowLoc;        // client: where we stood at our last throw
+var float IGPlus_DetRedoSpotTS;       // client: the throw it belongs to (0: none on its way)
+var vector IGPlus_DetRedoSpot;
+var float IGPlus_DetRedoMoreSpotTS;   // server: as it came in, for the move that follows
+var vector IGPlus_DetRedoMoreSpot;
+var float IGPlus_DetLateSpotTS;       // server: the spot of the move being run, for IGPlus_DetRunAction
+var vector IGPlus_DetLateSpot;
 var float IGPlus_DetLastActionSeenTS; // server: newest action handled
 // Server: actions from moves we didn't run (paused, warp fix), oldest first.
 var int IGPlus_DetHeldCount;
@@ -5802,7 +5814,7 @@ function IGPlus_DetLogSummary() {
 		@"throws="$IGPlus_DetStatThrows@"translocates="$IGPlus_DetStatTlocs
 		@"landedApart="$IGPlus_DetStatApart@"absorbed="$IGPlus_DetStatAbsorbed
 		@"throwApart="$IGPlus_DetStatThrowApart@"rejects="$IGPlus_DetStatRejects@"late="$IGPlus_DetStatLate
-		@"jumpDropped="$IGPlus_DetStatJumpDropped
+		@"jumpDropped="$IGPlus_DetStatJumpDropped@"lateSpot="$IGPlus_DetStatLateSpot
 		@"shotRefused="$IGPlus_StatShotRefused@"shotUnbound="$IGPlus_StatShotUnbound
 		@"switchMismatch="$IGPlus_StatSwitchMismatch@"clockHolds="$IGPlus_StatClockHolds
 		@"hitShots="$IGPlus_HitStatShots@"hitNoData="$IGPlus_HitStatNoData@"hitBoth="$IGPlus_HitStatBoth
@@ -5909,6 +5921,8 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 	local float SavedTS;
 	local rotator SavedView;
 	local ST_Translocator TL;
+	local bool bSpotKnown;
+	local vector Gap;
 
 	if ((Action & 3) == 0 || Action > 7 || (bHeld == false && TS <= IGPlus_DetLastActionSeenTS) || IsInState('Dying'))
 		return;
@@ -5923,16 +5937,64 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 	IGPlus_DetStatLate++; // (for the summary: no line each, a lossy link has many)
 	SavedTS = CurrentTimeStamp;
 	SavedView = ViewRotation;
+	// A late throw whose spot came along: our disc leaves from there by the
+	// rule of a throw on time (IGPlus_DetThrowOrigin), so both fly one path.
+	bSpotKnown = (Action & 3) == 1 && bHeld == false && IGPlus_DetLateSpotTS == TS;
+	if (bSpotKnown) {
+		Gap = Location - IGPlus_DetLateSpot;
+		IGPlus_DetThrowRule = 0;
+		if (IGPlus_DetLateSpotTaken(IGPlus_DetLateSpot)) {
+			IGPlus_DetThrowSpot = IGPlus_DetLateSpot;
+			IGPlus_bDetThrowSpot = true;
+			IGPlus_DetThrowRule = 2;
+		}
+	}
 	CurrentTimeStamp = TS; // the throw time, the disc's age at a translocate
 	ViewRotation.Pitch = View >>> 16;
 	ViewRotation.Yaw = View & 0xFFFF;
 	ViewRotation.Roll = 0;
 	TL.IGPlus_DetServerStep(self, TS, Action, false, false, MoveTS - TS);
-	// A late throw: its move is gone, nothing tells where the client stood.
-	if ((Action & 3) == 1 && TL.TTarget != None && TL.IGPlus_ThrowTS == TS)
-		IGPlus_DetThrowGapInfo = "throwGap=unknown";
+	IGPlus_bDetThrowSpot = false;
+	if ((Action & 3) == 1 && TL.TTarget != None && TL.IGPlus_ThrowTS == TS) {
+		if (bSpotKnown == false) {
+			// Its move is gone and no spot came: nothing tells where the client stood.
+			IGPlus_DetThrowGapInfo = "throwGap=unknown";
+		} else {
+			if (IGPlus_DetThrowRule != 0) {
+				Gap = vect(0,0,0);
+				IGPlus_DetStatLateSpot++;
+			}
+			IGPlus_DetThrowGapInfo = "throwGap="$class'ST_ShockProj'.static.IGPlus_Vec(Gap);
+			// From our own spot after all, more than 4uu off: the thrower gets
+			// our disc's path, as after a throw on time (IGPlus_DetAfterThrow).
+			if (VSize(Gap) > 4.0) {
+				if (Mover(Base) == none && ST_TranslocatorTarget(TL.TTarget) != None)
+					TL.IGPlus_DetServerDiscChanged(ST_TranslocatorTarget(TL.TTarget));
+				IGPlus_DetStatThrowApart++;
+				IGPlus_DetTlocLog("throw-apart", "dist="$int(VSize(Gap))@"late="$(MoveTS - TS));
+			}
+		}
+	}
 	CurrentTimeStamp = SavedTS;
 	ViewRotation = SavedView;
+}
+
+// Server: do we take the spot a late throw's thrower stood at? Within 32uu of
+// ours with a clear line for body and eyes, as for a throw on time. Not on a
+// lift, where that spot is inside our lift.
+// ponytail: the fixed 32uu of IGPlus_DetThrowOrigin. A throw late in a long
+// burst is further off (the thrower ran on) and leaves from our own spot.
+function bool IGPlus_DetLateSpotTaken(vector Spot) {
+	local vector Eye;
+	local float Dist;
+
+	if (IsInState('Dying') || Mover(Base) != none)
+		return false;
+	Dist = VSize(Spot - Location);
+	if (Dist < 0.5 || Dist > 32.0)
+		return false;
+	Eye = BaseEyeHeight * vect(0,0,1);
+	return IGPlus_PSAClear(Spot, Location) && IGPlus_PSAClear(Spot + Eye, Location + Eye);
 }
 
 // Server: a translocator action while our translocator isn't up. The
@@ -6263,6 +6325,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// a move we run: a throttled one (too far ahead) loses its actions.
 	RedoAction = 0;
 	Redo2Action = 0;
+	IGPlus_DetLateSpotTS = SM.DetRedoSpotTS;
+	IGPlus_DetLateSpot = SM.DetRedoSpot;
 	if (IGPlus_DetTranslocator) {
 		// A resend is for a move between the last one we had and this one.
 		if (IGPlus_DetRedoDue(SM.DetRedoData, SM.DetRedoTS, CurrentTimeStamp, SM.TimeStamp))
@@ -7191,6 +7255,8 @@ function IGPlus_ABRunHead() {
 	IGPlus_ABPlaying = true;
 	IGPlus_DetRedoMoreTS = SM.DetRedo2TS;
 	IGPlus_DetRedoMoreData = SM.DetRedo2Data;
+	IGPlus_DetRedoMoreSpotTS = SM.DetRedoSpotTS;
+	IGPlus_DetRedoMoreSpot = SM.DetRedoSpot;
 	xxServerMove(
 		SM.TimeStamp,
 		SM.RawDelta,
@@ -7663,9 +7729,15 @@ function xxServerMove(
 // it, 16 parameters are all a function can have. We keep it for the move
 // that follows. It can get here without its move or the move without it:
 // only its time stamp decides whether it still runs (IGPlus_ApplyServerMove).
-function xxServerDetRedoMore(float OlderTS, int OlderData) {
+// SpotTS and the three after it: where we stood at the throw with that time
+// stamp (as floats: a vector would arrive rounded to whole units).
+function xxServerDetRedoMore(float OlderTS, int OlderData, optional float SpotTS, optional float SpotX, optional float SpotY, optional float SpotZ) {
 	IGPlus_DetRedoMoreTS = OlderTS;
 	IGPlus_DetRedoMoreData = OlderData;
+	IGPlus_DetRedoMoreSpotTS = SpotTS;
+	IGPlus_DetRedoMoreSpot.X = SpotX;
+	IGPlus_DetRedoMoreSpot.Y = SpotY;
+	IGPlus_DetRedoMoreSpot.Z = SpotZ;
 }
 
 // Server: the move that follows takes it along (through the Adaptive
@@ -7673,8 +7745,11 @@ function xxServerDetRedoMore(float OlderTS, int OlderData) {
 function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
 	SM.DetRedo2TS = IGPlus_DetRedoMoreTS;
 	SM.DetRedo2Data = IGPlus_DetRedoMoreData;
+	SM.DetRedoSpotTS = IGPlus_DetRedoMoreSpotTS;
+	SM.DetRedoSpot = IGPlus_DetRedoMoreSpot;
 	IGPlus_DetRedoMoreTS = 0.0;
 	IGPlus_DetRedoMoreData = 0;
+	IGPlus_DetRedoMoreSpotTS = 0.0;
 }
 
 // A resent action as it travels: bits 0-2 the action (bit 2: refused), bits
@@ -11370,9 +11445,17 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		RedoTS = IGPlus_DetRedoTS;
 		RedoData = IGPlus_DetPackRedo(IGPlus_DetRedoAction, IGPlus_DetRedoView);
 	}
-	// The action before that one goes ahead of the move in a call of its own.
+	// The spot of a throw rides along while that throw does.
+	if (IGPlus_DetRedoSpotTS != 0.0
+		&& !(IGPlus_DetRedoAction != 0 && IGPlus_DetRedoTS == IGPlus_DetRedoSpotTS)
+		&& !(IGPlus_DetRedo2Action != 0 && IGPlus_DetRedo2TS == IGPlus_DetRedoSpotTS))
+		IGPlus_DetRedoSpotTS = 0.0;
+	// The action before that one, and the spot, go ahead of the move in a call of their own.
 	if (IGPlus_DetRedo2Action != 0)
-		xxServerDetRedoMore(IGPlus_DetRedo2TS, IGPlus_DetPackRedo(IGPlus_DetRedo2Action, IGPlus_DetRedo2View));
+		xxServerDetRedoMore(IGPlus_DetRedo2TS, IGPlus_DetPackRedo(IGPlus_DetRedo2Action, IGPlus_DetRedo2View),
+			IGPlus_DetRedoSpotTS, IGPlus_DetRedoSpot.X, IGPlus_DetRedoSpot.Y, IGPlus_DetRedoSpot.Z);
+	else if (IGPlus_DetRedoSpotTS != 0.0)
+		xxServerDetRedoMore(0.0, 0, IGPlus_DetRedoSpotTS, IGPlus_DetRedoSpot.X, IGPlus_DetRedoSpot.Y, IGPlus_DetRedoSpot.Z);
 	if (Move.DetChargeData <= 7 && (Move.DetChargeData & 3) != 0 && Move.DetWeaponIndex == IGPLUS_DetWEAPON_None
 		&& ST_Translocator(Move.IGPlus_SavedWeapon) != none) {
 		// The last action keeps riding along until the server is past it:
@@ -11384,6 +11467,10 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 		}
 		IGPlus_DetRedoAction = Move.DetChargeData;
 		IGPlus_DetRedoTS = Move.TimeStamp;
+		if ((Move.DetChargeData & 3) == 1) {
+			IGPlus_DetRedoSpotTS = Move.TimeStamp;
+			IGPlus_DetRedoSpot = IGPlus_DetThrowLoc;
+		}
 		IGPlus_DetRedoTloc = ST_Translocator(Move.IGPlus_SavedWeapon);
 		IGPlus_DetRedoView = ViewPacked;
 	}
