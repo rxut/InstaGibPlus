@@ -14,6 +14,9 @@ var float R1, R2, R3;
 // near the lift; clients, its speed, as it was sent held still.
 var IGPlus_LiftShot IGPlus_Lift;
 var vector IGPlus_HeldVelocity;
+// Where the server spawned it before the ping catch-up: other players draw it
+// from there (IGPlus_Glide).
+var vector IGPlus_SkipStart;
 // Clients: the lift our shooter rides, and where it and we were last tick
 // (IGPlus_SweepLift).
 var Mover IGPlus_SweepMover;
@@ -24,7 +27,7 @@ replication
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3;
 	reliable if (Role == ROLE_Authority && bNetInitial)
-		IGPlus_HeldVelocity;
+		IGPlus_HeldVelocity, IGPlus_SkipStart;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -120,6 +123,9 @@ simulated function PostNetBeginPlay()
 	local vector FakeLocation;
 
 	super.PostNetBeginPlay();
+
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations);
 
 	if (Level.NetMode != NM_DedicatedServer)
 	{

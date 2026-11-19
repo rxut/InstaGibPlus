@@ -17,11 +17,14 @@ var vector IGPlus_SpawnVel;
 // near the lift; clients, its speed, as it was sent held still.
 var IGPlus_LiftShot IGPlus_Lift;
 var vector IGPlus_HeldVelocity;
+// Where the server spawned it before the ping catch-up: other players draw it
+// from there (IGPlus_Glide).
+var vector IGPlus_SkipStart;
 
 replication
 {
 	reliable if (Role == ROLE_Authority && bNetInitial)
-		IGPlus_HeldVelocity;
+		IGPlus_HeldVelocity, IGPlus_SkipStart;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -72,6 +75,9 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations);
+
 	if (GetWeaponSettings().FlakCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);
@@ -104,6 +110,25 @@ simulated function PostNetBeginPlay()
 	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {
 		Disable('Tick');
 	}
+}
+
+// Stock FlakSlug.Timer, with the smoke where the slug is drawn (IGPlus_Glide
+// draws it behind its real spot for a moment).
+simulated function Timer()
+{
+	local ut_SpriteSmokePuff s;
+
+	initialDir = Velocity;
+	if (Level.NetMode!=NM_DedicatedServer)
+	{
+		s = Spawn(class'ut_SpriteSmokePuff',,, class'IGPlus_Glide'.static.DrawnSpot(self));
+		if (s != None)
+			s.RemoteRole = ROLE_None;
+	}
+	if ( Level.bDropDetail )
+		SetTimer(0.25,True);
+	else if ( Level.bHighDetailMode )
+		SetTimer(0.04,True);
 }
 
 simulated event Tick(float Delta) {
