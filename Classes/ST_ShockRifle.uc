@@ -471,6 +471,8 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optio
 			Extra = Extra$"ball stopped";
 		else if (Best.IGPlus_bFromMover || BP.IGPlus_OnMovingLift())
 			Extra = Extra$"lift, server decides";
+		else if (Best.IGPlus_bTouched)
+			Extra = Extra$"touched something, server decides";
 		else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, Reach, BestLoc,
 				Best.CollisionRadius - IGPLUS_COMBO_MARGIN, Best.CollisionHeight - IGPLUS_COMBO_MARGIN))
 			Extra = Extra$"clear hit";
@@ -488,8 +490,9 @@ simulated function IGPlus_DebugBeam(string Side, vector Start, vector Dir, optio
 const IGPLUS_COMBO_MARGIN = 3.0;
 
 // Client: the nearest of our own flying balls the beam passes clearly through
-// before MaxDist (IGPlus_BeamReach). Nearer the edge, or for a ball fired from
-// a lift, the server's combo is shown instead.
+// before MaxDist (IGPlus_BeamReach). Nearer the edge, for a ball fired from
+// a lift, or for one that touched something on our screen
+// (ST_ShockProj.IGPlus_ClientTouchCheck), the server's combo is shown instead.
 simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, float MaxDist) {
 	local ST_ShockProj P, Best;
 	local float D, BestD;
@@ -497,6 +500,9 @@ simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, f
 	foreach AllActors(class'ST_ShockProj', P) {
 		if (P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe
 			|| P.Physics == PHYS_None || P.Instigator != Owner || P.IGPlus_bFromMover)
+			continue;
+		P.IGPlus_ClientTouchCheck();
+		if (P.IGPlus_bTouched)
 			continue;
 		if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, MaxDist, P.Location,
 				P.CollisionRadius - IGPLUS_COMBO_MARGIN, P.CollisionHeight - IGPLUS_COMBO_MARGIN) == false)
@@ -517,10 +523,12 @@ simulated function ST_ShockProj IGPlus_OwnBallOnBeam(vector Start, vector Dir, f
 // combo on the same ball, or none. So any hit on the ball counts here, to its
 // edge. No verdict (the server's own trace decides, a combo shows a ping
 // late) where our screen can't be trusted: on a moving lift, near a ball we
-// can't place, or on a ball older than our newest two.
+// can't place, on a ball that touched something on our screen (the server's
+// may have exploded there, ST_ShockProj.IGPlus_ClientTouchCheck), or on a
+// ball older than our newest two.
 simulated function ST_ShockProj IGPlus_ClientOwnBall(bbPlayer BP, vector Start, vector Dir, float MaxDist) {
 	local ST_ShockProj P, Best;
-	local float D, BestD;
+	local float D, BestD, Margin;
 	local bool bUnsure;
 	local int i;
 
@@ -534,11 +542,18 @@ simulated function ST_ShockProj IGPlus_ClientOwnBall(bbPlayer BP, vector Start, 
 	foreach AllActors(class'ST_ShockProj', P) {
 		if (P.IGPlus_bOwnTimeline == false || P.bHidden || P.bDeleteMe || P.Physics == PHYS_None || P.Instigator != Owner)
 			continue;
+		// Its path up to this beam's frame: the beam leaves before the frame
+		// moves the ball, and before the ball's own Tick looks.
+		P.IGPlus_ClientTouchCheck();
 		// Fired from a lift, or its server copy came without ours: the server
-		// has it somewhere else.
-		if (P.IGPlus_bFromMover) {
+		// has it somewhere else. Touched something on our screen: the server
+		// has it here, or no more.
+		if (P.IGPlus_bFromMover || P.IGPlus_bTouched) {
+			Margin = IGPLUS_VERDICT_SLACK;
+			if (P.IGPlus_bFromMover)
+				Margin = 64.0;
 			if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, MaxDist, P.Location,
-					P.CollisionRadius + 64.0, P.CollisionHeight + 64.0))
+					P.CollisionRadius + Margin, P.CollisionHeight + Margin))
 				bUnsure = true;
 			continue;
 		}
@@ -739,6 +754,7 @@ simulated function ClientSpawnAltProjectileEffects(
 			LocalDummy.IGPlus_bLocalBall = true;
 			LocalDummy.IGPlus_bOwnTimeline = true;
 			LocalDummy.IGPlus_SpawnTS = Level.TimeSeconds;
+			LocalDummy.IGPlus_TouchFrom = Start;
 			LocalDummy.IGPlus_bFromMover = bbP.IGPlus_OnMovingLift();
 		} else {
 			LocalDummy.bCollideWorld = false;
@@ -916,9 +932,11 @@ function ST_ShockProj IGPlus_VerdictBall(bbPlayer P, vector Start, vector Dir, o
 	local string Why;
 
 	B = P.IGPlus_OwnBalls[P.IGPlus_OwnBallVerdict - 2];
-	if (B == None || B.bDeleteMe)
-		Why = "the ball is gone here (it hit something, or was set off)";
-	else if (B.IGPlus_OwnerSeesBall(P, Loc) == false)
+	if (B == None || B.bDeleteMe || (B.IGPlus_bTouchHold && B.IGPlus_OwnerSeesBall(P, Loc) == false)) {
+		// Gone, or it waits on something it touched before this beam left.
+		if (P.bDrawDebugData)
+			Why = P.IGPlus_OwnBallGoneText(P.IGPlus_OwnBallVerdict - 2);
+	} else if (B.IGPlus_OwnerSeesBall(P, Loc) == false)
 		Why = "the ball had stopped by then";
 	else if (class'ST_Translocator'.static.IGPlus_RayHitsCylinder(Start, Dir, 10000.0, Loc,
 			B.CollisionRadius + IGPLUS_VERDICT_SLACK, B.CollisionHeight + IGPLUS_VERDICT_SLACK) == false)
