@@ -2866,15 +2866,22 @@ function ClientDebugMessage(coerce string S, optional name Type, optional bool b
 		Type = 'IGPlusDebug';
 
 	if (bDrawDebugData) {
-		// The console, UnrealTournament.log and the debug log file get every
-		// line. The message area of the HUD only gets it with
-		// bShowDebugDataOnScreen: without a HUD, ClientMessage skips that part
-		// and does the rest as always.
-		H = myHUD;
-		if (Settings != none && Settings.bShowDebugDataOnScreen == false)
-			myHUD = none;
-		ClientMessage("["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S, Type, bBeep);
-		myHUD = H;
+		// The debug log file gets every line. ClientSettings.DebugDataDisplay
+		// decides where else: 0 nowhere (a client demo still gets it, as with
+		// debug data off), 1 the console and UnrealTournament.log, 2 also the
+		// message area of the HUD. Without a HUD, ClientMessage skips that
+		// part and does the rest as always.
+		if (Settings != none && Settings.DebugDataDisplay <= 0) {
+			zzPrevClientMessage = "["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S;
+			ClientDemoMessage(zzPrevClientMessage, Type, bBeep);
+			zzPrevClientMessage = "";
+		} else {
+			H = myHUD;
+			if (Settings != none && Settings.DebugDataDisplay < 2)
+				myHUD = none;
+			ClientMessage("["$IGPlus_FrameCount@Level.TimeSeconds$"] "$S, Type, bBeep);
+			myHUD = H;
+		}
 		if (Level.NetMode != NM_DedicatedServer) {
 			if (IGPlus_DebugLogFile == none)
 				IGPlus_DebugLogFile = Spawn(class'IGPlus_DebugLogFile');
@@ -11797,8 +11804,8 @@ function string forcedModelToString(int fm) {
 }
 
 // Debug data on or off, with one line to confirm it. On collects the debug
-// lines and writes them to the console and to a file in Logs. The screen only
-// shows them with ClientSettings.bShowDebugDataOnScreen.
+// lines and writes them to a file in Logs. ClientSettings.DebugDataDisplay
+// decides whether the console or the screen shows them too.
 exec function enableDebugData(bool b) {
 	bDrawDebugData = b;
 	if (b) {
@@ -18146,7 +18153,7 @@ event PostRender( canvas zzCanvas )
 		}
 	}
 
-	if (bDrawDebugData && Settings.bShowDebugDataOnScreen) {
+	if (bDrawDebugData && Settings.DebugDataDisplay >= 2) {
 		xxDrawDebugData(zzCanvas, 10, 120);
 	}
 

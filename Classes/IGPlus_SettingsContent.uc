@@ -116,9 +116,12 @@ var localized string MoreInformationText;
 	var localized string DebugMovementText;
 	var localized string DebugMovementHelp;
 
-	var UWindowCheckbox Chk_ShowDebugDataOnScreen;
-	var localized string ShowDebugDataOnScreenText;
-	var localized string ShowDebugDataOnScreenHelp;
+	var IGPlus_ComboBox Cmb_DebugDataDisplay;
+	var localized string DebugDataDisplayText;
+	var localized string DebugDataDisplayHelp;
+	var localized string DebugDataDisplayOff;
+	var localized string DebugDataDisplayConsole;
+	var localized string DebugDataDisplayScreen;
 
 	var IGPlus_ComboBox Cmb_FlipAnimationFix;
 	var localized string FlipAnimationFixText;
@@ -985,7 +988,10 @@ function Created() {
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
 	Chk_DemoShowClientMessages = CreateCheckbox(DemoShowClientMessagesText, DemoShowClientMessagesHelp);
 	Chk_DebugMovement = CreateCheckbox(DebugMovementText, DebugMovementHelp);
-	Chk_ShowDebugDataOnScreen = CreateCheckbox(ShowDebugDataOnScreenText, ShowDebugDataOnScreenHelp);
+	Cmb_DebugDataDisplay = CreateComboBox(DebugDataDisplayText, DebugDataDisplayHelp, false, 150);
+	Cmb_DebugDataDisplay.AddItem(DebugDataDisplayOff);
+	Cmb_DebugDataDisplay.AddItem(DebugDataDisplayConsole);
+	Cmb_DebugDataDisplay.AddItem(DebugDataDisplayScreen);
 	Cmb_FlipAnimationFix = CreateComboBox(FlipAnimationFixText, FlipAnimationFixHelp, false, 150);
 	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixOff);
 	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixInstant);
@@ -1178,7 +1184,7 @@ function Load() {
 	Chk_LogClientMessages.bChecked = Settings.bLogClientMessages;
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
 	Chk_DebugMovement.bChecked = Settings.bDebugMovement;
-	Chk_ShowDebugDataOnScreen.bChecked = Settings.bShowDebugDataOnScreen;
+	Cmb_DebugDataDisplay.SetSelectedIndex(Clamp(Settings.DebugDataDisplay, 0, 2));
 	Cmb_FlipAnimationFix.SetSelectedIndex(Clamp(Settings.FlipAnimationFix, 0, 2));
 	Chk_LocationOffsetFix.bChecked = Settings.bEnableLocationOffsetFix;
 
@@ -1311,7 +1317,6 @@ function LoadForcedSettings() {
 	LockIfForced(Chk_LogClientMessages, "bLogClientMessages", P);
 	LockIfForced(Chk_DemoShowClientMessages, "bDemoShowClientMessages", P);
 	LockIfForced(Chk_DebugMovement, "bDebugMovement", P);
-	LockIfForced(Chk_ShowDebugDataOnScreen, "bShowDebugDataOnScreen", P);
 	LockIfForced(Chk_LocationOffsetFix, "bEnableLocationOffsetFix", P, true);
 	LockIfForced(Chk_EnableNetStats, "bEnableNetStats", P);
 	LockIfForced(Chk_NetStatUnconfirmedTime, "bNetStatsUnconfirmedTime", P);
@@ -1432,7 +1437,7 @@ function Save() {
 	Settings.bLogClientMessages = Chk_LogClientMessages.bChecked;
 	Settings.bDemoShowClientMessages = Chk_DemoShowClientMessages.bChecked;
 	Settings.bDebugMovement = Chk_DebugMovement.bChecked;
-	Settings.bShowDebugDataOnScreen = Chk_ShowDebugDataOnScreen.bChecked;
+	Settings.DebugDataDisplay = Cmb_DebugDataDisplay.GetSelectedIndex();
 	Settings.FlipAnimationFix = Settings.IntToFlipAnimationFix(Cmb_FlipAnimationFix.GetSelectedIndex());
 	Settings.bEnableLocationOffsetFix = Chk_LocationOffsetFix.bChecked;
 
@@ -1656,8 +1661,11 @@ defaultproperties
 		FlipAnimationFixOff="Off"
 		FlipAnimationFixInstant="Instant"
 		FlipAnimationFixFinishFlip="Finish Flip"
-		ShowDebugDataOnScreenText="Show Debug Data On Screen"
-		ShowDebugDataOnScreenHelp="If checked, enableDebugData 1 also shows the debug data on screen\\nUnchecked, it only goes to the console and to a file in your Logs folder"
+		DebugDataDisplayText="Show Debug Data"
+		DebugDataDisplayHelp="Where debug data shows while it is on. It always goes to a file in your Logs folder\\nOff shows one line when debug data turns on and one when it turns off"
+		DebugDataDisplayOff="Off"
+		DebugDataDisplayConsole="Console"
+		DebugDataDisplayScreen="On Screen"
 
 		LocationOffsetFixText="Location Offset Fix"
 		LocationOffsetFixHelp="If checked, tries to work around a UT bug that prevents synchronized player locations "
