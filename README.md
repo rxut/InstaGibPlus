@@ -431,7 +431,7 @@ Players with high upload bandwidth can set this to a high value to lessen the im
 
 ## DesiredNetspeed
 **Type: int**  
-**Default: 25000**  
+**Default: 50000**  
 **Unit: B/s**  
 
 Always tries to keep your netspeed at the value of this variable, unless the server prevents this.
@@ -668,7 +668,7 @@ If `False`, your FOV immediately changes to the desired FOV without a smooth tra
 
 ## bEnableLocationOffsetFix
 **Type: bool**  
-**Default: True**  
+**Default: False**  
 
 If `True`, enables client-side location offset correction to reduce visual jitter/offset artifacts.  
 If `False`, disables that correction.  
