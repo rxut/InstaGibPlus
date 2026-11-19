@@ -371,11 +371,11 @@ function TrimConfigTo(int Mode) {
 	ClearConfig("TranslocatorHealth");
 	ClearConfig("TranslocatorCompensatePing");
 	ClearConfig("DefaultWeaponClass");
-	if (Mode != 2) ClearConfig("InvisibilityDuration");
-	if (Mode != 2) ClearConfig("ShieldBeltCharge");
-	if (Mode != 2) ClearConfig("ArmorCharge");
-	if (Mode != 2) ClearConfig("ThighPadsCharge");
-	if (Mode != 2) ClearConfig("HealthPackHealingAmount");
+	ClearConfig("InvisibilityDuration");
+	ClearConfig("ShieldBeltCharge");
+	ClearConfig("ArmorCharge");
+	ClearConfig("ThighPadsCharge");
+	ClearConfig("HealthPackHealingAmount");
 }
 
 defaultproperties

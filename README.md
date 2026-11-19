@@ -1402,6 +1402,7 @@ SniperArena with the deterministic SniperRifle. The server traces every shot its
 * The rules are those of NewNetSA. Everyone spawns with the rifle and 50 bullets, and a shot uses one.
 * NextSA removes every weapon in the map. All other ammo becomes a bullet box, and a bullet box holds 50 bullets.
 * There is no translocator, as in stock Sniper Arena and NewNetSA. The game's translocator setting does nothing here.
+* Armor, belts, health packs and other pickups stay as the map made them, as in NewNetSA. A health pack heals what the map set. Its section has no pickup settings (`ArmorCharge`, `HealthPackHealingAmount` and the others), and the menu does not show them.
 * The rifle comes up after a spawn as the NewNetSA rifle does. It has no select or down time setting: `SniperSelectTime` and `SniperDownTime` are not read here.
 * A shot from a player who just died only counts with [bEnableTrades](#benabletrades) on in its weapon settings. It is off by default.
 * A new server starts with ping compensation, [bEnableSubTickCompensation](#benablesubtickcompensation), [bEnablePreciseRewindTime](#benablepreciserewindtime) and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.

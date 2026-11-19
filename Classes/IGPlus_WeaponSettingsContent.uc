@@ -1989,7 +1989,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	// was changed, so a hidden setting keeps its value.
 	Mode = WeaponSettingsMode();
 	bShowOther = bShowSettings && Mode == 0;
-	bShowPickups = bShowSettings && Mode != 1; // instagib has no pickups
+	bShowPickups = bShowSettings && Mode == 0; // NextIG has none, NextSA leaves the map's pickups stock
 	bShowSniper = bShowSettings && (Mode == 0 || Mode == 2);
 	bShowRifle = bShowSettings && (Mode == 0 || Mode == 1); // the instagib rifle: reduced hitbox (its select and down have no setting in NextIG)
 
