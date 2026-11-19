@@ -345,6 +345,7 @@ function EnhancedHurtRadius(
 
 	local vector SourceGeoLocation, SourceGeoNormal;
 	local vector VictimGeoLocation, VictimGeoNormal;
+	local vector SightOrigin;
 
 	local UTPure PureRef;
 	local bbPlayer bbP;
@@ -366,6 +367,16 @@ function EnhancedHurtRadius(
 	CollChecker.SetCollision(true, false, false);
 	CollChecker.SetCollisionSize(DamageRadius, DamageRadius);
 	CollChecker.SetLocation(HitLocation);
+
+	// A blast on a wall or floor sits on its surface. On stairs the edge of
+	// the step it hit is just above it and hides everyone further up. Players
+	// in sight of the spot 16 uu above the blast count as in sight too, when
+	// that spot is open. Straight up, not out from the wall: out from the wall
+	// it would see around the end of a wall. The shooter's client does the
+	// same for its own push (bbPlayer.IGPlus_SKSplash).
+	SightOrigin = Source.Location;
+	if (FastTrace(Source.Location + vect(0,0,16), Source.Location))
+		SightOrigin = Source.Location + vect(0,0,16);
 
 	foreach Source.VisibleCollidingActors(class'Actor', Victim, DamageRadius, HitLocation, , true) {
 		if (Victim.IsA('Brush') == false)
@@ -431,7 +442,9 @@ function EnhancedHurtRadius(
 			EffectiveRadius = DamageRadius;
 			DamageDiffraction = 0.0;
 
-			if (FastTrace(Victim.Location, Source.Location) == false) {
+			if (FastTrace(Victim.Location, Source.Location) == false &&
+				(SightOrigin == Source.Location || FastTrace(Victim.Location, SightOrigin) == false)
+			) {
 				EffectiveRadius = DamageRadius * WeaponSettings.SplashWraparoundRadiusScale;
 				if (EffectiveRadius <= 0.0 || dist > EffectiveRadius)
 					continue;
