@@ -4933,7 +4933,11 @@ simulated function bool IGPlus_SKSplash(IGPlus_SelfKnockback K, vector Loc, floa
 		if (Dist > K.Radius)
 			return true;
 
-		if (FastTrace(Loc, K.SourceLocation) == false)
+		// In sight of the blast, or of the spot 16 uu above it when that spot
+		// is open (EnhancedHurtRadius, SightOrigin).
+		if (FastTrace(Loc, K.SourceLocation) == false && (
+			FastTrace(K.SourceLocation + vect(0,0,16), K.SourceLocation) == false ||
+			FastTrace(Loc, K.SourceLocation + vect(0,0,16)) == false))
 			return false;
 
 		MomentumDelta = Loc - K.HitLocation;
