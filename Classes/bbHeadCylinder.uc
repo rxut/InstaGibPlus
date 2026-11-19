@@ -122,8 +122,11 @@ simulated event Tick(float DeltaTime) {
 					default: BaseOffset = vect(0,0,0); break;
 				}
 				if (Abs(BaseOffset.X) > 0.1 || Abs(BaseOffset.Y) > 0.1 || Abs(BaseOffset.Z) > 0.1) {
-					GetAxes(PawnRef.Rotation, X, Y, Z);
-					WorldOffset = BaseOffset.X * X + BaseOffset.Y * Y + BaseOffset.Z * Z;
+					// Yaw only, as the hit checks turn it.
+					NewRot = rot(0,0,0);
+					NewRot.Yaw = PawnRef.Rotation.Yaw;
+					GetAxes(NewRot, X, Y, Z);
+					WorldOffset = BaseOffset.X * X + BaseOffset.Y * Y;
 					FinalLocation += WorldOffset; // Add the calculated world offset
 				}
 			}

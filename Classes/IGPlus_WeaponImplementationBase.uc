@@ -636,10 +636,14 @@ final simulated function float GetBodyOffsetZ(float CollHeight, float DuckFrac) 
 
 simulated function vector GetAnimationHeadOffset(Pawn P) {
 	local vector BaseOffset;
+	local rotator YawRot;
 	if (P == none)
 		return vect(0,0,0);
 	BaseOffset = GetAnimationHeadOffsetFromState(P.class.name, P.AnimSequence, P.AnimFrame);
-	return BaseOffset >> P.Rotation;
+	// Yaw only, as the rewound head (CheckHeadShotCompensated) turns it.
+	// Pitch or roll would lift or drop the head off the body.
+	YawRot.Yaw = P.Rotation.Yaw;
+	return (BaseOffset * vect(1,1,0)) >> YawRot;
 }
 
 final simulated function bool CheckHitboxInternal(
