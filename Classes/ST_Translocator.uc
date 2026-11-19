@@ -881,7 +881,13 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 		bWeaponUp = true;
 		GotoState('');
 	}
-	if (IsInState('ClientActive') || IGPlus_DetTlocPending()) {
+	// A predicted switch to us has one finish time both sides know
+	// (bbPlayer.IGPlus_PSEquipTS), and the server brings us up on it. Here the
+	// holster animation ends a frame or two sooner. An action in between went
+	// to a server that still held the other weapon: it held the action, sent
+	// us back, then translocated and sent us to the disc a second time.
+	if (IsInState('ClientActive') || IGPlus_DetTlocPending()
+		|| (P.IGPlus_PSActive && P.IGPlus_PSTarget == self && TS < P.IGPlus_PSEquipTS)) {
 		// Stock's bring-up keeps both and fires first (bForceFire wins).
 		if (bFirePress || (bAltPress && IGPlus_DetLatchedPress != 1)) {
 			if (bFirePress)
@@ -927,7 +933,7 @@ simulated function int IGPlus_DetClientStep(bbPlayer P, float TS, bool bFirePres
 
 	if (bFireIn) {
 		if (IGPlus_bDetOut == false) {
-			if (TS - IGPlus_DetLastFireTS >= 0.5)
+			if (TS - IGPlus_DetLastFireTS >= 0.5 && P.IGPlus_DetSpawnWaitOver(TS, P.IGPlus_PSSpawnTS, 0.5))
 				Action = IGPLUS_DETTLOC_THROW;
 		} else if (TS - IGPlus_DetThrowTS >= 0.8) {
 			Action = IGPLUS_DETTLOC_RECALL;
@@ -1246,11 +1252,14 @@ function IGPlus_DetServerStep(bbPlayer P, float TS, int Action, bool bFireHeld, 
 	}
 
 	if (Action == IGPLUS_DETTLOC_THROW) {
-		if (TTarget != None || TS - IGPlus_DetLastFireTS < 0.499) {
+		if (TTarget != None || TS - IGPlus_DetLastFireTS < 0.499
+			|| P.IGPlus_DetSpawnWaitOver(TS, P.IGPlus_PSSpawnTS, 0.499) == false) {
 			if (TTarget != None)
 				Reason = "disc-already-out";
-			else
+			else if (TS - IGPlus_DetLastFireTS < 0.499)
 				Reason = "0.5s-throw-timer";
+			else
+				Reason = "0.5s-after-spawn";
 			IGPlus_DetReject(Action, TS, Reason);
 			return;
 		}
