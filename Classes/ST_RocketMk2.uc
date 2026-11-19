@@ -16,11 +16,14 @@ var float IGPlus_Speed;
 var IGPlus_LiftShot IGPlus_Lift;
 var vector IGPlus_HeldVelocity;
 var bool IGPlus_bTookOver;      // client: carries on from our own copy
+// Where the server spawned it before the ping catch-up: other players draw it
+// from there (IGPlus_Glide).
+var vector IGPlus_SkipStart;
 
 replication
 {
 	reliable if (Role == ROLE_Authority && bNetInitial)
-		RocketIndex, IGPlus_HeldVelocity;
+		RocketIndex, IGPlus_HeldVelocity, IGPlus_SkipStart;
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -48,6 +51,9 @@ simulated function PostNetBeginPlay()
 
 	super.PostNetBeginPlay();
 
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRocketUseClientSideAnimations);
+
 	if (Instigator != None && bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRocketUseClientSideAnimations)
 	{
 		In = PlayerPawn(Instigator);
@@ -69,6 +75,34 @@ simulated function PostNetBeginPlay()
 			}
 		}
 	}
+}
+
+// Stock RocketMk2.Timer, with the smoke where the rocket is drawn (IGPlus_Glide
+// draws it behind its real spot for a moment).
+simulated function Timer()
+{
+	local ut_SpriteSmokePuff b;
+	local vector L;
+
+	if ( Region.Zone.bWaterZone || (Level.NetMode == NM_DedicatedServer) )
+		Return;
+	L = class'IGPlus_Glide'.static.DrawnSpot(self);
+	if ( Level.bHighDetailMode )
+	{
+		if ( Level.bDropDetail || ((NumExtraRockets > 0) && (FRand() < 0.5)) )
+			Spawn(class'LightSmokeTrail',,, L);
+		else
+			Spawn(class'UTSmokeTrail',,, L);
+		SmokeRate = 152/Speed;
+	}
+	else
+	{
+		SmokeRate = 0.15 + FRand()*(0.01+NumExtraRockets);
+		b = Spawn(class'ut_SpriteSmokePuff',,, L);
+		if (b != None)
+			b.RemoteRole = ROLE_None;
+	}
+	SetTimer(SmokeRate, false);
 }
 
 simulated event Tick(float Delta) {

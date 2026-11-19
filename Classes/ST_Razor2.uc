@@ -13,11 +13,14 @@ var vector ExtrapolationDelta;
 // near the lift; clients, its speed, as it was sent held still.
 var IGPlus_LiftShot IGPlus_Lift;
 var vector IGPlus_HeldVelocity;
+// Where the server spawned it before the ping catch-up: other players draw it
+// from there (IGPlus_Glide).
+var vector IGPlus_SkipStart;
 
 replication
 {
 	reliable if (Role == ROLE_Authority && bNetInitial)
-		IGPlus_HeldVelocity;
+		IGPlus_HeldVelocity, IGPlus_SkipStart;
 }
 
 simulated function PostBeginPlay()
@@ -55,6 +58,9 @@ simulated function PostNetBeginPlay()
 	local vector FakeLocation;
 
 	super.PostNetBeginPlay();
+
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations);
 
 	if (GetWeaponSettings().RipperCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bRipperUseClientSideAnimations == true)
 	{
