@@ -12,6 +12,7 @@ class NextSA extends ST_Mutator;
 // - Every weapon in the map is removed, rifles too.
 // - All other ammo becomes a bullet box, and a bullet box holds full ammo.
 // - No translocator, whatever the game setting says.
+// - Armor, health and other pickups stay as the map made them.
 //
 // Load this in place of ST_Mutator, not together with it: each brings its own
 // weapon settings.
@@ -49,7 +50,10 @@ function bool CheckReplacement(Actor Other, out byte bSuperRelevant) {
 		return false;
 	}
 
-	return Super.CheckReplacement(Other, bSuperRelevant);
+	// Armor, belts, health and the rest stay as the map made them, as in
+	// NewNetSA. ST_Mutator's swap would break map scripts that spawn and hand
+	// out armor (Spawn returns None) and drop a map's per-box HealingAmount.
+	return true;
 }
 
 defaultproperties {
