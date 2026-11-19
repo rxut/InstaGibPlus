@@ -55,6 +55,9 @@ var localized string PauseTimeHelp;
 var UWindowCheckbox Chk_bForceDemo;
 var localized string bForceDemoText;
 var localized string bForceDemoHelp;
+var UWindowCheckbox Chk_bAutoDebugData;
+var localized string bAutoDebugDataText;
+var localized string bAutoDebugDataHelp;
 var UWindowCheckbox Chk_bRestrictTrading;
 var localized string bRestrictTradingText;
 var localized string bRestrictTradingHelp;
@@ -671,6 +674,7 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "PauseTotalTime", Edit_PauseTotalTime.GetValue());
 	SaveServerSettingIfChanged(S, "PauseTime", Edit_PauseTime.GetValue());
 	SaveServerSettingIfChanged(S, "bForceDemo", BoolToString(Chk_bForceDemo.bChecked));
+	SaveServerSettingIfChanged(S, "bAutoDebugData", BoolToString(Chk_bAutoDebugData.bChecked));
 	SaveServerSettingIfChanged(S, "bRestrictTrading", BoolToString(Chk_bRestrictTrading.bChecked));
 	SaveServerSettingIfChanged(S, "MaxTradeTimeMargin", Edit_MaxTradeTimeMargin.GetValue());
 	SaveServerSettingIfChanged(S, "TradePingMargin", Edit_TradePingMargin.GetValue());
@@ -1095,6 +1099,7 @@ function LoadServerSettings() {
 	Edit_PauseTotalTime.SetValue(string(S.PauseTotalTime));
 	Edit_PauseTime.SetValue(string(S.PauseTime));
 	Chk_bForceDemo.bChecked = S.bForceDemo;
+	Chk_bAutoDebugData.bChecked = S.bAutoDebugData;
 	Chk_bRestrictTrading.bChecked = S.bRestrictTrading;
 	Edit_MaxTradeTimeMargin.SetValue(string(S.MaxTradeTimeMargin));
 	Edit_TradePingMargin.SetValue(string(S.TradePingMargin));
@@ -1196,6 +1201,7 @@ function Created() {
 	Edit_PauseTotalTime = CreateEdit(ECT_Integer, PauseTotalTimeText, PauseTotalTimeHelp, 6, 80);
 	Edit_PauseTime = CreateEdit(ECT_Integer, PauseTimeText, PauseTimeHelp, 6, 80);
 	Chk_bForceDemo = CreateCheckbox(bForceDemoText, bForceDemoHelp);
+	Chk_bAutoDebugData = CreateCheckbox(bAutoDebugDataText, bAutoDebugDataHelp);
 	Chk_bRestrictTrading = CreateCheckbox(bRestrictTradingText, bRestrictTradingHelp);
 	Edit_MaxTradeTimeMargin = CreateEdit(ECT_Real, MaxTradeTimeMarginText, MaxTradeTimeMarginHelp, 16, 80);
 	Edit_TradePingMargin = CreateEdit(ECT_Real, TradePingMarginText, TradePingMarginHelp, 16, 80);
@@ -1356,6 +1362,7 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_PauseTotalTime, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_PauseTime, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bForceDemo, bShowSettings, WndWidth, Top);
+	LayoutControl(Chk_bAutoDebugData, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bRestrictTrading, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxTradeTimeMargin, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_TradePingMargin, bShowSettings, WndWidth, Top);
@@ -1530,6 +1537,8 @@ defaultproperties
 	PauseTimeHelp="Maximum duration in seconds of a single pause"
 	bForceDemoText="Force Demo Recording"
 	bForceDemoHelp="If checked, players are forced to record demos"
+	bAutoDebugDataText="Auto Debug Data"
+	bAutoDebugDataHelp="If checked, debug data turns on for every player when a match starts, like enableDebugData 1, and its file in their Logs folder is saved when the match ends"
 	bRestrictTradingText="Restrict Trading"
 	bRestrictTradingHelp="If checked, trade kills are only accepted within limited timing margins"
 	MaxTradeTimeMarginText="Max Trade Time Margin"

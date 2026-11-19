@@ -492,6 +492,10 @@ function TestTickInterp() {
 	// enableDebugData draws nothing on the screen unless the player asks for it.
 	LogTestResult(class'ClientSettings'.default.bShowDebugDataOnScreen == false,
 		"ShowDebugDataOnScreen_starts_off");
+	// Auto Debug Data makes every player write a file each match: only when the admin turns it on.
+	LogTestResult(class'ServerSettings'.default.bAutoDebugData == false
+		&& class'bbPlayer'.default.IGPlus_AutoDebugData == false,
+		"AutoDebugData_starts_off");
 	// The stock look of other players' models stays unless the player asks.
 	LogTestResult(class'ClientSettings'.default.FlipAnimationFix == FAF_FinishFlip
 		&& class'ClientSettings'.static.IntToFlipAnimationFix(0) == FAF_Off
