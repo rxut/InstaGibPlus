@@ -7,6 +7,42 @@
 class ST_UT_Grenade extends UT_Grenade;
 
 var IGPlus_WeaponImplementation WImp;
+// Where the server spawned it before the ping catch-up: other players draw it
+// from there (IGPlus_Glide).
+var vector IGPlus_SkipStart;
+
+replication
+{
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		IGPlus_SkipStart;
+}
+
+simulated function PostNetBeginPlay()
+{
+	super.PostNetBeginPlay();
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRocketUseClientSideAnimations);
+}
+
+// Stock UT_Grenade.Tick, with the smoke where the grenade is drawn.
+simulated function Tick(float DeltaTime)
+{
+	local UT_BlackSmoke b;
+
+	if ( bHitWater || Level.bDropDetail )
+	{
+		Disable('Tick');
+		Return;
+	}
+	Count += DeltaTime;
+	if ( (Count>Frand()*SmokeRate+SmokeRate+NumExtraGrenades*0.03) && (Level.NetMode!=NM_DedicatedServer) )
+	{
+		b = Spawn(class'UT_BlackSmoke',,, class'IGPlus_Glide'.static.DrawnSpot(self));
+		if (b != None)
+			b.RemoteRole = ROLE_None;
+		Count=0;
+	}
+}
 
 function Explosion(vector HitLocation)
 {

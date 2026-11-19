@@ -1170,6 +1170,11 @@ var float IGPlus_TI_StPrevTime, IGPlus_TI_StPrevDt;
 var bool IGPlus_TI_StHavePrev;
 // On our own pawn: clock jumps since the last line, and when the next line is due.
 var int IGPlus_TI_StClockSnaps;
+// enableDebugData: projectiles this client drew from the gun because the
+// server sent them flown ahead (IGPlus_Glide), and of those, flak chunks it
+// got only as a replay (IGPlus_SkippedPath). One line every 30 seconds.
+var int IGPlus_SkipGlides, IGPlus_SkipReplays;
+var float IGPlus_SkipNextLine;
 var float IGPlus_TI_StNextLine, IGPlus_TI_StSince;
 // And how far the clock was held behind the newest tick number, in ticks: summed over the frames, and the most.
 var int IGPlus_TI_StRecvFrames;
@@ -15014,6 +15019,13 @@ function xxPlayerTickEvents(float DeltaTime)
 
 	if (Role == ROLE_AutonomousProxy) {
 		IGPlus_CameraCorrectionDecay(DeltaTime);
+		if (bDrawDebugData && CurrentTime >= IGPlus_SkipNextLine) {
+			if (IGPlus_SkipNextLine > 0.0 && IGPlus_SkipGlides > 0)
+				ClientDebugMessage("Skipped paths drawn from the gun:"@"glides="$IGPlus_SkipGlides@"replays="$IGPlus_SkipReplays);
+			IGPlus_SkipGlides = 0;
+			IGPlus_SkipReplays = 0;
+			IGPlus_SkipNextLine = CurrentTime + 30.0 * Level.TimeDilation;
+		}
 		// For server demos (the server records it demo-only).
 		IGPlus_ClientFOV = byte(Clamp(int(FOVAngle + 0.5), 1, 255));
 		IGPlus_ClientZoomed = bZooming || DesiredFOV != DefaultFOV;

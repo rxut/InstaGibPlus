@@ -29,6 +29,12 @@ var vector IGPlus_HeldVelocity;
 // From a flak slug's blast, not the gun (server demo playback must not draw
 // it leaving the gun).
 var bool IGPlus_bFromSlug;
+// Where the ping catch-up started (sent: other players draw the chunk from
+// there, IGPlus_Glide). Server: its speed, the catch-up's length, and until
+// when a hit still sends other players the hit spot
+// (IGPlus_WeaponImplementationBase.IGPlus_SendSkippedPath).
+var vector IGPlus_SkipStart;
+var float IGPlus_SkipSpeed, IGPlus_SkipUntil, IGPlus_SkipCatchUp;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -52,7 +58,7 @@ replication
 	reliable if ( Role == ROLE_Authority )
 		R1, R2, R3, R4, RBounce;
 	reliable if ( Role == ROLE_Authority && bNetInitial )
-		ChunkIndex, IGPlus_HeldVelocity, IGPlus_bFromSlug;
+		ChunkIndex, IGPlus_HeldVelocity, IGPlus_bFromSlug, IGPlus_SkipStart;
 }
 
 simulated function float GetFRandValues()
@@ -144,6 +150,9 @@ simulated function PostNetBeginPlay()
 	local bool bFoundFake;
 
 	super.PostNetBeginPlay();
+
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bFlakUseClientSideAnimations);
 
 	if (GetWeaponSettings().FlakCompensatePing) {
 
@@ -275,6 +284,14 @@ function ProcessTouch (Actor Other, vector HitLocation)
 			}
 			if (FRand() < 0.5)
 				PlaySound(Sound 'ChunkHit',, 4.0,,200);
+			// Hit while other players still draw it behind (IGPlus_Glide): they
+			// get the hit spot (IGPlus_WeaponImplementationBase.IGPlus_SendSkippedPath).
+			if (Role == ROLE_Authority && IGPlus_SkipUntil > 0.0 && Level.TimeSeconds <= IGPlus_SkipUntil
+				&& IGPlus_WeaponImplementationBase(WImp) != None) {
+				IGPlus_SkipUntil = 0.0;
+				IGPlus_WeaponImplementationBase(WImp).IGPlus_SendSkippedPath(self, Class, Instigator,
+					IGPlus_SkipStart, Location, IGPlus_SkipSpeed, true, IGPlus_SkipCatchUp);
+			}
 		}
 		bHidden = true;
 	}

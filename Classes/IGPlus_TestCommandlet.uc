@@ -318,6 +318,36 @@ function TestDetNextShot() {
 		"DetNextShot_short_interval_at_30_fps_is_the_interval");
 }
 
+// IGPlus_Glide: the share of the skipped path still to close, from the gun
+// (1) to the projectile's real spot (0), never back, no jump in speed at
+// either end.
+function TestGlideGap() {
+	local float A, Last;
+	local bool bDown;
+
+	bDown = true;
+	Last = 1.0;
+	for (A = 0.05; A <= 1.0; A += 0.05) {
+		if (class'IGPlus_Glide'.static.GapLeft(A) > Last)
+			bDown = false;
+		Last = class'IGPlus_Glide'.static.GapLeft(A);
+	}
+	LogTestResult(class'IGPlus_Glide'.static.GapLeft(0.0) == 1.0 && class'IGPlus_Glide'.static.GapLeft(1.0) == 0.0
+		&& class'IGPlus_Glide'.static.GapLeft(-0.5) == 1.0 && class'IGPlus_Glide'.static.GapLeft(1.5) == 0.0,
+		"GlideGap_starts_at_the_gun_and_ends_on_the_real_spot");
+	LogTestResult(bDown, "GlideGap_only_closes");
+	LogTestResult(class'IGPlus_Glide'.static.GapLeft(0.01) > 0.999 && class'IGPlus_Glide'.static.GapLeft(0.99) < 0.001,
+		"GlideGap_leaves_the_gun_and_lands_at_flying_speed");
+	LogTestResult(class'IGPlus_Glide'.static.GlideTime() > 0.0 && class'IGPlus_Glide'.static.GlideTime() <= 0.2,
+		"GlideGap_closes_within_a_fifth_of_a_second");
+	// The fastest it is drawn: its speed plus the gap over the glide's time,
+	// 1.5 times that at the curve's steepest.
+	LogTestResult(class'IGPlus_Glide'.static.GlideTimeFor(0.05) == class'IGPlus_Glide'.static.GlideTime()
+		&& 1.0 + 1.5 * 0.3 / class'IGPlus_Glide'.static.GlideTimeFor(0.3) <= 2.5001
+		&& 1.0 + 1.5 * 0.05 / class'IGPlus_Glide'.static.GlideTimeFor(0.05) <= 2.5001,
+		"GlideGap_never_draws_it_over_two_and_a_half_times_its_speed");
+}
+
 function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.0, 10.0) < 0.02, "FireClockLead_synced_clock_stays_near_zero");
 	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.05, "FireClockLead_small_drift_is_absorbed");
@@ -748,6 +778,7 @@ event int main(string Params) {
 	TestTranslocatorFireMerging();
 	TestTelefragOverlap();
 	TestDetNextShot();
+	TestGlideGap();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
 	TestTradeReach();
