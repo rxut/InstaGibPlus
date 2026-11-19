@@ -211,6 +211,20 @@ var localized string MoreInformationText;
 	var localized string DesiredTeamSkinFemaleText;
 	var localized string DesiredTeamSkinFemaleHelp;
 
+	var IGPlus_ComboBox Cmb_TeamColor;
+	var localized string TeamColorText;
+	var localized string TeamColorHelp;
+
+	var IGPlus_ComboBox Cmb_EnemyColor;
+	var localized string EnemyColorText;
+	var localized string EnemyColorHelp;
+
+	var localized string SkinColorDefault;
+	var localized string SkinColorRed;
+	var localized string SkinColorBlue;
+	var localized string SkinColorGreen;
+	var localized string SkinColorGold;
+
 	var localized string ForcedModelDefault;
 	var localized string ForcedModelAphex;
 	var localized string ForcedModelFemaleCommando;
@@ -780,6 +794,14 @@ function IGPlus_Button CreateButton(
 	return Btn;
 }
 
+function SetUpSkinColorComboBox(IGPlus_ComboBox Cmb) {
+	Cmb.AddItem(SkinColorDefault);
+	Cmb.AddItem(SkinColorRed);
+	Cmb.AddItem(SkinColorBlue);
+	Cmb.AddItem(SkinColorGreen);
+	Cmb.AddItem(SkinColorGold);
+}
+
 function SetUpForcedModelComboBox(IGPlus_ComboBox Cmb) {
 	Cmb.AddItem(ForcedModelDefault);
 	Cmb.AddItem(ForcedModelAphex);
@@ -996,6 +1018,10 @@ function Created() {
 	SetUpForcedModelComboBox(Cmb_DesiredSkinFemale);
 	SetUpForcedModelComboBox(Cmb_DesiredTeamSkin);
 	SetUpForcedModelComboBox(Cmb_DesiredTeamSkinFemale);
+	Cmb_TeamColor = CreateComboBox(TeamColorText, TeamColorHelp, false, 150);
+	Cmb_EnemyColor = CreateComboBox(EnemyColorText, EnemyColorHelp, false, 150);
+	SetUpSkinColorComboBox(Cmb_TeamColor);
+	SetUpSkinColorComboBox(Cmb_EnemyColor);
 
 	Lbl_SuperShockRifle = CreateSeparator(SuperShockRifleText);
 	Cmb_cShockBeam = CreateComboBox(cShockBeamText, cShockBeamHelp, false, 150);
@@ -1174,6 +1200,8 @@ function Load() {
 	Cmb_DesiredSkinFemale.SetSelectedIndex(Clamp(Settings.DesiredSkinFemale + 1, 0, 18));
 	Cmb_DesiredTeamSkin.SetSelectedIndex(Clamp(Settings.DesiredTeamSkin + 1, 0, 18));
 	Cmb_DesiredTeamSkinFemale.SetSelectedIndex(Clamp(Settings.DesiredTeamSkinFemale + 1, 0, 18));
+	Cmb_TeamColor.SetSelectedIndex(Clamp(Settings.TeamColor + 1, 0, 4));
+	Cmb_EnemyColor.SetSelectedIndex(Clamp(Settings.EnemyColor + 1, 0, 4));
 
 	Cmb_cShockBeam.SetSelectedIndex(Clamp(Settings.cShockBeam - 1, 0, 3));
 	Chk_HideOwnBeam.bChecked = Settings.bHideOwnBeam;
@@ -1426,6 +1454,8 @@ function Save() {
 	Settings.DesiredSkinFemale = Cmb_DesiredSkinFemale.GetSelectedIndex() - 1;
 	Settings.DesiredTeamSkin = Cmb_DesiredTeamSkin.GetSelectedIndex() - 1;
 	Settings.DesiredTeamSkinFemale = Cmb_DesiredTeamSkinFemale.GetSelectedIndex() - 1;
+	Settings.TeamColor = Cmb_TeamColor.GetSelectedIndex() - 1;
+	Settings.EnemyColor = Cmb_EnemyColor.GetSelectedIndex() - 1;
 
 	Settings.cShockBeam = Cmb_cShockBeam.GetSelectedIndex() + 1;
 	Settings.bHideOwnBeam = Chk_HideOwnBeam.bChecked;
@@ -1688,6 +1718,18 @@ defaultproperties
 
 		DesiredTeamSkinFemaleText="Skin - Female Friendlies"
 		DesiredTeamSkinFemaleHelp="Which skin to use for team-mates that use a female skin"
+
+		TeamColorText="Color - Friendlies"
+		TeamColorHelp="Color of team-mates' forced skins. Team Color keeps their team's color."
+
+		EnemyColorText="Color - Enemies"
+		EnemyColorHelp="Color of enemies' forced skins. Team Color keeps their team's color."
+
+		SkinColorDefault="Team Color"
+		SkinColorRed="Red"
+		SkinColorBlue="Blue"
+		SkinColorGreen="Green"
+		SkinColorGold="Gold"
 
 		ForcedModelDefault="Do Not Force"
 		ForcedModelAphex="Aphex"
