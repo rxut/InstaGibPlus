@@ -239,6 +239,28 @@ function TestTelefragOverlap() {
 		"Telefrag_bodies_78_units_up_do_not");
 }
 
+// A shock ball (radius and half height 12) and a standing player (17 and 39):
+// where on a tick's way the two first overlap, which is the touch the ball's
+// owner's beam is timed against (ST_ShockProj.IGPlus_TouchWait).
+function TestShockBallTouchFraction() {
+	LogTestResult(Abs(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(-100,0,0), vect(0,0,0), vect(0,0,0), 29, 51) - 0.71) < 0.001,
+		"ShockBallTouch_head_on_at_29_units_from_the_middle");
+	LogTestResult(Abs(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(-100,20,0), vect(0,20,0), vect(0,0,0), 29, 51) - 0.79) < 0.001,
+		"ShockBallTouch_20_units_beside_the_middle_is_later");
+	LogTestResult(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(-100,30,0), vect(0,30,0), vect(0,0,0), 29, 51) == 1.0,
+		"ShockBallTouch_30_units_beside_the_middle_passes");
+	LogTestResult(Abs(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(0,0,151), vect(0,0,51), vect(0,0,0), 29, 51) - 1.0) < 0.001
+		&& Abs(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(0,0,151), vect(0,0,1), vect(0,0,0), 29, 51) - 0.6667) < 0.001,
+		"ShockBallTouch_from_above_at_the_top_of_the_head");
+	LogTestResult(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(-10,0,0), vect(50,0,0), vect(0,0,0), 29, 51) == 0.0,
+		"ShockBallTouch_overlapping_at_the_start_is_0");
+	LogTestResult(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(-100,0,60), vect(0,0,60), vect(0,0,0), 29, 51) == 1.0,
+		"ShockBallTouch_over_the_head_passes");
+	LogTestResult(class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(40,0,0), vect(40,0,0), vect(0,0,0), 29, 51) == 1.0
+		&& class'ST_ShockProj'.static.IGPlus_TouchFraction(vect(20,0,0), vect(20,0,0), vect(0,0,0), 29, 51) == 0.0,
+		"ShockBallTouch_a_ball_that_stands_still");
+}
+
 // Simulates 200 Hz moves against a server ticking every 10 ms. The client
 // clock runs at ClientRate from HackAt on; a spike holds packets in flight
 // and delivers them together. Returns the highest lead after the 2 s learn.
@@ -747,6 +769,7 @@ event int main(string Params) {
 	TestDetEffectiveAnimTime();
 	TestTranslocatorFireMerging();
 	TestTelefragOverlap();
+	TestShockBallTouchFraction();
 	TestDetNextShot();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
