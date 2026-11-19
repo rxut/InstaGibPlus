@@ -74,7 +74,7 @@ var config bool   bNoOwnFootsteps;
 var config bool   bLogClientMessages;
 var config bool   bDemoShowClientMessages;
 var config bool   bDebugMovement;
-var config bool   bShowDebugDataOnScreen; // enableDebugData 1: also draw the debug block and the debug lines on the HUD
+var config int    DebugDataDisplay; // while debug data is on: 0 only the log file, 1 also the console, 2 also the HUD
 var config EFlipAnimationFix FlipAnimationFix;
 var config bool   bEnableKillCam;
 var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
@@ -631,7 +631,7 @@ simulated function string DumpSettings() {
 		GetSetting("bLogClientMessages")$
 		GetSetting("bDemoShowClientMessages")$
 		GetSetting("bDebugMovement")$
-		GetSetting("bShowDebugDataOnScreen")$
+		GetSetting("DebugDataDisplay")$
 		GetSetting("FlipAnimationFix")$
 		GetSetting("bEnableKillCam")$
 		GetSetting("FakeCAPInterval")$
@@ -746,7 +746,7 @@ defaultproperties
 	bLogClientMessages=True
 	bDemoShowClientMessages=False
 	bDebugMovement=False
-	bShowDebugDataOnScreen=False
+	DebugDataDisplay=0
 	FlipAnimationFix=FAF_FinishFlip
 	bEnableKillCam=False
 	FakeCAPInterval=0.1

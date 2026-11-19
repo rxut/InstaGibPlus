@@ -541,9 +541,9 @@ function TestTickInterp() {
 		&& class'SuperShockRifleBeamEffect'.default.bPlayBeam && class'SuperShockRifleBeamEffect'.default.bPlayRing == false
 		&& class'SuperShockRifleRingEffect'.default.bPlayRing && class'SuperShockRifleRingEffect'.default.bPlayBeam == false,
 		"HitEffectSource_starts_on_client_and_the_two_effect_halves_are_split");
-	// enableDebugData draws nothing on the screen unless the player asks for it.
-	LogTestResult(class'ClientSettings'.default.bShowDebugDataOnScreen == false,
-		"ShowDebugDataOnScreen_starts_off");
+	// Debug data shows nowhere but its log file unless the player asks for it.
+	LogTestResult(class'ClientSettings'.default.DebugDataDisplay == 0,
+		"DebugDataDisplay_starts_off");
 	// Auto Debug Data makes every player write a file each match: only when the admin turns it on.
 	LogTestResult(class'ServerSettings'.default.bAutoDebugData == false
 		&& class'bbPlayer'.default.IGPlus_AutoDebugData == false,

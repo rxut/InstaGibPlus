@@ -84,7 +84,7 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bLogClientMessages](#blogclientmessages)
 1. [bDemoShowClientMessages](#bdemoshowclientmessages)
 1. [bDebugMovement](#bdebugmovement)
-1. [bShowDebugDataOnScreen](#bshowdebugdataonscreen)
+1. [DebugDataDisplay](#debugdatadisplay)
 1. [FlipAnimationFix](#flipanimationfix)
 1. [bEnableKillCam](#benablekillcam)
 1. [MinDodgeClickTime](#mindodgeclicktime)
@@ -557,16 +557,17 @@ If `False`, ClientMessages are hidden while playing demos.
 
 Causes IG+ to write movement debugging events to console/demo, depending on whether debug data is enabled at the moment (see [EnableDebugData](#enabledebugdata))
 
-## bShowDebugDataOnScreen
-**Type: bool**  
-**Default: False**  
+## DebugDataDisplay
+**Type: int**  
+**Default: 0**  
 
-Decides whether debug data shows on your screen while it is on (see [EnableDebugData](#enabledebugdata)).
+Decides where debug data shows while it is on (see [EnableDebugData](#enabledebugdata)). The debug lines always go to the debug log file.
 
-If `False`, the screen stays as it is. You get one line when you turn debug data on and one line when you turn it off. The debug lines still go to the console and to the debug log file.  
-If `True`, the HUD shows the debug values and the message area shows the debug lines.
+* `0` ➜ Off. Nothing shows. You get one line when debug data turns on and one line when it turns off.
+* `1` ➜ Console. The debug lines also go to the console and to UnrealTournament.log.
+* `2` ➜ On Screen. As `1`, and the HUD shows the debug values and the message area shows the debug lines.
 
-In the IG+ menu this is `Show Debug Data On Screen`, under `Advanced`.
+In the IG+ menu this is `Show Debug Data`, under `Advanced`.
 
 ## FlipAnimationFix
 **Type: EFlipAnimationFix**  
@@ -1077,7 +1078,7 @@ Parameters marked `optional` do not have to be supplied.
 
 Collects debugging information about your own game. `EnableDebugData 1` turns it on and `EnableDebugData 0` turns it off. Each prints one line that confirms it and names the log file.
 
-While on, the debug lines are written to the console and to a new file in your UT Logs folder, named IGPlusDebug_\<date\>_\<time\>.log. Turning it off closes the file. Nothing else shows on screen unless you turn on [bShowDebugDataOnScreen](#bshowdebugdataonscreen).
+While on, the debug lines are written to a new file in your UT Logs folder, named IGPlusDebug_\<date\>_\<time\>.log. Turning it off closes the file. [DebugDataDisplay](#debugdatadisplay) decides whether the console or the screen shows them too.
 ## EnableHitSound
 **Parameters: (bool b)**
 
