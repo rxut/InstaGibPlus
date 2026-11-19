@@ -20445,9 +20445,11 @@ exec function TeamSay( string Msg )
 			cmd = Left(Msg, 2);
 			Msg = Right(Msg,x-2);
 		} else {
+			// A lone % at the end. break, not continue: continue skips the
+			// InStr at the bottom, pos stays 0 and the loop never ends.
 			OutMsg = OutMsg$Msg;
 			Msg = "";
-			continue;
+			break;
 		}
 
 		if (cmd == "%H") {
