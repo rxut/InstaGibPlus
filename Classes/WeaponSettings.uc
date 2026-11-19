@@ -399,7 +399,7 @@ defaultproperties
 	bEnableEnhancedSplashShockProjectile=False
 	bEnableEnhancedSplashRipperSecondary=False
 	bEnableEnhancedSplashFlakSlug=False
-	bEnableEnhancedSplashRockets=False
+	bEnableEnhancedSplashRockets=True
 	SplashMaxDiffraction=0.5
 	SplashMinDiffractionDistance=50.0
 	SplashWraparoundRadiusScale=1.0
