@@ -116,7 +116,7 @@ var bool IGPlus_DetTranslocator;        // server setting, replicated to the own
 var bool IGPlus_PredictedDiscBoost;     // server setting, replicated to the owner
 var float IGPlus_PredComboTS;           // client: our last drawn shock combo (IGPlus_OwnerComboRing)
 var vector IGPlus_PredComboLoc;
-var ST_ShockProj IGPlus_WallBall;       // server: our shock ball waiting at a wall for our moves (ST_ShockProj.IGPlus_WallWait)
+var ST_ShockProj IGPlus_WallBall;       // server: our shock ball waiting for our moves, at a wall (ST_ShockProj.IGPlus_WallWait) or on something it touched (IGPlus_TouchWait)
 // Our shock beam and our own balls, as our client's screen had them: 0 no
 // verdict (the server's own trace decides), 1 the beam met none of them, 2 it
 // set off our newest ball, 3 the one before (ST_ShockRifle.IGPlus_ClientOwnBall).
@@ -125,6 +125,8 @@ var ST_ShockProj IGPlus_WallBall;       // server: our shock ball waiting at a w
 var int IGPlus_OwnBallVerdict;
 var float IGPlus_OwnBallTS[2];          // client: when we fired our two newest shock balls, newest first
 var ST_ShockProj IGPlus_OwnBalls[2];    // server: our two newest shock balls, newest first (None: that shot made none)
+var string IGPlus_OwnBallEnd[2];        // server, debug data: what ended each of them (ST_ShockProj.IGPlus_NoteEnd)
+var float IGPlus_OwnBallEndTS[2];       // server, debug data: and when, in our move timestamps
 var float IGPlus_MoveFrameDelta;        // server: the length of the client's frame the move being run ends in (a shot's move is that one frame)
 // Client demos: what our client draws itself before the server's copy
 // arrives (our own projectiles) is not in a client demo. Those copies are
@@ -5495,6 +5497,29 @@ simulated function IGPlus_NoteOwnBall(ST_ShockProj Ball, float TS) {
 	IGPlus_OwnBalls[0] = Ball;
 	IGPlus_OwnBallTS[1] = IGPlus_OwnBallTS[0];
 	IGPlus_OwnBallTS[0] = TS;
+	IGPlus_OwnBallEnd[1] = IGPlus_OwnBallEnd[0];
+	IGPlus_OwnBallEnd[0] = "";
+	IGPlus_OwnBallEndTS[1] = IGPlus_OwnBallEndTS[0];
+}
+
+// Server, debug data: one of our two newest balls ended (ST_ShockProj.IGPlus_NoteEnd).
+function IGPlus_NoteOwnBallEnd(ST_ShockProj Ball, string What, float TS) {
+	local int i;
+
+	for (i = 0; i < 2; i++)
+		if (IGPlus_OwnBalls[i] == Ball) {
+			IGPlus_OwnBallEnd[i] = What;
+			IGPlus_OwnBallEndTS[i] = TS;
+		}
+}
+
+// Server, debug data: why the ball our client's beam named is not there for
+// it, and how long before this beam's move it ended on our own screen.
+function string IGPlus_OwnBallGoneText(int i) {
+	if (IGPlus_OwnBallEnd[i] == "")
+		return "the ball is gone here (it hit something, or was set off)";
+	return "the ball is gone here: "$IGPlus_OwnBallEnd[i]$" "
+		$int((CurrentTimeStamp - IGPlus_OwnBallEndTS[i]) * 1000.0 / Level.TimeDilation)$"ms before this beam";
 }
 
 // Client: our shock ball went off in a combo, not against the wall.
@@ -6741,6 +6766,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// explodes at the end of the move that gets there, as it stops on our
 	// screen in that frame: a beam on this move was still tested against it,
 	// and its push on us lands on this move, as our client predicted.
+	// One waiting on something it touched (IGPlus_TouchWait) is let go here too.
 	if (IGPlus_WallBall != None) {
 		if (IGPlus_WallBall.bDeleteMe)
 			IGPlus_WallBall = None;
