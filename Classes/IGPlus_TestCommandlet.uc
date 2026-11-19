@@ -206,6 +206,11 @@ function bool TestDetEffectiveAnimTime() {
 		&& class'bbPlayer'.static.IGPlus_DetRedoDue(0, 5.2, 5.0, 5.5) == false, "Det_tloc_resend_is_due_between_the_last_move_and_this_one");
 	LogTestResult(class'bbPlayer'.static.IGPlus_DetPressOf(true, true) == 1 && class'bbPlayer'.static.IGPlus_DetPressOf(false, true) == 2
 		&& class'bbPlayer'.static.IGPlus_DetPressOf(false, false) == 0, "Det_tloc_early_click_fire_first");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetSpawnWaitOver(10.4, 10.0, 0.5) == false && class'bbPlayer'.static.IGPlus_DetSpawnWaitOver(10.5, 10.0, 0.5)
+		&& class'bbPlayer'.static.IGPlus_DetSpawnWaitOver(0.2, 0.0, 0.5), "Det_tloc_first_throw_waits_after_spawn");
+	LogTestResult(class'bbPlayer'.static.IGPlus_DetHoldsTloc(3, 2, 1) && class'bbPlayer'.static.IGPlus_DetHoldsTloc(3, 0, 3)
+		&& class'bbPlayer'.static.IGPlus_DetHoldsTloc(1, 2, 1) == false && class'bbPlayer'.static.IGPlus_DetHoldsTloc(3, 1, 1) == false
+		&& class'bbPlayer'.static.IGPlus_DetHoldsTloc(0, 2, 1) == false, "Det_tloc_no_correction_while_a_translocate_is_held_for_a_switch");
 	return true;
 }
 

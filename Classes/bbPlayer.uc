@@ -153,7 +153,7 @@ var float IGPlus_PSGate;
 var float IGPlus_PSPrevGate;          // client: From's gate, restored on cancel
 var bool bPSHolsterStarted;
 var bool bPSForcing;                  // server: the timeline's own ChangedWeapon
-var float IGPlus_PSSpawnTS;           // client: our timestamp the server had reached when it respawned us
+var float IGPlus_PSSpawnTS;           // our client's timestamp the server had reached when it respawned us (both sides)
 var Weapon IGPlus_PSKeep;             // client: weapon the timeline put up (vs stale echoes)
 var Weapon IGPlus_PSFiltFrom[8];      // client: server ClientPutDowns to drop (see IGPlus_PSFilterDrops)
 var Weapon IGPlus_PSFiltT1[8];
@@ -6774,6 +6774,7 @@ function IGPlus_CheckClientError() {
 	local float MaxLocError;
 	local bool bForceUpdate;
 	local bool bLandingTaken;
+	local bool bTlocHeld;
 
 	if (bHaveReceivedServerMove == false)
 		return;
@@ -6789,7 +6790,13 @@ function IGPlus_CheckClientError() {
 	ClientLocError = LocDelta Dot LocDelta;
 	debugClientLocError = ClientLocError;
 	bLandingTaken = IGPlus_DetTakeClientLanding(ClientTlocCounter, ClientPhysics, ClientLocAbs, ClientLocError);
-	IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken, LocDelta);
+	// A translocate we hold for our switch to the translocator
+	// (IGPlus_DetNotHeld): the client is at its disc already. We follow when
+	// ours is up, or refuse and correct then. A correction now put the client
+	// back for those moves and our own translocate sent it there again.
+	bTlocHeld = IGPlus_DetHoldsTloc(IGPlus_DetSwitchHeldAction, ClientTlocCounter, TlocCounter);
+	if (bTlocHeld == false)
+		IGPlus_DetTlocCheck(ClientTlocCounter, ClientLocError, bLandingTaken, LocDelta);
 	if (bLandingTaken)
 		ClientLocError = 0.0;
 
@@ -6805,7 +6812,7 @@ function IGPlus_CheckClientError() {
 
 	debugClientForceUpdate = bForceUpdate;
 
-	if (bForceUpdate) {
+	if (bForceUpdate && bTlocHeld == false) {
 		// (sv, cv: our speed and the one the client's last move reported.)
 		if (bDrawDebugData)
 			ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError
@@ -7794,6 +7801,22 @@ function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
 
 // Which press a click is for the translocator: 1 fire, 2 alt-fire, 0 none.
 // Fire first, as stock's bring-up does (bForceFire).
+// The deterministic translocator's first throw of a life waits 0.5s from the
+// respawn, as master's does: its throw timer (ServerTimeSinceLastFire > 0.5)
+// starts when the weapon is made. Ours ran from the last throw, and a new
+// translocator has none, so a respawn click still down threw at once.
+// ponytail: the stamp comes from ServerReStartPlayer only. A match start
+// (no stamp sent) has no wait.
+// Server: is a translocate held for a switch (3: translocate) and the client
+// one translocate ahead of us?
+static final function bool IGPlus_DetHoldsTloc(int HeldAction, int ClientCount, int ServerCount) {
+	return (HeldAction & 3) == 3 && ((ClientCount - ServerCount) & 3) == 1;
+}
+
+static final function bool IGPlus_DetSpawnWaitOver(float TS, float SpawnTS, float Need) {
+	return SpawnTS <= 0.0 || TS - SpawnTS >= Need;
+}
+
 static final function int IGPlus_DetPressOf(bool bFirePress, bool bAltPress) {
 	if (bFirePress)
 		return 1;
@@ -14512,6 +14535,7 @@ state Dying
 				PlaySpawn();
 
 			IGPlus_ClientReStart(Physics, Location, Rotation, IGPlus_RestartedAgainByStartMatch());
+			IGPlus_PSSpawnTS = CurrentTimeStamp;
 			xxClientPSSpawn(CurrentTimeStamp);
 
 			IGPlus_DetClearSwitchTrustState();
