@@ -735,7 +735,7 @@ defaultproperties
 	SSRRingType=1
 	HitEffectSource=HESRC_Client
 	DesiredNetUpdateRate=200.0
-	DesiredNetspeed=25000
+	DesiredNetspeed=50000
 	bNoOwnFootsteps=False
 	bLogClientMessages=True
 	bDemoShowClientMessages=False
@@ -768,7 +768,7 @@ defaultproperties
 	bAutoReady=True
 	bShowDeathReport=False
 	bSmoothFOVChanges=False
-	bEnableLocationOffsetFix=True
+	bEnableLocationOffsetFix=False
 	bEnableKillFeed=True
 	KillFeedX=0.0
 	KillFeedY=0.5
