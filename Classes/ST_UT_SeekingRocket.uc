@@ -8,6 +8,54 @@ class ST_UT_SeekingRocket extends UT_SeekingRocket;
 
 var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
+// Where the server spawned it before the ping catch-up: other players draw it
+// from there (IGPlus_Glide).
+var vector IGPlus_SkipStart;
+
+replication {
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		IGPlus_SkipStart;
+}
+
+simulated function PostNetBeginPlay() {
+	super.PostNetBeginPlay();
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bRocketUseClientSideAnimations);
+}
+
+// Stock UT_SeekingRocket.Timer, with the smoke where the rocket is drawn
+// (IGPlus_Glide draws it behind its real spot for a moment).
+simulated function Timer()
+{
+	local ut_SpriteSmokePuff b;
+	local vector SeekingDir;
+	local float MagnitudeVel;
+
+	if ( InitialDir == vect(0,0,0) )
+		InitialDir = Normal(Velocity);
+
+	if ( (Seeking != None) && (Seeking != Instigator) )
+	{
+		SeekingDir = Normal(Seeking.Location - Location);
+		if ( (SeekingDir Dot InitialDir) > 0 )
+		{
+			MagnitudeVel = VSize(Velocity);
+			SeekingDir = Normal(SeekingDir * 0.5 * MagnitudeVel + Velocity);
+			Velocity =  MagnitudeVel * SeekingDir;
+			Acceleration = 25 * SeekingDir;
+			SetRotation(rotator(Velocity));
+		}
+	}
+	if ( bHitWater || (Level.NetMode == NM_DedicatedServer) )
+		Return;
+
+	if ( (Level.bHighDetailMode && !Level.bDropDetail) || (FRand() < 0.5) )
+	{
+		b = Spawn(class'ut_SpriteSmokePuff',,, class'IGPlus_Glide'.static.DrawnSpot(self));
+		if (b != None)
+			b.RemoteRole = ROLE_None;
+	}
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;

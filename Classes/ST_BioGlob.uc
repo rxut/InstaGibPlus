@@ -17,6 +17,9 @@ simulated function PostNetBeginPlay()
 
 	super(Projectile).PostNetBeginPlay();
 
+	class'IGPlus_Glide'.static.Begin(self, IGPlus_SkipStart,
+		bbPlayer(Instigator) != None && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations);
+
 	if (GetWeaponSettings().BioCompensatePing && bbPlayer(Instigator) != none && bbPlayer(Instigator).ClientWeaponSettingsData.bBioUseClientSideAnimations == true) {
 
 		In = PlayerPawn(Instigator);

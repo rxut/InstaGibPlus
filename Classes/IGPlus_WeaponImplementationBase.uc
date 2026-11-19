@@ -1265,11 +1265,21 @@ function float SimulateProjectile(Projectile P, int Ping, optional float CatchUp
   local UTPure PureRef;
   local IGPlus_LiftShot LS;
   local float TotalMs;
+  local vector PathStart, PathEnd, PrevLoc;
+  local bool bPathEnded, bWasHidden;
+  local class<Projectile> PathClass;
+  local Pawn Shooter;
+  local float PathSpeed;
 
   // Early exit if the projectile is already destroyed
   if (P == None || P.bDeleteMe)
     return 0;
   LS = class'IGPlus_LiftShot'.static.Of(P);
+  PathStart = P.Location;
+  PathClass = P.Class;
+  Shooter = P.Instigator;
+  PathSpeed = VSize(P.Velocity);
+  bWasHidden = P.bHidden;
 
   PureRef = bbPlayer(P.Instigator).zzUTPure;
 
@@ -1306,19 +1316,90 @@ function float SimulateProjectile(Projectile P, int Ping, optional float CatchUp
     PureRef.CompensateFor(int(SimPing), P.Instigator);
     IGPlus_CatchUpProjectile = P;
     IGPlus_CatchUpLeftMs = SimPing - DeltaTime * 1000.0;
+    PrevLoc = P.Location;
     // From a moving lift (Push-Safe Aim): against the shooter's lift where
     // the shooter's screen has it.
     if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
       LS.Fly(DeltaTime, TotalMs - SimPing);
     else
       P.AutonomousPhysics(DeltaTime);
+    // Where it hit something (a chunk is hidden, a rocket explodes).
+    if (!bPathEnded) {
+      if (P == None) {
+        PathEnd = PrevLoc;
+        bPathEnded = true;
+      } else if (P.bDeleteMe || (P.bHidden && !bWasHidden)) {
+        PathEnd = P.Location;
+        bPathEnded = true;
+      }
+    }
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
   IGPlus_CatchUpProjectile = None;
   if (LS != None && class'IGPlus_LiftShot'.static.Of(P) == LS)
     LS.FastForwarded(TotalMs);
+  if (!bPathEnded && P != None)
+    PathEnd = P.Location;
+  IGPlus_SendSkippedPath(P, PathClass, Shooter, PathStart, PathEnd, PathSpeed, bPathEnded, TotalMs * 0.001 * Level.TimeDilation);
   return TotalMs;
+}
+
+// The catch-up above flew the projectile ahead before any other player got
+// it. One that flies on carries the spot it left from (IGPlus_SkipStart):
+// other players draw it from there and let it catch up (IGPlus_Glide). A flak
+// chunk that hit something during the catch-up is never sent to anyone but
+// the shooter: other players get it drawn from the gun to the hit spot on the
+// same curve as the rest of the volley (IGPlus_SkippedPath). Projectiles that
+// end in the catch-up otherwise (a rocket's blast) show only their end.
+// CatchUpS: the catch-up's length in seconds.
+function IGPlus_SendSkippedPath(Projectile P, class<Projectile> PathClass, Pawn Shooter,
+    vector PathStart, vector PathEnd, float PathSpeed, bool bEnded, float CatchUpS) {
+  local IGPlus_SkippedPath S;
+
+  if (VSize(PathEnd - PathStart) < 24.0)
+    return;
+  // A slug's blast chunks did not leave the gun.
+  if (ST_UTChunk(P) != None && ST_UTChunk(P).IGPlus_bFromSlug)
+    return;
+  if (bEnded == false) {
+    if (ST_RocketMk2(P) != None)
+      ST_RocketMk2(P).IGPlus_SkipStart = PathStart;
+    else if (ST_UT_SeekingRocket(P) != None)
+      ST_UT_SeekingRocket(P).IGPlus_SkipStart = PathStart;
+    else if (ST_UT_Grenade(P) != None)
+      ST_UT_Grenade(P).IGPlus_SkipStart = PathStart;
+    else if (ST_FlakSlug(P) != None)
+      ST_FlakSlug(P).IGPlus_SkipStart = PathStart;
+    else if (ST_Razor2(P) != None)
+      ST_Razor2(P).IGPlus_SkipStart = PathStart;
+    else if (ST_Razor2Alt(P) != None)
+      ST_Razor2Alt(P).IGPlus_SkipStart = PathStart;
+    else if (ST_UT_BioGel(P) != None)
+      ST_UT_BioGel(P).IGPlus_SkipStart = PathStart;
+    else if (ST_UTChunk(P) != None) {
+      ST_UTChunk(P).IGPlus_SkipStart = PathStart;
+      // If it hits something while other players still draw it behind, they
+      // get the hit spot (ST_UTChunk.ProcessTouch) and draw it on to there.
+      ST_UTChunk(P).IGPlus_SkipSpeed = PathSpeed;
+      ST_UTChunk(P).IGPlus_SkipCatchUp = CatchUpS;
+      ST_UTChunk(P).IGPlus_SkipUntil = Level.TimeSeconds
+        + (class'IGPlus_Glide'.static.GlideTimeFor(CatchUpS / Level.TimeDilation) + 0.05) * Level.TimeDilation;
+    }
+    return;
+  }
+  if (ClassIsChildOf(PathClass, class'UTChunk') == false)
+    return;
+  S = Spawn(class'IGPlus_SkippedPath', Shooter, '', PathEnd);
+  if (S == None)
+    return;
+  S.PathStart = PathStart;
+  S.PathSpeed = PathSpeed;
+  S.PathClass = PathClass;
+  S.PathCatchUp = CatchUpS;
+  // Other players who already got the chunk drop their copy for the replay.
+  if (P != None && P.bDeleteMe == false)
+    S.PathActor = P;
 }
 
 function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles, int Ping) {
@@ -1329,10 +1410,23 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   local int i;
   local bool bAnyAlive;
   local float TotalMs;
-  
+  local vector PathStart[6], PathEnd[6], PrevLoc;
+  local byte PathEnded[6];
+  local class<Projectile> PathClass[6];
+  local float PathSpeed[6];
+  local Pawn Shooter;
+
   if (NumProjectiles == 0 || Projectiles[0] == None)
     return;
-    
+  Shooter = Projectiles[0].Instigator;
+  for (i = 0; i < NumProjectiles; i++) {
+    if (Projectiles[i] == None)
+      continue;
+    PathStart[i] = Projectiles[i].Location;
+    PathClass[i] = Projectiles[i].Class;
+    PathSpeed[i] = VSize(Projectiles[i].Velocity);
+  }
+
   PureRef = bbPlayer(Projectiles[0].Instigator).zzUTPure;
 
   InterpMs = IGPlus_GetSnapshotInterpRewindMs(Projectiles[0].Instigator) + IGPlus_GetTickInterpDelayMs(Projectiles[0].Instigator);
@@ -1371,15 +1465,25 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
     PureRef.CompensateFor(int(SimPing), Projectiles[0].Instigator);
     for (i = 0; i < NumProjectiles; i++) {
       if (Projectiles[i] != None && !Projectiles[i].bDeleteMe) {
+        PrevLoc = Projectiles[i].Location;
         // From a moving lift (Push-Safe Aim): against the shooter's lift
         // where the shooter's screen has it.
         if (class'IGPlus_LiftShot'.static.Of(Projectiles[i]) != None)
           class'IGPlus_LiftShot'.static.Of(Projectiles[i]).Fly(DeltaTime, TotalMs - SimPing);
         else
           Projectiles[i].AutonomousPhysics(DeltaTime);
+        if (PathEnded[i] == 0) {
+          if (Projectiles[i] == None) {
+            PathEnd[i] = PrevLoc;
+            PathEnded[i] = 1;
+          } else if (Projectiles[i].bDeleteMe) {
+            PathEnd[i] = Projectiles[i].Location;
+            PathEnded[i] = 1;
+          }
+        }
       }
     }
-    
+
     SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
@@ -1387,6 +1491,13 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   for (i = 0; i < NumProjectiles; i++)
     if (Projectiles[i] != None && class'IGPlus_LiftShot'.static.Of(Projectiles[i]) != None)
       class'IGPlus_LiftShot'.static.Of(Projectiles[i]).FastForwarded(TotalMs);
+  for (i = 0; i < NumProjectiles; i++) {
+    if (PathClass[i] == None)
+      continue;
+    if (PathEnded[i] == 0 && Projectiles[i] != None)
+      PathEnd[i] = Projectiles[i].Location;
+    IGPlus_SendSkippedPath(Projectiles[i], PathClass[i], Shooter, PathStart[i], PathEnd[i], PathSpeed[i], PathEnded[i] != 0, TotalMs * 0.001 * Level.TimeDilation);
+  }
 }
 
 simulated function Actor TraceShotInternal(
