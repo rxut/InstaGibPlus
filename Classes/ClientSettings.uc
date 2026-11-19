@@ -41,6 +41,8 @@ var config int    DesiredSkin;
 var config int    DesiredSkinFemale;
 var config int    DesiredTeamSkin;
 var config int    DesiredTeamSkinFemale;
+var config int    TeamColor;  // forced skin color of team-mates: -1 = their team, 0 red, 1 blue, 2 green, 3 gold
+var config int    EnemyColor; // forced skin color of enemies, same values
 var config int    SkinEnemyIndexMap[16];
 var config int    SkinTeamIndexMap[16];
 var config bool   bSkinEnemyUseIndexMap;
@@ -598,6 +600,8 @@ simulated function string DumpSettings() {
 		GetSetting("DesiredSkinFemale")$
 		GetSetting("DesiredTeamSkin")$
 		GetSetting("DesiredTeamSkinFemale")$
+		GetSetting("TeamColor")$
+		GetSetting("EnemyColor")$
 		DumpSkinIndexMaps()$
 		GetSetting("bSkinEnemyUseIndexMap")$
 		GetSetting("bSkinTeamUseIndexMap")$
@@ -710,6 +714,8 @@ defaultproperties
 	DesiredSkinFemale=0
 	DesiredTeamSkin=9
 	DesiredTeamSkinFemale=0
+	TeamColor=-1
+	EnemyColor=-1
 	bUnlitSkins=True
 	bEnableHitSounds=True
 	bEnableTeamHitSounds=False
