@@ -32,6 +32,8 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [DesiredSkinFemale](#desiredskinfemale)
 1. [DesiredTeamSkin](#desiredteamskin)
 1. [DesiredTeamSkinFemale](#desiredteamskinfemale)
+1. [TeamColor](#teamcolor)
+1. [EnemyColor](#enemycolor)
 1. [SkinEnemyIndexMap](#skinenemyindexmap)
 1. [SkinTeamIndexMap](#skinteamindexmap)
 1. [bSkinEnemyUseIndexMap](#bskinenemyuseindexmap)
@@ -183,6 +185,26 @@ Any value below zero disables forcing models. For example, if you set [DesiredSk
 ## DesiredTeamSkinFemale
 **Type: int**  
 **Default: 0**  
+
+## TeamColor
+**Type: int**  
+**Default: -1**  
+
+Color of team-mates' forced skins. Only works with [bForceModels](#bforcemodels) on.
+
+* `-1` ➜ Keep their team's color
+* `0` ➜ Red
+* `1` ➜ Blue
+* `2` ➜ Green
+* `3` ➜ Gold
+
+A player whose skin is not forced keeps their team's color.
+
+## EnemyColor
+**Type: int**  
+**Default: -1**  
+
+Color of enemies' forced skins. Same values as [TeamColor](#teamcolor).
 
 ## SkinEnemyIndexMap
 **Type: int\[16\]**  

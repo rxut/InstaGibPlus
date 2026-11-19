@@ -15523,6 +15523,23 @@ function int GetForcedSkinForPlayer(PlayerReplicationInfo PRI) {
 	return -1;
 }
 
+// Team Color and Enemy Color. Every stock forced skin comes in red, blue,
+// green and gold (t_0 to t_3). A player's own skin keeps their team's color,
+// it may not have the other two.
+function int GetForcedSkinColor(PlayerReplicationInfo PRI, int Skin) {
+	local int C;
+
+	if (Skin < 0 || Skin > 17)
+		return PRI.Team;
+	if (PRI.Team == PlayerReplicationInfo.Team)
+		C = Settings.TeamColor;
+	else
+		C = Settings.EnemyColor;
+	if (C < 0 || C > 3)
+		return PRI.Team;
+	return C;
+}
+
 function bool IsForcedSkinFemale(int Skin) {
 	return Skin >= 0 && Skin <= 8;
 }
@@ -15567,7 +15584,7 @@ function ApplyForcedSkins(PlayerReplicationInfo PRI) {
 	if (zzbForceModels && IGPlus_ShowRealModelsInDemo() == false) {
 		Skin = GetForcedSkinForPlayer(PRI);
 		SetForcedMesh(PRI, Skin);
-		SetForcedSkin(PRI.Owner, Skin, GameReplicationInfo.bTeamGame, PRI.Team);
+		SetForcedSkin(PRI.Owner, Skin, GameReplicationInfo.bTeamGame, GetForcedSkinColor(PRI, Skin));
 	} else if (bbPlayer(PRI.Owner) != none && IGPlus_ShowRealModelsInDemo()) {
 		bbPlayer(PRI.Owner).IGPlus_DemoRestoreRealModel();
 	}
