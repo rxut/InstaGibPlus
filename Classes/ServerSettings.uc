@@ -36,6 +36,7 @@ var config bool bTellSpectators;	// Enable or disable telling spectators of reas
 var config string PlayerPacks[8];	// Config list of supported player packs
 var config int ThrowVelocity;	// How far a player can throw weapons
 var config bool  bForceDemo;		// Forces clients to do demos.
+var config bool  bAutoDebugData;	// Players run enableDebugData 1 for every match, like bForceDemo for demos.
 var config bool  bRestrictTrading;
 var config float MaxTradeTimeMargin; // Only relevant when bRestrictTrading is true
 var config float TradePingMargin;
@@ -165,6 +166,7 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "PauseTotalTime");
 	DumpSetting(P, "PauseTime");
 	DumpSetting(P, "bForceDemo");
+	DumpSetting(P, "bAutoDebugData");
 	DumpSetting(P, "bRestrictTrading");
 	DumpSetting(P, "MaxTradeTimeMargin");
 	DumpSetting(P, "TradePingMargin");
