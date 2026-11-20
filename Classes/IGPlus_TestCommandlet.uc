@@ -551,10 +551,10 @@ function TestTickInterp() {
 	// The stock look of other players' models stays unless the player asks.
 	LogTestResult(class'ClientSettings'.default.FlipAnimationFix == FAF_FinishFlip
 		&& class'ClientSettings'.static.IntToFlipAnimationFix(0) == FAF_Off
-		&& class'ClientSettings'.static.IntToFlipAnimationFix(1) == FAF_Instant
+		&& class'ClientSettings'.static.IntToFlipAnimationFix(1) == FAF_FinishFlip
 		&& class'ClientSettings'.static.IntToFlipAnimationFix(2) == FAF_FinishFlip
 		&& class'ClientSettings'.static.IntToFlipAnimationFix(7) == FAF_Off,
-		"FlipAnimationFix_starts_on_Finish_Flip_and_reads_its_three_values");
+		"FlipAnimationFix_starts_on_Finish_Flip_and_offers_Off_and_Finish_Flip");
 	// Tick Interpolation: the move time between two updates comes back from the two bytes sent,
 	// also past the 128 ms the byte covers, and for a tick that ran far more move time than one tick is long.
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_MoveDelta(class'bbPlayer'.static.IGPlus_TI_MoveByte(100.0000),

@@ -573,13 +573,20 @@ In the IG+ menu this is `Show Debug Data`, under `Advanced`.
 **Type: EFlipAnimationFix**  
 **Default: FAF_FinishFlip**  
 
-What to draw when a player's model would collapse into a small lump in the air. Players call it the pancake. It happens when a forward dodge lands in the middle of its flip and a jump or a jump pad follows at once. The game then blends the turned-over model straight into its next pose. The model folds up for as long as the blend takes.
+What to draw when a player's model would collapse into a small lump. Players call it the pancake. It happens when the model blends out of the turned-over middle of a forward dodge's flip. The game moves every point of the model in a straight line to its next pose. The model folds up until the blend ends. It happens at 3 moments:
+
+- A jump or a jump pad right after the landing. The lump lasts about 0.2 s.
+- The landing itself. The lump lasts about 60 ms.
+- A lagging player at the landing. The server holds their movement and the model stops in the middle of the blend. The lump stays until their movement comes in again.
+
+The setting has 2 values:
 
 - `FAF_Off`: models are drawn as the game draws them.
-- `FAF_Instant`: the model takes its next pose at once.
 - `FAF_FinishFlip`: the model plays its flip to the end and then blends on. Every frame drawn is a frame of the stock animations.
 
-It works on other players, on your own model in behind view and for spectators. Short blends and blends from an upright pose are drawn as before.
+Older versions also had `FAF_Instant`. A settings file that still has it gets `FAF_FinishFlip`.
+
+It works on other players, on your own model in behind view and for spectators. The game draws blends from an upright pose as before.
 
 In the IG+ menu this is `Flip Animation Fix`, under `Advanced`.
 
