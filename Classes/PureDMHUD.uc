@@ -7,6 +7,13 @@ class PureDMHUD extends ChallengeHUD;
 simulated function PostRender(canvas Canvas)
 {
 	local bbPlayer Followed;
+	local Pawn Dead;
+	local Weapon DeadWeapon, DeadPending;
+	local Inventory DeadInventory;
+	local int DeadArmor, DeadBoots;
+
+	// Dead: draw as stock does once the inventory is gone (see HideDead).
+	Dead = class'PureHUDHelper'.static.HideDead(self, DeadWeapon, DeadPending, DeadInventory, DeadArmor, DeadBoots);
 
 	if (PlayerPawn(Owner) != none)
 		Followed = bbPlayer(PlayerPawn(Owner).ViewTarget);
@@ -14,9 +21,11 @@ simulated function PostRender(canvas Canvas)
 		Followed.bIsPlayer = false;
 		Super.PostRender(Canvas);
 		Followed.bIsPlayer = true;
-		return;
+	} else {
+		Super.PostRender(Canvas);
 	}
-	Super.PostRender(Canvas);
+
+	class'PureHUDHelper'.static.RestoreDead(Dead, DeadWeapon, DeadPending, DeadInventory, DeadArmor, DeadBoots);
 }
 
 
