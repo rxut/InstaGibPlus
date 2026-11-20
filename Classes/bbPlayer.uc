@@ -1082,7 +1082,6 @@ const IGPLUS_FLIPFIX_FLIP_FROM = 0.15;
 const IGPLUS_FLIPFIX_FLIP_TO = 0.92;
 const IGPLUS_FLIPFIX_FLIP_END = 0.95;     // the flip's last frame
 const IGPLUS_FLIPFIX_MIN_FLIPPED = 0.2;   // how much of the drawn pose has to be a turned-over one
-const IGPLUS_FLIPFIX_MIN_BLEND = 0.25;    // seconds a blend has to have left
 const IGPLUS_FLIPFIX_FLIP_MEMORY = 0.2; // seconds a flip counts as just shown
 const IGPLUS_FLIPFIX_RAMP_TIME = 0.06;    // seconds: how fast the blend that takes over catches up
 // Client, with enableDebugData on: how Tick Interpolation drew this player
@@ -3674,6 +3673,29 @@ simulated function IGPlus_DebugLiftJumpTop(Actor OldBase) {
 simulated function bool IGPlus_InLiftExitWindow() {
 	return IGPlus_LiftExitTS > 0.0
 		&& Level.TimeSeconds - IGPlus_LiftExitTS < PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.3;
+}
+
+// Client, about to fire while a correction eases on the body (default
+// smoothing, IGPlus_AdjustLocationAlpha). The body is still on its way to
+// where the server has us, and a shot from there leaves from a spot the server
+// does not share: it fires from its own (IGPlus_ShotOriginIsNear allows about
+// 1.7 uu) and the two can disagree. In Logs 57 (Nov 19 2026) shots fired with
+// the two further apart disagreed 7% of the time, the others 0.3%. The rest of
+// the ease goes into the body at once, and the camera keeps where it was drawn
+// and eases out like after a push (IGPlus_PushCamOffset), so nothing on screen
+// jumps and Push-Safe Aim sends the shot through the crosshair point.
+simulated function IGPlus_ShotEaseToCamera() {
+	local vector Rest, Before;
+
+	Rest = IGPlus_AdjustLocationOffset * IGPlus_AdjustLocationAlpha;
+	IGPlus_AdjustLocationOffset = vect(0,0,0);
+	IGPlus_AdjustLocationAlpha = 0;
+	Before = Location;
+	MoveSmooth(Rest);
+	// What the body really moved: a wall can stop it short.
+	Rest = Location - Before;
+	IGPlus_PushCamOffset -= Rest;
+	IGPlus_CameraOffsetDrawn -= Rest;
 }
 
 // Push-Safe Aim, client: the view that sends a shot from the real position
@@ -11023,6 +11045,15 @@ function xxReplicateMove(
 		debugPlayerLocation = Location;
 	}
 
+	// A shot while a correction still eases on the body (the default
+	// smoothing, not camera-only): the rest of the ease goes into the body now
+	// and the camera eases it out, so the shot leaves from where the server
+	// has us (IGPlus_ShotEaseToCamera).
+	if (IGPlus_AdjustLocationAlpha > 0.0
+		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
+		&& IGPlus_FindDetSupportedWeapon(Weapon) != none)
+		IGPlus_ShotEaseToCamera();
+
 	// Push-Safe Aim: while the camera still eases after a correction, shots
 	// leave from the real position; aim them through the crosshair point.
 	if (IGPlus_PushSafeAim
@@ -16131,27 +16162,29 @@ function IGPlus_TI_LogStats(bool bWrite) {
 // in a straight line from where it was last drawn (ULodMesh::GetFrame, a
 // frame below 0). From the turned-over part of the forward dodge's flip to an
 // upright pose the lines cross in the middle, and the model is a small lump
-// for as long as the blend takes: the "pancake". The usual way there: a
-// forward dodge lands in the middle of its flip, and a jump in that moment
-// swaps the 0.12 s landing blend for one of 0.35 or 0.7 s (PlayInAir). A jump
-// pad does the same, with 2 s.
+// for as long as the blend takes: the "pancake". Three ways there, all from a
+// forward dodge that lands in the middle of its flip: a jump in that moment
+// swaps the 0.12 s landing blend for one of 0.35 or 0.7 s (PlayInAir), a jump
+// pad does the same with 2 s, and the 0.12 s landing blend itself shows the
+// lump for about 60 ms. A held body (IGPlus_TI_bStopped) keeps its blend
+// frame and the engine moves the model no further, so even the landing blend
+// stays a lump for as long as the hold lasts (a lagging player).
 //
 // IGPlus_FlipFix_Flipped follows how much of the pose the engine last drew is a
 // turned-over one, with the engine's own sum. It only changes in frames the
 // model is drawn in, as far as a script can tell (IGPlus_FlipFix_Seen): a model
 // that left the screen in the middle of a flip keeps that pose in the engine
-// until it is drawn again. When a blend with more than IGPLUS_FLIPFIX_MIN_BLEND
-// seconds to go would be drawn from such a pose:
-//   FAF_Instant: the pose the blend goes to is drawn once, as a played frame.
-//     The engine keeps it from there, and the game's air logic goes on.
-//   FAF_FinishFlip: when the flip was what the model showed, it plays on to
-//     its end at its own speed, and then the blend the game is in by then
-//     takes over from its start and catches up. Every frame drawn is a stock
-//     frame. A model that comes into view with an old turned-over pose gets
-//     the pose its blend goes to, as with FAF_Instant.
+// until it is drawn again. When a blend would be drawn from such a pose:
+//   FAF_FinishFlip (and FAF_Instant from older settings files): when the flip
+//     was what the model showed, it plays on to its end at its own speed, and
+//     then the blend the game is in by then takes over from its start and
+//     catches up. Every frame drawn is a stock frame. A model that comes into
+//     view with an old turned-over pose, where no flip was seen, gets the pose
+//     its blend goes to at once, drawn as a played frame. The engine keeps it
+//     from there, and the game's air logic goes on.
 //   FAF_Off: nothing is changed.
-// Everything else is drawn as it came: the flip itself, short blends, and
-// slow ones from an upright pose.
+// Everything else is drawn as it came: the flip itself and blends from an
+// upright pose.
 simulated function IGPlus_FlipFix_Apply(float Rate) {
 	local name Seq;
 	local float Frame, Dt, Left;
@@ -16230,7 +16263,9 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 	if (IGPlus_FlipFix_Flipped > 0.1 && IGPlus_FlipFix_Seen()) {
 		if (Rate > 0.0)
 			Left = -Frame / Rate;
-		if (Left > IGPLUS_FLIPFIX_MIN_BLEND) {
+		// Any blend, the 0.12 s landing one too, and a held body's (its
+		// blend frame stays and so does the lump).
+		if (Left > 0.0 || IGPlus_TI_bStopped) {
 			Mode = IGPlus_FlipFix_Setting();
 			// The flip was on screen a moment ago, with at most a short blend
 			// since (the 0.12 s one of a landing): it plays on from where it
@@ -16267,19 +16302,24 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 	IGPlus_FlipFix_Last = Frame;
 }
 
-// The client's FlipAnimationFix setting: 0 off, 1 instant, 2 finish the flip.
+// The client's FlipAnimationFix setting: 0 off, 2 finish the flip. FAF_Instant
+// (from older settings files) works as FAF_FinishFlip.
 simulated function int IGPlus_FlipFix_Setting() {
 	local PlayerPawn LP;
+	local byte F;
 
 	LP = GetLocalPlayer();
+	F = 0;
 	if (bbPlayer(LP) != None && bbPlayer(LP).Settings != None)
-		return bbPlayer(LP).Settings.FlipAnimationFix;
-	if (bbCHSpectator(LP) != None && bbCHSpectator(LP).Settings != None)
-		return bbCHSpectator(LP).Settings.FlipAnimationFix;
-	return 0;
+		F = bbPlayer(LP).Settings.FlipAnimationFix;
+	else if (bbCHSpectator(LP) != None && bbCHSpectator(LP).Settings != None)
+		F = bbCHSpectator(LP).Settings.FlipAnimationFix;
+	if (F == 0)
+		return 0;
+	return 2;
 }
 
-// enableDebugData 1: one line for every slow blend out of a turned-over pose,
+// enableDebugData 1: one line for every blend out of a turned-over pose,
 // with the setting on any value, so a log shows how often it happens and what
 // was done. bStart false: the model came into view in the middle of the blend.
 simulated function IGPlus_FlipFix_Note(name Seq, float Left, string What, bool bStart) {

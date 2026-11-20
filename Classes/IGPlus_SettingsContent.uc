@@ -124,7 +124,6 @@ var localized string MoreInformationText;
 	var localized string FlipAnimationFixText;
 	var localized string FlipAnimationFixHelp;
 	var localized string FlipAnimationFixOff;
-	var localized string FlipAnimationFixInstant;
 	var localized string FlipAnimationFixFinishFlip;
 
 	var UWindowCheckbox Chk_LocationOffsetFix;
@@ -956,7 +955,6 @@ function Created() {
 	Cmb_DebugDataDisplay.AddItem(DebugDataDisplayScreen);
 	Cmb_FlipAnimationFix = CreateComboBox(FlipAnimationFixText, FlipAnimationFixHelp, false, 150);
 	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixOff);
-	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixInstant);
 	Cmb_FlipAnimationFix.AddItem(FlipAnimationFixFinishFlip);
 	Chk_LocationOffsetFix = CreateCheckbox(LocationOffsetFixText, LocationOffsetFixHelp);
 	Lbl_LocationOffsetFixNote = CreateLabel("", LocationOffsetFixNoteHelp);
@@ -1145,7 +1143,11 @@ function Load() {
 	Chk_DemoShowClientMessages.bChecked = Settings.bDemoShowClientMessages;
 	Chk_DebugMovement.bChecked = Settings.bDebugMovement;
 	Cmb_DebugDataDisplay.SetSelectedIndex(Clamp(Settings.DebugDataDisplay, 0, 2));
-	Cmb_FlipAnimationFix.SetSelectedIndex(Clamp(Settings.FlipAnimationFix, 0, 2));
+	// Two choices: Off, and Finish Flip (FAF_Instant from older settings counts as Finish Flip).
+	if (Settings.FlipAnimationFix == FAF_Off)
+		Cmb_FlipAnimationFix.SetSelectedIndex(0);
+	else
+		Cmb_FlipAnimationFix.SetSelectedIndex(1);
 	Chk_LocationOffsetFix.bChecked = Settings.bEnableLocationOffsetFix;
 
 	Chk_EnableNetStats.bChecked = Settings.bEnableNetStats;
@@ -1608,9 +1610,8 @@ defaultproperties
 		DebugMovementHelp="If checked, trace movement input to demo"
 
 		FlipAnimationFixText="Flip Animation Fix"
-		FlipAnimationFixHelp="What to do when another player's model would collapse into a small lump in the air (a pancake)\\nIt happens when a slow blend starts in the turned-over part of a forward dodge's flip\\nOff --> Nothing, as the game draws it\\nInstant --> The model takes its next pose at once\\nFinish Flip --> The model finishes its flip first, then blends on"
+		FlipAnimationFixHelp="What to do when another player's model would collapse into a small lump, the pancake\\nIt happens when the model blends out of the turned-over part of a forward dodge's flip\\nOff --> Nothing, as the game draws it\\nFinish Flip --> The model finishes its flip first, then blends on"
 		FlipAnimationFixOff="Off"
-		FlipAnimationFixInstant="Instant"
 		FlipAnimationFixFinishFlip="Finish Flip"
 		DebugDataDisplayText="Show Debug Data"
 		DebugDataDisplayHelp="Where debug data shows while it is on. It always goes to a file in your Logs folder\\nOff shows one line when debug data turns on and one when it turns off"
