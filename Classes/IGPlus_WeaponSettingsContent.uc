@@ -79,14 +79,7 @@ var localized string HeadRadiusHelp;
 var UWindowCheckbox Chk_bEnablePingCompensation;
 var localized string bEnablePingCompensationText;
 var localized string bEnablePingCompensationHelp;
-var UWindowCheckbox Chk_bEnableSubTickCompensation;
-var localized string bEnableSubTickCompensationText;
-var localized string bEnableSubTickCompensationHelp;
-var UWindowCheckbox Chk_bEnablePreciseRewindTime;
-var localized string bEnablePreciseRewindTimeText;
-var localized string bEnablePreciseRewindTimeHelp;
 var localized string TickInterpLockHelp;
-var localized string NeedsPingCompHelp;
 var localized string ReducedHitboxOffHelp;
 var UWindowCheckbox Chk_bEnableTrades;
 var localized string bEnableTradesText;
@@ -906,10 +899,6 @@ function SaveWeaponSettings() {
 	// A grayed-out box shows what another setting makes of it, not the ini.
 	if (Chk_bEnablePingCompensation.bDisabled == false)
 		SaveWeaponSettingIfChanged(S, "bEnablePingCompensation", BoolToString(Chk_bEnablePingCompensation.bChecked));
-	if (Chk_bEnableSubTickCompensation.bDisabled == false)
-		SaveWeaponSettingIfChanged(S, "bEnableSubTickCompensation", BoolToString(Chk_bEnableSubTickCompensation.bChecked));
-	if (Chk_bEnablePreciseRewindTime.bDisabled == false)
-		SaveWeaponSettingIfChanged(S, "bEnablePreciseRewindTime", BoolToString(Chk_bEnablePreciseRewindTime.bChecked));
 	SaveWeaponSettingIfChanged(S, "bEnableTrades", BoolToString(Chk_bEnableTrades.bChecked));
 	SaveWeaponSettingIfChanged(S, "bEnableFireTimeOrder", BoolToString(Chk_bEnableFireTimeOrder.bChecked));
 	SaveWeaponSettingIfChanged(S, "PreciseRewindTimeMaxDeviationMs", Edit_PreciseRewindTimeMaxDeviationMs.GetValue());
@@ -1522,19 +1511,13 @@ function bool TickInterpLocks() {
 // clicked. The window stays open across servers.
 function ApplyWeaponLocks() {
 	local WeaponSettings S;
-	local bool bTI, bPC, bRH;
+	local bool bTI, bRH;
 
 	S = FindWeaponSettingsObject();
 	if (S == none)
 		return;
 	bTI = TickInterpLocks();
 	IGPlus_Checkbox(Chk_bEnablePingCompensation).SetLock(bTI, true, S.bEnablePingCompensation, bEnablePingCompensationHelp, TickInterpLockHelp);
-	bPC = Chk_bEnablePingCompensation.bChecked;
-	if (bTI)
-		IGPlus_Checkbox(Chk_bEnablePreciseRewindTime).SetLock(true, true, S.bEnablePreciseRewindTime, bEnablePreciseRewindTimeHelp, TickInterpLockHelp);
-	else
-		IGPlus_Checkbox(Chk_bEnablePreciseRewindTime).SetLock(bPC == false, false, S.bEnablePreciseRewindTime, bEnablePreciseRewindTimeHelp, NeedsPingCompHelp);
-	IGPlus_Checkbox(Chk_bEnableSubTickCompensation).SetLock(bPC == false, false, S.bEnableSubTickCompensation, bEnableSubTickCompensationHelp, NeedsPingCompHelp);
 	bRH = Chk_SniperUseReducedHitbox.bChecked || Chk_ShockBeamUseReducedHitbox.bChecked || Chk_EnforcerUseReducedHitbox.bChecked;
 	IGPlus_Checkbox(Chk_bEnableAnimationAdaptiveHeadHitbox).SetLock(bRH == false, false, S.bEnableAnimationAdaptiveHeadHitbox, bEnableAnimationAdaptiveHeadHitboxHelp, ReducedHitboxOffHelp);
 }
@@ -1559,8 +1542,6 @@ function LoadWeaponSettings() {
 	Edit_HeadHalfHeight.SetValue(string(S.HeadHalfHeight));
 	Edit_HeadRadius.SetValue(string(S.HeadRadius));
 	Chk_bEnablePingCompensation.bChecked = S.bEnablePingCompensation;
-	Chk_bEnableSubTickCompensation.bChecked = S.bEnableSubTickCompensation;
-	Chk_bEnablePreciseRewindTime.bChecked = S.bEnablePreciseRewindTime;
 	Chk_bEnableTrades.bChecked = S.bEnableTrades;
 	Chk_bEnableFireTimeOrder.bChecked = S.bEnableFireTimeOrder;
 	Edit_PreciseRewindTimeMaxDeviationMs.SetValue(string(S.PreciseRewindTimeMaxDeviationMs));
@@ -1749,8 +1730,6 @@ function Created() {
 	Edit_HeadHalfHeight = CreateEdit(ECT_Real, HeadHalfHeightText, HeadHalfHeightHelp, 16, 80);
 	Edit_HeadRadius = CreateEdit(ECT_Real, HeadRadiusText, HeadRadiusHelp, 16, 80);
 	Chk_bEnablePingCompensation = CreateCheckbox(bEnablePingCompensationText, bEnablePingCompensationHelp);
-	Chk_bEnableSubTickCompensation = CreateCheckbox(bEnableSubTickCompensationText, bEnableSubTickCompensationHelp);
-	Chk_bEnablePreciseRewindTime = CreateCheckbox(bEnablePreciseRewindTimeText, bEnablePreciseRewindTimeHelp);
 	Chk_bEnableTrades = CreateCheckbox(bEnableTradesText, bEnableTradesHelp);
 	Chk_bEnableFireTimeOrder = CreateCheckbox(bEnableFireTimeOrderText, bEnableFireTimeOrderHelp);
 	Edit_PreciseRewindTimeMaxDeviationMs = CreateEdit(ECT_Integer, PreciseRewindTimeMaxDeviationMsText, PreciseRewindTimeMaxDeviationMsHelp, 8, 80);
@@ -2016,8 +1995,6 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_HeadHalfHeight, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_HeadRadius, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnablePingCompensation, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableSubTickCompensation, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnablePreciseRewindTime, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_PreciseRewindTimeMaxDeviationMs, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_PingCompensationMax, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableAnimationAdaptiveHeadHitbox, bShowSettings, WndWidth, Top);
@@ -2303,13 +2280,8 @@ defaultproperties
 	HeadRadiusText="Head Radius"
 	HeadRadiusHelp="Weapon setting: Head Radius"
 	bEnablePingCompensationText="Enable Ping Compensation"
-	bEnablePingCompensationHelp="Weapon setting: Enable Ping Compensation"
-	bEnableSubTickCompensationText="Enable Sub Tick Compensation"
-	bEnableSubTickCompensationHelp="Weapon setting: Enable Sub Tick Compensation"
-	bEnablePreciseRewindTimeText="Enable Precise Rewind Time"
-	bEnablePreciseRewindTimeHelp="Weapon setting: rewind hitscan shots to the moment the shooter's screen showed"
+	bEnablePingCompensationHelp="Weapon setting: the server tests a shot against the other players where the shooter's screen showed them. That includes the spot between two server ticks and the moment the shooter saw"
 	TickInterpLockHelp="Weapon setting: on because Tick Interpolation is on"
-	NeedsPingCompHelp="Weapon setting: off because Ping Compensation is off"
 	ReducedHitboxOffHelp="Weapon setting: off because every Use Reduced Hitbox setting is off"
 	bEnableTradesText="Enable Trades"
 	bEnableTradesHelp="Weapon setting: a shot from a player who just died still counts. NextIG and NextSA read this in place of the server setting"

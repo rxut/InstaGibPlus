@@ -107,7 +107,7 @@ function float IGPlus_GetHitscanRewindMs(Pawn Instigator) {
 	// below comes from the time stamps of the client's moves, which the
 	// client writes itself and which run late after every moment of lag.
 	if (bbP != None && bbP.IGPlus_PingLowMs() > 0.0 && IGPlus_GetSnapshotInterpRewindMs(Instigator) <= 0.0
-		&& bbP.GetWeaponSettings() != None && bbP.GetWeaponSettings().bEnablePreciseRewindTime)
+		&& bbP.GetWeaponSettings() != None && bbP.GetWeaponSettings().bEnablePingCompensation)
 		return IGPlus_GetServerPingRewindMs(bbP);
 	return IGPlus_GetAveragePingRewindMs(Instigator);
 }

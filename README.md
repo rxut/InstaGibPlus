@@ -269,7 +269,7 @@ Selects where hit sound events come from.
 * `HSSRC_Server` ➜ Use server-side hit confirmations (accurate but delayed by ping).
 * `HSSRC_Client` ➜ Use client-side hit detection (instant but can be inaccurate).
 
-`HSSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG and NextSA. With those two your own trace plays the sound at the click. With [bEnablePreciseRewindTime](#benablepreciserewindtime) on, that trace tests the other players where the server will place them for your shot, which can be a few units from where your screen draws a player who just changed direction. The server still decides the hit. A sound can play for a shot the server counts as a miss, and a hit only the server saw plays its sound a ping late. With every other weapon the hit sound is the server's.
+`HSSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG and NextSA. With those two your own trace plays the sound at the click. With [bEnablePingCompensation](#benablepingcompensation) on, that trace tests the other players where the server will place them for your shot, which can be a few units from where your screen draws a player who just changed direction. The server still decides the hit. A sound can play for a shot the server counts as a miss, and a hit only the server saw plays its sound a ping late. With every other weapon the hit sound is the server's.
 
 ## SelectedHitSound
 **Type: int**  
@@ -1379,7 +1379,7 @@ InstaGib, but with a ping compensated custom weapon.
 
 ## InstaGibPlus_11.NextIG
 
-InstaGib with the deterministic SuperShockRifle. The server traces every shot itself and rewinds the other players by the shooter's ping, or by [bEnablePreciseRewindTime](#benablepreciserewindtime) if that is on. The shooter's client draws its own beam and ring at once. No client setting turns that off. With ping compensation off, the beam comes from the server. With [HitSoundSource](#hitsoundsource) and [HitMarkerSource](#hitmarkersource) set to Client, the hit sound and hit marker play at the click from the shooter's own trace. The server's trace still decides the hit.
+InstaGib with the deterministic SuperShockRifle. The server traces every shot itself and moves the other players back to what the shooter's screen showed (see [bEnablePingCompensation](#benablepingcompensation)). The shooter's client draws its own beam and ring at once. No client setting turns that off. With ping compensation off, the beam comes from the server. With [HitSoundSource](#hitsoundsource) and [HitMarkerSource](#hitmarkersource) set to Client, the hit sound and hit marker play at the click from the shooter's own trace. The server's trace still decides the hit.
 
 * Load it in place of ST_Mutator, not together with it.
 * Its weapon settings are in the section `WeaponSettingsInstaGib`.
@@ -1387,7 +1387,7 @@ InstaGib with the deterministic SuperShockRifle. The server traces every shot it
 * The rifle comes up after a spawn as the NewNetIG rifle does. It has no select or down time setting: `ShockSelectTime` and `ShockDownTime` are not read here.
 * The rifle has no range limit.
 * A shot from a player who just died only counts with [bEnableTrades](#benabletrades) on in its weapon settings. It is off by default.
-* A new server starts with ping compensation, [bEnableSubTickCompensation](#benablesubtickcompensation), [bEnablePreciseRewindTime](#benablepreciserewindtime) and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.
+* A new server starts with ping compensation and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.
 
 ## InstaGibPlus_11.NewNetSA
 
@@ -1395,7 +1395,7 @@ SniperArena, but with a ping compensated custom weapon.
 
 ## InstaGibPlus_11.NextSA
 
-SniperArena with the deterministic SniperRifle. The server traces every shot itself and rewinds the other players by the shooter's ping, or by [bEnablePreciseRewindTime](#benablepreciserewindtime) if that is on. The sniper settings apply, such as the reduced hitbox, the reload time and the damage. Everyone gets `SA_SniperRifle`. It is the IG+ sniper with its client-side shell case and muzzle flash always on, and with the same hit sound and hit marker at the click as NextIG.
+SniperArena with the deterministic SniperRifle. The server traces every shot itself and moves the other players back to what the shooter's screen showed (see [bEnablePingCompensation](#benablepingcompensation)). The sniper settings apply, such as the reduced hitbox, the reload time and the damage. Everyone gets `SA_SniperRifle`. It is the IG+ sniper with its client-side shell case and muzzle flash always on, and with the same hit sound and hit marker at the click as NextIG.
 
 * Load it in place of ST_Mutator, not together with it.
 * Its weapon settings are in the section `WeaponSettingsSniperArena`.
@@ -1405,7 +1405,7 @@ SniperArena with the deterministic SniperRifle. The server traces every shot its
 * Armor, belts, health packs and other pickups stay as the map made them, as in NewNetSA. A health pack heals what the map set. Its section has no pickup settings (`ArmorCharge`, `HealthPackHealingAmount` and the others), and the menu does not show them.
 * The rifle comes up after a spawn as the NewNetSA rifle does. It has no select or down time setting: `SniperSelectTime` and `SniperDownTime` are not read here.
 * A shot from a player who just died only counts with [bEnableTrades](#benabletrades) on in its weapon settings. It is off by default.
-* A new server starts with ping compensation, [bEnableSubTickCompensation](#benablesubtickcompensation), [bEnablePreciseRewindTime](#benablepreciserewindtime) and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.
+* A new server starts with ping compensation and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.
 
 ## InstaGibPlus_11.MutFraggerArena
 
@@ -2027,7 +2027,7 @@ It costs the server about 12 bytes for each other player in each tick.
 
 A client's Location Offset Fix setting has no effect while this is on. The picture is later than without it, by the delay above. A player whose packets stall is drawn standing still for a moment and then catches up. [bEnableAdaptiveBuffering](#benableadaptivebuffering) evens that out on the server.
 
-Keeps [bEnablePingCompensation](#benablepingcompensation) and [bEnablePreciseRewindTime](#benablepreciserewindtime) on while it is on, whatever the weapon settings say. Without them the server would test your shots against where the players are now. The ini keeps its own values. The Weapon Settings tab of the IG+ menu shows both ticked and grayed out. Not used with bEnableInputReplication. Players on lifts are drawn the same way, with no lift handling of their own yet.
+Keeps [bEnablePingCompensation](#benablepingcompensation) on while it is on, whatever the weapon settings say. Without them the server would test your shots against where the players are now. The ini keeps its own values. The Weapon Settings tab of the IG+ menu shows it ticked and grayed out. Not used with bEnableInputReplication. Players on lifts are drawn the same way, with no lift handling of their own yet.
 
 ## KillCamDelay
 
@@ -2204,7 +2204,7 @@ If True, the push from your own rockets, flak slug, shock ball, ripper alt-fire 
 
 If True, translocator throws, recalls and translocations follow the same rules on client and server at the same timestamp, and you see your own disc from the moment you throw it. The server's disc follows your own moves, so TranslocatorCompensatePing is not used while this is on. Requires bEnableInputReplication to be False.
 
-Your own disc stops on another player where your screen shows them. The server stops it at the same spot. Your game tests the disc's path against the players as your screen draws them. The server runs the same test against the players moved back to what your screen showed. Before, your disc could vanish for about a second as it reached a player. The server could also move it after it had stopped. The disc stops on each player once and then drops through them. The test is exact with [bEnablePreciseRewindTime](#benablepreciserewindtime). Without it the server moves the players back by your ping.
+Your own disc stops on another player where your screen shows them. The server stops it at the same spot. Your game tests the disc's path against the players as your screen draws them. The server runs the same test against the players moved back to what your screen showed. Before, your disc could vanish for about a second as it reached a player. The server could also move it after it had stopped. The disc stops on each player once and then drops through them. The test is exact with [bEnablePingCompensation](#benablepingcompensation) on.
 
 A translocate also telefrags the other players where your screen showed them. A player who runs away from you is ahead of what your screen shows. At 100 ping that is about 50 units. Stock only telefrags a body that overlaps yours on the server at that moment. So a translocate timed right on your screen landed behind a running player. The server now also tests the players moved back to what your screen showed, as it does for your hitscan shots. A player who stands at the spot right now is still telefragged too. Neither test telefrags a teammate, as in stock. Needs [bEnablePingCompensation](#benablepingcompensation).
 
@@ -2243,7 +2243,13 @@ The URL option `?IGPlusWeaponSettings=<section>` makes the mutator read another 
 **Type: bool**  
 **Default: True**  
 
-If enabled, hitscan shots are tested against where targets were on the shooter's screen: the server rewinds every player (and the lift they stand on) by the shooter's ping before tracing. Also switches supported ST_ weapons to the deterministic fire path (see Docs/DETERMINISTIC-NETCODE.md).
+If enabled, hitscan shots are tested against where targets were on the shooter's screen. The server moves every player (and the lift they stand on) back to that moment before it traces. Also switches supported ST_ weapons to the deterministic fire path (see Docs/DETERMINISTIC-NETCODE.md).
+
+Each hitscan shot tells the server which update the shooter's screen showed and how far past it the screen had moved the players. The server places every player the same way. Network jitter and ping changes then no longer move the rewound players. Your moves also carry this report while your own [deterministic translocator](#benabledeterministictranslocator) disc flies. The server uses it to stop the disc on players where you saw them. Shots traced later in the tick use the same report: minigun, pulse beam and enforcer refire. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them.
+
+The server doesn't use a report that differs from its own ping reading by more than [PreciseRewindTimeMaxDeviationMs](#preciserewindtimemaxdeviationms), or that is older than [PingCompensationMax](#pingcompensationmax) allows. Then it moves the players back by the lowest of its last four ping readings, plus the delays of Adaptive Buffering and Tick Interpolation. Reports are not used with bEnableInputReplication or for a player with Snapshot Interpolation. When the server moves players back by a ping, it places each one between the two saved positions around that moment, not at the older one.
+
+Older versions had these parts as their own settings, bEnableSubTickCompensation and bEnablePreciseRewindTime. A value left in the ini for either one does nothing.
 
 Always on while [bEnableTickInterpolation](#benabletickinterpolation) is on.
 
@@ -2267,33 +2273,13 @@ The server keeps each player's last 128 positions, one for every tick a move ran
 
 A shock combo on its owner's own ball goes off where the owner saw the ball. If this is above 0, the players it hurts are also rewound to where the owner saw them, by the owner's ping but at most this long (and never past PingCompensationMax), like a beam hit. 0 hurts them where they are now. Combos on someone else's ball are never rewound. Needs bEnablePingCompensation.
 
-## bEnableSubTickCompensation
-
-**Type: bool**  
-**Default: False** (True in NextIG and NextSA)  
-
-If enabled, the rewound position is interpolated between the two snapshots around the target time instead of snapping to the older one.
-
-Does nothing without [bEnablePingCompensation](#benablepingcompensation). The Weapon Settings tab grays it out then.
-
-## bEnablePreciseRewindTime
-
-**Type: bool**  
-**Default: False** (True in NextIG and NextSA)  
-
-If enabled, a hitscan shot rewinds the other players to the moment the shooter's screen showed them, instead of guessing from the shooter's average ping. Each shot tells the server which update the screen showed and how far past it the screen had moved the players. The server places every player the same way. Network jitter and ping changes then no longer move the rewound players. Your moves also carry this report while your own [deterministic translocator](#benabledeterministictranslocator) disc flies. The server uses it to stop the disc on players where you saw them. Shots traced later in the tick use the same report: minigun, pulse beam and enforcer refire. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them.
-
-Always on while [bEnableTickInterpolation](#benabletickinterpolation) is on. Otherwise it does nothing without [bEnablePingCompensation](#benablepingcompensation). The Weapon Settings tab grays it out then.
-
-The server doesn't use a report that differs from its own ping reading by more than PreciseRewindTimeMaxDeviationMs, or that is older than [PingCompensationMax](#pingcompensationmax) allows. Then it rewinds by the lowest of its last four ping readings, plus the delays of Adaptive Buffering and Tick Interpolation. Doesn't need bEnableSubTickCompensation. Needs bEnablePingCompensation and bEnableInputReplication off. Not used for a player with Snapshot Interpolation.
-
 ## PreciseRewindTimeMaxDeviationMs
 
 **Type: int**  
 **Default: 60**  
 **Unit: ms**  
 
-How far a shot's [bEnablePreciseRewindTime](#benablepreciserewindtime) rewind may differ from the server's own ping measurement before the server does not use it. Limits how much extra rewind a modified client can claim. A rewind longer than the ping is checked against the newest reading. A shorter one is checked against the lowest of the last four readings (two a second): a moment of lag raises the readings that follow it for a while, when the player's screen is already current again, and a younger picture gives a shot no advantage.
+How far the rewind a shot reports (see [bEnablePingCompensation](#benablepingcompensation)) may differ from the server's own ping measurement before the server does not use it. Limits how much extra rewind a modified client can claim. A rewind longer than the ping is checked against the newest reading. A shorter one is checked against the lowest of the last four readings (two a second): a moment of lag raises the readings that follow it for a while, when the player's screen is already current again, and a younger picture gives a shot no advantage.
 
 ## bEnableTrades
 
