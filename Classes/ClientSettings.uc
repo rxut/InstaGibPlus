@@ -77,7 +77,6 @@ var config bool   bDebugMovement;
 var config int    DebugDataDisplay; // while debug data is on: 0 only the log file, 1 also the console, 2 also the HUD
 var config EFlipAnimationFix FlipAnimationFix;
 var config bool   bEnableKillCam;
-var config float  FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
 var config bool   bCameraCorrectionSmoothing; // Apply corrections to the simulation at once, ease only the camera
 var config float  CameraCorrectionSmoothingTime; // Seconds until ~95% of a correction is gone from the camera
 var config bool   bSmoothLiftJump; // Leaving a moving lift: move to the server's spot at once, camera eased
@@ -634,7 +633,6 @@ simulated function string DumpSettings() {
 		GetSetting("DebugDataDisplay")$
 		GetSetting("FlipAnimationFix")$
 		GetSetting("bEnableKillCam")$
-		GetSetting("FakeCAPInterval")$
 		GetSetting("bCameraCorrectionSmoothing")$
 		GetSetting("CameraCorrectionSmoothingTime")$
 		GetSetting("bSmoothLiftJump")$
@@ -749,7 +747,6 @@ defaultproperties
 	DebugDataDisplay=0
 	FlipAnimationFix=FAF_FinishFlip
 	bEnableKillCam=False
-	FakeCAPInterval=0.1
 	bCameraCorrectionSmoothing=False
 	CameraCorrectionSmoothingTime=0.1
 	bSmoothLiftJump=True

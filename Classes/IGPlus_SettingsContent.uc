@@ -65,9 +65,6 @@ var localized string MoreInformationText;
 	var localized string DesiredNetspeedText;
 	var localized string DesiredNetspeedHelp;
 
-	var IGPlus_EditControl Edit_FakeCAPInterval;
-	var localized string FakeCAPIntervalText;
-	var localized string FakeCAPIntervalHelp;
 
 	var UWindowCheckbox Chk_CameraCorrectionSmoothing;
 	var localized string CameraCorrectionSmoothingText;
@@ -928,7 +925,6 @@ function Created() {
 	Edit_MinDodgeClickTime = CreateEdit(ECT_Real, MinDodgeClickTimeText, MinDodgeClickTimeHelp, , 64);
 	Edit_DesiredNetUpdateRate = CreateEdit(ECT_Integer, DesiredNetUpdateRateText, DesiredNetUpdateRateHelp, 4, 32);
 	Edit_DesiredNetspeed = CreateEdit(ECT_Integer, DesiredNetspeedText, DesiredNetspeedHelp, , 64);
-	Edit_FakeCAPInterval = CreateEdit(ECT_Real, FakeCAPIntervalText, FakeCAPIntervalHelp, , 64);
 	Chk_CameraCorrectionSmoothing = CreateCheckbox(CameraCorrectionSmoothingText, CameraCorrectionSmoothingHelp);
 	Edit_CameraCorrectionSmoothingTime = CreateEdit(ECT_Real, CameraCorrectionSmoothingTimeText, CameraCorrectionSmoothingTimeHelp, , 64);
 	Chk_SmoothLiftJump = CreateCheckbox(SmoothLiftJumpText, SmoothLiftJumpHelp);
@@ -1138,7 +1134,6 @@ function Load() {
 	Edit_MinDodgeClickTime.SetValue(string(Settings.MinDodgeClickTime));
 	Edit_DesiredNetUpdateRate.SetValue(string(int(Settings.DesiredNetUpdateRate)));
 	Edit_DesiredNetspeed.SetValue(string(Settings.DesiredNetspeed));
-	Edit_FakeCAPInterval.SetValue(string(Settings.FakeCAPInterval));
 	Chk_CameraCorrectionSmoothing.bChecked = Settings.bCameraCorrectionSmoothing;
 	Edit_CameraCorrectionSmoothingTime.SetValue(string(Settings.CameraCorrectionSmoothingTime));
 	Chk_SmoothLiftJump.bChecked = Settings.bSmoothLiftJump;
@@ -1391,7 +1386,6 @@ function Save() {
 	Settings.MinDodgeClickTime = float(Edit_MinDodgeClickTime.GetValue());
 	Settings.DesiredNetUpdateRate = int(Edit_DesiredNetUpdateRate.GetValue());
 	Settings.DesiredNetspeed = int(Edit_DesiredNetspeed.GetValue());
-	Settings.FakeCAPInterval = float(Edit_FakeCAPInterval.GetValue());
 	Settings.bCameraCorrectionSmoothing = Chk_CameraCorrectionSmoothing.bChecked;
 	Settings.CameraCorrectionSmoothingTime = FMax(0.0, float(Edit_CameraCorrectionSmoothingTime.GetValue()));
 	Settings.bSmoothLiftJump = Chk_SmoothLiftJump.bChecked;
@@ -1590,8 +1584,6 @@ defaultproperties
 		DesiredNetspeedText="Desired Netspeed"
 		DesiredNetspeedHelp="IG+ will try keeping your netspeed at this value, if the server allows"
 
-		FakeCAPIntervalText="Fake CAP Interval"
-		FakeCAPIntervalHelp="Server will acknowledge your movement every this many seconds"
 
 		CameraCorrectionSmoothingText="Camera-Only Correction Smoothing"
 		CameraCorrectionSmoothingHelp="Experimental. If checked, server corrections move you at once and only the camera eases to the new spot"
