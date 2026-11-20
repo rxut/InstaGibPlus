@@ -1001,6 +1001,26 @@ function TestHeadTween() {
 	LogTestResult(Ok && Tw.bCur && NearVec(Tw.Cur, B0), "HeadTween_no_blend_from_an_unknown_animation");
 }
 
+// The server's head tracker follows the animation as a client draws it (IGPlus_HeadTween.UpdateRaw).
+function TestHeadTweenFold() {
+	local IGPlus_HeadTween H;
+
+	H = new class'IGPlus_HeadTween';
+	H.UpdateRaw('StrafeR', 0.9, 0.0, 1.7);
+	H.UpdateRaw('StrafeL', -0.096, 1.7, 1.7);
+	LogTestResult(Abs(H.LastFrame - 0.904) < 0.001, "HeadTweenFold_strafe_flip_follows_the_drawn_stride");
+	H.UpdateRaw('StrafeL', -0.05, 1.7, 1.7);
+	LogTestResult(Abs(H.LastFrame - 0.95) < 0.001, "HeadTweenFold_stays_on_the_stride_through_the_blend");
+	H.UpdateRaw('StrafeL', 0.02, 1.7, 1.7);
+	LogTestResult(Abs(H.LastFrame - 0.02) < 0.001, "HeadTweenFold_the_real_animation_takes_over_after_the_blend");
+	H.UpdateRaw('StillFrRp', -0.1, 0.5, 0.0);
+	LogTestResult(H.LastFrame == 0.0, "HeadTweenFold_strafe_to_standing_follows_the_first_frame");
+	H = new class'IGPlus_HeadTween';
+	H.UpdateRaw('RunLgFr', 0.9, 0.0, 1.0);
+	H.UpdateRaw('BackRun', -0.1, 1.0, 1.0);
+	LogTestResult(Abs(H.LastFrame + 0.1) < 0.001, "HeadTweenFold_a_blend_that_does_not_fold_stays_a_blend");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
@@ -1022,6 +1042,7 @@ event int main(string Params) {
 	TestTweenPlaceholder();
 	TestMissedTween();
 	TestFoldSnap();
+	TestHeadTweenFold();
 	TestHeadHitbox();
 	TestHeadTween();
 	return 0;
