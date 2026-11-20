@@ -69,7 +69,6 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bNoOwnFootsteps](#bnoownfootsteps)
 1. [DesiredNetUpdateRate](#desirednetupdaterate)
 1. [DesiredNetspeed](#desirednetspeed)
-1. [FakeCAPInterval](#fakecapinterval)
 1. [bCameraCorrectionSmoothing](#bcameracorrectionsmoothing)
 1. [CameraCorrectionSmoothingTime](#cameracorrectionsmoothingtime)
 1. [bSmoothLiftJump](#bsmoothliftjump)
@@ -457,16 +456,6 @@ Players with high upload bandwidth can set this to a high value to lessen the im
 **Unit: B/s**  
 
 Always tries to keep your netspeed at the value of this variable, unless the server prevents this.
-
-## FakeCAPInterval
-**Type: float**  
-**Default: 0.1**  
-**Unit: s**  
-
-Tells the server to send an acknowledgement of your movement updates (see [DesiredNetUpdateRate](#desirednetupdaterate)) after this amount of time has passed since the last acknowledgement. This saves download bandwidth and lessens server load.
-
-Smaller values (closer to 0) result in acknowledgements being sent more frequently, negative values send an acknowledgement for every movement update.
-Higher values result in less frequent acknowledgements which can result in degraded client performance (FPS), or even crashes.
 
 ## bCameraCorrectionSmoothing
 **Type: bool**  

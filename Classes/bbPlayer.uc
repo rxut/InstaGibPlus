@@ -247,6 +247,8 @@ var bool zzbRepVRData;
 // player's own move timing (client timestamps) and records that, plus their
 // exact view, FOV and the delay they saw the others at. Playback (udemo
 // following a player) draws the camera from it.
+// The server acknowledges a client's moves at least this often (seconds), with a FakeCAP when no correction went out.
+const IGPLUS_FAKE_CAP_INTERVAL = 0.1;
 const IGPLUS_SD_RECSIZE = 48;
 const IGPLUS_SD_HISTSIZE = 128;
 // Server: the player's recent moves, by client timestamp.
@@ -416,7 +418,6 @@ var float IGPlus_PRTLagMs;           // server: now minus ViewTime, real ms
 var string IGPlus_PRTReason;         // server: why the report isn't used ("" = used)
 var float IGPlus_PRTServerPing;      // server: our own ping measurement (GETPING)
 var float IGPlus_PRTPingReadTS;
-var float FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
 var float ExtrapolationDelta;
 var bool bIs469Server;
 var bool bIs469Client;
@@ -1339,7 +1340,6 @@ replication
 	unreliable if ( Role == ROLE_AutonomousProxy )
 		bDrawDebugData,
 		bIsFinishedLoading,
-		FakeCAPInterval,
 		IGPlus_DamageEvent_ShowOnDeath,
 		IGPlus_EnableDualButtonSwitch,
 		IGPlus_ClientSnapInterpDelayMs,
@@ -2160,7 +2160,6 @@ event Possess()
 		// it does not. As a result, AutoDemo does not work on maps with ][ in
 		// their name.
 		SetPropertyText("PureLevel", GetPropertyText("xLevel"));
-		FakeCAPInterval = Settings.FakeCAPInterval;
 		IGPlus_DamageEvent_ShowOnDeath = Settings.bShowDeathReport;
 		ClientSetMusic( Level.Song, Level.SongSection, Level.CdTrack, MTRAN_Fade );
 
@@ -4648,7 +4647,7 @@ function IGPlus_ProcessRemoteMovement() {
 
 	IGPlus_SkipMovesUntilNextTick = false;
 
-	if (((ServerTimeStamp - LastCAPTime) / Level.TimeDilation) > FakeCAPInterval) {
+	if (((ServerTimeStamp - LastCAPTime) / Level.TimeDilation) > IGPLUS_FAKE_CAP_INTERVAL) {
 		xxFakeCAP(CurrentTimeStamp);
 		LastCAPTime = ServerTimeStamp;
 	}
@@ -23405,7 +23404,6 @@ defaultproperties
 	bIsFinishedLoading=False
 	bDrawDebugData=False
 	TimeBetweenNetUpdates=0.01
-	FakeCAPInterval=0.1
 	DodgeSpeedXY=600
 	DodgeSpeedZ=210
 	SecondaryDodgeSpeedXY=500
