@@ -1131,9 +1131,6 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
 	IGPlus_ServerSendSetting("JitterBoundingMode");
-	IGPlus_ServerSendSetting("bEnableSnapshotInterpolation");
-	IGPlus_ServerSendSetting("SnapshotInterpSendHz");
-	IGPlus_ServerSendSetting("SnapshotInterpRewindMs");
 	IGPlus_ServerSendSetting("bEnableWarpFix");
 	IGPlus_ServerSendSetting("bEnableAdaptiveBuffering");
 	IGPlus_ServerSendSetting("bEnableTickInterpolation");

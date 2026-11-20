@@ -133,7 +133,6 @@ var localized string MoreInformationText;
 	var UWindowLabelControl Lbl_LocationOffsetFixNote;
 	var localized string LocationOffsetFixNoteText;
 	var localized string LocationOffsetFixNoteHelp;
-	var localized string LocationOffsetFixNoteSIText;
 
 // NetStats
 	var UWindowLabelControl Lbl_NetStats;
@@ -1317,27 +1316,21 @@ function LockIfForced(UWindowCheckbox Chk, string Key, bbPlayer P, optional bool
 		IGPlus_Checkbox(Chk).SetDisabled(bForced);
 }
 
-// On a server that draws the other players with Tick Interpolation or
-// Snapshot Interpolation, Location Offset Fix is never used (bbPlayer.IGPlus_TI_Use,
-// IGPlus_ShouldUseSnapshotInterpForProxy): grayed out with the setting that
-// does it named under it. At most one of the two is active: Tick Interpolation
-// turns Snapshot Interpolation off (ServerSettings.SnapshotInterpolationActive).
-// Its value stays as it is. Runs before LoadForcedSettings.
+// On a server that draws the other players with Tick Interpolation, Location
+// Offset Fix is never used (bbPlayer.IGPlus_TI_Use): grayed out with a note
+// that says why. Its value stays as it is. Runs before LoadForcedSettings.
 function LoadOtherPlayersDrawing() {
 	local bbPlayer P;
 	local bool bOwnWay;
 
 	P = bbPlayer(GetPlayerOwner());
 	bOwnWay = P != None && P.Level.NetMode == NM_Client
-		&& (P.IGPlus_EnableTickInterp || P.IGPlus_EnableSnapshotInterpolation);
+		&& P.IGPlus_EnableTickInterp;
 	IGPlus_Checkbox(Chk_LocationOffsetFix).SetDisabled(bOwnWay);
 	Lbl_LocationOffsetFixNote.SetText("");
-	if (bOwnWay && P.IGPlus_EnableTickInterp) {
+	if (bOwnWay) {
 		Lbl_LocationOffsetFixNote.SetText(LocationOffsetFixNoteText);
 		Lbl_LocationOffsetFixNote.SetHelpText(LocationOffsetFixNoteText);
-	} else if (bOwnWay) {
-		Lbl_LocationOffsetFixNote.SetText(LocationOffsetFixNoteSIText);
-		Lbl_LocationOffsetFixNote.SetHelpText(LocationOffsetFixNoteSIText);
 	}
 }
 
@@ -1629,7 +1622,6 @@ defaultproperties
 		LocationOffsetFixHelp="If checked, tries to work around a UT bug that prevents synchronized player locations "
 		LocationOffsetFixNoteText="Grayed out: Tick Interpolation is on"
 		LocationOffsetFixNoteHelp="Grayed out: Tick Interpolation is on"
-		LocationOffsetFixNoteSIText="Grayed out: Snapshot Interpolation is on"
 
 	NetStatsText="NetStats"
 
