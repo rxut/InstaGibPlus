@@ -850,6 +850,45 @@ function TestTweenPlaceholder() {
 		"TweenPlaceholder_a_restarted_tween_a_restarted_loop_and_Breath1");
 }
 
+function plane SimAnimOf(float X, float Y, float Z, float W) {
+	local plane P;
+	P.X = X; P.Y = Y; P.Z = Z; P.W = W;
+	return P;
+}
+
+// A strafe flip with the same SimAnim (seen on a server: -1000, 8500, 1700, -9000).
+function TestMissedTween() {
+	local plane S;
+	S = SimAnimOf(-1000, 8500, 1700, -9000);
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('StrafeR', S, 'StrafeL', S, 0.91), "MissedTween_strafe_flip_with_the_same_SimAnim");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('StrafeR', S, 'StrafeL', SimAnimOf(-1000, 8500, 1700, -8999), 0.91) == false, "MissedTween_not_when_SimAnim_changed");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('StrafeR', S, 'StrafeL', S, -0.05) == false, "MissedTween_not_while_tweening");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('StrafeL', S, 'StrafeL', S, 0.91) == false, "MissedTween_not_on_the_same_sequence");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('StrafeR', SimAnimOf(1, 8500, 0, -9000), 'StrafeL', SimAnimOf(1, 8500, 0, -9000), 0.91) == false, "MissedTween_not_after_a_LoopAnim_with_no_tween");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('', S, 'StrafeL', S, 0.91) == false, "MissedTween_not_on_the_first_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('RunLG', S, 'RunLGFR', S, 0.5) == false, "MissedTween_not_on_the_PlayFiring_swap");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('RunSMFR', S, 'RunLG', S, 0.5) == false, "MissedTween_not_on_the_PlayWeaponSwitch_swap");
+	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('RunLGFR', S, 'RunLG', S, 0.5), "MissedTween_RunLGFR_to_RunLG_is_a_LoopAnim");
+}
+
+// Blends that fold the model are drawn as stock frames (IGPlus_FoldSnap, IGPlus_FoldStrideFrame).
+function TestFoldSnap() {
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeR', 'StrafeL') == 1, "FoldSnap_strafe_flip_keeps_the_stride");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('DuckWlkL', 'StrafeL') == 1, "FoldSnap_crouch_to_strafe_keeps_the_stride");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'StillFrRp') == 2, "FoldSnap_strafe_to_standing_draws_the_first_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('LandLgFr', 'StrafeR') == 1, "FoldSnap_landing_into_a_strafe");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'StrafeL') == 0, "FoldSnap_not_a_loop_restart");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('RunLgFr', 'BackRun') == 0, "FoldSnap_not_without_a_strafe");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'DodgeR') == 0, "FoldSnap_not_into_a_dodge");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'JumpLgFr') == 0, "FoldSnap_not_into_a_jump");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('BackRun', 'StrafeL') == 0, "FoldSnap_not_from_BackRun");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('', 'StrafeL') == 0, "FoldSnap_not_on_the_first_frame");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.096, 1.7, 1.7) - 0.904) < 0.001, "FoldStrideFrame_strafe_flip_draws_the_end_of_the_stride");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.5, 0.5, 1.7) - 0.3) < 0.001, "FoldStrideFrame_wraps_over_a_whole_loop");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.001, 1.7, 1.7) - 0.999) < 0.001, "FoldStrideFrame_meets_the_loop_start_at_the_end");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.1, 1.7, 0.0) == 0.0, "FoldStrideFrame_a_loop_standing_still_draws_its_first_frame");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
@@ -869,5 +908,7 @@ event int main(string Params) {
 	TestCrosshairShapes();
 	TestCrosshairLayerCanvas();
 	TestTweenPlaceholder();
+	TestMissedTween();
+	TestFoldSnap();
 	return 0;
 }
