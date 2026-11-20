@@ -3779,6 +3779,29 @@ simulated function bool IGPlus_InLiftExitWindow() {
 		&& Level.TimeSeconds - IGPlus_LiftExitTS < PlayerReplicationInfo.Ping * 0.001 * Level.TimeDilation + 0.3;
 }
 
+// Client, about to fire while a correction eases on the body (default
+// smoothing, IGPlus_AdjustLocationAlpha). The body is still on its way to
+// where the server has us, and a shot from there leaves from a spot the server
+// does not share: it fires from its own (IGPlus_ShotOriginIsNear allows about
+// 1.7 uu) and the two can disagree. In Logs 57 (Nov 19 2026) shots fired with
+// the two further apart disagreed 7% of the time, the others 0.3%. The rest of
+// the ease goes into the body at once, and the camera keeps where it was drawn
+// and eases out like after a push (IGPlus_PushCamOffset), so nothing on screen
+// jumps and Push-Safe Aim sends the shot through the crosshair point.
+simulated function IGPlus_ShotEaseToCamera() {
+	local vector Rest, Before;
+
+	Rest = IGPlus_AdjustLocationOffset * IGPlus_AdjustLocationAlpha;
+	IGPlus_AdjustLocationOffset = vect(0,0,0);
+	IGPlus_AdjustLocationAlpha = 0;
+	Before = Location;
+	MoveSmooth(Rest);
+	// What the body really moved: a wall can stop it short.
+	Rest = Location - Before;
+	IGPlus_PushCamOffset -= Rest;
+	IGPlus_CameraOffsetDrawn -= Rest;
+}
+
 // Push-Safe Aim, client: the view that sends a shot from the real position
 // through the point under the crosshair of the (offset) rendered camera. The
 // unshifted shot would hit D*Dir + Offset from the real origin.
@@ -11195,6 +11218,15 @@ function xxReplicateMove(
 		debugNewAccel = Normal(NewAccel);
 		debugPlayerLocation = Location;
 	}
+
+	// A shot while a correction still eases on the body (the default
+	// smoothing, not camera-only): the rest of the ease goes into the body now
+	// and the camera eases it out, so the shot leaves from where the server
+	// has us (IGPlus_ShotEaseToCamera).
+	if (IGPlus_AdjustLocationAlpha > 0.0
+		&& (bFire != 0 || bAltFire != 0 || bJustFired || bJustAltFired)
+		&& IGPlus_FindDetSupportedWeapon(Weapon) != none)
+		IGPlus_ShotEaseToCamera();
 
 	// Push-Safe Aim: while the camera still eases after a correction, shots
 	// leave from the real position; aim them through the crosshair point.
