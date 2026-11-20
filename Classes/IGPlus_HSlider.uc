@@ -1,6 +1,5 @@
 class IGPlus_HSlider extends UWindowHSliderControl;
 
-var UWindowDialogControl NextSettingControl;
 
 function float CheckValue(float Test) {
 	local float TempF;

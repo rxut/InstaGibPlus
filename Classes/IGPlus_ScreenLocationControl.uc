@@ -1,6 +1,5 @@
 class IGPlus_ScreenLocationControl extends UWindowDialogControl;
 
-var UWindowDialogControl NextSettingControl;
 
 var Region ActiveRegion;
 

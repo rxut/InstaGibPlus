@@ -1,6 +1,5 @@
 class IGPlus_EditControl extends UWindowEditControl;
 
-var UWindowDialogControl NextSettingControl;
 
 var float EditBoxMinWidth;
 var float EditBoxMaxWidth;

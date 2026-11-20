@@ -1,6 +1,5 @@
 class IGPlus_Label extends UWindowLabelControl;
 
-var UWindowDialogControl NextSettingControl;
 
 function MouseLeave()
 {

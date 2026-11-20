@@ -1,6 +1,5 @@
 class IGPlus_Checkbox extends UWindowCheckbox;
 
-var UWindowDialogControl NextSettingControl;
 var color EnabledTextColor;
 
 // Grayed out (UWindowCheckbox ignores clicks while disabled, and draws its

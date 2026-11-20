@@ -548,9 +548,6 @@ var float SeparatorSpacing;
 var float ControlOffset;
 var bool bLoadSucceeded;
 
-var UWindowDialogControl SettingControls;
-var UWindowDialogControl TemporaryControl;
-
 enum EEditControlType {
 	ECT_Text,
 	ECT_Integer,
@@ -578,20 +575,6 @@ function ClientSettings FindSettingsObject() {
 	return none;
 }
 
-function InsertControl(UWindowDialogControl C) {
-	if (SettingControls != none)
-		C.SetPropertyText("NextSettingControl", string(SettingControls));
-	SettingControls = C;
-}
-
-function UWindowDialogControl NextControl(UWindowDialogControl C) {
-	if (C == none)
-		return none;
-
-	SetPropertyText("TemporaryControl", C.GetPropertyText("NextSettingControl"));
-	return TemporaryControl;
-}
-
 function UWindowCheckbox CreateCheckbox(string T, optional string HT) {
 	local UWindowCheckbox Chk;
 
@@ -602,8 +585,6 @@ function UWindowCheckbox CreateCheckbox(string T, optional string HT) {
 	Chk.SetFont(F_Normal);
 	Chk.Align = TA_Left;
 	ControlOffset += LineSpacing;
-
-	InsertControl(Chk);
 
 	return Chk;
 }
@@ -647,8 +628,6 @@ function IGPlus_EditControl CreateEditResizable(
 			break;
 	}
 
-	InsertControl(Edit);
-
 	return Edit;
 }
 
@@ -675,8 +654,6 @@ function UWindowLabelControl CreateLabel(string T, optional string HT) {
 	Lbl.Align = TA_Left;
 	ControlOffset += LineSpacing;
 
-	InsertControl(Lbl);
-
 	return Lbl;
 }
 
@@ -692,8 +669,6 @@ function UWindowLabelControl CreateSeparator(string T, optional string HT) {
 	Lbl.SetFont(F_Normal);
 	Lbl.Align = TA_Left;
 	ControlOffset += LineSpacing;
-
-	InsertControl(Lbl);
 
 	return Lbl;
 }
@@ -720,8 +695,6 @@ function IGPlus_ComboBox CreateComboBoxResizable(
 	Cmb.EditBoxMaxWidth = EditBoxMaxWidth;
 	Cmb.EditBoxWidthFraction = EditBoxWidthFraction;
 	ControlOffset += LineSpacing;
-
-	InsertControl(Cmb);
 
 	return Cmb;
 }
@@ -757,8 +730,6 @@ function UWindowHSliderControl CreateSlider(
 	HSld.SliderWidth = SliderWidth;
 	ControlOffset += LineSpacing;
 
-	InsertControl(HSld);
-
 	return HSld;
 }
 
@@ -775,8 +746,6 @@ function IGPlus_ScreenLocationControl CreateScreenLocation(
 	SLoc.Align = TA_Left;
 	ControlOffset += Height+4;
 
-	InsertControl(Sloc);
-
 	return Sloc;
 }
 
@@ -791,8 +760,6 @@ function IGPlus_Button CreateButton(
 	Btn.SetHelpText(HT);
 	Btn.Align = TA_Left;
 	ControlOffset += LineSpacing;
-
-	InsertControl(Btn);
 
 	return Btn;
 }
@@ -1124,19 +1091,18 @@ function AfterCreate() {
 
 function BeforePaint(Canvas C, float X, float Y) {
 	local float WndWidth;
-	local UWindowDialogControl DC;
+	local UWindowWindow W;
 
 	super.BeforePaint(C, X, Y);
 
 	WndWidth = WinWidth - 2*PaddingX;
 
-	for (DC = SettingControls; DC != none; DC = NextControl(DC)) {
-		switch(DC.Class.Name) {
-			case 'IGPlus_Checkbox': DC.SetSize(WndWidth, 1); break;
-			default:
-				DC.SetSize(WndWidth, DC.WinHeight);
-				break;
-		}
+	// Every child of this page is a settings control.
+	for (W = FirstChildWindow; W != none; W = W.NextSiblingWindow) {
+		if (W.IsA('IGPlus_Checkbox'))
+			W.SetSize(WndWidth, 1);
+		else
+			W.SetSize(WndWidth, W.WinHeight);
 	}
 }
 
