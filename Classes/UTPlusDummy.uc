@@ -45,6 +45,11 @@ var IGPlus_WeaponImplementation WImp;
 
 var name  CurrentAnimSequence;
 var float CurrentAnimFrame;
+var vector CurrentHeadDrawn;
+var bool   bCurrentHeadDrawn;
+// Where Actual's head is drawn through tweens, kept every tick (shared with
+// bbPlayer.IGPlus_HeadTween for the live head check).
+var IGPlus_HeadTween HeadTween;
 
 // What our player stood on when this compensation started, before any lift
 // was moved back. Moving a lift takes everyone standing on it off it.
@@ -97,6 +102,9 @@ function FillData(UTPlusSnapshot D) {
 
 	D.AnimSequence = Actual.AnimSequence;
 	D.AnimFrame = Actual.AnimFrame;
+	D.bHeadDrawn = HeadTween != None && HeadTween.bCur;
+	if (HeadTween != None)
+		D.HeadDrawn = HeadTween.Cur;
 
 	if (Actual.IsA('PlayerPawn'))
 		D.ClientTimeStamp = PlayerPawn(Actual).CurrentTimeStamp;
@@ -121,6 +129,14 @@ event Tick(float DeltaTime) {
 		}
 		return;
 	}
+
+	// Every tick, before a snapshot is taken: the head blends through tweens.
+	if (HeadTween == None) {
+		HeadTween = new class'IGPlus_HeadTween';
+		if (bbPlayer(Actual) != None)
+			bbPlayer(Actual).IGPlus_HeadTween = HeadTween;
+	}
+	HeadTween.Update(Actual.AnimSequence, Actual.AnimFrame);
 
     PP = PlayerPawn(Actual);
 
@@ -485,6 +501,8 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 
 	CurrentAnimSequence = SnapA.AnimSequence;
 	CurrentAnimFrame = SnapA.AnimFrame;
+	CurrentHeadDrawn = SnapA.HeadDrawn;
+	bCurrentHeadDrawn = SnapA.bHeadDrawn;
 
 	SetCollision(SnapA.bSnapCollideActors, SnapA.bSnapBlockActors, SnapA.bSnapBlockPlayers);
 	bProjTarget = SnapA.bSnapProjTarget;

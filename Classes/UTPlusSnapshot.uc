@@ -28,6 +28,9 @@ var float ClientTimeStamp;
 
 var name  AnimSequence;
 var float AnimFrame;
+// The middle of the head as drawn (IGPlus_HeadTween.Cur), for the adaptive head hitbox.
+var vector HeadDrawn;
+var bool   bHeadDrawn;
 
 defaultproperties
 {
