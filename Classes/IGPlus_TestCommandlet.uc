@@ -803,6 +803,118 @@ function TestCrosshairShapes() {
 		"CrosshairShape_a_layer_and_the_dump_keep_shape_and_thickness");
 }
 
+function bool NearVec(vector A, vector B) {
+	return VSize(A - B) < 0.05;
+}
+
+function vector HeadAt(name Seq, float Frame) {
+	local vector C;
+
+	class'IGPlus_HeadHitbox'.static.DataCenter(Seq, Frame, C);
+	return C;
+}
+
+function TestHeadHitbox() {
+	local class<IGPlus_HeadHitbox> H;
+	local vector C, O;
+	local rotator R;
+
+	H = class'IGPlus_HeadHitbox';
+	LogTestResult(H.static.DataCenter('RunLg', 0.0, C) && NearVec(C, vect(5.12,-0.18,38.70)),
+		"HeadHitbox_run_first_frame_is_the_table_value");
+	LogTestResult(H.static.DataCenter('RunLg', 0.05, C) && NearVec(C, vect(5.195,-0.945,37.435)),
+		"HeadHitbox_halfway_between_two_frames_is_halfway_between_their_heads");
+	LogTestResult(H.static.DataCenter('RunLg', -0.2, C) && NearVec(C, vect(5.12,-0.18,38.70)),
+		"HeadHitbox_a_tween_blends_into_the_first_frame");
+	LogTestResult(H.static.DataCenter('CockGun', 0.0, C) && NearVec(C, vect(1.38,0.98,27.83)),
+		"HeadHitbox_an_animation_without_data_uses_a_similar_one");
+	LogTestResult(H.static.DataCenter('NoSuchAnim', 0.0, C) == false,
+		"HeadHitbox_no_data_for_other_animations");
+
+	R.Pitch = 3072;
+	O = H.static.HeadOffset(R, 'RunLg', 0.0, 31.5, 100.0);
+	C = vect(5.12,-0.18,38.70) >> R;
+	LogTestResult(NearVec(O, C * vect(1,1,0) + vect(0,0,31.5)), "HeadHitbox_the_head_moves_with_the_lean_but_keeps_its_height");
+	O = H.static.HeadOffset(rot(0,0,0), 'Breath1', 0.0, 31.5, 6.0);
+	LogTestResult(O.Z == 31.5, "HeadHitbox_the_top_of_the_head_stays_where_it_was");
+	O = H.static.HeadOffset(rot(0,0,0), 'StrafeL', 0.0, 31.5, 6.0);
+	LogTestResult(Abs(VSize(O * vect(1,1,0)) - 6.0) < 0.01, "HeadHitbox_the_head_stays_inside_the_collision_cylinder");
+	R = rot(0,16384,0);
+	R.Pitch = 3000;
+	O = H.static.HeadOffset(R, 'NoSuchAnim', 0.0, 31.5, 6.0);
+	LogTestResult(NearVec(O, vect(0,0,31.5)), "HeadHitbox_unknown_animations_keep_the_old_place");
+	O = H.static.HeadOffset(R, 'StrafeL', 0.0, 31.5, 100.0);
+	LogTestResult(O.X > 5.0, "HeadHitbox_the_head_turns_with_the_player");
+	O = H.static.HeadOffset(rot(0,0,0), 'RunLg', 0.0, 31.5, 100.0, true, vect(1,2,30));
+	LogTestResult(NearVec(O, vect(1,2,31.5)), "HeadHitbox_the_drawn_head_is_used_when_known");
+}
+
+function TestHeadTween() {
+	local IGPlus_HeadTween Tw;
+	local vector R04, B0, D0, Mid, Mid2;
+	local bool Ok;
+
+	R04 = HeadAt('RunLg', 0.4);
+	B0 = HeadAt('Breath1', 0.0);
+	D0 = HeadAt('DuckWlkL', 0.0);
+
+	// A tween starts from the head as drawn last.
+	Tw = new class'IGPlus_HeadTween';
+	Tw.Update('RunLg', 0.3);
+	Tw.Update('RunLg', 0.4);
+	LogTestResult(Tw.bCur && NearVec(Tw.Cur, R04), "HeadTween_outside_a_tween_the_head_is_the_frame");
+	Tw.Update('Breath1', -0.1);
+	Ok = NearVec(Tw.Cur, R04);
+	Tw.Update('Breath1', -0.05);
+	Mid = B0 + (R04 - B0) * 0.5;
+	LogTestResult(Ok && NearVec(Tw.Cur, Mid), "HeadTween_tween_start_blends_from_the_drawn_head");
+
+	// A new tween half way through that one starts from the half-blended head.
+	Tw.Update('DuckWlkL', -0.2);
+	Ok = NearVec(Tw.Cur, Mid);
+	Tw.Update('DuckWlkL', -0.1);
+	Mid2 = D0 + (Mid - D0) * 0.5;
+	LogTestResult(Ok && NearVec(Tw.Cur, Mid2), "HeadTween_chained_tween_starts_from_the_blend");
+
+	// The same animation's tween restarted half way (AnimFrame goes back) goes on from where it was:
+	// still for two frames (the placeholder frame, then the tween's own first frame), then on.
+	Tw.Update('DuckWlkL', -0.3);
+	Ok = NearVec(Tw.Cur, Mid2);
+	Tw.Update('DuckWlkL', -0.15);
+	Ok = Ok && NearVec(Tw.Cur, Mid2);
+	Tw.Update('DuckWlkL', -0.075);
+	LogTestResult(Ok && NearVec(Tw.Cur, D0 + (Mid - D0) * 0.25), "HeadTween_same_animation_tween_restart");
+
+	// The tween ends on the animation's own frames.
+	Tw.Update('DuckWlkL', 0.1);
+	LogTestResult(NearVec(Tw.Cur, HeadAt('DuckWlkL', 0.1)), "HeadTween_after_the_tween_the_head_is_the_frame");
+
+	// A tween back to RunLg after a swap to RunLgFr gets the placeholder frame: still for two
+	// frames, then on.
+	Tw = new class'IGPlus_HeadTween';
+	Tw.Update('RunLg', 0.5);
+	Tw.Update('RunLg', -0.1);
+	Tw.Update('RunLg', -0.05);
+	Tw.Update('RunLg', -0.001);
+	Tw.Update('RunLg', 0.1);
+	Tw.Update('RunLgFr', 0.6);
+	Mid = HeadAt('RunLgFr', 0.6);
+	Tw.Update('RunLg', -0.1);
+	Ok = NearVec(Tw.Cur, Mid);
+	Tw.Update('RunLg', -0.08);
+	Ok = Ok && NearVec(Tw.Cur, Mid);
+	Tw.Update('RunLg', -0.04);
+	LogTestResult(Ok && NearVec(Tw.Cur, HeadAt('RunLg', 0.0) + (Mid - HeadAt('RunLg', 0.0)) * 0.5),
+		"HeadTween_same_sequence_tween_blends_after_a_placeholder");
+
+	// Unknown animations have no head, and a tween from one starts at the new animation's first frame.
+	Tw = new class'IGPlus_HeadTween';
+	Tw.Update('NoSuchAnim', 0.3);
+	Ok = Tw.bCur == false;
+	Tw.Update('Breath1', -0.1);
+	LogTestResult(Ok && Tw.bCur && NearVec(Tw.Cur, B0), "HeadTween_no_blend_from_an_unknown_animation");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
@@ -821,5 +933,7 @@ event int main(string Params) {
 	TestCrosshairPresets();
 	TestCrosshairShapes();
 	TestCrosshairLayerCanvas();
+	TestHeadHitbox();
+	TestHeadTween();
 	return 0;
 }

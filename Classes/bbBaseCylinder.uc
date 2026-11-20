@@ -3,6 +3,7 @@
 var Pawn PawnRef;
 var PlayerPawn CachedLocalPlayerPawn;
 var bool bLocalPlayerPawnCached;
+var bool bRegistered;   // with the local player, to be placed after the players are drawn
 
 var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
@@ -66,6 +67,11 @@ simulated event Tick(float DeltaTime) {
 	local bool bHideThisCylinder;
 
 	Super.Tick(DeltaTime);
+	// On a client it is placed again where the model is drawn (bbPlayer.IGPlus_LocationOffsetFix_AfterAll).
+	if (bRegistered == false && Role < ROLE_Authority && bbPlayer(GetLocalPlayerPawn()) != none) {
+		bbPlayer(GetLocalPlayerPawn()).IGPlus_AddDebugHitbox(self);
+		bRegistered = true;
+	}
 
 	if (PawnRef == none || PawnRef.bHidden || WSettings == none || PawnRef.PlayerReplicationInfo == none || PawnRef.PlayerReplicationInfo.bIsSpectator) {
 		bHidden = true;
@@ -96,7 +102,8 @@ simulated event Tick(float DeltaTime) {
 		}
 
 		if (!bHidden) {
-			SetLocation(PawnRef.Location);
+			// The full hitbox is the collision cylinder.
+			class'IGPlus_HitboxCylinderMesh'.static.Place(self, PawnRef.Location, PawnRef.CollisionRadius, PawnRef.CollisionHeight);
 			NewRot = rot(0,0,0);
 			NewRot.Yaw = PawnRef.Rotation.Yaw;
 			SetRotation(NewRot);
@@ -134,9 +141,10 @@ simulated event PostNetBeginPlay() {
 defaultproperties
 {
 	DrawType=DT_Mesh
-	Mesh=Mesh'IGPlus_BaseCylinder'
+	Mesh=Mesh'IGPlus_HitboxCylinder'
+	AnimSequence=All
 	Texture=Texture'CylinderRed'
-	DrawScale=0.625
+	DrawScale=1.0
 	bUnlit=True
 	RemoteRole=ROLE_SimulatedProxy
     bAlwaysRelevant=true

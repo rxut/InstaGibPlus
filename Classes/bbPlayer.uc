@@ -210,6 +210,15 @@ var Weapon zzPendingWeapon;
 var float LastCAPTime; // ServerTime when last CAP was sent
 var decoration carriedFlag;
 var WeaponSettingsRepl WSettings;
+// Where this player's head is drawn through animation tweens (adaptive head
+// hitbox). The server's UTPlusDummy keeps it, on clients
+// IGPlus_LocationOffsetFix_AfterAll does for the other players, from the
+// animation as drawn.
+var IGPlus_HeadTween IGPlus_HeadTween;
+// Client: the hitbox debug cylinders (bb*Cylinder). They are placed again
+// right after the other players are drawn into place and animated
+// (IGPlus_LocationOffsetFix_AfterAll), so they sit on the model as drawn.
+var Actor IGPlus_DbgHitbox[64];
 
 // HUD stuff
 var Mutator	zzHudMutes[50];		// Accepted Hud Mutators
@@ -8309,6 +8318,18 @@ simulated function IGPlus_PRTRuleUndo() {
 	bCollideWorld = true;
 }
 
+// Client: a hitbox debug cylinder to place again after the players are drawn
+// (IGPlus_LocationOffsetFix_AfterAll). It takes the slot of one that is gone.
+simulated function IGPlus_AddDebugHitbox(Actor A) {
+	local int i;
+
+	for (i = 0; i < ArrayCount(IGPlus_DbgHitbox); i++)
+		if (IGPlus_DbgHitbox[i] == none || IGPlus_DbgHitbox[i].bDeleteMe) {
+			IGPlus_DbgHitbox[i] = A;
+			return;
+		}
+}
+
 // Client: does the server place players by our Precise Rewind Time report
 // for the shot we are about to trace? The same conditions as the report
 // itself (xxReplicateMove, SendSavedMove).
@@ -16299,6 +16320,10 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 				P.IGPlus_TI_After(DeltaTime);
 			else
 				P.IGPlus_LocationOffsetFix_After(DeltaTime);
+			// The head through tweens, from the animation as this frame draws it.
+			if (P.IGPlus_HeadTween == none)
+				P.IGPlus_HeadTween = new class'IGPlus_HeadTween';
+			P.IGPlus_HeadTween.Update(P.AnimSequence, P.AnimFrame);
 		}
 	}
 
@@ -16306,6 +16331,11 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 		D.bCollideWorld = false;
 		D.SetCollision(false, false, false);
 	}
+
+	// The hitbox debug view, now that the players stand and move as drawn.
+	for (i = 0; i < ArrayCount(IGPlus_DbgHitbox); i++)
+		if (IGPlus_DbgHitbox[i] != none && IGPlus_DbgHitbox[i].bDeleteMe == false)
+			IGPlus_DbgHitbox[i].Tick(0.0);
 
 	// Everyone stands where they are drawn: our own deterministic disc meets them there.
 	if (IGPlus_DetTloc != none && IGPlus_DetTloc.bDeleteMe == false)

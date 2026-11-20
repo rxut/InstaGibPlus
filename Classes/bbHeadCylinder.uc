@@ -3,8 +3,10 @@
 var Pawn PawnRef;
 var PlayerPawn CachedLocalPlayerPawn;
 var bool bLocalPlayerPawnCached;
+var bool bRegistered;   // with the local player, to be placed after the players are drawn
 
 var IGPlus_WeaponImplementation WImp;
+var IGPlus_WeaponImplementationBase WImpBase;   // client too: WImp is only found on the server
 var WeaponSettingsRepl WSettings;
 
 replication
@@ -38,6 +40,13 @@ function PostBeginPlay()
 		break;		// Find master :D
 }
 
+simulated function IGPlus_WeaponImplementationBase FindWImpBase() {
+	if (WImpBase == none)
+		foreach AllActors(class'IGPlus_WeaponImplementationBase', WImpBase)
+			break;
+	return WImpBase;
+}
+
 simulated function PlayerPawn GetLocalPlayerPawn()
 {
 	local PlayerPawn P;
@@ -64,11 +73,15 @@ simulated event Tick(float DeltaTime) {
 	local rotator NewRot;
 	local PlayerPawn LocalP;
 	local bool bShowThisCylinder;
-	local vector BaseOffset, WorldOffset, FinalLocation;
-	local vector X, Y, Z;
-	local name PawnAnimSequence;
+	local vector BodyCenter, HeadCenter;
+	local float BodyHH, HeadHH;
 
 	Super.Tick(DeltaTime);
+	// On a client it is placed again where the model is drawn (bbPlayer.IGPlus_LocationOffsetFix_AfterAll).
+	if (bRegistered == false && Role < ROLE_Authority && bbPlayer(GetLocalPlayerPawn()) != none) {
+		bbPlayer(GetLocalPlayerPawn()).IGPlus_AddDebugHitbox(self);
+		bRegistered = true;
+	}
 
 	if (PawnRef == none || PawnRef.bHidden || WSettings == none || PawnRef.PlayerReplicationInfo == none || PawnRef.PlayerReplicationInfo.bIsSpectator) {
 		bHidden = true;
@@ -99,38 +112,18 @@ simulated event Tick(float DeltaTime) {
 		}
 
 		if (!bHidden) {
-			FinalLocation = PawnRef.Location;
-
-			// Only calculate and apply animation offset if the setting is enabled
-			if (WSettings.bEnableAnimationAdaptiveHeadHitbox) {
-				PawnAnimSequence = PawnRef.AnimSequence;
-				switch (PawnAnimSequence) {
-					case 'Breath1L': case 'Breath2L': case 'Breath1': case 'Breath2': BaseOffset = vect(2, 0, 0); break;
-					case 'CockGun': case 'CockGunL': BaseOffset = vect(-2.5, 0, 0); break;
-					case 'StrafeL': BaseOffset = vect(0, -3.5, 0); break;
-					case 'StrafeR': BaseOffset = vect(0, 3.5, 0); break;
-					case 'RunLg': case 'RunSm': case 'RunLgFr': case 'RunSmFr': case 'WalkLg': case 'WalkSm': case 'WalkLgFr': case 'WalkSmFr': BaseOffset = vect(3.5, 0, 0); break;
-					case 'BackRun': BaseOffset = vect(-2.5, 0, 0); break;
-					case 'DodgeL': BaseOffset = vect(0, -3, 0); break;
-					case 'DodgeR': BaseOffset = vect(0, 3, 0); break;
-					case 'DodgeF': BaseOffset = vect(2.5, 0, 0); break;
-					case 'DodgeB': BaseOffset = vect(-4, 0, 0); break;
-					case 'AimDnLg': BaseOffset = vect(6, 0, 0); break;
-					case 'AimDnSm': BaseOffset = vect(6, 0, 0); break;
-					case 'AimUpLg': BaseOffset = vect(-6, 0, 0); break;
-					case 'AimUpSm': BaseOffset = vect(-6, 0, 0); break;
-					default: BaseOffset = vect(0,0,0); break;
-				}
-				if (Abs(BaseOffset.X) > 0.1 || Abs(BaseOffset.Y) > 0.1 || Abs(BaseOffset.Z) > 0.1) {
-					// Yaw only, as the hit checks turn it.
-					NewRot = rot(0,0,0);
-					NewRot.Yaw = PawnRef.Rotation.Yaw;
-					GetAxes(NewRot, X, Y, Z);
-					WorldOffset = BaseOffset.X * X + BaseOffset.Y * Y;
-					FinalLocation += WorldOffset; // Add the calculated world offset
-				}
+			// Where and how big the hit checks make the head: HeadRadius,
+			// HeadHalfHeight, the adaptive head and crouching.
+			if (FindWImpBase() == none) {
+				bHidden = true;
+				return;
 			}
-			SetLocation(FinalLocation);
+			WImpBase.ReducedHitboxCylinders(PawnRef, BodyCenter, BodyHH, HeadCenter, HeadHH);
+			if (HeadHH <= 0.0) {
+				bHidden = true;
+				return;
+			}
+			class'IGPlus_HitboxCylinderMesh'.static.Place(self, HeadCenter, WSettings.HeadRadius, HeadHH);
 			
 			NewRot = rot(0,0,0);
 			NewRot.Yaw = PawnRef.Rotation.Yaw;
@@ -169,9 +162,10 @@ simulated event PostNetBeginPlay() {
 defaultproperties
 {
 	DrawType=DT_Mesh
-	Mesh=Mesh'IGPlus_HeadCylinder'
+	Mesh=Mesh'IGPlus_HitboxCylinder'
+	AnimSequence=All
 	Texture=Texture'CylinderWhite'
-	DrawScale=0.625
+	DrawScale=1.0
 	bUnlit=True
 	RemoteRole=ROLE_SimulatedProxy
     bAlwaysRelevant=true

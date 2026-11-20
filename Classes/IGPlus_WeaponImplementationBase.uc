@@ -634,18 +634,6 @@ final simulated function float GetBodyOffsetZ(float CollHeight, float DuckFrac) 
 	);
 }
 
-simulated function vector GetAnimationHeadOffset(Pawn P) {
-	local vector BaseOffset;
-	local rotator YawRot;
-	if (P == none)
-		return vect(0,0,0);
-	BaseOffset = GetAnimationHeadOffsetFromState(P.class.name, P.AnimSequence, P.AnimFrame);
-	// Yaw only, as the rewound head (CheckHeadShotCompensated) turns it.
-	// Pitch or roll would lift or drop the head off the body.
-	YawRot.Yaw = P.Rotation.Yaw;
-	return (BaseOffset * vect(1,1,0)) >> YawRot;
-}
-
 final simulated function bool CheckHitboxInternal(
 	vector HitLocation,
 	vector Direction,
@@ -689,7 +677,7 @@ final simulated function bool CheckHitboxInternal(
 simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Direction) {
 	local float DuckFrac;
 	local float BodyOffsetZ, BodyHalfHeight, HeadHH;
-	local vector AnimOffset, HitboxCenter;
+	local vector HitboxCenter;
 
 	if (P == none)
 		return false;
@@ -705,15 +693,52 @@ simulated function bool CheckHeadShot(Pawn P, vector HitLocation, vector Directi
 	if (HeadHH <= 0.0)
 		return false;
 
-	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox)
-		AnimOffset = GetAnimationHeadOffset(P);
-	else
-		AnimOffset = vect(0,0,0);
-
-	HitboxCenter = P.Location + AnimOffset + vect(0,0,1) * (BodyOffsetZ + BodyHalfHeight + HeadHH);
+	HitboxCenter = P.Location + GetPawnHeadOffset(P, BodyOffsetZ + BodyHalfHeight + HeadHH);
 
 	return CheckHitboxInternal(HitLocation, Direction, HitboxCenter,
 		WSettingsRepl.HeadRadius, HeadHH, P.CollisionRadius + P.CollisionHeight);
+}
+
+// The middle of the head hitbox relative to the pawn. StandZ is its height,
+// which the adaptive head keeps. The head stays inside the collision cylinder
+// of radius CollRadius. With bDrawn, Drawn is the middle of the head as the
+// model is drawn (IGPlus_HeadTween.Cur), blended through tweens.
+simulated function vector GetHeadOffset(rotator Rot, name Seq, float Frame, bool bDrawn, vector Drawn,
+	float StandZ, float CollRadius
+) {
+	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox == false)
+		return vect(0,0,1) * StandZ;
+	return class'IGPlus_HeadHitbox'.static.HeadOffset(Rot, Seq, Frame, StandZ,
+		CollRadius - WSettingsRepl.HeadRadius, bDrawn, Drawn);
+}
+
+// The head offset of P as it stands now. A bbPlayer follows its tweens
+// (IGPlus_HeadTween: on a client from the animation as drawn, on the server
+// from UTPlusDummy). Other pawns use the animation's own frame.
+simulated function vector GetPawnHeadOffset(Pawn P, float StandZ) {
+	local IGPlus_HeadTween Tw;
+
+	if (bbPlayer(P) != none)
+		Tw = bbPlayer(P).IGPlus_HeadTween;
+	if (Tw != none)
+		return GetHeadOffset(P.Rotation, P.AnimSequence, P.AnimFrame, Tw.bCur, Tw.Cur, StandZ, P.CollisionRadius);
+	return GetHeadOffset(P.Rotation, P.AnimSequence, P.AnimFrame, false, vect(0,0,0), StandZ, P.CollisionRadius);
+}
+
+// The reduced hitbox's two cylinders around P as CheckBodyShot and
+// CheckHeadShot place them, for the hitbox debug view. HeadHH is 0 when P is
+// fully crouched: then there is no head cylinder.
+simulated function ReducedHitboxCylinders(Pawn P, out vector BodyCenter, out float BodyHH,
+	out vector HeadCenter, out float HeadHH
+) {
+	local float DuckFrac, BodyOffsetZ;
+
+	DuckFrac = GetPawnDuckFraction(P);
+	BodyOffsetZ = GetBodyOffsetZ(P.CollisionHeight, DuckFrac);
+	BodyHH = GetBodyHalfHeight(P.CollisionHeight, DuckFrac);
+	HeadHH = GetHeadHalfHeight(DuckFrac);
+	BodyCenter = P.Location + vect(0,0,1) * BodyOffsetZ;
+	HeadCenter = P.Location + GetPawnHeadOffset(P, BodyOffsetZ + BodyHH + HeadHH);
 }
 
 simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Direction, optional vector PositionOverride) {
@@ -737,93 +762,10 @@ simulated function bool CheckBodyShot(Pawn P, vector HitLocation, vector Directi
 		P.CollisionRadius, HalfHeight, P.CollisionRadius + P.CollisionHeight);
 }
 
-simulated function vector GetAnimationHeadOffsetFromState(name PClassName, name AnimSequence, float AnimFrame) {
-	local vector BaseOffset;
-
-	// Potential to use the class name and animframe to improve offset accuracy
-
-	switch (AnimSequence) {
-		// Breathing standing still
-		case 'Breath1L':
-        case 'Breath2L':
-        case 'Breath1':
-        case 'Breath2':
-             BaseOffset = vect(2, 0, 0); // Move hitbox forward (relative X)
-             break;
-
-		// Cocking gun standing still
-		case 'CockGun':
-        case 'CockGunL':
-             BaseOffset = vect(-2.5, 0, 0); // Move hitbox backward (relative X)
-             break;
-
-		// Strafing
-		case 'StrafeL':
-			BaseOffset = vect(0, -3.5, 0); // Move hitbox left (relative Y)
-			break;
-		case 'StrafeR':
-			BaseOffset = vect(0, 3.5, 0);  // Move hitbox right (relative Y)
-			break;
-
-		// Forward movement
-		case 'RunLg':
-		case 'RunSm':
-		case 'RunLgFr':
-		case 'RunSmFr':
-		case 'WalkLg':
-		case 'WalkSm':
-		case 'WalkLgFr':
-		case 'WalkSmFr':
-			BaseOffset = vect(3.5, 0, 0); // Move hitbox slightly forward (relative X)
-			break;
-
-		// Backwards movement
-		case 'BackRun':
-			BaseOffset = vect(-2.5, 0, 0); // Move hitbox slightly backward (relative X)
-			break;
-
-		// Dodging
-		case 'DodgeL':
-				BaseOffset = vect(0, -3, 0);
-				break;
-		case 'DodgeR':
-				BaseOffset = vect(0, 3, 0);
-				break;
-		case 'DodgeF':
-				BaseOffset = vect(2.5, 0, 0);
-				break;
-		case 'DodgeB':
-				BaseOffset = vect(-4, 0, 0);
-				break;
-
-		case 'AimDnLg':
-			BaseOffset = vect(6, 0, 0); // Move hitbox forward
-			break;
-		case 'AimDnSm':
-			BaseOffset = vect(6, 0, 0); // Move hitbox forward
-			break;
-		case 'AimUpLg':
-			BaseOffset = vect(-6, 0, 0); // Move hitbox backward
-			break;
-		case 'AimUpSm':
-			BaseOffset = vect(-6, 0, 0); // Move hitbox backward
-			break;
-
-		default:
-			BaseOffset = vect(0,0,0);
-			break;
-	}
-
-	return BaseOffset;
-}
-
 simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocation, vector Direction) {
 	local float DuckFrac;
 	local float BodyOffsetZ, BodyHalfHeight, HeadHH;
-	local vector AnimOffset, HorizontalAnimOffset;
-	local vector FinalHeadCenter;
-	local vector X, Y, Z;
-	local rotator PawnYawRot;
+	local vector HitboxCenter;
 
 	if (D == none || D.Actual == none)
 		return false;
@@ -836,26 +778,12 @@ simulated function bool CheckHeadShotCompensated(UTPlusDummy D, vector HitLocati
 	if (HeadHH <= 0.0)
 		return false;
 
-	FinalHeadCenter = D.Location;
+	// The head as it was drawn at that moment, through tweens too
+	// (UTPlusSnapshot.HeadDrawn).
+	HitboxCenter = D.Location + GetHeadOffset(D.Rotation, D.CurrentAnimSequence, D.CurrentAnimFrame,
+		D.bCurrentHeadDrawn, D.CurrentHeadDrawn, BodyOffsetZ + BodyHalfHeight + HeadHH, D.CollisionRadius);
 
-	if (WSettingsRepl.bEnableAnimationAdaptiveHeadHitbox) {
-		AnimOffset = GetAnimationHeadOffsetFromState(D.Actual.class.name, D.CurrentAnimSequence, D.CurrentAnimFrame);
-
-		if (Abs(AnimOffset.X) > 0.1 || Abs(AnimOffset.Y) > 0.1 || Abs(AnimOffset.Z) > 0.1) {
-			HorizontalAnimOffset = AnimOffset * vect(1,1,0);
-
-			PawnYawRot = D.Rotation;
-			PawnYawRot.Pitch = 0;
-			PawnYawRot.Roll = 0;
-
-			GetAxes(PawnYawRot, X, Y, Z);
-			FinalHeadCenter += (HorizontalAnimOffset.X * X) + (HorizontalAnimOffset.Y * Y);
-		}
-	}
-
-	FinalHeadCenter += vect(0,0,1) * (BodyOffsetZ + BodyHalfHeight + HeadHH);
-
-	return CheckHitboxInternal(HitLocation, Direction, FinalHeadCenter,
+	return CheckHitboxInternal(HitLocation, Direction, HitboxCenter,
 		WSettingsRepl.HeadRadius, HeadHH, D.CollisionRadius + D.CollisionHeight);
 }
 
