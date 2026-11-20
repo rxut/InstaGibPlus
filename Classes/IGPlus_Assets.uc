@@ -95,10 +95,11 @@ static function RepairDefaults(Actor Context) {
 		}
 	}
 
-	// Hitbox cylinders
-	Repaired += RepairCylinder(Context, class'bbBaseCylinder', "IGPlus_BaseCylinder", "CylinderRed");
-	Repaired += RepairCylinder(Context, class'bbBaseCylinderReduced', "IGPlus_BaseCylinderReduced", "CylinderRed");
-	Repaired += RepairCylinder(Context, class'bbHeadCylinder', "IGPlus_HeadCylinder", "CylinderWhite");
+	// Hitbox debug cylinders. Their mesh is in this package
+	// (IGPlus_HitboxCylinderMesh), only the textures come from the assets.
+	Repaired += RepairCylinderTexture(Context, class'bbBaseCylinder', "CylinderRed");
+	Repaired += RepairCylinderTexture(Context, class'bbBaseCylinderReduced', "CylinderRed");
+	Repaired += RepairCylinderTexture(Context, class'bbHeadCylinder', "CylinderWhite");
 
 	// Hit sounds (copied into each ClientSettings when it is made)
 	O = Snd(class'ClientSettings'.default.DefaultHitSound[0], "HitSound");
@@ -179,30 +180,17 @@ static function int RepairPawnMesh(Actor Context, class<Pawn> PawnClass, string 
 	return 1;
 }
 
-static function int RepairCylinder(Actor Context, class<Actor> CylClass, string MeshName, string TexName) {
-	local Mesh OldMesh, M;
+static function int RepairCylinderTexture(Actor Context, class<Actor> CylClass, string TexName) {
 	local Texture OldTex, T;
 	local Actor A;
-	local int Repaired;
 
-	OldMesh = CylClass.default.Mesh;
 	OldTex = CylClass.default.Texture;
-	M = Msh(OldMesh, MeshName);
 	T = Tex(OldTex, TexName);
-	if (M != none && M != OldMesh) {
-		CylClass.default.Mesh = M;
-		Repaired++;
-	}
-	if (T != none && T != OldTex) {
-		CylClass.default.Texture = T;
-		Repaired++;
-	}
-	if (Repaired > 0)
-		foreach Context.AllActors(CylClass, A) {
-			if (M != none && A.Mesh == OldMesh)
-				A.Mesh = M;
-			if (T != none && A.Texture == OldTex)
-				A.Texture = T;
-		}
-	return Repaired;
+	if (T == none || T == OldTex)
+		return 0;
+	CylClass.default.Texture = T;
+	foreach Context.AllActors(CylClass, A)
+		if (A.Texture == OldTex)
+			A.Texture = T;
+	return 1;
 }

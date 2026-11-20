@@ -1761,7 +1761,11 @@ NextIG shows no damage numbers, whatever this is set to. Every hit there is a ki
 **Type: bool**  
 **Default: False**  
 
-If `True`, enables hitbox debug instrumentation.
+With `True` every player's hitbox is drawn over the model, so you can see what a shot has to hit. You see the hitbox of the weapon you hold:
+- Weapons that use the full hitbox: the collision cylinder, in red.
+- Weapons that use the reduced hitbox: the body cylinder in red and the head cylinder in white.
+
+The cylinders have the size and place the hit checks use. They follow [HeadRadius](#headradius), [HeadHalfHeight](#headhalfheight) and [bEnableAnimationAdaptiveHeadHitbox](#benableanimationadaptiveheadhitbox). When a player crouches the head cylinder shrinks away and the body cylinder gets shorter. They are drawn where the player model is drawn on your screen. Your own hitbox shows only in behind view. Bots have no debug hitbox.
 
 ## ExcludeMapsForKickers
 
@@ -2302,6 +2306,9 @@ Radius of the head cylinder of the reduced hitbox.
 **Default: False**  
 
 If enabled, the head cylinder of the reduced hitbox follows the player's animation, so it sits where the model's head is.  
+It follows every frame of every player animation. It also moves with the model's lean when the player looks up or down. Every model uses the same head position for an animation: the average of the four stock models. No model is easier or harder to hit.  
+When a player starts a new animation the model blends into it for a moment. The head blends the same way. With ping compensation the server rewinds the head with this blend too.  
+It only moves forward, back and to the sides. At the default sizes it moves at most 6 units. That keeps it inside the player's collision cylinder. Its height stays the same. Its top sits on the top of the collision cylinder.  
 It only changes anything while [SniperUseReducedHitbox](#sniperusereducedhitbox), [ShockBeamUseReducedHitbox](#shockbeamusereducedhitbox) or [EnforcerUseReducedHitbox](#enforcerusereducedhitbox) is on. The full hitbox has no head cylinder. With all three off the Weapon Settings tab grays it out.
 
 # Demos
@@ -2337,5 +2344,6 @@ The demo features only work in demos recorded on a server that runs this build.
 **AnthraX** - Lots and lots of help with debugging tricky problems.  
 **spect** - Starting this project.  
 **Deaod** - Maintenance.  
+**UTPureDP2C** - Vertex data of the stock player models, used by the adaptive head hitbox.  
 **UT99 Community** - For their endless patience, support and help testing and reporting bugs.  
 **Epic** - For not open sourcing a 20 year old game running on their 20 year old engine.

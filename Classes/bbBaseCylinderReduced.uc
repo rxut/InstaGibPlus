@@ -3,8 +3,10 @@
 var Pawn PawnRef;
 var PlayerPawn CachedLocalPlayerPawn;
 var bool bLocalPlayerPawnCached;
+var bool bRegistered;   // with the local player, to be placed after the players are drawn
 
 var IGPlus_WeaponImplementation WImp;
+var IGPlus_WeaponImplementationBase WImpBase;   // client too: WImp is only found on the server
 var WeaponSettingsRepl WSettings;
 
 replication
@@ -38,6 +40,13 @@ function PostBeginPlay()
 		break;		// Find master :D
 }
 
+simulated function IGPlus_WeaponImplementationBase FindWImpBase() {
+	if (WImpBase == none)
+		foreach AllActors(class'IGPlus_WeaponImplementationBase', WImpBase)
+			break;
+	return WImpBase;
+}
+
 simulated function PlayerPawn GetLocalPlayerPawn()
 {
 	local PlayerPawn P;
@@ -64,8 +73,15 @@ simulated event Tick(float DeltaTime) {
 	local rotator NewRot;
 	local PlayerPawn LocalP;
 	local bool bShowThisCylinder;
+	local vector BodyCenter, HeadCenter;
+	local float BodyHH, HeadHH;
 
 	Super.Tick(DeltaTime);
+	// On a client it is placed again where the model is drawn (bbPlayer.IGPlus_LocationOffsetFix_AfterAll).
+	if (bRegistered == false && Role < ROLE_Authority && bbPlayer(GetLocalPlayerPawn()) != none) {
+		bbPlayer(GetLocalPlayerPawn()).IGPlus_AddDebugHitbox(self);
+		bRegistered = true;
+	}
 
 	if (PawnRef == none || PawnRef.bHidden || WSettings == none || PawnRef.PlayerReplicationInfo == none || PawnRef.PlayerReplicationInfo.bIsSpectator) {
 		bHidden = true;
@@ -96,7 +112,13 @@ simulated event Tick(float DeltaTime) {
 		}
 
 		if (!bHidden) {
-			SetLocation(PawnRef.Location);
+			// Where and how big the hit checks make the body (crouching too).
+			if (FindWImpBase() == none) {
+				bHidden = true;
+				return;
+			}
+			WImpBase.ReducedHitboxCylinders(PawnRef, BodyCenter, BodyHH, HeadCenter, HeadHH);
+			class'IGPlus_HitboxCylinderMesh'.static.Place(self, BodyCenter, PawnRef.CollisionRadius, BodyHH);
 			NewRot = rot(0,0,0);
 			NewRot.Yaw = PawnRef.Rotation.Yaw;
 			SetRotation(NewRot);
@@ -136,9 +158,10 @@ simulated event PostNetBeginPlay() {
 defaultproperties
 {
 	DrawType=DT_Mesh
-	Mesh=Mesh'IGPlus_BaseCylinderReduced'
+	Mesh=Mesh'IGPlus_HitboxCylinder'
+	AnimSequence=All
 	Texture=Texture'CylinderRed'
-	DrawScale=0.625
+	DrawScale=1.0
 	bUnlit=True
 	RemoteRole=ROLE_SimulatedProxy
     bAlwaysRelevant=true
