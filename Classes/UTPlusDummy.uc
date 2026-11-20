@@ -136,7 +136,10 @@ event Tick(float DeltaTime) {
 		if (bbPlayer(Actual) != None)
 			bbPlayer(Actual).IGPlus_HeadTween = HeadTween;
 	}
-	HeadTween.Update(Actual.AnimSequence, Actual.AnimFrame);
+	if (bbPlayer(Actual) != None)
+		HeadTween.UpdateRaw(Actual.AnimSequence, Actual.AnimFrame, Actual.TweenRate, bbPlayer(Actual).IGPlus_LoopRate());
+	else
+		HeadTween.Update(Actual.AnimSequence, Actual.AnimFrame);
 
     PP = PlayerPawn(Actual);
 

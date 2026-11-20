@@ -15,7 +15,38 @@ var bool bCur;		// whether Cur is known
 var name LastSeq;
 var float LastFrame;
 var name DrawnSeq;	// drawn on the latest update with a negative frame, can be a placeholder
+// Server (UpdateRaw): the pawn's own animation last tick, and the blend a
+// client draws as stock frames instead (bbPlayer.IGPlus_FoldSnap) and how.
+var name   RawSeq;
+var float  RawFrame;
+var name   FoldSeq;
+var byte   FoldMode;
 var float StillFrame;	// frame at which the blend last began, restarted or changed what is drawn
+
+// Server, every tick: the animation as a client draws it, then Update. A blend
+// that would fold the model is drawn as stock frames of the new animation
+// (bbPlayer.IGPlus_FlipFix_Apply), so the head is where the client draws it.
+// LoopRate: how much of the loop plays in a second (bbPlayer.IGPlus_LoopRate).
+function UpdateRaw(name Seq, float Frame, float TweenRate, float LoopRate) {
+	local float Drawn;
+
+	Drawn = Frame;
+	if (Frame >= 0.0) {
+		FoldSeq = '';
+	} else {
+		if (Seq != RawSeq || RawFrame >= 0.0) {
+			FoldSeq = Seq;
+			FoldMode = class'bbPlayer'.static.IGPlus_FoldSnap(RawSeq, Seq);
+		}
+		if (Seq == FoldSeq && FoldMode == 1)
+			Drawn = class'bbPlayer'.static.IGPlus_FoldStrideFrame(Frame, TweenRate, LoopRate);
+		else if (Seq == FoldSeq && FoldMode == 2)
+			Drawn = 0.0;
+	}
+	RawSeq = Seq;
+	RawFrame = Frame;
+	Update(Seq, Drawn);
+}
 
 function Update(name Seq, float Frame)
 {
