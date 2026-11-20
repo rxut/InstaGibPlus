@@ -289,7 +289,7 @@ defaultproperties
 	bEnableSnapshotInterpolation=False
 	SnapshotInterpSendHz=30.0
 	SnapshotInterpRewindMs=66.0
-	bEnableWarpFix=True
+	bEnableWarpFix=False
 	bEnableAdaptiveBuffering=False
 	bEnableTickInterpolation=False
 	AdaptiveBufferingMax=100
