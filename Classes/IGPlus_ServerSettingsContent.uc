@@ -205,9 +205,6 @@ var localized string MaxNetUpdateRateHelp;
 var UWindowCheckbox Chk_bEnableInputReplication;
 var localized string bEnableInputReplicationText;
 var localized string bEnableInputReplicationHelp;
-var UWindowCheckbox Chk_bEnableServerExtrapolation;
-var localized string bEnableServerExtrapolationText;
-var localized string bEnableServerExtrapolationHelp;
 var UWindowCheckbox Chk_bPlayersAlwaysRelevant;
 var localized string bPlayersAlwaysRelevantText;
 var localized string bPlayersAlwaysRelevantHelp;
@@ -718,7 +715,6 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "FireTimeout", Edit_FireTimeout.GetValue());
 	SaveServerSettingIfChanged(S, "MinNetUpdateRate", Edit_MinNetUpdateRate.GetValue());
 	SaveServerSettingIfChanged(S, "MaxNetUpdateRate", Edit_MaxNetUpdateRate.GetValue());
-	SaveServerSettingIfChanged(S, "bEnableServerExtrapolation", BoolToString(Chk_bEnableServerExtrapolation.bChecked));
 	SaveServerSettingIfChanged(S, "bPlayersAlwaysRelevant", BoolToString(Chk_bPlayersAlwaysRelevant.bChecked));
 	SaveServerSettingIfChanged(S, "JitterBoundingMode", JitterBoundingModeIndexToValue(Cmb_JitterBoundingMode.GetSelectedIndex()));
 	SaveServerSettingIfChanged(S, "MaxJitterTime", Edit_MaxJitterTime.GetValue());
@@ -1146,7 +1142,6 @@ function LoadServerSettings() {
 	Edit_MinNetUpdateRate.SetValue(string(S.MinNetUpdateRate));
 	Edit_MaxNetUpdateRate.SetValue(string(S.MaxNetUpdateRate));
 	Chk_bEnableInputReplication.bChecked = S.bEnableInputReplication;
-	Chk_bEnableServerExtrapolation.bChecked = S.bEnableServerExtrapolation;
 	Chk_bPlayersAlwaysRelevant.bChecked = S.bPlayersAlwaysRelevant;
 	Cmb_JitterBoundingMode.SetSelectedIndex(Clamp(int(S.JitterBoundingMode), 0, 2));
 	Chk_bEnableSnapshotInterpolation.bChecked = S.bEnableSnapshotInterpolation;
@@ -1257,7 +1252,6 @@ function Created() {
 	Edit_FireTimeout = CreateEdit(ECT_Real, FireTimeoutText, FireTimeoutHelp, 16, 80);
 	Edit_MinNetUpdateRate = CreateEdit(ECT_Real, MinNetUpdateRateText, MinNetUpdateRateHelp, 16, 80);
 	Edit_MaxNetUpdateRate = CreateEdit(ECT_Real, MaxNetUpdateRateText, MaxNetUpdateRateHelp, 16, 80);
-	Chk_bEnableServerExtrapolation = CreateCheckbox(bEnableServerExtrapolationText, bEnableServerExtrapolationHelp);
 	Chk_bPlayersAlwaysRelevant = CreateCheckbox(bPlayersAlwaysRelevantText, bPlayersAlwaysRelevantHelp);
 	Cmb_JitterBoundingMode = CreateComboBox(JitterBoundingModeText, JitterBoundingModeHelp, false, 180);
 	Cmb_JitterBoundingMode.AddItem(JitterBoundingModeNone);
@@ -1409,7 +1403,6 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Edit_FireTimeout, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MinNetUpdateRate, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxNetUpdateRate, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableServerExtrapolation, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bPlayersAlwaysRelevant, bShowSettings, WndWidth, Top);
 	LayoutControl(Cmb_JitterBoundingMode, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxJitterTime, bShowSettings, WndWidth, Top);
@@ -1640,8 +1633,6 @@ defaultproperties
 	MaxNetUpdateRateHelp="Maximum per-client update rate the server allows"
 	bEnableInputReplicationText="Enable Input Replication"
 	bEnableInputReplicationHelp="If checked, replicates movement input data for validation"
-	bEnableServerExtrapolationText="Enable Server Extrapolation"
-	bEnableServerExtrapolationHelp="If checked, server extrapolates movement between updates"
 	bPlayersAlwaysRelevantText="Players Always Relevant"
 	bPlayersAlwaysRelevantHelp="If checked, players stay network relevant regardless of distance"
 	JitterBoundingModeText="Jitter Bounding Mode"

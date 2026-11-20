@@ -1453,7 +1453,6 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "MinNetUpdateRate") return "MinNetUpdateRate";
 	if (Key ~= "MaxNetUpdateRate") return "MaxNetUpdateRate";
 	if (Key ~= "bEnableInputReplication") return "bEnableInputReplication";
-	if (Key ~= "bEnableServerExtrapolation") return "bEnableServerExtrapolation";
 	if (Key ~= "bPlayersAlwaysRelevant") return "bPlayersAlwaysRelevant";
 	if (Key ~= "bEnablePingCompensatedSpawn") return "bEnablePingCompensatedSpawn";
 	if (Key ~= "JitterBoundingMode") return "JitterBoundingMode";

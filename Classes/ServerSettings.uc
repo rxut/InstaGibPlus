@@ -68,7 +68,6 @@ var config bool  bEnablePredictedDiscBoost;
 var config float MinNetUpdateRate;
 var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
-var config bool  bEnableServerExtrapolation;
 var config bool  bPlayersAlwaysRelevant;
 var config bool  bEnablePingCompensatedSpawn;
 var config bool  bEnableSnapshotInterpolation;
@@ -208,7 +207,6 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "MinNetUpdateRate");
 	DumpSetting(P, "MaxNetUpdateRate");
 	DumpSetting(P, "bEnableInputReplication");
-	DumpSetting(P, "bEnableServerExtrapolation");
 	DumpSetting(P, "bPlayersAlwaysRelevant");
 	DumpSetting(P, "bEnablePingCompensatedSpawn");
 	DumpSetting(P, "JitterBoundingMode");
@@ -282,7 +280,6 @@ defaultproperties
 	bEnableInputReplication=False
 	bAlwaysRenderFlagCarrier=False
 	bAlwaysRenderDroppedFlags=False
-	bEnableServerExtrapolation=False
 	bPlayersAlwaysRelevant=True
 	bEnablePingCompensatedSpawn=True
 	JitterBoundingMode=JB_None
