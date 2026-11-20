@@ -197,7 +197,7 @@ function CompStart(int Ping, optional int ExtraMs)
 	if (Ping < 0)
 		Ping = 0;
 
-    bSubTickCompensation = WImp.WeaponSettings.bEnableSubTickCompensation;
+    bSubTickCompensation = WImp.WSettingsRepl != None && WImp.WSettingsRepl.bEnablePingCompensation;
     TargetTimeStamp = Level.TimeSeconds - 0.001 * Ping * Level.TimeDilation;
 
 	BufSize = arraycount(Data);

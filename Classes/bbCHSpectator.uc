@@ -1225,8 +1225,6 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("HeadHalfHeight");
 	IGPlus_WeaponSendSetting("HeadRadius");
 	IGPlus_WeaponSendSetting("bEnablePingCompensation");
-	IGPlus_WeaponSendSetting("bEnableSubTickCompensation");
-	IGPlus_WeaponSendSetting("bEnablePreciseRewindTime");
 	IGPlus_WeaponSendSetting("bEnableTrades");
 	IGPlus_WeaponSendSetting("bEnableFireTimeOrder");
 	IGPlus_WeaponSendSetting("PreciseRewindTimeMaxDeviationMs");

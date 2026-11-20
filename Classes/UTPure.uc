@@ -724,7 +724,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	// Precise Rewind Time: a hitscan shot's players where the shooter's
 	// screen drew them. Only on its own rewind (a capped combo rewind isn't).
 	if (bHitscan && bbPlayer(Instigator) != none && bbPlayer(Instigator).GetWeaponSettings() != none
-		&& bbPlayer(Instigator).GetWeaponSettings().bEnablePreciseRewindTime) {
+		&& bbPlayer(Instigator).GetWeaponSettings().bEnablePingCompensation) {
 		PRT = bbPlayer(Instigator);
 		if (PRT.bDrawDebugData && bQuiet == false)
 			PRTDebug = PRT;
@@ -1580,8 +1580,6 @@ function string IGPlus_NormalizeWeaponSettingKey(string Key) {
 	if (Key ~= "HeadHalfHeight") return "HeadHalfHeight";
 	if (Key ~= "HeadRadius") return "HeadRadius";
 	if (Key ~= "bEnablePingCompensation") return "bEnablePingCompensation";
-	if (Key ~= "bEnableSubTickCompensation") return "bEnableSubTickCompensation";
-	if (Key ~= "bEnablePreciseRewindTime") return "bEnablePreciseRewindTime";
 	if (Key ~= "bEnableTrades") return "bEnableTrades";
 	if (Key ~= "bEnableFireTimeOrder") return "bEnableFireTimeOrder";
 	if (Key ~= "PreciseRewindTimeMaxDeviationMs") return "PreciseRewindTimeMaxDeviationMs";

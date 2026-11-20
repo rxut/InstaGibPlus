@@ -6,8 +6,6 @@ class WeaponSettingsNext extends WeaponSettings perobjectconfig;
 // a new server starts with all of it on. A value saved in the ini wins.
 
 defaultproperties {
-	bEnableSubTickCompensation=True
-	bEnablePreciseRewindTime=True
 	bEnableFireTimeOrder=True
 	PingCompensationMax=250
 }

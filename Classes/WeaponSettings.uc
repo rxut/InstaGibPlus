@@ -173,11 +173,10 @@ var config bool  TranslocatorCompensatePing;
 
 var config string DefaultWeaponClass;
 
+// Also turns on Sub Tick Compensation (UTPlusDummy.CompStart) and Precise
+// Rewind Time (bbPlayer.IGPlus_PRTNote).
 var config bool  bEnablePingCompensation;
 
-var config bool  bEnableSubTickCompensation;
-
-var config bool  bEnablePreciseRewindTime;
 var config int   PreciseRewindTimeMaxDeviationMs;
 
 var config int   PingCompensationMax;
@@ -564,9 +563,6 @@ defaultproperties
 
 	bEnablePingCompensation=True
 
-	bEnableSubTickCompensation=False
-
-	bEnablePreciseRewindTime=False
 	bEnableTrades=False
 	bEnableFireTimeOrder=False
 	PreciseRewindTimeMaxDeviationMs=60

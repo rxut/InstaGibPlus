@@ -155,9 +155,6 @@ var bool  TranslocatorCompensatePing;
 
 var bool  bEnablePingCompensation;
 
-var bool  bEnableSubTickCompensation;
-
-var bool  bEnablePreciseRewindTime;
 var bool  bEnableTrades;
 var bool  bEnableFireTimeOrder;
 var int   PreciseRewindTimeMaxDeviationMs;
@@ -339,8 +336,6 @@ replication {
 		HealthPackHealingAmount,
 
 		bEnablePingCompensation,
-		bEnableSubTickCompensation,
-		bEnablePreciseRewindTime,
 		bEnableTrades,
 		bEnableFireTimeOrder,
 		PreciseRewindTimeMaxDeviationMs,
@@ -710,9 +705,6 @@ function InitFromWeaponSettings(WeaponSettings S) {
 
 	bEnablePingCompensation = S.bEnablePingCompensation;
 
-	bEnableSubTickCompensation = S.bEnableSubTickCompensation;
-
-	bEnablePreciseRewindTime = S.bEnablePreciseRewindTime;
 	bEnableTrades = S.bEnableTrades;
 	bEnableFireTimeOrder = S.bEnableFireTimeOrder;
 	PreciseRewindTimeMaxDeviationMs = S.PreciseRewindTimeMaxDeviationMs;
@@ -738,7 +730,6 @@ function IGPlus_ApplyTickInterpLocks() {
 	if (Pure == None || Pure.Settings == None || Pure.Settings.TickInterpolationActive() == false)
 		return;
 	bEnablePingCompensation = true;
-	bEnablePreciseRewindTime = true;
 }
 
 defaultproperties
@@ -905,10 +896,7 @@ defaultproperties
 	HealthPackHealingAmount=20
 
 	bEnablePingCompensation=True
-	
-	bEnableSubTickCompensation=False
 
-	bEnablePreciseRewindTime=False
 	bEnableTrades=False
 	bEnableFireTimeOrder=False
 	PreciseRewindTimeMaxDeviationMs=60

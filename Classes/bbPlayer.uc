@@ -396,7 +396,7 @@ var int PingCurrentAveragingSecond;
 var float PingRunningAverage;
 var int PingRunningAverageCount;
 
-// Precise Rewind Time (WeaponSettings.bEnablePreciseRewindTime): a hitscan
+// Precise Rewind Time (on with WeaponSettings.bEnablePingCompensation): a hitscan
 // shot rewinds players to what the shooter's screen showed.
 var int IGPlus_PRTServerTick;        // server: counts ticks, sent to our client
 var float IGPlus_PRTTickTime[128];   // server: the time of each recent tick (as far back as UTPlusDummy's snapshots)
@@ -4358,7 +4358,7 @@ function IGPlus_PRTNote(int Data) {
 	IGPlus_PRTViewTime = IGPlus_PRTSeenTime + IGPlus_PRTAge(Data);
 	IGPlus_PRTLagMs = 1000.0 * (Level.TimeSeconds - IGPlus_PRTViewTime) / Level.TimeDilation;
 	IGPlus_PRTReason = "";
-	if (WS == none || WS.bEnablePreciseRewindTime == false)
+	if (WS == none || WS.bEnablePingCompensation == false)
 		IGPlus_PRTReason = "off";
 	else if (IGPlus_EnableSnapshotInterpolation)
 		IGPlus_PRTReason = "snapshot interpolation";
@@ -4424,7 +4424,7 @@ function IGPlus_PRTNoteInterp(int Data, WeaponSettingsRepl WS) {
 	IGPlus_PRTReason = "";
 	// The screen is our ping behind, plus the delay it draws a player with.
 	MaxLag = IGPlus_PRTServerPing + 1000.0 * (IGPLUS_TI_MAX_DELAY + 2.0) * TickLen / Level.TimeDilation;
-	if (WS == none || WS.bEnablePreciseRewindTime == false)
+	if (WS == none || WS.bEnablePingCompensation == false)
 		IGPlus_PRTReason = "off";
 	else if (float(G) - IGPlus_PRTInterpR > 1000.0)
 		IGPlus_PRTReason = "update too old";
@@ -8316,7 +8316,7 @@ function bool IGPlus_PRTTraceUsable() {
 	local WeaponSettingsRepl WS;
 
 	WS = GetWeaponSettings();
-	return WS != None && WS.bEnablePingCompensation && WS.bEnablePreciseRewindTime
+	return WS != None && WS.bEnablePingCompensation
 		&& IGPlus_EnableSnapshotInterpolation == false && IGPlus_EnableInputReplication == false
 		&& Settings != None && IGPlus_PRTSeenAt > 0 && IGPlus_PRTShownTick != 0;
 }
@@ -11682,7 +11682,7 @@ function SendSavedMove(IGPlus_SavedMove Move, optional IGPlus_SavedMove OldMove)
 			|| (IGPlus_DetTloc != none && IGPlus_DetTloc.IGPlus_bDetOut && IGPlus_DetTloc.IGPlus_DetLocalDisc != none
 				&& IGPlus_DetTloc.IGPlus_DetLocalDisc.Physics != PHYS_None))
 		&& WS != none
-		&& WS.bEnablePreciseRewindTime && IGPlus_EnableSnapshotInterpolation == false)
+		&& WS.bEnablePingCompensation && IGPlus_EnableSnapshotInterpolation == false)
 		PRTData = Move.IGPlus_PRTData;
 
 	xxServerMove(
@@ -13375,7 +13375,7 @@ event ServerTick(float DeltaTime) {
 	// Precise Rewind Time: stamp what this tick sends our client, and read
 	// our own measure of its ping to check its reports against.
 	if (RemoteRole == ROLE_AutonomousProxy && GetWeaponSettings() != none
-		&& GetWeaponSettings().bEnablePreciseRewindTime) {
+		&& GetWeaponSettings().bEnablePingCompensation) {
 		IGPlus_PRTServerTick++;
 		IGPlus_PRTTickTime[IGPlus_PRTServerTick & 127] = Level.TimeSeconds;
 		if (Level.TimeSeconds >= IGPlus_PRTPingReadTS) {
@@ -23289,8 +23289,6 @@ function IGPlus_WeaponRequestSettings() {
 	IGPlus_WeaponSendSetting("HeadHalfHeight");
 	IGPlus_WeaponSendSetting("HeadRadius");
 	IGPlus_WeaponSendSetting("bEnablePingCompensation");
-	IGPlus_WeaponSendSetting("bEnableSubTickCompensation");
-	IGPlus_WeaponSendSetting("bEnablePreciseRewindTime");
 	IGPlus_WeaponSendSetting("bEnableTrades");
 	IGPlus_WeaponSendSetting("bEnableFireTimeOrder");
 	IGPlus_WeaponSendSetting("PreciseRewindTimeMaxDeviationMs");
