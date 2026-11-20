@@ -1456,9 +1456,6 @@ function string IGPlus_NormalizeServerSettingKey(string Key) {
 	if (Key ~= "bPlayersAlwaysRelevant") return "bPlayersAlwaysRelevant";
 	if (Key ~= "bEnablePingCompensatedSpawn") return "bEnablePingCompensatedSpawn";
 	if (Key ~= "JitterBoundingMode") return "JitterBoundingMode";
-	if (Key ~= "bEnableSnapshotInterpolation") return "bEnableSnapshotInterpolation";
-	if (Key ~= "SnapshotInterpSendHz") return "SnapshotInterpSendHz";
-	if (Key ~= "SnapshotInterpRewindMs") return "SnapshotInterpRewindMs";
 	if (Key ~= "bEnableWarpFix") return "bEnableWarpFix";
 	if (Key ~= "bEnableAdaptiveBuffering") return "bEnableAdaptiveBuffering";
 	if (Key ~= "AdaptiveBufferingMax") return "AdaptiveBufferingMax";
@@ -1476,7 +1473,6 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 	local Pawn P;
 	local bbPlayer BP;
 	local bbCHSpectator BS;
-	local bool bOldSnap;
 
 	for (P = Level.PawnList; P != None; P = P.NextPawn) {
 		BP = bbPlayer(P);
@@ -1507,12 +1503,6 @@ function IGPlus_ApplyServerSettingsToPlayers() {
 			BP.zzMinimumNetspeed = Settings.MinClientRate;
 			BP.zzMaximumNetspeed = Settings.MaxClientRate;
 			BP.zzbNoMultiWeapon = !Settings.bAllowMultiWeapon;
-			bOldSnap = BP.IGPlus_EnableSnapshotInterpolation;
-			BP.IGPlus_EnableSnapshotInterpolation = Settings.SnapshotInterpolationActive();
-			if (bOldSnap != BP.IGPlus_EnableSnapshotInterpolation) {
-				BP.IGPlus_SnapInterp_ServerNextTime = 0;
-				BP.IGPlus_SnapInterp_ServerHasLast = false;
-			}
 			BP.IGPlus_EnableTickInterp = Settings.TickInterpolationActive();
 			BP.ShowDamageNumberMode = IGPlus_DamageNumberMode();
 			continue;

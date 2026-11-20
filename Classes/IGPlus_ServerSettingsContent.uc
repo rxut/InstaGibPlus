@@ -214,15 +214,6 @@ var localized string JitterBoundingModeHelp;
 var localized string JitterBoundingModeNone;
 var localized string JitterBoundingModeCarrierOnly;
 var localized string JitterBoundingModeAll;
-var UWindowCheckbox Chk_bEnableSnapshotInterpolation;
-var localized string bEnableSnapshotInterpolationText;
-var localized string bEnableSnapshotInterpolationHelp;
-var IGPlus_EditControl Edit_SnapshotInterpSendHz;
-var localized string SnapshotInterpSendHzText;
-var localized string SnapshotInterpSendHzHelp;
-var IGPlus_EditControl Edit_SnapshotInterpRewindMs;
-var localized string SnapshotInterpRewindMsText;
-var localized string SnapshotInterpRewindMsHelp;
 var UWindowCheckbox Chk_bEnableWarpFix;
 var localized string bEnableWarpFixText;
 var localized string bEnableWarpFixHelp;
@@ -234,7 +225,6 @@ var UWindowCheckbox Chk_bEnableTickInterpolation;
 var localized string bEnableTickInterpolationText;
 var localized string bEnableTickInterpolationHelp;
 var localized string InputReplicationOffHelp;
-var localized string TickInterpOnHelp;
 var localized string AdaptiveBufferingMaxText;
 var localized string AdaptiveBufferingMaxHelp;
 
@@ -638,14 +628,14 @@ function SaveBoxIfOpen(ServerSettings S, string Key, UWindowCheckbox Chk) {
 		SaveServerSettingIfChanged(S, Key, BoolToString(Chk.bChecked));
 }
 
-// Input Replication turns off what is built on the normal move path, and
-// Tick Interpolation turns off Snapshot Interpolation (ServerSettings.*Active).
+// Input Replication turns off what is built on the normal move path
+// (ServerSettings.*Active).
 // Those boxes show it: unticked and grayed out, with the reason as help. Runs
 // when the window loads and when the Input Replication or Tick Interpolation
 // box is clicked.
 function ApplyServerLocks() {
 	local ServerSettings S;
-	local bool bIR, bTI;
+	local bool bIR;
 
 	S = FindServerSettingsObject();
 	if (S == none)
@@ -658,8 +648,6 @@ function ApplyServerLocks() {
 	IGPlus_Checkbox(Chk_bEnableDeterministicTranslocator).SetLock(bIR, false, S.bEnableDeterministicTranslocator, bEnableDeterministicTranslocatorHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnableAdaptiveBuffering).SetLock(bIR, false, S.bEnableAdaptiveBuffering, bEnableAdaptiveBufferingHelp, InputReplicationOffHelp);
 	IGPlus_Checkbox(Chk_bEnableTickInterpolation).SetLock(bIR, false, S.bEnableTickInterpolation, bEnableTickInterpolationHelp, InputReplicationOffHelp);
-	bTI = bIR == false && Chk_bEnableTickInterpolation.bChecked;
-	IGPlus_Checkbox(Chk_bEnableSnapshotInterpolation).SetLock(bTI, false, S.bEnableSnapshotInterpolation, bEnableSnapshotInterpolationHelp, TickInterpOnHelp);
 }
 
 function SaveServerSettings() {
@@ -719,9 +707,6 @@ function SaveServerSettings() {
 	SaveServerSettingIfChanged(S, "JitterBoundingMode", JitterBoundingModeIndexToValue(Cmb_JitterBoundingMode.GetSelectedIndex()));
 	SaveServerSettingIfChanged(S, "MaxJitterTime", Edit_MaxJitterTime.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableInputReplication", BoolToString(Chk_bEnableInputReplication.bChecked));
-	SaveBoxIfOpen(S, "bEnableSnapshotInterpolation", Chk_bEnableSnapshotInterpolation);
-	SaveServerSettingIfChanged(S, "SnapshotInterpSendHz", Edit_SnapshotInterpSendHz.GetValue());
-	SaveServerSettingIfChanged(S, "SnapshotInterpRewindMs", Edit_SnapshotInterpRewindMs.GetValue());
 	SaveServerSettingIfChanged(S, "bEnableWarpFix", BoolToString(Chk_bEnableWarpFix.bChecked));
 	SaveServerSettingIfChanged(S, "WarpFixDelay", Edit_WarpFixDelay.GetValue());
 	SaveBoxIfOpen(S, "bEnableAdaptiveBuffering", Chk_bEnableAdaptiveBuffering);
@@ -1075,8 +1060,6 @@ function ConfigureResponsiveServerControls(Canvas C, float ControlWidth) {
 	ConfigureFixedWidthEdit(Edit_MinNetUpdateRate, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MaxNetUpdateRate, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_MaxJitterTime, C, ControlWidth, 80);
-	ConfigureFixedWidthEdit(Edit_SnapshotInterpSendHz, C, ControlWidth, 80);
-	ConfigureFixedWidthEdit(Edit_SnapshotInterpRewindMs, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_WarpFixDelay, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_AdaptiveBufferingMax, C, ControlWidth, 80);
 	ConfigureFixedWidthEdit(Edit_Timeouts, C, ControlWidth, 80);
@@ -1144,9 +1127,6 @@ function LoadServerSettings() {
 	Chk_bEnableInputReplication.bChecked = S.bEnableInputReplication;
 	Chk_bPlayersAlwaysRelevant.bChecked = S.bPlayersAlwaysRelevant;
 	Cmb_JitterBoundingMode.SetSelectedIndex(Clamp(int(S.JitterBoundingMode), 0, 2));
-	Chk_bEnableSnapshotInterpolation.bChecked = S.bEnableSnapshotInterpolation;
-	Edit_SnapshotInterpSendHz.SetValue(string(S.SnapshotInterpSendHz));
-	Edit_SnapshotInterpRewindMs.SetValue(string(S.SnapshotInterpRewindMs));
 	Chk_bEnableWarpFix.bChecked = S.bEnableWarpFix;
 	Chk_bEnableAdaptiveBuffering.bChecked = S.bEnableAdaptiveBuffering;
 	Edit_AdaptiveBufferingMax.SetValue(string(S.AdaptiveBufferingMax));
@@ -1259,9 +1239,6 @@ function Created() {
 	Cmb_JitterBoundingMode.AddItem(JitterBoundingModeAll);
 	Edit_MaxJitterTime = CreateEdit(ECT_Real, MaxJitterTimeText, MaxJitterTimeHelp, 16, 80);
 	Chk_bEnableInputReplication = CreateCheckbox(bEnableInputReplicationText, bEnableInputReplicationHelp);
-	Chk_bEnableSnapshotInterpolation = CreateCheckbox(bEnableSnapshotInterpolationText, bEnableSnapshotInterpolationHelp);
-	Edit_SnapshotInterpSendHz = CreateEdit(ECT_Real, SnapshotInterpSendHzText, SnapshotInterpSendHzHelp, 16, 80);
-	Edit_SnapshotInterpRewindMs = CreateEdit(ECT_Real, SnapshotInterpRewindMsText, SnapshotInterpRewindMsHelp, 16, 80);
 	Chk_bEnableWarpFix = CreateCheckbox(bEnableWarpFixText, bEnableWarpFixHelp);
 	Edit_WarpFixDelay = CreateEdit(ECT_Real, WarpFixDelayText, WarpFixDelayHelp, 16, 80);
 	Chk_bEnableAdaptiveBuffering = CreateCheckbox(bEnableAdaptiveBufferingText, bEnableAdaptiveBufferingHelp);
@@ -1407,9 +1384,6 @@ function BeforePaint(Canvas C, float X, float Y) {
 	LayoutControl(Cmb_JitterBoundingMode, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_MaxJitterTime, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableInputReplication, bShowSettings, WndWidth, Top);
-	LayoutControl(Chk_bEnableSnapshotInterpolation, bShowSettings, WndWidth, Top);
-	LayoutControl(Edit_SnapshotInterpSendHz, bShowSettings, WndWidth, Top);
-	LayoutControl(Edit_SnapshotInterpRewindMs, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableWarpFix, bShowSettings, WndWidth, Top);
 	LayoutControl(Edit_WarpFixDelay, bShowSettings, WndWidth, Top);
 	LayoutControl(Chk_bEnableAdaptiveBuffering, bShowSettings, WndWidth, Top);
@@ -1640,12 +1614,6 @@ defaultproperties
 	JitterBoundingModeNone="Disabled"
 	JitterBoundingModeCarrierOnly="Flag Carriers Only"
 	JitterBoundingModeAll="All Players"
-	bEnableSnapshotInterpolationText="Enable Snapshot Interpolation"
-	bEnableSnapshotInterpolationHelp="If checked, clients smooth movement using snapshot interpolation"
-	SnapshotInterpSendHzText="Snapshot Send Hz"
-	SnapshotInterpSendHzHelp="Snapshot transmission frequency in Hz"
-	SnapshotInterpRewindMsText="Snapshot Rewind (ms)"
-	SnapshotInterpRewindMsHelp="Interpolation rewind delay in milliseconds"
 	bEnableWarpFixText="Enable Warp Fix"
 	bEnableWarpFixHelp="If checked, a player whose moves stop for longer than the warp fix delay is put back where the server last had them. The other players see them stop there"
 	bEnableAdaptiveBufferingText="Adaptive Buffering"
@@ -1654,7 +1622,6 @@ defaultproperties
 	bEnableTickInterpolationText="Tick Interpolation"
 	bEnableTickInterpolationHelp="If checked, clients draw other players between two server updates, a little in the past, and a shot is tested against the exact spot the shooter's screen drew. Keeps ping compensation and Precise Rewind Time on. Not with Input Replication."
 	InputReplicationOffHelp="Server setting: off because Input Replication is on"
-	TickInterpOnHelp="Server setting: off because Tick Interpolation is on"
 	AdaptiveBufferingMaxHelp="The most delay Adaptive Buffering gives one player, in milliseconds. Movement that arrives later than this runs at once, as without Adaptive Buffering."
 
 	ClientEnforcementText="Client Enforcement"

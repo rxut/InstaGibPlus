@@ -70,9 +70,6 @@ var config float MaxNetUpdateRate;
 var config bool  bEnableInputReplication;
 var config bool  bPlayersAlwaysRelevant;
 var config bool  bEnablePingCompensatedSpawn;
-var config bool  bEnableSnapshotInterpolation;
-var config float SnapshotInterpSendHz;
-var config float SnapshotInterpRewindMs;
 var config bool  bEnableWarpFix;
 var config bool  bEnableAdaptiveBuffering;
 var config bool  bEnableTickInterpolation;
@@ -138,16 +135,9 @@ function bool DeterministicTranslocatorActive() {
 	return bEnableDeterministicTranslocator && !bEnableInputReplication;
 }
 
-// Tick Interpolation uses the ServerMove path and has its own drawing. It wins
-// over Snapshot Interpolation, which is experimental.
+// Tick Interpolation uses the ServerMove path and has its own drawing.
 function bool TickInterpolationActive() {
 	return bEnableTickInterpolation && !bEnableInputReplication;
-}
-
-// Snapshot Interpolation draws the other players its own way, unless Tick
-// Interpolation does.
-function bool SnapshotInterpolationActive() {
-	return bEnableSnapshotInterpolation && !TickInterpolationActive();
 }
 
 // Adaptive Buffering is built on the ServerMove path.
@@ -210,9 +200,6 @@ function DumpServerSettings(PlayerPawn P) {
 	DumpSetting(P, "bPlayersAlwaysRelevant");
 	DumpSetting(P, "bEnablePingCompensatedSpawn");
 	DumpSetting(P, "JitterBoundingMode");
-	DumpSetting(P, "bEnableSnapshotInterpolation");
-	DumpSetting(P, "SnapshotInterpSendHz");
-	DumpSetting(P, "SnapshotInterpRewindMs");
 	DumpSetting(P, "bEnableWarpFix");
 	DumpSetting(P, "bEnableAdaptiveBuffering");
 	DumpSetting(P, "bEnableTickInterpolation");
@@ -283,9 +270,6 @@ defaultproperties
 	bPlayersAlwaysRelevant=True
 	bEnablePingCompensatedSpawn=True
 	JitterBoundingMode=JB_None
-	bEnableSnapshotInterpolation=False
-	SnapshotInterpSendHz=30.0
-	SnapshotInterpRewindMs=66.0
 	bEnableWarpFix=False
 	bEnableAdaptiveBuffering=False
 	bEnableTickInterpolation=False

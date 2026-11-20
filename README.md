@@ -684,7 +684,7 @@ If `False`, your FOV immediately changes to the desired FOV without a smooth tra
 
 If `True`, enables client-side location offset correction to reduce visual jitter/offset artifacts.  
 If `False`, disables that correction.  
-On a server with Tick Interpolation or Snapshot Interpolation it changes nothing. The settings menu grays it out there.
+On a server with Tick Interpolation it changes nothing. The settings menu grays it out there.
 
 ## bEnableKillFeed
 **Type: bool**  
@@ -1049,16 +1049,8 @@ Parameters marked `optional` do not have to be supplied.
 1. [PrintWeaponState](#printweaponstate)
 1. [NetcodeHelp](#netcodehelp)
 1. [bEnableInputReplication](#benableinputreplication-command)
-1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation-command)
-1. [SnapshotInterpSendHz](#snapshotinterpsendhz-command)
-1. [SnapshotInterpRewindMs](#snapshotinterprewindms-command)
 1. [MaxJitterTime](#maxjittertime-command)
 1. [JitterBoundingMode](#jitterboundingmode-command)
-1. [SnapInterpDebug](#snapinterpdebug)
-1. [SnapInterpStatus](#snapinterpstatus)
-1. [SnapInterpNetStatus](#snapinterpnetstatus)
-1. [SnapInterpCheck](#snapinterpcheck)
-1. [SnapInterpCheckStop](#snapinterpcheckstop)
 1. [TraceInput](#traceinput)
 1. [ShowTickrate / ShowNetSpeeds](#showtickrate--shownetspeeds)
 
@@ -1286,21 +1278,6 @@ Prints netcode runtime settings and available netcode debug commands.
 
 Read/set server setting [bEnableInputReplication](#benableinputreplication) (admin only).
 
-## bEnableSnapshotInterpolation (command)
-**Parameters: (optional string Value)**
-
-Read/set server setting [bEnableSnapshotInterpolation](#benablesnapshotinterpolation) (admin only).
-
-## SnapshotInterpSendHz (command)
-**Parameters: (optional string Value)**
-
-Read/set server setting [SnapshotInterpSendHz](#snapshotinterpsendhz) (admin only).
-
-## SnapshotInterpRewindMs (command)
-**Parameters: (optional string Value)**
-
-Read/set server setting [SnapshotInterpRewindMs](#snapshotinterprewindms) (admin only).
-
 ## MaxJitterTime (command)
 **Parameters: (optional string Value)**
 
@@ -1310,27 +1287,6 @@ Read/set server setting [MaxJitterTime](#maxjittertime) (admin only).
 **Parameters: (optional string Value)**
 
 Read/set server setting [JitterBoundingMode](#jitterboundingmode) (admin only).
-
-## SnapInterpDebug
-Toggles snapshot interpolation debug reporting.
-
-## SnapInterpStatus
-**Parameters: (optional string NameFilter)**
-
-Prints one-shot proxy runtime status.
-
-## SnapInterpNetStatus
-**Parameters: (optional string NameFilter)**
-
-Prints client report + server echo + proxy status.
-
-## SnapInterpCheck
-**Parameters: (optional string Profile, optional float DurationSec, optional string NameFilter)**
-
-Runs an interpolation quality check against a simulated proxy target.
-
-## SnapInterpCheckStop
-Stops an active SnapInterpCheck run.
 
 ## TraceInput
 Toggles logging of client input trace data.
@@ -1492,9 +1448,6 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bPlayersAlwaysRelevant](#bplayersalwaysrelevant)
 1. [bEnablePingCompensatedSpawn](#benablepingcompensatedspawn)
 1. [JitterBoundingMode](#jitterboundingmode)
-1. [bEnableSnapshotInterpolation](#benablesnapshotinterpolation)
-1. [SnapshotInterpSendHz](#snapshotinterpsendhz)
-1. [SnapshotInterpRewindMs](#snapshotinterprewindms)
 1. [bEnableWarpFix](#benablewarpfix)
 1. [WarpFixDelay](#warpfixdelay)
 1. [bEnableAdaptiveBuffering](#benableadaptivebuffering)
@@ -1920,33 +1873,6 @@ All modes share [MaxJitterTime](#maxjittertime).
 
 Jitter bounding does not run while [bEnableAdaptiveBuffering](#benableadaptivebuffering) is on.
 
-## bEnableSnapshotInterpolation
-
-**Type: bool**  
-**Default: False**  
-
-If enabled, clients use snapshot interpolation for simulated proxies.
-
-This feature is highly experimental and should be enabled only for controlled testing.
-
-It is not used while [bEnableTickInterpolation](#benabletickinterpolation) is on. The Server tab then shows it unticked and grayed out.
-
-## SnapshotInterpSendHz
-
-**Type: float**  
-**Default: 30.0**  
-**Unit: Hz**  
-
-Snapshot send rate used by snapshot interpolation.
-
-## SnapshotInterpRewindMs
-
-**Type: float**  
-**Default: 66.0**  
-**Unit: ms**  
-
-Interpolation rewind delay used by snapshot interpolation.
-
 ## bEnableWarpFix
 
 **Type: bool**  
@@ -2232,7 +2158,7 @@ If enabled, hitscan shots are tested against where targets were on the shooter's
 
 Each hitscan shot tells the server which update the shooter's screen showed and how far past it the screen had moved the players. The server places every player the same way. Network jitter and ping changes then no longer move the rewound players. Your moves also carry this report while your own [deterministic translocator](#benabledeterministictranslocator) disc flies. The server uses it to stop the disc on players where you saw them. Shots traced later in the tick use the same report: minigun, pulse beam and enforcer refire. With bEnableWarpFix on, a player whose packets stalled for longer than WarpFixDelay stays where clients hold them.
 
-The server doesn't use a report that differs from its own ping reading by more than [PreciseRewindTimeMaxDeviationMs](#preciserewindtimemaxdeviationms), or that is older than [PingCompensationMax](#pingcompensationmax) allows. Then it moves the players back by the lowest of its last four ping readings, plus the delays of Adaptive Buffering and Tick Interpolation. Reports are not used with bEnableInputReplication or for a player with Snapshot Interpolation. When the server moves players back by a ping, it places each one between the two saved positions around that moment, not at the older one.
+The server doesn't use a report that differs from its own ping reading by more than [PreciseRewindTimeMaxDeviationMs](#preciserewindtimemaxdeviationms), or that is older than [PingCompensationMax](#pingcompensationmax) allows. Then it moves the players back by the lowest of its last four ping readings, plus the delays of Adaptive Buffering and Tick Interpolation. Reports are not used with bEnableInputReplication. When the server moves players back by a ping, it places each one between the two saved positions around that moment, not at the older one.
 
 Older versions had these parts as their own settings, bEnableSubTickCompensation and bEnablePreciseRewindTime. A value left in the ini for either one does nothing.
 
