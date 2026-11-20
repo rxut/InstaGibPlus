@@ -1142,6 +1142,10 @@ var int IGPlus_TI_AnimHead, IGPlus_TI_AnimNum;
 var name IGPlus_TI_RawSeq, IGPlus_TI_ShownSeq;
 var float IGPlus_TI_RawFrame, IGPlus_TI_ShownFrame, IGPlus_TI_ShownTween;
 var bool IGPlus_TI_bAnimSwapped;
+// Client, on another player's pawn: its animation and SimAnim at the last
+// Tick (IGPlus_MissedTween).
+var name IGPlus_MT_LastSeq;
+var plane IGPlus_MT_LastSim;
 // Client, on a pawn that may be drawn (client setting FlipAnimationFix, IGPlus_FlipFix_Apply):
 // how much of the pose the engine last drew is a turned-over one (1 all of
 // it, 0 none), the animation shown last frame, and the flip that plays on or
@@ -1155,6 +1159,10 @@ var byte IGPlus_FlipFix_State;            // 1: the flip plays on. 2: the game's
 var float IGPlus_FlipFix_FlipFrame, IGPlus_FlipFix_FlipRate, IGPlus_FlipFix_Ramp;
 var float IGPlus_FlipFix_FlipAt, IGPlus_FlipFix_FlipTime; // the flip frame shown last, and when
 var bool IGPlus_FlipFix_bLogged;
+// The blend a stock frame is drawn for instead (IGPlus_FoldSnap), and how: 1 the
+// new loop at the point of its stride that meets the blend's end, 2 its first frame.
+var name IGPlus_NF_Seq;
+var byte IGPlus_NF_Mode;
 // The part of the Flip animation the model is turned over in. Measured on
 // the stock male model (20 frames): 50 degrees off upright at frame 3, 170 at
 // frame 12, 59 at frame 18. A dodge on level ground lands at frames 15 to 17.
@@ -16328,6 +16336,16 @@ simulated event Tick(float DeltaTime) {
 
 	super.Tick(DeltaTime);
 
+	// The engine has run this frame's animation. Start the tween the server started.
+	if (Role == ROLE_SimulatedProxy && IGPlus_TI_bAnimSwapped == false) {
+		if (IGPlus_MissedTween(IGPlus_MT_LastSeq, IGPlus_MT_LastSim, AnimSequence, SimAnim, AnimFrame)) {
+			TweenRate = SimAnim.Z * 0.001;
+			AnimFrame = FMin(SimAnim.X * 0.0001 + TweenRate * DeltaTime, -0.001);
+		}
+		IGPlus_MT_LastSeq = AnimSequence;
+		IGPlus_MT_LastSim = SimAnim;
+	}
+
 	if (IGPlus_ShowRealModelsInDemo())
 		IGPlus_DemoRestoreRealModel();
 
@@ -16747,6 +16765,7 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 		IGPlus_FlipFix_Seq = Seq;
 		IGPlus_FlipFix_Last = Frame;
 		IGPlus_FlipFix_bLogged = false;
+		IGPlus_NF_Seq = '';
 		return;
 	}
 
@@ -16791,8 +16810,75 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 		if (bStart == false && IGPlus_FlipFix_Last < 0.0)
 			IGPlus_FlipFix_Flipped *= FClamp(Frame / IGPlus_FlipFix_Last, 0.0, 1.0);
 	}
+	if (bStart) {
+		IGPlus_NF_Seq = Seq;
+		IGPlus_NF_Mode = IGPlus_FoldSnap(IGPlus_FlipFix_Seq, Seq);
+	}
 	IGPlus_FlipFix_Seq = Seq;
 	IGPlus_FlipFix_Last = Frame;
+	// A blend that would fold the model: a stock frame of the new animation is
+	// drawn instead (IGPlus_FoldSnap). Only drawn, the real animation stays.
+	if (Seq == IGPlus_NF_Seq && IGPlus_NF_Mode != 0) {
+		if (IGPlus_NF_Mode == 1)
+			AnimFrame = IGPlus_FoldStrideFrame(Frame, Rate, IGPlus_LoopRate());
+		else
+			AnimFrame = 0.0;
+		IGPlus_FlipFix_Flipped = 0.0;
+	}
+}
+
+// The engine blends into a new animation by moving every vertex in a straight
+// line from the pose it drew last (ULodMesh::GetFrame, a frame below 0). Where
+// the two poses turn the legs or the body a long way apart, the lines cross and
+// the model goes thin in the middle of the blend: a strafe flip folds the legs
+// to 55 to 60% of their surface on every stock model, a blend between a strafe
+// and standing, landing, crouching or running to 60 to 76%. Two neighbouring
+// frames of a stock animation never go below 93%.
+// Such a blend is drawn as the new animation at once, every frame a stock one:
+// 1 for a loop (the stride goes on, IGPlus_FoldStrideFrame), 2 for a pose (its
+// first frame). 0: the blend is drawn as the engine makes it.
+// Blends into and out of dodges, jumps and BackRun are left alone for now.
+static function byte IGPlus_FoldSnap(name From, name To) {
+	local string Other;
+
+	if (From == To || From == '')
+		return 0;
+	if (Left(string(From), 6) ~= "Strafe")
+		Other = string(To);
+	else if (Left(string(To), 6) ~= "Strafe")
+		Other = string(From);
+	else
+		return 0;
+	if (Left(Other, 5) ~= "Dodge" || Left(Other, 4) ~= "Jump" || Other ~= "BackRun")
+		return 0;
+	switch (Caps(Left(string(To), 4))) {
+		case "STRA": case "RUNL": case "RUNS": case "WALK": case "DUCK": case "SWIM": case "TREA":
+			return 1;
+	}
+	return 2;
+}
+
+// The frame of a looping animation to draw while the blend into it has Frame
+// left (below 0) at TweenRate: the point of its stride that reaches the start
+// of the loop when the blend ends, so the real animation takes over there with
+// no jump. Rate: how much of the loop plays in a second.
+static function float IGPlus_FoldStrideFrame(float Frame, float TweenRate, float Rate) {
+	local float D;
+
+	if (TweenRate <= 0.0 || Rate <= 0.0)
+		return 0.0;
+	D = 1.0 + Frame / TweenRate * Rate;
+	D -= int(D);
+	if (D < 0.0)
+		D += 1.0;
+	return D;
+}
+
+// How much of the loop this pawn plays in a second (a negative AnimRate goes by speed).
+simulated function float IGPlus_LoopRate() {
+	if (AnimRate >= 0.0)
+		return AnimRate;
+	return FMax(AnimMinRate, VSize(Velocity) * -AnimRate);
 }
 
 // The client's FlipAnimationFix setting: 0 off, 1 instant, 2 finish the flip.
@@ -16879,6 +16965,49 @@ simulated function IGPlus_FlipFix_Plain() {
 		IGPlus_TI_RawFrame = F;
 		IGPlus_TI_bAnimSwapped = true;
 	}
+}
+
+// Client, on another player's pawn: true when the server started a tween into
+// a new animation and the client did not get it. A LoopAnim into a new
+// sequence rebuilds SimAnim from the sequence's frame count and rates
+// (UnScript.cpp, execLoopAnim). StrafeL and StrafeR give the same SimAnim, so
+// on a strafe flip only AnimSequence changes. AActor::PostNetReceive then
+// applies nothing, and the client draws the new strafe at the old one's frame:
+// the body jumps from one side to the other. SimAnim still holds the server's
+// tween start (X below 0), so the caller replays it.
+// Stock TournamentPlayer swaps some sequences with no tween (IGPlus_IsAnimSwap).
+static function bool IGPlus_MissedTween(name LastSeq, plane LastSim, name Seq, plane Sim, float Frame) {
+	if (LastSeq == '' || Seq == LastSeq || Frame < 0.0 || Sim.X >= 0.0)
+		return false;
+	if (Sim.X != LastSim.X || Sim.Y != LastSim.Y || Sim.Z != LastSim.Z || Sim.W != LastSim.W)
+		return false;
+	return IGPlus_IsAnimSwap(LastSeq, Seq) == false;
+}
+
+// The sequence changes stock TournamentPlayer makes by setting AnimSequence,
+// which keep the frame and start no tween: PlayFiring and PlayWeaponSwitch.
+static function bool IGPlus_IsAnimSwap(name A, name B) {
+	switch (A) {
+		case 'RunLG':     return B == 'RunLGFR' || B == 'RunSM';
+		case 'RunSM':     return B == 'RunSMFR' || B == 'RunLG';
+		case 'RunLGFR':   return B == 'RunSM';
+		case 'RunSMFR':   return B == 'RunLG';
+		case 'WalkLG':    return B == 'WalkLGFR' || B == 'WalkSM';
+		case 'WalkSM':    return B == 'WalkSMFR' || B == 'WalkLG';
+		case 'WalkLGFR':  return B == 'WalkSM';
+		case 'WalkSMFR':  return B == 'WalkLG';
+		case 'JumpLGFR':  return B == 'JumpSMFR';
+		case 'JumpSMFR':  return B == 'JumpLGFR';
+		case 'DuckWlkL':  return B == 'DuckWlkS';
+		case 'DuckWlkS':  return B == 'DuckWlkL';
+		case 'StillFRRP': return B == 'StillSMFR';
+		case 'StillSMFR': return B == 'StillFRRP';
+		case 'AimDnLg':   return B == 'AimDnSm';
+		case 'AimDnSm':   return B == 'AimDnLg';
+		case 'AimUpLg':   return B == 'AimUpSm';
+		case 'AimUpSm':   return B == 'AimUpLg';
+	}
+	return false;
 }
 
 // After the frame is drawn: the engine plays on from its own animation.
