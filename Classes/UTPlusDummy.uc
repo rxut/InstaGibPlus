@@ -344,8 +344,13 @@ function CompStartTick(float R, float TickLen, optional bool bPast, optional boo
 		else
 			CompSwap(A, B, (R - float(A.Tick)) / float(B.Tick - A.Tick), 0.0);
 	} else {
+		// Held after A: a hold snapshot followed it, or the hold began in A's
+		// own tick. Adaptive Buffering holds a player in the tick their last
+		// queued move ran (bbPlayer.IGPlus_ABPlayout), and that tick's snapshot
+		// is the move's, with bHeld set and no hold snapshot after it. The
+		// clients stop the player there, so the rewind does not carry them on.
 		CompSwap(A, None, -1.0, A.ServerTimeStamp
-			+ class'bbPlayer'.static.IGPlus_TI_CarryTicks(R - float(A.Tick), bHeld && bHoldAfter) * TickLen);
+			+ class'bbPlayer'.static.IGPlus_TI_CarryTicks(R - float(A.Tick), bHeld && (bHoldAfter || A.bHeld)) * TickLen);
 	}
 	bCompTick = false;
 }

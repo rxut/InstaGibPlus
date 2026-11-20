@@ -19,8 +19,10 @@ enum EHitEffectSource {
 	HESRC_Client
 };
 
-// What to draw when a player's model would blend slowly out of the
+// What to draw when a player's model would blend out of the
 // turned-over part of a flip and collapse into a lump (bbPlayer.IGPlus_FlipFix_Apply).
+// The menu offers Off and Finish Flip. FAF_Instant stays so that settings files
+// from older versions still load, and it works as FAF_FinishFlip.
 enum EFlipAnimationFix {
 	FAF_Off,
 	FAF_Instant,
@@ -543,9 +545,10 @@ static function EHitSoundSource IntToHitSoundSource(int A) {
 	return HSSRC_Server;
 }
 
+// The menu's index (0 Off, 1 Finish Flip), or an older one (2 was Finish Flip).
 static function EFlipAnimationFix IntToFlipAnimationFix(int A) {
 	switch(A) {
-		case 1: return FAF_Instant;
+		case 1:
 		case 2: return FAF_FinishFlip;
 	}
 	return FAF_Off;
