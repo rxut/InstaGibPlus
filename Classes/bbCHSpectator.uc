@@ -1128,7 +1128,6 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("MinNetUpdateRate");
 	IGPlus_ServerSendSetting("MaxNetUpdateRate");
 	IGPlus_ServerSendSetting("bEnableInputReplication");
-	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
 	IGPlus_ServerSendSetting("JitterBoundingMode");

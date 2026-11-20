@@ -418,16 +418,6 @@ var float IGPlus_PRTServerPing;      // server: our own ping measurement (GETPIN
 var float IGPlus_PRTPingReadTS;
 var float FakeCAPInterval; // Send a FakeCAP after no CAP has been sent for this amount of time
 var float ExtrapolationDelta;
-var bool bExtrapolatedLastUpdate;
-struct SavedData {
-	var() vector Location;
-	var() vector Velocity;
-	var() vector Acceleration;
-	var() name State;
-	var() EPhysics Physics;
-	var() EDodgeDir DodgeDir;
-};
-var SavedData Saved;
 var bool bIs469Server;
 var bool bIs469Client;
 
@@ -1725,11 +1715,6 @@ simulated function bool xxNewSetLocation(vector NewLoc, vector NewVel)
 		return false;
 	Velocity = NewVel;
 	return true;
-}
-
-simulated function bool xxNewMoveSmooth(vector NewLoc)
-{
-	return MoveSmooth(NewLoc - Location);
 }
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -4639,59 +4624,8 @@ function SimMoveAutonomous(float DeltaTime) {
 	}
 }
 
-function ExtrapolationSaveData() {
-	Saved.Location = Location;
-	Saved.Velocity = Velocity;
-	Saved.Acceleration = Acceleration;
-	Saved.State = GetStateName();
-	Saved.Physics = Physics;
-	Saved.DodgeDir = DodgeDir;
-}
-
-function ExtrapolationRestoreData() {
-	local vector OldLoc;
-	local Decoration Carried;
-
-	if (FastTrace(Saved.Location)) {
-		xxNewMoveSmooth(Saved.Location);
-	} else {
-		Carried = CarriedDecoration;
-		OldLoc = Location;
-
-		bCanTeleport = false;
-		xxNewSetLocation(Saved.Location, Saved.Velocity);
-		bCanTeleport = true;
-
-		if (Carried != None) {
-			CarriedDecoration = Carried;
-			CarriedDecoration.SetLocation(Saved.Location + CarriedDecoration.Location - OldLoc);
-			CarriedDecoration.SetPhysics(PHYS_None);
-			CarriedDecoration.SetBase(self);
-		}
-	}
-	Velocity = Saved.Velocity;
-	Acceleration = Saved.Acceleration;
-	if (Saved.State == GetStateName()) {
-		SetPhysics(Saved.Physics);
-		DodgeDir = Saved.DodgeDir;
-	}
-}
-
-function ExtrapolationDiscardData() {
-	bExtrapolatedLastUpdate = false;
-}
-
 function WarpCompensation(float DeltaTime) {
 	if (Level.Pauser == "" && !bWasPaused) {
-		// (Not a queued player, Adaptive Buffering: they wait, no guessing.)
-		if (zzUTPure.Settings.bEnableServerExtrapolation && IGPlus_ABQueued == false &&
-			bExtrapolatedLastUpdate == false && ExtrapolationDelta > AverageServerDeltaTime
-		) {
-			bExtrapolatedLastUpdate = true;
-			ExtrapolationSaveData();
-			SimMoveAutonomous(ExtrapolationDelta);
-			ClientDebugMessage("Extrapolation"@ExtrapolationDelta);
-		}
 		ExtrapolationDelta *= Exp(-2.0 * DeltaTime);
 	} else {
 		bWasPaused = true;
@@ -5809,7 +5743,6 @@ function IGPlus_AfterTranslocate() {
 	if (IGPlus_DidTranslocate) {
 		// A teleport, not a step: no eye-height smoothing (as for teleporters).
 		IgnoreZChangeTicks = 2;
-		ExtrapolationDiscardData();
 		IGPlus_NotifiedTranslocate = false;
 		if (ST_Translocator(Weapon) != none && ST_Translocator(Weapon).IGPlus_IsDetMode()) {
 			IGPlus_bDetTlocCheckLanding = true;
@@ -6443,7 +6376,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 				RedoAction = 0;
 				Redo2Action = 0;
 			} else {
-				UndoExtrapolation();
 				IGPlus_DetRunHeld(SM.TimeStamp);
 				if (Redo2Action != 0 && (OldTS <= CurrentTimeStamp || SM.DetRedo2TS < OldTS)) {
 					IGPlus_DetRunAction(Redo2Action, SM.DetRedo2TS, IGPlus_DetUnpackRedoView(SM.DetRedo2Data), SM.TimeStamp);
@@ -6523,8 +6455,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	bJumpStatus = NewbJumpStatus;
 
 	if ((Level.Pauser == "") && (DeltaTime > 0)) {
-		UndoExtrapolation();
-
 		if (RemoteRole == ROLE_AutonomousProxy && zzUTPure.Settings.bEnablePingCompensatedSpawn) {
 			if (bHidden && (IsInState('PlayerWalking') || IsInState('PlayerSwimming'))) {
 				bClientDead = false;
@@ -6919,14 +6849,6 @@ function IGPlus_SendCAP() {
 	IGPlus_NotifiedTranslocate = true;
 }
 
-function UndoExtrapolation() {
-	if (bExtrapolatedLastUpdate) {
-		bExtrapolatedLastUpdate = false;
-
-		ExtrapolationRestoreData();
-	}
-}
-
 function EDodgeDir GetDodgeDir(int dir) {
 	switch(dir) {
 		case 0: return DODGE_None;
@@ -6992,8 +6914,6 @@ function bool IGPlus_OldServerMove(float TimeStamp, int OldMoveData1, int OldMov
 
 	if (DodgeMove > DODGE_None && DodgeMove < DODGE_Active)
 		ClientDebugMessage("Received Old Dodge"@DodgeMove@CurrentTimeStamp@OldTimeStamp);
-
-	UndoExtrapolation();
 
 	if (IGPlus_ShouldJitterBound() && DeltaTime > zzUTPure.Settings.MaxJitterTime) {
 		SimTime = DeltaTime - zzUTPure.Settings.MaxJitterTime;
@@ -8006,9 +7926,6 @@ function ServerApplyInput(float RefTimeStamp, int NumBits, ReplBuffer B) {
 		IGPlus_InputReplicationBuffer.BitsData[i] = B.Data[i];
 
 	debugServerMoveCallsReceived += 1;
-
-	if (Level.Pauser == "")
-		UndoExtrapolation();
 
 	Old = IGPlus_SavedInputChain.Newest;
 	if (Old == none) {
@@ -14241,7 +14158,6 @@ ignores SeePlayer, HearNoise, Bump;
 		bIsCrouching = false;
 		bIsTurning = false;
 		bPressedJump = false;
-		bExtrapolatedLastUpdate = false;
 		if (Physics != PHYS_Falling) SetPhysics(PHYS_Walking);
 		if ( !IsAnimating() )
 			PlaySpawn();
@@ -20665,10 +20581,8 @@ function IGPlus_SDServerRecord(float DeltaTime) {
 		WinMin = FMin(FMin(IGPlus_SDMinCur, IGPlus_SDMinPrev[0]), FMin(IGPlus_SDMinPrev[1], IGPlus_SDMinPrev[2]));
 		IGPlus_SDJitter += (FClamp(ArrivalOffset - WinMin, 0.0, 0.25) - IGPlus_SDJitter) * 0.05;
 
-		// Where the move put us (not server extrapolation on top of it).
+		// Where the move put us.
 		Loc = Location;
-		if (bExtrapolatedLastUpdate)
-			Loc = Saved.Location;
 
 		// A translocation, teleport or respawn: no gliding across the map.
 		// The jump shows at its own move's time.
@@ -23192,7 +23106,6 @@ function IGPlus_ServerRequestSettings() {
 	IGPlus_ServerSendSetting("MinNetUpdateRate");
 	IGPlus_ServerSendSetting("MaxNetUpdateRate");
 	IGPlus_ServerSendSetting("bEnableInputReplication");
-	IGPlus_ServerSendSetting("bEnableServerExtrapolation");
 	IGPlus_ServerSendSetting("bPlayersAlwaysRelevant");
 	IGPlus_ServerSendSetting("bEnablePingCompensatedSpawn");
 	IGPlus_ServerSendSetting("JitterBoundingMode");

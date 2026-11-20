@@ -1500,7 +1500,6 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [MinNetUpdateRate](#minnetupdaterate)
 1. [MaxNetUpdateRate](#maxnetupdaterate)
 1. [bEnableInputReplication](#benableinputreplication)
-1. [bEnableServerExtrapolation](#benableserverextrapolation)
 1. [bPlayersAlwaysRelevant](#bplayersalwaysrelevant)
 1. [bEnablePingCompensatedSpawn](#benablepingcompensatedspawn)
 1. [JitterBoundingMode](#jitterboundingmode)
@@ -1891,15 +1890,6 @@ Restrictions:
 - Pitch is only replicated within [-90°..+90°). Values outside this range may not be replicated correctly.
 
 While it is on, these are off: [bEnablePredictedSwitching](#benablepredictedswitching), [bEnablePredictedTranslocation](#benablepredictedtranslocation), [bEnablePredictedSelfKnockback](#benablepredictedselfknockback), [bEnablePushSafeAim](#benablepushsafeaim), [bEnableDeterministicTranslocator](#benabledeterministictranslocator), [bEnableAdaptiveBuffering](#benableadaptivebuffering) and [bEnableTickInterpolation](#benabletickinterpolation). The Server tab of the IG+ menu shows them unticked and grayed out. The ini keeps their own values.
-
-Disable to restore default netcode behavior.
-
-## bEnableServerExtrapolation
-
-**Type: bool**  
-**Default: False**  
-
-If enabled the server will extrapolate client movement when the client's movement updates are too far behind the server's timepoint.
 
 Disable to restore default netcode behavior.
 
