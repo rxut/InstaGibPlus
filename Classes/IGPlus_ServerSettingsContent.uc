@@ -1656,7 +1656,7 @@ defaultproperties
 	SnapshotInterpRewindMsText="Snapshot Rewind (ms)"
 	SnapshotInterpRewindMsHelp="Interpolation rewind delay in milliseconds"
 	bEnableWarpFixText="Enable Warp Fix"
-	bEnableWarpFixHelp="If checked, enables warp correction smoothing"
+	bEnableWarpFixHelp="If checked, a player whose moves stop for longer than the warp fix delay is put back where the server last had them. The other players see them stop there"
 	bEnableAdaptiveBufferingText="Adaptive Buffering"
 	bEnableAdaptiveBufferingHelp="If checked, the server evens out the movement of a player whose packets arrive late or in clumps. Their moves wait in a short queue and play at the pace they were made, so other players see an even path instead of a stop and a jump. That player gets extra delay, up to Adaptive Buffering Max, and no corrections from it. A player whose packets arrive on time is not queued and plays as before. Replaces jitter bounding, which does not run while this is on. Has no effect with input replication."
 	AdaptiveBufferingMaxText="Adaptive Buffering Max"

@@ -1971,9 +1971,15 @@ Interpolation rewind delay used by snapshot interpolation.
 ## bEnableWarpFix
 
 **Type: bool**  
-**Default: True**  
+**Default: False**  
 
-If enabled, other players will not be extrapolated indefinitely on clients. Instead, after a short amount of time they will be forcibly reset to the last position the client received from the server.
+If enabled, a player whose moves stop arriving for longer than [WarpFixDelay](#warpfixdelay) is handled in three places:
+
+* The server doesn't run the missed time when their moves come back. They are put back where the server last had them on their own screen, and the other players don't see them jump forward.
+* The other players' clients stop moving them on and put them back at the last spot the server sent. With [bEnableTickInterpolation](#benabletickinterpolation) on, this part does nothing: a stalled player already stops where the last update had them.
+* The rewind for shots places them where those clients show them.
+
+Off, the server runs the whole gap at once when the moves come back. The player keeps their own position and the others see them jump. [bEnableAdaptiveBuffering](#benableadaptivebuffering) holds a late player for shorter gaps either way.
 
 ## WarpFixDelay
 
@@ -1981,7 +1987,7 @@ If enabled, other players will not be extrapolated indefinitely on clients. Inst
 **Default: 0.25**  
 **Unit: s**  
 
-The amount of time that has to pass without an update from a player before forcing them back to their position on the server for all other clients. Also controls 
+How long a player's moves can stop arriving before [bEnableWarpFix](#benablewarpfix) puts them back where the server last had them. Does nothing with bEnableWarpFix off.
 
 ## bEnableAdaptiveBuffering
 
