@@ -6,6 +6,65 @@ var int EndOfGameTime;
 var bool bPaused;
 var float GRISecondCountOffset;
 
+// Dead: the server keeps our weapons and inventory for the trade window
+// (2 x MaxTradeTimeMargin, bbPlayer state Dying) and they keep reaching us
+// until it discards them. Stock discards them in Died. So for one HUD draw,
+// the dead pawn the HUD is about to show (ChallengeHUD.HUDSetup's PawnOwner)
+// goes without them: no ammo count, weapon bar or its pending switch, armor
+// or boots once the health reads 0. Someone else's armor and boots come from
+// their PRI (spectators, demos), which updates once a second, so those go
+// too. RestoreDead puts it all back after the draw (traded shots still need
+// the weapons). Returns None for the living and for spectators.
+static function Pawn HideDead(HUD H, out Weapon W, out Weapon Pending, out Inventory Inv, out int Armor, out int Boots) {
+	local PlayerPawn PP;
+	local Pawn P;
+	local bbPlayerReplicationInfo PRI;
+
+	PP = PlayerPawn(H.Owner);
+	if (PP == none)
+		return none;
+	P = PP;
+	if (PP.ViewTarget != none && PP.ViewTarget.bIsPawn)
+		P = Pawn(PP.ViewTarget);
+	if (P.Health > 0 || P.PlayerReplicationInfo == none || P.PlayerReplicationInfo.bIsSpectator)
+		return none;
+
+	W = P.Weapon;
+	Pending = P.PendingWeapon;
+	Inv = P.Inventory;
+	P.Weapon = none;
+	P.PendingWeapon = none;
+	P.Inventory = none;
+	PRI = bbPlayerReplicationInfo(P.PlayerReplicationInfo);
+	if (PRI != none) {
+		Armor = PRI.Armor;
+		Boots = PRI.Boots;
+		PRI.Armor = 0;
+		PRI.Boots = 0;
+	}
+	return P;
+}
+
+static function RestoreDead(Pawn P, Weapon W, Weapon Pending, Inventory Inv, int Armor, int Boots) {
+	local bbPlayerReplicationInfo PRI;
+
+	if (P == none)
+		return;
+	if (P.Weapon == none)
+		P.Weapon = W;
+	if (P.PendingWeapon == none)
+		P.PendingWeapon = Pending;
+	if (P.Inventory == none)
+		P.Inventory = Inv;
+	PRI = bbPlayerReplicationInfo(P.PlayerReplicationInfo);
+	if (PRI != none) {
+		if (PRI.Armor == 0)
+			PRI.Armor = Armor;
+		if (PRI.Boots == 0)
+			PRI.Boots = Boots;
+	}
+}
+
 static function int GetClockTime(HUD H) {
 	local int Rem;
 	local TournamentGameReplicationInfo TGRI;
