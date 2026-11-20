@@ -1,6 +1,5 @@
 class IGPlus_Button extends UWindowSmallButton;
 
-var UWindowDialogControl NextSettingControl;
 
 function MouseLeave() {
 	super(UWindowDialogControl).MouseLeave();

@@ -1,6 +1,5 @@
 class IGPlus_Separator extends UWindowLabelControl;
 
-var UWindowDialogControl NextSettingControl;
 var string SeparatorChar;
 var float TextWidth;
 var float SeparatorWidth;

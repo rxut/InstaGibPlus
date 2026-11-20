@@ -1,6 +1,5 @@
 class IGPlus_ComboBox extends UWindowComboControl;
 
-var UWindowDialogControl NextSettingControl;
 
 var float EditBoxMinWidth;
 var float EditBoxMaxWidth;
