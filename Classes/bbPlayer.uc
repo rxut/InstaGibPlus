@@ -1142,6 +1142,8 @@ var int IGPlus_TI_AnimHead, IGPlus_TI_AnimNum;
 var name IGPlus_TI_RawSeq, IGPlus_TI_ShownSeq;
 var float IGPlus_TI_RawFrame, IGPlus_TI_ShownFrame, IGPlus_TI_ShownTween;
 var bool IGPlus_TI_bAnimSwapped;
+// Client, on another player's pawn: the engine's tween state as drawn (IGPlus_TweenPlaceholder).
+var IGPlus_TweenTrack IGPlus_Tween;
 // Client, on a pawn that may be drawn (client setting FlipAnimationFix, IGPlus_FlipFix_Apply):
 // how much of the pose the engine last drew is a turned-over one (1 all of
 // it, 0 none), the animation shown last frame, and the flip that plays on or
@@ -15937,6 +15939,9 @@ event PreRender( canvas zzCanvas )
 				bbPlayer(zzPRI.Owner).IGPlus_ShownSpan = bbPlayer(zzPRI.Owner).IGPlus_TI_DrawnSpan;
 				bbPlayer(zzPRI.Owner).IGPlus_bShownHeld = bbPlayer(zzPRI.Owner).IGPlus_TI_bDrawnHeld;
 				bbPlayer(zzPRI.Owner).IGPlus_ShownDuck = bbPlayer(zzPRI.Owner).IGPlus_TI_DrawnDuck;
+				// Only drawn: the end of PostRender puts the animation back before any shot.
+				if (bbPlayer(zzPRI.Owner).IGPlus_Tween != none && bbPlayer(zzPRI.Owner).IGPlus_Tween.bPlaceholder)
+					bbPlayer(zzPRI.Owner).IGPlus_TweenPlaceholder();
 			}
 		}
 	}
@@ -16299,6 +16304,10 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 				P.IGPlus_TI_After(DeltaTime);
 			else
 				P.IGPlus_LocationOffsetFix_After(DeltaTime);
+			// Tweens as the engine draws them: from the animation as drawn.
+			if (P.IGPlus_Tween == none)
+				P.IGPlus_Tween = new class'IGPlus_TweenTrack';
+			P.IGPlus_Tween.Update(P.AnimSequence, P.AnimFrame);
 		}
 	}
 
@@ -16879,6 +16888,20 @@ simulated function IGPlus_FlipFix_Plain() {
 		IGPlus_TI_RawFrame = F;
 		IGPlus_TI_bAnimSwapped = true;
 	}
+}
+
+// The first frame of a tween into the same sequence as the last tween is drawn
+// with another sequence (IGPlus_TweenTrack), or the engine holds the pose it
+// starts from for the whole tween and then snaps. The engine blends nothing on
+// that frame, so the pose drawn does not change. IGPlus_AnimRestore puts the
+// animation back.
+simulated function IGPlus_TweenPlaceholder() {
+	if (IGPlus_TI_bAnimSwapped == false) {
+		IGPlus_TI_RawSeq = AnimSequence;
+		IGPlus_TI_RawFrame = AnimFrame;
+		IGPlus_TI_bAnimSwapped = true;
+	}
+	AnimSequence = IGPlus_Tween.PlaceholderSeq;
 }
 
 // After the frame is drawn: the engine plays on from its own animation.

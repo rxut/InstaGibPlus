@@ -803,6 +803,53 @@ function TestCrosshairShapes() {
 		"CrosshairShape_a_layer_and_the_dump_keep_shape_and_thickness");
 }
 
+function TestTweenPlaceholder() {
+	local IGPlus_TweenTrack T;
+	local bool bFresh, bBack, bAfter;
+
+	// Running, then stock PlayFiring swaps in RunLGFR without a tween, then a tween back to RunLG.
+	T = new class'IGPlus_TweenTrack';
+	T.Update('RunLG', -0.2);
+	bFresh = T.bPlaceholder == false;
+	T.Update('RunLG', -0.1);
+	bFresh = bFresh && T.bPlaceholder == false;
+	T.Update('RunLG', 0.3);
+	T.Update('RunLGFR', 0.4);
+	T.Update('RunLG', -0.2);
+	bBack = T.bPlaceholder && T.PlaceholderSeq == 'Breath1';
+	T.Update('RunLG', -0.15);
+	bAfter = T.bPlaceholder == false;
+	T.Update('RunLG', -0.1);
+	bAfter = bAfter && T.bPlaceholder == false;
+	LogTestResult(bFresh && bBack && bAfter,
+		"TweenPlaceholder_only_the_first_frame_of_a_tween_back_into_the_last_tween_sequence");
+
+	// A tween that starts again into the same sequence while the frame is still negative.
+	T = new class'IGPlus_TweenTrack';
+	T.Update('DuckWlkL', -0.3);
+	T.Update('DuckWlkL', -0.2);
+	bFresh = T.bPlaceholder == false;
+	T.Update('DuckWlkL', -0.3);
+	bBack = T.bPlaceholder && T.PlaceholderSeq == 'Breath1';
+	// A loop that starts again from a server update: the tween's start frame comes back after the loop played.
+	T = new class'IGPlus_TweenTrack';
+	T.Update('StrafeR', -0.09);
+	T.Update('StrafeR', -0.01);
+	T.Update('StrafeR', 0.5);
+	T.Update('StrafeR', 0.92);
+	T.Update('StrafeR', -0.09);
+	bBack = bBack && T.bPlaceholder;
+	T.Update('StrafeR', -0.08);
+	bBack = bBack && T.bPlaceholder == false;
+	// Breath1 itself gets Breath2.
+	T = new class'IGPlus_TweenTrack';
+	T.Update('Breath1', -0.2);
+	T.Update('Breath1', 0.5);
+	T.Update('Breath1', -0.2);
+	LogTestResult(bFresh && bBack && T.bPlaceholder && T.PlaceholderSeq == 'Breath2',
+		"TweenPlaceholder_a_restarted_tween_a_restarted_loop_and_Breath1");
+}
+
 event int main(string Params) {
 	TestDataBuffer();
 	TestDetEffectiveAnimTime();
@@ -821,5 +868,6 @@ event int main(string Params) {
 	TestCrosshairPresets();
 	TestCrosshairShapes();
 	TestCrosshairLayerCanvas();
+	TestTweenPlaceholder();
 	return 0;
 }
