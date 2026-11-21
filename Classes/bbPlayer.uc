@@ -1094,6 +1094,15 @@ var bool IGPlus_FlipFix_bLogged;
 // new loop at the point of its stride that meets the blend's end, 2 its first frame.
 var name IGPlus_NF_Seq;
 var byte IGPlus_NF_Mode;
+// A strafe flip drawn with transition frames (IGPlus_NF_Mode 3, IGPlus_StrafeTurnMeshFor):
+// the mesh that holds them, the blend's first frame, the pawn's own mesh while
+// the other one is drawn, and the blend for the head hitbox (head v2).
+var Mesh IGPlus_NF_TurnMesh;
+var float IGPlus_NF_Start;
+var bool IGPlus_NF_bMesh;
+var Mesh IGPlus_NF_RawMesh;
+var name IGPlus_NF_HeadSeq;
+var float IGPlus_NF_HeadFrame;
 // The part of the Flip animation the model is turned over in. Measured on
 // the stock male model (20 frames): 50 degrees off upright at frame 3, 170 at
 // frame 12, 59 at frame 18. A dodge on level ground lands at frames 15 to 17.
@@ -15345,6 +15354,13 @@ function SetForcedMesh(PlayerReplicationInfo PRI, int Skin) {
 	if (NewMesh == none)
 		return;
 
+	// Drawn with strafe flip transition frames this frame (IGPlus_StrafeTurnDraw):
+	// the forced model is the one put back after the frame.
+	if (bbPlayer(PRI.Owner) != none && bbPlayer(PRI.Owner).IGPlus_NF_bMesh) {
+		bbPlayer(PRI.Owner).IGPlus_NF_RawMesh = NewMesh;
+		return;
+	}
+
 	if (PRI.Owner.Mesh != NewMesh)
 		PRI.Owner.Mesh = NewMesh;
 }
@@ -15851,7 +15867,10 @@ function IGPlus_LocationOffsetFix_AfterAll(float DeltaTime) {
 			// The head through tweens, from the animation as this frame draws it.
 			if (P.IGPlus_HeadTween == none)
 				P.IGPlus_HeadTween = new class'IGPlus_HeadTween';
-			P.IGPlus_HeadTween.Update(P.AnimSequence, P.AnimFrame);
+			if (P.IGPlus_NF_bMesh)
+				P.IGPlus_HeadTween.Update(P.IGPlus_NF_HeadSeq, P.IGPlus_NF_HeadFrame);
+			else
+				P.IGPlus_HeadTween.Update(P.AnimSequence, P.AnimFrame);
 		}
 	}
 
@@ -16357,18 +16376,87 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 	if (bStart) {
 		IGPlus_NF_Seq = Seq;
 		IGPlus_NF_Mode = IGPlus_FoldSnap(IGPlus_FlipFix_Seq, Seq);
+		IGPlus_NF_Start = Frame;
+		// A strafe flip: the model's own transition frames, where it has them.
+		// Without them the engine's blend is drawn.
+		if (IGPlus_IsStrafeFlip(IGPlus_FlipFix_Seq, Seq)) {
+			IGPlus_NF_TurnMesh = IGPlus_StrafeTurnMeshFor(Mesh);
+			if (IGPlus_NF_TurnMesh != none)
+				IGPlus_NF_Mode = 3;
+		}
 	}
 	IGPlus_FlipFix_Seq = Seq;
 	IGPlus_FlipFix_Last = Frame;
 	// A blend that would fold the model: a stock frame of the new animation is
 	// drawn instead (IGPlus_FoldSnap). Only drawn, the real animation stays.
 	if (Seq == IGPlus_NF_Seq && IGPlus_NF_Mode != 0) {
-		if (IGPlus_NF_Mode == 1)
+		if (IGPlus_NF_Mode == 3) {
+			IGPlus_StrafeTurnDraw(Frame);
+		} else if (IGPlus_NF_Mode == 1) {
 			AnimFrame = IGPlus_FoldStrideFrame(Frame, Rate, IGPlus_LoopRate());
-		else
+		} else {
 			AnimFrame = 0.0;
+		}
 		IGPlus_FlipFix_Flipped = 0.0;
 	}
+}
+
+// From one strafe straight into the other (they flip at the end of a loop).
+static function bool IGPlus_IsStrafeFlip(name From, name To) {
+	return (From == 'StrafeL' && To == 'StrafeR') || (From == 'StrafeR' && To == 'StrafeL');
+}
+
+// The engine blends a strafe flip by moving every vertex in a straight line,
+// and the legs cross and go thin in the middle. IG+ has transition frames for
+// the stock models (IGPlus_StrafeTurnMesh.uc, made from the model's own frames):
+// the upper body moves as the engine's blend moves it, the legs turn instead of
+// sliding, so they keep their thickness. Their StrafeL is the flip from StrafeR
+// into StrafeL's first frame, their StrafeR the other way. None: no frames for
+// this model.
+static function Mesh IGPlus_StrafeTurnMeshFor(Mesh M) {
+	if (M == none)
+		return none;
+	switch (M.Name) {
+		case 'Commando':
+		case 'IGPlus_MCommandoF':
+			return class'IGPlus_StrafeTurnMesh'.default.Commando;
+		case 'Soldier':
+		case 'IGPlus_MSoldierF':
+			return class'IGPlus_StrafeTurnMesh'.default.Soldier;
+		case 'Boss':
+		case 'IGPlus_BossF':
+			return class'IGPlus_StrafeTurnMesh'.default.Boss;
+		case 'FCommando':
+			return class'IGPlus_StrafeTurnMesh'.default.FCommando;
+		case 'IGPlus_FCommando':
+		case 'IGPlus_FCommandoM':
+			return class'IGPlus_StrafeTurnMesh'.default.FCommandoIG;
+		case 'SGirl':
+			return class'IGPlus_StrafeTurnMesh'.default.SGirl;
+		case 'IGPlus_FSoldier':
+		case 'IGPlus_FSoldierM':
+			return class'IGPlus_StrafeTurnMesh'.default.SGirlIG;
+	}
+	return none;
+}
+
+// Draws this frame of a strafe flip from the transition frames, at the part of
+// the way the engine's blend is at (Frame below 0, from IGPlus_NF_Start up to 0).
+// The head hitbox follows the engine's blend (IGPlus_NF_HeadSeq), which is where
+// these frames hold the upper body. IGPlus_AnimRestore puts the mesh back.
+simulated function IGPlus_StrafeTurnDraw(float Frame) {
+	local float Alpha;
+
+	IGPlus_NF_HeadSeq = AnimSequence;
+	IGPlus_NF_HeadFrame = Frame;
+	Alpha = 1.0;
+	if (IGPlus_NF_Start < 0.0)
+		Alpha = FClamp(1.0 - Frame / IGPlus_NF_Start, 0.0, 1.0);
+	if (IGPlus_NF_bMesh == false)
+		IGPlus_NF_RawMesh = Mesh;
+	Mesh = IGPlus_NF_TurnMesh;
+	IGPlus_NF_bMesh = true;
+	AnimFrame = Alpha * 0.875;  // 8 frames: the last is the new strafe's first
 }
 
 // Where two poses turn the legs or the body a long way apart, the model goes
@@ -16383,7 +16471,7 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 static function byte IGPlus_FoldSnap(name From, name To) {
 	local string Other;
 
-	if (From == To || From == '')
+	if (From == To || From == '' || IGPlus_IsStrafeFlip(From, To))
 		return 0;
 	if (Left(string(From), 6) ~= "Strafe")
 		Other = string(To);
@@ -16573,6 +16661,10 @@ simulated function IGPlus_AnimRestore() {
 		AnimSequence = IGPlus_TI_RawSeq;
 		AnimFrame = IGPlus_TI_RawFrame;
 		IGPlus_TI_bAnimSwapped = false;
+	}
+	if (IGPlus_NF_bMesh) {
+		Mesh = IGPlus_NF_RawMesh;
+		IGPlus_NF_bMesh = false;
 	}
 }
 

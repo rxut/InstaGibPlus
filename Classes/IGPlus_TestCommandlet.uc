@@ -873,7 +873,18 @@ function TestMissedTween() {
 
 // Blends that fold the model are drawn as stock frames (IGPlus_FoldSnap, IGPlus_FoldStrideFrame).
 function TestFoldSnap() {
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeR', 'StrafeL') == 1, "FoldSnap_strafe_flip_keeps_the_stride");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeR', 'StrafeL') == 0, "FoldSnap_strafe_flips_are_left_to_the_transition_frames");
+	LogTestResult(class'bbPlayer'.static.IGPlus_IsStrafeFlip('StrafeL', 'StrafeR') && class'bbPlayer'.static.IGPlus_IsStrafeFlip('StrafeR', 'StrafeL')
+		&& class'bbPlayer'.static.IGPlus_IsStrafeFlip('StrafeL', 'StrafeL') == false && class'bbPlayer'.static.IGPlus_IsStrafeFlip('DuckWlkL', 'StrafeL') == false, "IsStrafeFlip_only_one_strafe_into_the_other");
+	LogTestResult(class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(LodMesh'Botpack.Soldier') != none, "StrafeTurnMesh_the_stock_Soldier_has_transition_frames");
+	LogTestResult(class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(LodMesh'Botpack.Commando') != none
+		&& class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(LodMesh'Botpack.Boss') != none
+		&& class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(LodMesh'Botpack.FCommando') != none
+		&& class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(LodMesh'Botpack.SGirl') != none, "StrafeTurnMesh_every_stock_model_has_transition_frames");
+	LogTestResult(class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(LodMesh'Botpack.FCommando') != class'IGPlus_StrafeTurnMesh'.default.FCommandoIG
+		&& class'IGPlus_StrafeTurnMesh'.default.FCommandoIG != none && class'IGPlus_StrafeTurnMesh'.default.SGirlIG != none, "StrafeTurnMesh_IG_plus_female_copies_have_their_own_origin");
+	LogTestResult(class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(none) == none
+		&& class'bbPlayer'.static.IGPlus_StrafeTurnMeshFor(class'IGPlus_StrafeTurnMesh'.default.Soldier) == none, "StrafeTurnMesh_none_for_a_model_without_frames");
 	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('DuckWlkL', 'StrafeL') == 1, "FoldSnap_crouch_to_strafe_keeps_the_stride");
 	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'StillFrRp') == 2, "FoldSnap_strafe_to_standing_draws_the_first_frame");
 	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('LandLgFr', 'StrafeR') == 1, "FoldSnap_landing_into_a_strafe");
@@ -1008,7 +1019,11 @@ function TestHeadTweenFold() {
 	H = new class'IGPlus_HeadTween';
 	H.UpdateRaw('StrafeR', 0.9, 0.0, 1.7);
 	H.UpdateRaw('StrafeL', -0.096, 1.7, 1.7);
-	LogTestResult(Abs(H.LastFrame - 0.904) < 0.001, "HeadTweenFold_strafe_flip_follows_the_drawn_stride");
+	LogTestResult(Abs(H.LastFrame + 0.096) < 0.001, "HeadTweenFold_strafe_flip_follows_the_engine_blend");
+	H = new class'IGPlus_HeadTween';
+	H.UpdateRaw('DuckWlkL', 0.5, 0.0, 1.0);
+	H.UpdateRaw('StrafeL', -0.096, 1.7, 1.7);
+	LogTestResult(Abs(H.LastFrame - 0.904) < 0.001, "HeadTweenFold_crouch_to_strafe_follows_the_drawn_stride");
 	H.UpdateRaw('StrafeL', -0.05, 1.7, 1.7);
 	LogTestResult(Abs(H.LastFrame - 0.95) < 0.001, "HeadTweenFold_stays_on_the_stride_through_the_blend");
 	H.UpdateRaw('StrafeL', 0.02, 1.7, 1.7);
