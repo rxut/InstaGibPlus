@@ -998,7 +998,10 @@ function TestTransitionFrames() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Commando') == 0 && class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Soldier') == 1
 		&& class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Boss') == 2 && class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.FCommando') == 3
 		&& class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.SGirl') == 5 && class'bbPlayer'.static.IGPlus_TransitionModel(none) == -1, "TransitionModel_every_stock_model");
-	LogTestResult(class'IGPlus_TransitionMesh'.default.Frames[0] != none && class'IGPlus_TransitionMesh'.default.Frames[34] != none, "TransitionMesh_all_meshes_imported");
+	LogTestResult(class'IGPlus_TransitionMesh'.default.Frames[0] != none && class'IGPlus_TransitionMesh'.default.Frames[41] != none, "TransitionMesh_all_meshes_imported");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('Flip', 'LandLgFr', Source, Sets, Steps) && Source == 5 && Sets == 1
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('Flip', 'StillFrRp', Source, Sets, Steps) && Source == 5
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('LandLgFr', 'StillFrRp', Source, Sets, Steps) && Source == 3, "Transition_flip_end_and_landing_into_standing");
 	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionModel(class'IGPlus_TransitionMesh'.default.Frames[6]) == -1, "TransitionModel_none_for_a_transition_mesh");
 	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFrame(0.0, 1, 8, 0.0) == 0.0 && Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(1.0, 1, 8, 0.0) - 0.875) < 0.0001, "TransitionFrame_one_set_runs_to_the_last_frame");
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(0.0, 10, 12, 3.4) - 3.4 / 132.0) < 0.0001, "TransitionFrame_first_step_between_two_start_sets");
@@ -1009,6 +1012,11 @@ function TestTransitionFrames() {
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.097, -0.097, 0.93) - 0.93) < 0.0001
 		&& Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.0485, -0.097, 0.93) - 0.965) < 0.0001, "TransitionAlpha_a_restarted_blend_goes_on_from_where_it_was");
 	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionAlpha(0.0, -0.097, 0.93) == 1.0, "TransitionAlpha_ends_at_the_new_animation");
+	// After Finish Flip the landing plays at its own speed, but a new jump or dodge takes over at once.
+	LogTestResult(class'bbPlayer'.static.IGPlus_FlipFix_InAir('JumpLgFr') && class'bbPlayer'.static.IGPlus_FlipFix_InAir('DodgeL')
+		&& class'bbPlayer'.static.IGPlus_FlipFix_InAir('Flip') && class'bbPlayer'.static.IGPlus_FlipFix_InAir('DuckWlkL'), "FlipFix_in_air_animations_end_a_late_landing");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FlipFix_InAir('LandLgFr') == false && class'bbPlayer'.static.IGPlus_FlipFix_InAir('StillFrRp') == false
+		&& class'bbPlayer'.static.IGPlus_FlipFix_InAir('StrafeL') == false && class'bbPlayer'.static.IGPlus_FlipFix_InAir('RunLgFr') == false, "FlipFix_ground_animations_keep_the_landing");
 }
 
 event int main(string Params) {
