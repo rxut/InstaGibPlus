@@ -1087,7 +1087,10 @@ var float IGPlus_FlipFix_Last, IGPlus_FlipFix_Time;
 var name IGPlus_FlipFix_BlendSeq;         // the blend the game is in
 var float IGPlus_FlipFix_BlendFirst;      // and the frame it started with
 var byte IGPlus_FlipFix_State;            // 1: the flip plays on. 2: the game's blend takes over
-var float IGPlus_FlipFix_FlipFrame, IGPlus_FlipFix_FlipRate, IGPlus_FlipFix_Ramp;
+var float IGPlus_FlipFix_FlipFrame, IGPlus_FlipFix_FlipRate;
+// After the flip: the blend the game was in, drawn on its own clock (IGPlus_FlipFix_Apply, State 2).
+var name IGPlus_FlipFix_LandSeq;
+var float IGPlus_FlipFix_LandFrame, IGPlus_FlipFix_LandRate;
 var float IGPlus_FlipFix_FlipAt, IGPlus_FlipFix_FlipTime; // the flip frame shown last, and when
 var bool IGPlus_FlipFix_bLogged;
 // A blend drawn with transition frames (IGPlus_TransitionStart): its sequence and
@@ -1123,7 +1126,7 @@ const IGPLUS_FLIPFIX_FLIP_TO = 0.92;
 const IGPLUS_FLIPFIX_FLIP_END = 0.95;     // the flip's last frame
 const IGPLUS_FLIPFIX_MIN_FLIPPED = 0.2;   // how much of the drawn pose has to be a turned-over one
 const IGPLUS_FLIPFIX_FLIP_MEMORY = 0.2; // seconds a flip counts as just shown
-const IGPLUS_FLIPFIX_RAMP_TIME = 0.06;    // seconds: how fast the blend that takes over catches up
+const IGPLUS_FLIPFIX_LAND_TIME = 0.12;    // seconds: the landing blend's length (stock PlayLanded) if the rate is unknown
 // Client, with enableDebugData on: how Tick Interpolation drew this player
 // since the last "Tick Interpolation:" line (IGPlus_TI_Stat, IGPlus_TI_LogStats).
 var int IGPlus_TI_StFrames, IGPlus_TI_StPast, IGPlus_TI_StStopped, IGPlus_TI_StHeld;
@@ -16307,19 +16310,30 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 		IGPlus_FlipFix_Seq = 'Flip';
 		IGPlus_FlipFix_Last = IGPLUS_FLIPFIX_FLIP_END;
 		if (Frame < 0.0 && IGPlus_FlipFix_BlendFirst < 0.0) {
-			// The blend the game is in takes over, from its own start.
+			// The blend the game is in (the landing) plays from its own start
+			// at its own speed, from the flip's last pose. Catching up with
+			// the game's blend squeezed it: the landing moved the free arm to
+			// the gun in 40 ms instead of the stock 120.
 			IGPlus_FlipFix_State = 2;
-			IGPlus_FlipFix_Ramp = FMax(0.0, IGPlus_FlipFix_BlendFirst / Frame - 1.0);
+			IGPlus_FlipFix_LandSeq = Seq;
+			IGPlus_FlipFix_LandFrame = IGPlus_FlipFix_BlendFirst;
+			IGPlus_FlipFix_LandRate = Rate;
+			if (IGPlus_FlipFix_LandRate <= 0.0)
+				IGPlus_FlipFix_LandRate = -IGPlus_FlipFix_BlendFirst / IGPLUS_FLIPFIX_LAND_TIME;
+			// With transition frames, so the free hand keeps its size on its way to the gun.
+			IGPlus_TransitionStart('Flip', IGPLUS_FLIPFIX_FLIP_END, Seq, IGPlus_FlipFix_BlendFirst);
 		}
 	}
 	if (IGPlus_FlipFix_State == 2) {
-		// It catches up with the game's blend.
-		IGPlus_FlipFix_Ramp *= Exp(-Dt / IGPLUS_FLIPFIX_RAMP_TIME);
-		if (Frame < 0.0 && Seq == IGPlus_FlipFix_BlendSeq && IGPlus_FlipFix_Ramp > 0.02
-			&& (IGPlus_FlipFix_Seq != Seq || Frame * (1.0 + IGPlus_FlipFix_Ramp) >= IGPlus_FlipFix_Last)) {
-			AnimFrame = Frame * (1.0 + IGPlus_FlipFix_Ramp);
-			IGPlus_FlipFix_Seq = Seq;
-			IGPlus_FlipFix_Last = AnimFrame;
+		// Until it ends, or the player leaves the ground again.
+		IGPlus_FlipFix_LandFrame += IGPlus_FlipFix_LandRate * Dt;
+		if (IGPlus_FlipFix_LandFrame < 0.0 && IGPlus_FlipFix_InAir(Seq) == false) {
+			AnimSequence = IGPlus_FlipFix_LandSeq;
+			AnimFrame = IGPlus_FlipFix_LandFrame;
+			IGPlus_FlipFix_Seq = IGPlus_FlipFix_LandSeq;
+			IGPlus_FlipFix_Last = IGPlus_FlipFix_LandFrame;
+			if (IGPlus_NF_Seq == IGPlus_FlipFix_LandSeq && IGPlus_NF_Mode != 0)
+				IGPlus_TransitionDraw(IGPlus_FlipFix_LandFrame);
 			return;
 		}
 		IGPlus_FlipFix_State = 0;
@@ -16429,6 +16443,9 @@ static function bool IGPlus_TransitionLayout(name From, name To, out int Source,
 	if (From == 'StillFrRp' && To == 'StrafeL') { Source = 2; Steps = 10; return true; }
 	if (From == 'LandLgFr' && To == 'StrafeL') { Source = 3; Steps = 10; return true; }
 	if (From == 'DuckWlkL' && To == 'StrafeR') { Source = 4; Sets = 15; Steps = 10; return true; }
+	if (From == 'LandLgFr' && To == 'StillFrRp') { Source = 3; Steps = 10; return true; }
+	if (From == 'Flip' && To == 'LandLgFr') { Source = 5; Steps = 10; return true; }
+	if (From == 'Flip' && To == 'StillFrRp') { Source = 5; Steps = 10; return true; }
 	return false;
 }
 
@@ -16483,10 +16500,13 @@ simulated function IGPlus_TransitionStart(name From, float FromFrame, name To, f
 		return;
 	if (Sets > 1 && FromFrame < 0.0)
 		return;
+	// The flip's frames start where Finish Flip ends it (IGPLUS_FLIPFIX_FLIP_END).
+	if (From == 'Flip' && FromFrame < 0.9)
+		return;
 	Model = IGPlus_TransitionModel(Mesh);
 	if (Model < 0)
 		return;
-	IGPlus_NF_TurnMesh = class'IGPlus_TransitionMesh'.default.Frames[Model * 5 + Source];
+	IGPlus_NF_TurnMesh = class'IGPlus_TransitionMesh'.default.Frames[Model * 6 + Source];
 	if (IGPlus_NF_TurnMesh == none)
 		return;
 	IGPlus_NF_Sets = Sets;
@@ -16552,6 +16572,15 @@ simulated function IGPlus_TransitionLeave(float Frame) {
 	IGPlus_NF_bHead = true;
 	AnimSequence = IGPlus_NF_NearSeq;
 	AnimFrame = IGPlus_NF_NearFrame;
+}
+
+// An animation of a player off the ground (a jump, a dodge, a flip, the in-air
+// crouch pose): a landing drawn late gives way to it at once.
+static function bool IGPlus_FlipFix_InAir(name Seq) {
+	local string S;
+
+	S = Left(string(Seq), 4);
+	return S ~= "Jump" || S ~= "Dodg" || S ~= "Flip" || S ~= "Duck";
 }
 
 // The client's FlipAnimationFix setting: 0 off, 2 finish the flip. FAF_Instant
