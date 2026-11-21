@@ -871,23 +871,6 @@ function TestMissedTween() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_MissedTween('RunLGFR', S, 'RunLG', S, 0.5), "MissedTween_RunLGFR_to_RunLG_is_a_LoopAnim");
 }
 
-// Blends that fold the model are drawn as stock frames (IGPlus_FoldSnap, IGPlus_FoldStrideFrame).
-function TestFoldSnap() {
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeR', 'StrafeL') == 1, "FoldSnap_strafe_flip_keeps_the_stride");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('DuckWlkL', 'StrafeL') == 1, "FoldSnap_crouch_to_strafe_keeps_the_stride");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'StillFrRp') == 2, "FoldSnap_strafe_to_standing_draws_the_first_frame");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('LandLgFr', 'StrafeR') == 1, "FoldSnap_landing_into_a_strafe");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'StrafeL') == 0, "FoldSnap_not_a_loop_restart");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('RunLgFr', 'BackRun') == 0, "FoldSnap_not_without_a_strafe");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'DodgeR') == 0, "FoldSnap_not_into_a_dodge");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('StrafeL', 'JumpLgFr') == 0, "FoldSnap_not_into_a_jump");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('BackRun', 'StrafeL') == 0, "FoldSnap_not_from_BackRun");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldSnap('', 'StrafeL') == 0, "FoldSnap_not_on_the_first_frame");
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.096, 1.7, 1.7) - 0.904) < 0.001, "FoldStrideFrame_strafe_flip_draws_the_end_of_the_stride");
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.5, 0.5, 1.7) - 0.3) < 0.001, "FoldStrideFrame_wraps_over_a_whole_loop");
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.001, 1.7, 1.7) - 0.999) < 0.001, "FoldStrideFrame_meets_the_loop_start_at_the_end");
-	LogTestResult(class'bbPlayer'.static.IGPlus_FoldStrideFrame(-0.1, 1.7, 0.0) == 0.0, "FoldStrideFrame_a_loop_standing_still_draws_its_first_frame");
-}
 
 function bool NearVec(vector A, vector B) {
 	return VSize(A - B) < 0.05;
@@ -1001,24 +984,31 @@ function TestHeadTween() {
 	LogTestResult(Ok && Tw.bCur && NearVec(Tw.Cur, B0), "HeadTween_no_blend_from_an_unknown_animation");
 }
 
-// The server's head tracker follows the animation as a client draws it (IGPlus_HeadTween.UpdateRaw).
-function TestHeadTweenFold() {
-	local IGPlus_HeadTween H;
-
-	H = new class'IGPlus_HeadTween';
-	H.UpdateRaw('StrafeR', 0.9, 0.0, 1.7);
-	H.UpdateRaw('StrafeL', -0.096, 1.7, 1.7);
-	LogTestResult(Abs(H.LastFrame - 0.904) < 0.001, "HeadTweenFold_strafe_flip_follows_the_drawn_stride");
-	H.UpdateRaw('StrafeL', -0.05, 1.7, 1.7);
-	LogTestResult(Abs(H.LastFrame - 0.95) < 0.001, "HeadTweenFold_stays_on_the_stride_through_the_blend");
-	H.UpdateRaw('StrafeL', 0.02, 1.7, 1.7);
-	LogTestResult(Abs(H.LastFrame - 0.02) < 0.001, "HeadTweenFold_the_real_animation_takes_over_after_the_blend");
-	H.UpdateRaw('StillFrRp', -0.1, 0.5, 0.0);
-	LogTestResult(H.LastFrame == 0.0, "HeadTweenFold_strafe_to_standing_follows_the_first_frame");
-	H = new class'IGPlus_HeadTween';
-	H.UpdateRaw('RunLgFr', 0.9, 0.0, 1.0);
-	H.UpdateRaw('BackRun', -0.1, 1.0, 1.0);
-	LogTestResult(Abs(H.LastFrame + 0.1) < 0.001, "HeadTweenFold_a_blend_that_does_not_fold_stays_a_blend");
+// Blends the engine would fold are drawn with transition frames (bbPlayer.IGPlus_TransitionLayout).
+function TestTransitionFrames() {
+	local int Source, Sets, Steps;
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'StrafeL', Source, Sets, Steps) && Source == 0 && Sets == 1 && Steps == 8, "Transition_strafe_flip_has_one_set_of_8");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeL', 'StillFrRp', Source, Sets, Steps) && Source == 1 && Sets == 10 && Steps == 12, "Transition_stopping_a_strafe_has_a_set_per_key_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('DuckWlkL', 'StrafeR', Source, Sets, Steps) && Source == 4 && Sets == 15, "Transition_leaving_a_crouch_walk_has_a_set_per_key_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StillFrRp', 'StrafeL', Source, Sets, Steps) && class'bbPlayer'.static.IGPlus_TransitionLayout('LandLgFr', 'StrafeL', Source, Sets, Steps), "Transition_standing_and_landing_into_StrafeL");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'StillFrRp', Source, Sets, Steps) == false
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StillFrRp', 'StrafeR', Source, Sets, Steps) == false
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'DuckWlkL', Source, Sets, Steps) == false
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeL', 'DodgeR', Source, Sets, Steps) == false, "Transition_other_blends_are_the_engines");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Commando') == 0 && class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Soldier') == 1
+		&& class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Boss') == 2 && class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.FCommando') == 3
+		&& class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.SGirl') == 5 && class'bbPlayer'.static.IGPlus_TransitionModel(none) == -1, "TransitionModel_every_stock_model");
+	LogTestResult(class'IGPlus_TransitionMesh'.default.Frames[0] != none && class'IGPlus_TransitionMesh'.default.Frames[34] != none, "TransitionMesh_all_meshes_imported");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionModel(class'IGPlus_TransitionMesh'.default.Frames[6]) == -1, "TransitionModel_none_for_a_transition_mesh");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFrame(0.0, 1, 8, 0.0) == 0.0 && Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(1.0, 1, 8, 0.0) - 0.875) < 0.0001, "TransitionFrame_one_set_runs_to_the_last_frame");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(0.0, 10, 12, 3.4) - 3.4 / 132.0) < 0.0001, "TransitionFrame_first_step_between_two_start_sets");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(1.0, 10, 12, 3.4) - (11 * 11 + 3.4) / 132.0) < 0.0001, "TransitionFrame_last_step_of_the_same_sets");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFrame(0.5, 10, 12, 9.99) < (6 * 11 + 10) / 132.0, "TransitionFrame_stays_inside_its_step");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.05, -0.1, 0.0) - 0.5) < 0.0001, "TransitionAlpha_halfway_through_the_blend");
+	// A stop played twice: the blend restarts at -0.097 when it was 93% done. It goes on from 93%, never back.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.097, -0.097, 0.93) - 0.93) < 0.0001
+		&& Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.0485, -0.097, 0.93) - 0.965) < 0.0001, "TransitionAlpha_a_restarted_blend_goes_on_from_where_it_was");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionAlpha(0.0, -0.097, 0.93) == 1.0, "TransitionAlpha_ends_at_the_new_animation");
 }
 
 event int main(string Params) {
@@ -1041,8 +1031,7 @@ event int main(string Params) {
 	TestCrosshairLayerCanvas();
 	TestTweenPlaceholder();
 	TestMissedTween();
-	TestFoldSnap();
-	TestHeadTweenFold();
+	TestTransitionFrames();
 	TestHeadHitbox();
 	TestHeadTween();
 	return 0;
