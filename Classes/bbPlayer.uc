@@ -1080,54 +1080,62 @@ var name IGPlus_MT_LastSeq;
 var plane IGPlus_MT_LastSim;
 // Client, on a pawn that may be drawn (client setting FlipAnimationFix, IGPlus_FlipFix_Apply):
 // how much of the pose on screen is a turned-over one (1 all of
-// it, 0 none), the animation shown last frame, and the flip that plays on or
-// the blend that takes over from it.
+// it, 0 none), the animation shown last frame and, for a blend, the frame it
+// started with.
 var float IGPlus_FlipFix_Flipped;
 var name IGPlus_FlipFix_Seq;
-var float IGPlus_FlipFix_Last, IGPlus_FlipFix_Time;
+var float IGPlus_FlipFix_Last, IGPlus_FlipFix_LastFirst;
+var float IGPlus_FlipFix_Time, IGPlus_FlipFix_Dt; // when this ran last, and the seconds since the time before
 var name IGPlus_FlipFix_BlendSeq;         // the blend the game is in
 var float IGPlus_FlipFix_BlendFirst;      // and the frame it started with
-var byte IGPlus_FlipFix_State;            // 1: the flip plays on. 2: the game's blend takes over
-var float IGPlus_FlipFix_FlipFrame, IGPlus_FlipFix_FlipRate;
-// After the flip: the blend the game was in, drawn on its own clock (IGPlus_FlipFix_Apply, State 2).
+// 1: the flip plays on. 2: a blend on its own clock, from the pose drawn last
+// into what the game plays. 3: that animation's phase eases over to the game's.
+var byte IGPlus_FlipFix_State;
+var float IGPlus_FlipFix_FlipFrame, IGPlus_FlipFix_FlipRate, IGPlus_FlipFix_FlipSpeed;
+var float IGPlus_FlipFix_FlipAt, IGPlus_FlipFix_FlipTime; // the flip frame shown last, and when
+// State 2: its animation, the frame (-1 to 0) and the speed.
 var name IGPlus_FlipFix_LandSeq;
 var float IGPlus_FlipFix_LandFrame, IGPlus_FlipFix_LandRate;
-var float IGPlus_FlipFix_FlipAt, IGPlus_FlipFix_FlipTime; // the flip frame shown last, and when
+// State 3: its animation, how far it was behind the game's and since when.
+var name IGPlus_FlipFix_CatchSeq;
+var float IGPlus_FlipFix_Lag, IGPlus_FlipFix_CatchTime;
 var bool IGPlus_FlipFix_bLogged;
-// A blend drawn with transition frames (IGPlus_TransitionStart): its sequence and
-// 3 while it is (0: the engine's blend).
+// A blend drawn with transition frames (IGPlus_TransitionBegin): its target and
+// whether it has them, which pair (IGPlus_TransitionLayout), its start sets and
+// steps, the start key frame and the set nearest to it, the blend's first
+// frame, the part of the way drawn last, and where the blend stood when the
+// game restarted it.
 var name IGPlus_NF_Seq;
-var byte IGPlus_NF_Mode;
-// The mesh that holds its frames, start sets, steps and the start key frame
-// (IGPlus_TransitionFrame), the blend's first frame, the pawn's own mesh while
-// the other one is drawn, and the blend for the head hitbox (head v2).
-var Mesh IGPlus_NF_TurnMesh;
-var int IGPlus_NF_Sets, IGPlus_NF_Steps;
+var bool IGPlus_NF_bOn;
+var int IGPlus_NF_Pair, IGPlus_NF_Sets, IGPlus_NF_Steps, IGPlus_NF_K;
 var float IGPlus_NF_Key;
 var float IGPlus_NF_Start;
+var float IGPlus_NF_Alpha, IGPlus_NF_Alpha0;
+var bool IGPlus_NF_bStep;                 // the exact start was drawn
+var float IGPlus_NF_Step0;                // and the part of the way it was drawn at
+// Blends after transition frames stay on the transition mesh
+// (IGPlus_FlipFix_Draw). The pawn's own mesh while that one is drawn, and the
+// blend for the head hitbox (head v2).
+var bool IGPlus_NF_bMerged;
 var bool IGPlus_NF_bMesh;
 var Mesh IGPlus_NF_RawMesh;
 var name IGPlus_NF_HeadSeq;
 var float IGPlus_NF_HeadFrame;
 var bool IGPlus_NF_bHead;
-// Transition frames were drawn the frame before, the old animation and its
-// frame, and the stock pose nearest to the one drawn last (IGPlus_TransitionLeave).
-var bool IGPlus_NF_bDrawn;
-var name IGPlus_NF_FromSeq;
-var float IGPlus_NF_FromFrame;
-// The part of the way drawn last, and where the blend stood when the game restarted it (IGPlus_TransitionDraw).
-var float IGPlus_NF_Alpha, IGPlus_NF_Alpha0;
-var name IGPlus_NF_NearSeq;
-var float IGPlus_NF_NearFrame;
 // The part of the Flip animation the model is turned over in. Measured on
 // the stock male model (20 frames): 50 degrees off upright at frame 3, 170 at
-// frame 12, 59 at frame 18. A dodge on level ground lands at frames 15 to 17.
+// frame 12, 59 at frame 18. A dodge on level ground lands at frames 15 to 17
+// on the male models. The female flip has 31 frames and lands about halfway.
 const IGPLUS_FLIPFIX_FLIP_FROM = 0.15;
-const IGPLUS_FLIPFIX_FLIP_TO = 0.92;
-const IGPLUS_FLIPFIX_FLIP_END = 0.95;     // the flip's last frame
+const IGPLUS_FLIPFIX_FLIP_END = 0.95;     // where Finish Flip ends the flip
+const IGPLUS_FLIPFIX_FLIP_END_F = 0.935484; // on the female models: key frame 29 of 31, where their transition frames start
 const IGPLUS_FLIPFIX_MIN_FLIPPED = 0.2;   // how much of the drawn pose has to be a turned-over one
 const IGPLUS_FLIPFIX_FLIP_MEMORY = 0.2; // seconds a flip counts as just shown
-const IGPLUS_FLIPFIX_LAND_TIME = 0.12;    // seconds: the landing blend's length (stock PlayLanded) if the rate is unknown
+const IGPLUS_FLIPFIX_MAX_SPEED = 1.5;     // how much faster than its own speed the flip may play on
+const IGPLUS_FLIPFIX_BLEND_TIME = 0.1;    // seconds: a blend of our own
+const IGPLUS_FLIPFIX_SHORT_BLEND = 0.06;  // seconds: with less of the game's blend left, we blend ourselves
+const IGPLUS_FLIPFIX_CATCH_TIME = 0.35;   // seconds: a phase eases over to the game's
+const IGPLUS_TRANSITION_STEP = 2;         // blends that start anywhere: the step the exact start tweens into
 // Client, with enableDebugData on: how Tick Interpolation drew this player
 // since the last "Tick Interpolation:" line (IGPlus_TI_Stat, IGPlus_TI_LogStats).
 var int IGPlus_TI_StFrames, IGPlus_TI_StPast, IGPlus_TI_StStopped, IGPlus_TI_StHeld;
@@ -15510,8 +15518,11 @@ event PreRender( canvas zzCanvas )
 	IGPlus_LocationOffsetFix_AfterAll(0);
 	// Our own model, drawn in behind view (FlipAnimationFix). PostRender puts the
 	// engine's animation back.
-	if (Level.NetMode == NM_Client && Role == ROLE_AutonomousProxy)
+	if (Level.NetMode == NM_Client && Role == ROLE_AutonomousProxy) {
 		IGPlus_FlipFix_Plain();
+		if (IGPlus_NF_bMesh)
+			IGPlus_TransitionShareMesh();
+	}
 
 	if (GameReplicationInfo != None && PlayerReplicationInfo != None) {
 		for (i = 0; i < arraycount(GameReplicationInfo.PRIArray); ++i) {
@@ -16286,27 +16297,44 @@ function IGPlus_TI_LogStats(bool bWrite) {
 // that left the screen in the middle of a flip keeps that pose in the engine
 // until it is drawn again. When a blend would be drawn from such a pose:
 //   FAF_FinishFlip (and FAF_Instant from older settings files): when the flip
-//     was what the model showed, it plays on to its end at its own speed, and
-//     then the blend the game is in by then takes over from its start and
-//     catches up. Every frame drawn is a stock frame. A model that comes into
-//     view with an old turned-over pose, where no flip was seen, gets the pose
-//     its blend goes to at once, drawn as a played frame. The engine keeps it
-//     from there, and the game's air logic goes on.
+//     was what the model showed, it plays on to its end, also when the game's
+//     blend is over before it. It plays just fast enough to end with that
+//     blend, up to 1.5 times its own speed (IGPlus_FlipFix_PlayOnSpeed). Then
+//     it blends into what the game plays by then, and a running animation's
+//     phase eases over to the game's. A jump, dodge or crouch takes over from
+//     that blend at once. A death or a hidden pawn ends all of it at once. A
+//     model that comes into view with an old turned-over pose, where no flip
+//     was seen, gets the pose its blend goes to at once, drawn as a played
+//     frame. The engine keeps it from there, and the game's air logic goes on.
 //   FAF_Off: nothing is changed.
+// Never leave a pose of ours for a played one directly: that is a snap.
 // Everything else is drawn as it came: the flip itself and blends from an
 // upright pose.
 simulated function IGPlus_FlipFix_Apply(float Rate) {
+	local bool bWas;
+
+	bWas = IGPlus_NF_bMerged;
+	IGPlus_FlipFix_Pose(Rate);
+	// The mesh changed, so the tween tracker starts again.
+	if (bWas != IGPlus_NF_bMerged && IGPlus_Tween != none)
+		IGPlus_Tween.LastTweenSeq = '';
+}
+
+simulated function IGPlus_FlipFix_Pose(float Rate) {
 	local name Seq;
-	local float Frame, Dt, Left;
-	local int Mode;
-	local bool bStart, bDrawn;
+	local float Frame, Dt, Left, FlipEnd, Phase, Part, Secs, First;
+	local int Mode, Model;
+	local bool bStart, bSame, bDying;
 
 	Seq = AnimSequence;
 	Frame = AnimFrame;
-	bDrawn = IGPlus_NF_bDrawn;
-	IGPlus_NF_bDrawn = false;
 	Dt = FClamp(Level.TimeSeconds - IGPlus_FlipFix_Time, 0.0, 0.1);
 	IGPlus_FlipFix_Time = Level.TimeSeconds;
+	IGPlus_FlipFix_Dt = Dt;
+	Model = IGPlus_TransitionModel(Mesh);
+	FlipEnd = IGPlus_FlipFix_FlipEnd(Model);
+	if (Frame < 0.0 && Rate > 0.0)
+		Left = -Frame / Rate;
 
 	// The blend the game is in, and the frame it had when it started.
 	if (Frame >= 0.0) {
@@ -16316,45 +16344,85 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 		IGPlus_FlipFix_BlendFirst = Frame;
 	}
 
+	// The dead don't finish a flip, and a hidden pawn comes back where and as the game has it.
+	bDying = IGPlus_FlipFix_Dying(Seq);
+	if (bHidden || bDying) {
+		IGPlus_FlipFix_State = 0;
+		IGPlus_FlipFix_Flipped = 0.0;
+	}
+	if (bHidden || Model < 0) {
+		IGPlus_NF_bMerged = false;
+		IGPlus_NF_bOn = false;
+	}
+
 	if (IGPlus_FlipFix_State == 1) {
 		// The flip plays on to its end.
-		IGPlus_FlipFix_FlipFrame += IGPlus_FlipFix_FlipRate * Dt;
-		if (Frame < 0.0 && IGPlus_FlipFix_FlipFrame < IGPLUS_FLIPFIX_FLIP_END) {
-			AnimSequence = 'Flip';
-			AnimFrame = IGPlus_FlipFix_FlipFrame;
-			IGPlus_FlipFix_Seq = 'Flip';
-			IGPlus_FlipFix_Last = IGPlus_FlipFix_FlipFrame;
+		IGPlus_FlipFix_FlipFrame += IGPlus_FlipFix_FlipSpeed * Dt;
+		if (IGPlus_FlipFix_FlipFrame < FlipEnd) {
+			IGPlus_FlipFix_Remember('Flip', IGPlus_FlipFix_FlipFrame, 0.0);
+			IGPlus_FlipFix_Draw('Flip', IGPlus_FlipFix_FlipFrame);
 			return;
 		}
 		IGPlus_FlipFix_State = 0;
 		IGPlus_FlipFix_Flipped = 0.0;
-		IGPlus_FlipFix_Seq = 'Flip';
-		IGPlus_FlipFix_Last = IGPLUS_FLIPFIX_FLIP_END;
-		if (Frame < 0.0 && IGPlus_FlipFix_BlendFirst < 0.0) {
-			// The blend the game is in (the landing) plays from its own start
-			// at its own speed, from the flip's last pose. Catching up with
-			// the game's blend squeezed it: the landing moved the free arm to
-			// the gun in 40 ms instead of the stock 120.
-			IGPlus_FlipFix_State = 2;
-			IGPlus_FlipFix_LandSeq = Seq;
-			IGPlus_FlipFix_LandFrame = IGPlus_FlipFix_BlendFirst;
-			IGPlus_FlipFix_LandRate = Rate;
-			if (IGPlus_FlipFix_LandRate <= 0.0)
-				IGPlus_FlipFix_LandRate = -IGPlus_FlipFix_BlendFirst / IGPLUS_FLIPFIX_LAND_TIME;
-			// With transition frames, so the free hand keeps its size on its way to the gun.
-			IGPlus_TransitionStart('Flip', IGPLUS_FLIPFIX_FLIP_END, Seq, IGPlus_FlipFix_BlendFirst);
+		IGPlus_FlipFix_Remember('Flip', FlipEnd, 0.0);
+		if (IGPlus_FlipFix_InAir(Seq) == false || Left < IGPLUS_FLIPFIX_SHORT_BLEND) {
+			// The landing (or what the game plays by now) from its own start at
+			// its own speed, with transition frames where there are some, so the
+			// free hand keeps its size on its way to the gun.
+			Secs = IGPLUS_FLIPFIX_BLEND_TIME;
+			if (Frame < 0.0 && IGPlus_FlipFix_BlendFirst < 0.0 && Rate > 0.0)
+				Secs = FClamp(-IGPlus_FlipFix_BlendFirst / Rate, 0.08, 0.15);
+			IGPlus_FlipFix_Blend(Seq, Secs);
+			IGPlus_TransitionBegin('Flip', FlipEnd, 0.0, Seq, -1.0);
+			IGPlus_FlipFix_BlendDraw();
+			return;
 		}
 	}
 	if (IGPlus_FlipFix_State == 2) {
-		// Until it ends, or the player leaves the ground again.
 		IGPlus_FlipFix_LandFrame += IGPlus_FlipFix_LandRate * Dt;
-		if (IGPlus_FlipFix_LandFrame < 0.0 && IGPlus_FlipFix_InAir(Seq) == false) {
-			AnimSequence = IGPlus_FlipFix_LandSeq;
-			AnimFrame = IGPlus_FlipFix_LandFrame;
-			IGPlus_FlipFix_Seq = IGPlus_FlipFix_LandSeq;
-			IGPlus_FlipFix_Last = IGPlus_FlipFix_LandFrame;
-			if (IGPlus_NF_Seq == IGPlus_FlipFix_LandSeq && IGPlus_NF_Mode != 0)
-				IGPlus_TransitionDraw(IGPlus_FlipFix_LandFrame);
+		bSame = Seq == IGPlus_FlipFix_LandSeq;
+		if (bSame == false && IGPlus_FlipFix_InAir(Seq)) {
+			// Until it ends, or the player leaves the ground again.
+			IGPlus_FlipFix_State = 0;
+			if (Frame >= 0.0 || Left < IGPLUS_FLIPFIX_SHORT_BLEND) {
+				IGPlus_FlipFix_Blend(Seq, IGPLUS_FLIPFIX_BLEND_TIME);
+				IGPlus_FlipFix_BlendDraw();
+				return;
+			}
+		} else if (IGPlus_FlipFix_LandFrame < 0.0) {
+			IGPlus_FlipFix_BlendDraw();
+			return;
+		} else {
+			IGPlus_FlipFix_State = 0;
+			IGPlus_NF_bOn = false;
+			IGPlus_FlipFix_Remember(IGPlus_FlipFix_LandSeq, 0.0, 0.0);
+			if (bSame && Frame < 0.0) {
+				// We are at the first frame the game's blend goes to.
+				IGPlus_FlipFix_Remember(Seq, Frame, IGPlus_FlipFix_BlendFirst);
+				IGPlus_NF_Seq = '';
+				IGPlus_FlipFix_Draw(Seq, 0.0);
+				return;
+			}
+			if (bSame) {
+				IGPlus_FlipFix_Catch(Seq, Frame);
+			} else if (Frame >= 0.0 || Left < IGPLUS_FLIPFIX_SHORT_BLEND) {
+				IGPlus_FlipFix_Blend(Seq, IGPLUS_FLIPFIX_BLEND_TIME);
+				IGPlus_FlipFix_BlendDraw();
+				return;
+			}
+		}
+	}
+	if (IGPlus_FlipFix_State == 3) {
+		Part = (Level.TimeSeconds - IGPlus_FlipFix_CatchTime) / IGPLUS_FLIPFIX_CATCH_TIME;
+		if (Frame >= 0.0 && Seq == IGPlus_FlipFix_CatchSeq && Part < 1.0) {
+			Phase = Frame - IGPlus_FlipFix_Lag * (1.0 - Part);
+			if (IGPlus_FlipFix_Looped(Seq))
+				Phase = IGPlus_FlipFix_Wrap(Phase);
+			else
+				Phase = FMax(Phase, 0.0);
+			IGPlus_FlipFix_Remember(Seq, Phase, 0.0);
+			IGPlus_FlipFix_Draw(Seq, Phase);
 			return;
 		}
 		IGPlus_FlipFix_State = 0;
@@ -16366,16 +16434,17 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 			IGPlus_FlipFix_FlipAt = Frame;
 			IGPlus_FlipFix_FlipTime = Level.TimeSeconds;
 		}
-		if (Seq == 'Flip' && Frame > IGPLUS_FLIPFIX_FLIP_FROM && Frame < IGPLUS_FLIPFIX_FLIP_TO) {
+		if (bHidden == false && Seq == 'Flip' && Frame > IGPLUS_FLIPFIX_FLIP_FROM && Frame < FlipEnd - 0.01) {
 			if (IGPlus_FlipFix_Flipped < 1.0 && IGPlus_FlipFix_Seen())
 				IGPlus_FlipFix_Flipped = 1.0;
 		} else if (IGPlus_FlipFix_Flipped > 0.0 && IGPlus_FlipFix_Seen()) {
 			IGPlus_FlipFix_Flipped = 0.0;
 		}
-		IGPlus_FlipFix_Seq = Seq;
-		IGPlus_FlipFix_Last = Frame;
+		IGPlus_FlipFix_Remember(Seq, Frame, 0.0);
 		IGPlus_FlipFix_bLogged = false;
 		IGPlus_NF_Seq = '';
+		IGPlus_NF_bOn = false;
+		IGPlus_NF_bMerged = false;
 		return;
 	}
 
@@ -16385,8 +16454,6 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 	if (bStart)
 		IGPlus_FlipFix_bLogged = false;
 	if (IGPlus_FlipFix_Flipped > 0.1 && IGPlus_FlipFix_Seen()) {
-		if (Rate > 0.0)
-			Left = -Frame / Rate;
 		// Any blend, the 0.12 s landing one too, and a held body's (its
 		// blend frame stays and so does the lump).
 		if (Left > 0.0 || IGPlus_TI_bStopped) {
@@ -16400,20 +16467,19 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 				if (IGPlus_FlipFix_FlipRate <= 0.0)
 					IGPlus_FlipFix_FlipRate = 2.0;
 				IGPlus_FlipFix_State = 1;
-				IGPlus_FlipFix_FlipFrame = FMin(IGPLUS_FLIPFIX_FLIP_END, IGPlus_FlipFix_FlipAt
+				IGPlus_FlipFix_FlipFrame = FMin(FlipEnd, IGPlus_FlipFix_FlipAt
 					+ IGPlus_FlipFix_FlipRate * (Level.TimeSeconds - IGPlus_FlipFix_FlipTime));
-				AnimSequence = 'Flip';
-				AnimFrame = IGPlus_FlipFix_FlipFrame;
-				IGPlus_FlipFix_Seq = 'Flip';
-				IGPlus_FlipFix_Last = IGPlus_FlipFix_FlipFrame;
+				IGPlus_FlipFix_FlipSpeed = IGPlus_FlipFix_PlayOnSpeed(IGPlus_FlipFix_FlipRate, IGPlus_FlipFix_FlipFrame, FlipEnd, Left);
+				IGPlus_FlipFix_Remember('Flip', IGPlus_FlipFix_FlipFrame, 0.0);
+				IGPlus_FlipFix_Draw('Flip', IGPlus_FlipFix_FlipFrame);
 				return;
 			}
+			// Into view with an old turned-over pose: nobody saw it turn over.
 			if (Mode != 0 && IGPlus_FlipFix_Flipped > IGPLUS_FLIPFIX_MIN_FLIPPED) {
 				IGPlus_FlipFix_Note(Seq, Left, "instant", bStart);
-				AnimFrame = 0.0;
 				IGPlus_FlipFix_Flipped = 0.0;
-				IGPlus_FlipFix_Seq = Seq;
-				IGPlus_FlipFix_Last = Frame;
+				IGPlus_FlipFix_Remember(Seq, Frame, IGPlus_FlipFix_BlendFirst);
+				IGPlus_FlipFix_Draw(Seq, 0.0);
 				return;
 			}
 			IGPlus_FlipFix_Note(Seq, Left, "off", bStart);
@@ -16422,24 +16488,118 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 		if (bStart == false && IGPlus_FlipFix_Last < 0.0)
 			IGPlus_FlipFix_Flipped *= FClamp(Frame / IGPlus_FlipFix_Last, 0.0, 1.0);
 	}
-	if (bStart)
-		IGPlus_TransitionStart(IGPlus_FlipFix_Seq, IGPlus_FlipFix_Last, Seq, Frame);
-	else if (Seq == IGPlus_NF_Seq && IGPlus_NF_Mode != 0 && Frame < IGPlus_FlipFix_Last - 0.01) {
+	First = IGPlus_FlipFix_BlendFirst;
+	if (bStart) {
+		IGPlus_TransitionBegin(IGPlus_FlipFix_Seq, IGPlus_FlipFix_Last, IGPlus_FlipFix_LastFirst, Seq, Frame);
+	} else if (IGPlus_NF_bOn && Seq == IGPlus_NF_Seq && Frame < IGPlus_FlipFix_Last - 0.01) {
 		// The game restarted the blend into the same animation (a stop is often played twice). The
 		// transition goes on from where it was, not from its start.
 		IGPlus_NF_Alpha0 = IGPlus_NF_Alpha;
 		IGPlus_NF_Start = Frame;
+		First = Frame;
 	}
-	IGPlus_FlipFix_Seq = Seq;
-	IGPlus_FlipFix_Last = Frame;
+	IGPlus_FlipFix_Remember(Seq, Frame, First);
 	// A blend the engine would fold: the model's transition frames are drawn
 	// instead (IGPlus_TransitionDraw). Only drawn, the real animation stays.
-	if (Seq == IGPlus_NF_Seq && IGPlus_NF_Mode != 0) {
-		IGPlus_TransitionDraw(Frame);
+	if (IGPlus_NF_bOn && Seq == IGPlus_NF_Seq) {
 		IGPlus_FlipFix_Flipped = 0.0;
-	} else if (bDrawn) {
-		IGPlus_TransitionLeave(Frame);
+		IGPlus_TransitionDraw(Seq, Frame);
+	} else {
+		IGPlus_FlipFix_Draw(Seq, Frame);
 	}
+}
+
+// What was drawn this frame, and the frame its blend started with.
+simulated function IGPlus_FlipFix_Remember(name Seq, float Frame, float First) {
+	IGPlus_FlipFix_Seq = Seq;
+	IGPlus_FlipFix_Last = Frame;
+	IGPlus_FlipFix_LastFirst = First;
+}
+
+// Draws Seq at Frame this frame. After transition frames every blend stays on
+// the transition mesh, which has the first frame of every stock animation, so
+// nothing jumps. A played frame is drawn on the pawn's own mesh.
+simulated function IGPlus_FlipFix_Draw(name Seq, float Frame) {
+	AnimSequence = Seq;
+	AnimFrame = Frame;
+	if (Frame >= 0.0)
+		IGPlus_NF_bMerged = false;
+	else if (IGPlus_NF_bMerged)
+		IGPlus_TransitionUseMesh();
+}
+
+// Our own blend from the pose drawn last into Seq.
+simulated function IGPlus_FlipFix_Blend(name Seq, float Secs) {
+	IGPlus_FlipFix_State = 2;
+	IGPlus_FlipFix_LandSeq = Seq;
+	IGPlus_FlipFix_LandFrame = -1.0;
+	IGPlus_FlipFix_LandRate = 1.0 / Secs;
+	IGPlus_NF_Seq = '';
+	IGPlus_NF_bOn = false;
+}
+
+simulated function IGPlus_FlipFix_BlendDraw() {
+	IGPlus_FlipFix_Remember(IGPlus_FlipFix_LandSeq, IGPlus_FlipFix_LandFrame, -1.0);
+	if (IGPlus_NF_bOn && IGPlus_NF_Seq == IGPlus_FlipFix_LandSeq)
+		IGPlus_TransitionDraw(IGPlus_FlipFix_LandSeq, IGPlus_FlipFix_LandFrame);
+	else
+		IGPlus_FlipFix_Draw(IGPlus_FlipFix_LandSeq, IGPlus_FlipFix_LandFrame);
+}
+
+// Our blend ended on the animation's first frame and the game's copy is at Frame.
+simulated function IGPlus_FlipFix_Catch(name Seq, float Frame) {
+	local float Lag;
+
+	Lag = Frame - AnimRate * IGPlus_FlipFix_Dt;
+	if (IGPlus_FlipFix_Looped(Seq))
+		Lag = IGPlus_FlipFix_Wrap(Lag + 0.5) - 0.5;
+	else
+		Lag = FMax(Lag, 0.0);
+	if (Abs(Lag) < 0.01)
+		return;
+	IGPlus_FlipFix_State = 3;
+	IGPlus_FlipFix_CatchSeq = Seq;
+	IGPlus_FlipFix_Lag = Lag;
+	IGPlus_FlipFix_CatchTime = Level.TimeSeconds - IGPlus_FlipFix_Dt;
+}
+
+// The speed a flip at Frame plays on with, Rate its own and Left the seconds
+// left of the game's blend: just enough to end with that blend, 1.5 times at
+// most. At more the female flip (it lands about halfway) looks rushed.
+static function float IGPlus_FlipFix_PlayOnSpeed(float Rate, float Frame, float FlipEnd, float Left) {
+	return FClamp((FlipEnd - Frame) / FMax(Left, 0.05), Rate, IGPLUS_FLIPFIX_MAX_SPEED * Rate);
+}
+
+// Where the flip ends on a model (IGPlus_TransitionModel): where its transition frames start.
+static function float IGPlus_FlipFix_FlipEnd(int Model) {
+	if (Model >= 3)
+		return IGPLUS_FLIPFIX_FLIP_END_F;
+	return IGPLUS_FLIPFIX_FLIP_END;
+}
+
+// The death animations and feigning death.
+static function bool IGPlus_FlipFix_Dying(name Seq) {
+	local string S;
+
+	S = string(Seq);
+	return Left(S, 4) ~= "Dead" || Left(S, 5) ~= "Death";
+}
+
+// Animations whose last frame runs on into the first. The name is asked and
+// not bAnimLoop: with Tick Interpolation the animation drawn is an earlier one.
+static function bool IGPlus_FlipFix_Looped(name Seq) {
+	local string S;
+
+	S = string(Seq);
+	return Left(S, 3) ~= "Run" || Left(S, 4) ~= "Stra" || Left(S, 4) ~= "Walk" || Left(S, 4) ~= "Back"
+		|| Left(S, 7) ~= "DuckWlk" || Left(S, 6) ~= "Breath" || Left(S, 5) ~= "Tread" || Left(S, 4) ~= "Swim";
+}
+
+static function float IGPlus_FlipFix_Wrap(float F) {
+	F -= int(F);
+	if (F < 0.0)
+		F += 1.0;
+	return F;
 }
 
 // Where two poses turn the legs a long way apart, the legs go thin in the
@@ -16452,27 +16612,27 @@ simulated function IGPlus_FlipFix_Apply(float Rate) {
 // straight lines would also shrink them the chest and arms, turn instead of
 // sliding. The head and the gun move as the engine's blend moves them. Every
 // other blend is drawn as the engine makes it.
-// Which source animation has frames into which target (IGPlus_TransitionMesh
-// source index), how many start sets (1: the blend always starts at the same
-// key frame, else one set for each key frame of the source, the engine's frame
-// blend picks the exact start between two) and how many steps.
-static function bool IGPlus_TransitionLayout(name From, name To, out int Source, out int Sets, out int Steps) {
+// Which blends have frames: the pair's number (IGPlus_TransitionMesh: Tn, Kn
+// and Pn), how many start sets (1: the blend always starts at the same key
+// frame, else one set for each key frame of the source) and how many steps.
+static function bool IGPlus_TransitionLayout(name From, name To, out int Pair, out int Sets, out int Steps) {
 	Sets = 1;
-	if (From == 'StrafeR' && To == 'StrafeL') { Source = 0; Steps = 8; return true; }
-	if (From == 'StrafeL' && To == 'StrafeR') { Source = 1; Steps = 8; return true; }
-	if (From == 'StrafeL' && To == 'StillFrRp') { Source = 1; Sets = 10; Steps = 12; return true; }
-	if (From == 'StillFrRp' && To == 'StrafeL') { Source = 2; Steps = 10; return true; }
-	if (From == 'LandLgFr' && To == 'StrafeL') { Source = 3; Steps = 10; return true; }
-	if (From == 'DuckWlkL' && To == 'StrafeR') { Source = 4; Sets = 15; Steps = 10; return true; }
-	if (From == 'LandLgFr' && To == 'StillFrRp') { Source = 3; Steps = 10; return true; }
-	if (From == 'Flip' && To == 'LandLgFr') { Source = 5; Steps = 10; return true; }
-	if (From == 'Flip' && To == 'StillFrRp') { Source = 5; Steps = 10; return true; }
+	Steps = 10;
+	if (From == 'StrafeR' && To == 'StrafeL') { Pair = 0; Steps = 8; return true; }
+	if (From == 'StrafeL' && To == 'StrafeR') { Pair = 1; Steps = 8; return true; }
+	if (From == 'StrafeL' && To == 'StillFrRp') { Pair = 2; Sets = 10; Steps = 12; return true; }
+	if (From == 'StillFrRp' && To == 'StrafeL') { Pair = 3; return true; }
+	if (From == 'LandLgFr' && To == 'StrafeL') { Pair = 4; return true; }
+	if (From == 'DuckWlkL' && To == 'StrafeR') { Pair = 5; Sets = 15; return true; }
+	if (From == 'LandLgFr' && To == 'StillFrRp') { Pair = 6; return true; }
+	if (From == 'Flip' && To == 'LandLgFr') { Pair = 7; return true; }
+	if (From == 'Flip' && To == 'StillFrRp') { Pair = 8; return true; }
 	return false;
 }
 
-// Which set of transition frames a drawn model uses (IGPlus_TransitionMesh model
+// Which transition mesh a drawn model uses (IGPlus_TransitionMesh.Frames
 // index), by its mesh: the stock models and InstaGibPlusAssets' copies (the
-// female copies have another origin, so frames of their own). -1: none.
+// female copies have another origin, so a mesh of their own). -1: none.
 static function int IGPlus_TransitionModel(Mesh M) {
 	if (M == none)
 		return -1;
@@ -16488,56 +16648,79 @@ static function int IGPlus_TransitionModel(Mesh M) {
 	return -1;
 }
 
-// The frame of a transition sequence to draw at Alpha (0 to 1) of the blend.
-// One set: the steps in a row, blended by the engine. Several: step j of the
-// set from key frame k is frame j * (Sets + 1) + k (the last column repeats the
-// first set), so drawing at k + the part of the way to the next key frame lets
-// the engine blend the two sets that bracket the real start.
-static function float IGPlus_TransitionFrame(float Alpha, int Sets, int Steps, float Key) {
-	local int j;
+// The transition mesh of this pawn's model, for this frame only.
+simulated function IGPlus_TransitionUseMesh() {
+	local int Model;
 
-	Alpha = FClamp(Alpha, 0.0, 1.0);
-	if (Sets <= 1)
-		return Alpha * (Steps - 1) / Steps;
-	j = int(Alpha * (Steps - 1) + 0.5);
-	Key = FClamp(Key, 0.0, Sets - 0.001);
-	return (j * (Sets + 1) + Key) / (Steps * (Sets + 1));
+	Model = IGPlus_TransitionModel(Mesh);
+	if (Model < 0)
+		return;
+	if (IGPlus_NF_bMesh == false)
+		IGPlus_NF_RawMesh = Mesh;
+	Mesh = class'IGPlus_TransitionMesh'.default.Frames[Model];
+	IGPlus_NF_bMesh = true;
+}
+
+// Our own pawn gets the transition mesh in PreRender, after the shield belt's
+// glow copied the pawn's mesh in its Tick. The glow draws the pawn's animation,
+// whose name only the transition mesh has, so it gets that mesh too. Other
+// pawns get it in their Tick, which runs before their glow's.
+simulated function IGPlus_TransitionShareMesh() {
+	local UT_ShieldBeltEffect Fx;
+
+	foreach ChildActors(class'UT_ShieldBeltEffect', Fx)
+		Fx.Mesh = Mesh;
+}
+
+// May a blend of Pair start from FromFrame (below 0: the source was itself
+// blending in, from FromFirst)? Only from the pose the frames start at, or the
+// first one drawn would be a jump. Step is how far the source played in a
+// frame: it is drawn up to that much short of the key the frames start at.
+static function bool IGPlus_TransitionFits(int Pair, int Sets, float FromFrame, float FromFirst, float Step, float FlipEnd) {
+	if (FromFrame < 0.0) {
+		// A blend that has all but reached its pose counts as there.
+		if (FromFrame < -0.05)
+			return false;
+		if (FromFirst < 0.0 && FromFrame / FromFirst > 0.03)
+			return false;
+		FromFrame = 0.0;
+	}
+	if (Pair < 2) // a strafe flip starts at the last key frame
+		return Abs(FromFrame - 0.9) <= 0.025 + Step;
+	if (Pair >= 7) // out of the flip
+		return Abs(FromFrame - FlipEnd) <= 0.011;
+	return Sets > 1 || FromFrame <= 0.05;
 }
 
 // A blend starts (From at FromFrame into To at Frame): drawn with transition
-// frames when the model has them for this pair and the old animation was being
-// played, so the blend starts from a pose of the old animation. A blend that
-// starts while the old one was still blending in, or right after transition
-// frames, is drawn as the engine makes it.
-simulated function IGPlus_TransitionStart(name From, float FromFrame, name To, float Frame) {
-	local int Model, Source, Sets, Steps;
+// frames when the model has them for this pair and the pose drawn last is the
+// one they start at. Any other blend is drawn as the engine makes it.
+simulated function IGPlus_TransitionBegin(name From, float FromFrame, float FromFirst, name To, float Frame) {
+	local int Model, Pair, Sets, Steps;
 
 	IGPlus_NF_Seq = To;
-	IGPlus_NF_Mode = 0;
+	IGPlus_NF_bOn = false;
 	IGPlus_NF_Start = Frame;
-	if (Frame >= 0.0 || FromFrame < -0.05)
-		return;
-	if (IGPlus_TransitionLayout(From, To, Source, Sets, Steps) == false)
-		return;
-	if (Sets > 1 && FromFrame < 0.0)
-		return;
-	// The flip's frames start where Finish Flip ends it (IGPLUS_FLIPFIX_FLIP_END).
-	if (From == 'Flip' && FromFrame < 0.9)
+	if (Frame >= 0.0)
 		return;
 	Model = IGPlus_TransitionModel(Mesh);
 	if (Model < 0)
 		return;
-	IGPlus_NF_TurnMesh = class'IGPlus_TransitionMesh'.default.Frames[Model * 6 + Source];
-	if (IGPlus_NF_TurnMesh == none)
+	if (IGPlus_TransitionLayout(From, To, Pair, Sets, Steps) == false)
 		return;
+	if (IGPlus_TransitionFits(Pair, Sets, FromFrame, FromFirst, AnimRate * IGPlus_FlipFix_Dt, IGPlus_FlipFix_FlipEnd(Model)) == false)
+		return;
+	IGPlus_NF_Pair = Pair;
 	IGPlus_NF_Sets = Sets;
 	IGPlus_NF_Steps = Steps;
-	IGPlus_NF_Key = FMax(FromFrame, 0.0) * Sets;
-	IGPlus_NF_FromSeq = From;
-	IGPlus_NF_FromFrame = FMax(FromFrame, 0.0);
+	IGPlus_NF_Key = FMin(FMax(FromFrame, 0.0) * Sets, Sets - 0.001);
+	IGPlus_NF_K = int(IGPlus_NF_Key + 0.5);
+	if (IGPlus_NF_K >= Sets) // both loop: after the last key comes the first
+		IGPlus_NF_K = 0;
+	IGPlus_NF_bStep = false;
 	IGPlus_NF_Alpha0 = 0.0;
 	IGPlus_NF_Alpha = 0.0;
-	IGPlus_NF_Mode = 3;
+	IGPlus_NF_bOn = true;
 }
 
 // The part of the way through the transition at blend frame Frame: from Alpha0
@@ -16549,50 +16732,57 @@ static function float IGPlus_TransitionAlpha(float Frame, float Start, float Alp
 	return FClamp(Alpha0 + (1.0 - Alpha0) * (1.0 - Frame / Start), 0.0, 1.0);
 }
 
-// Draws this frame of the blend from the transition frames, at the part of the
-// way the engine's blend is at (Frame below 0, from IGPlus_NF_Start up to 0).
-// The head hitbox follows the engine's blend (IGPlus_NF_HeadSeq), which is where
-// these frames hold the head. IGPlus_AnimRestore puts the mesh back.
-simulated function IGPlus_TransitionDraw(float Frame) {
-	local float Alpha;
+// The sequence and frame of the transition mesh that draw Pair at Alpha.
+// One start: the steps in a row (Tn), the engine blends between two of them. A
+// blend that starts anywhere: first the exact start (bStarted false), key Key
+// in the row of starts (Kn), then the engine's tween from there into step 2 of
+// the nearest start K (Into), then that start's steps in a row (Pn). The engine
+// can only blend between two frames in a row, so this is what keeps both the
+// exact start and a blend without visible steps. The steps take over shortly
+// before that tween ends.
+static function name IGPlus_TransitionPose(int Pair, int Sets, int Steps, float Alpha, float Key, int K, bool bStarted, float Alpha1, out float Frame) {
+	local float A;
 
-	IGPlus_NF_HeadSeq = AnimSequence;
-	IGPlus_NF_HeadFrame = Frame;
-	IGPlus_NF_bHead = true;
-	Alpha = 1.0;
-	if (IGPlus_NF_Start < 0.0)
-		Alpha = IGPlus_TransitionAlpha(Frame, IGPlus_NF_Start, IGPlus_NF_Alpha0);
-	IGPlus_NF_Alpha = Alpha;
-	if (Alpha < 0.5) {
-		IGPlus_NF_NearSeq = IGPlus_NF_FromSeq;
-		IGPlus_NF_NearFrame = IGPlus_NF_FromFrame;
-	} else {
-		IGPlus_NF_NearSeq = AnimSequence;
-		IGPlus_NF_NearFrame = 0.0;
+	if (Sets <= 1) {
+		Frame = Alpha * (Steps - 1) / Steps;
+		return class'IGPlus_TransitionMesh'.default.Tn[Pair];
 	}
-	if (IGPlus_NF_bMesh == false)
-		IGPlus_NF_RawMesh = Mesh;
-	Mesh = IGPlus_NF_TurnMesh;
-	IGPlus_NF_bMesh = true;
-	IGPlus_NF_bDrawn = true;
-	AnimFrame = IGPlus_TransitionFrame(Alpha, IGPlus_NF_Sets, IGPlus_NF_Steps, IGPlus_NF_Key);
+	if (bStarted == false) {
+		Frame = Key / (Sets + 1);
+		return class'IGPlus_TransitionMesh'.default.Kn[Pair];
+	}
+	A = float(IGPLUS_TRANSITION_STEP) / (Steps - 1);
+	if (Alpha1 < A && A - Alpha > 0.04 * A) {
+		Frame = Alpha - A;
+		if (Pair == 2)
+			return class'IGPlus_TransitionMesh'.default.Into[K];
+		return class'IGPlus_TransitionMesh'.default.Into[10 + K];
+	}
+	Frame = (K * Steps + Alpha * (Steps - 1)) / (Sets * Steps);
+	return class'IGPlus_TransitionMesh'.default.Pn[Pair];
 }
 
-// A new blend starts while transition frames were drawn. Back on the pawn's
-// own mesh the model would jump to the new animation's first frame. So this
-// one
-// frame draws the stock pose nearest to the one drawn last: the old animation
-// for the first half of the transition, the new one's first frame after it. The
-// engine then blends the new animation from there. The head hitbox follows the
-// engine's blend as before.
-simulated function IGPlus_TransitionLeave(float Frame) {
-	if (IGPlus_NF_NearSeq == '')
-		return;
-	IGPlus_NF_HeadSeq = AnimSequence;
+// Draws this frame of the blend into To from the transition frames, at the part
+// of the way the engine's blend is at (Frame below 0, from IGPlus_NF_Start up
+// to 0). The head hitbox follows the engine's blend (IGPlus_NF_HeadSeq), which
+// is where these frames hold the head. IGPlus_AnimRestore puts the mesh back.
+simulated function IGPlus_TransitionDraw(name To, float Frame) {
+	local float Alpha, F;
+
+	IGPlus_NF_HeadSeq = To;
 	IGPlus_NF_HeadFrame = Frame;
 	IGPlus_NF_bHead = true;
-	AnimSequence = IGPlus_NF_NearSeq;
-	AnimFrame = IGPlus_NF_NearFrame;
+	Alpha = IGPlus_TransitionAlpha(Frame, IGPlus_NF_Start, IGPlus_NF_Alpha0);
+	IGPlus_NF_Alpha = Alpha;
+	IGPlus_NF_bMerged = true;
+	IGPlus_TransitionUseMesh();
+	AnimSequence = IGPlus_TransitionPose(IGPlus_NF_Pair, IGPlus_NF_Sets, IGPlus_NF_Steps, Alpha,
+		IGPlus_NF_Key, IGPlus_NF_K, IGPlus_NF_bStep, IGPlus_NF_Step0, F);
+	AnimFrame = F;
+	if (IGPlus_NF_bStep == false) {
+		IGPlus_NF_bStep = true;
+		IGPlus_NF_Step0 = Alpha;
+	}
 }
 
 // An animation of a player off the ground (a jump, a dodge, a flip, the in-air
