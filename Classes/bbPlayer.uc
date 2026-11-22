@@ -421,6 +421,7 @@ var float IGPlus_PRTShownLead;       // client: the same for the update the last
 var float IGPlus_PRTShownTime;       // client: that frame's time
 var float IGPlus_PRTNoteTS;          // server: when the last shot's report arrived
 var int IGPlus_PRTNoteTick;          // server: our tick count then
+var bool IGPlus_bPRTNewerMove;       // server: a move without a report came after it
 var float IGPlus_PRTSeenTime;        // server: the update the shooter's screen showed
 var float IGPlus_PRTViewTime;        // server: carried forward to this time
 var float IGPlus_PRTLagMs;           // server: now minus ViewTime, real ms
@@ -4307,6 +4308,7 @@ function IGPlus_PRTNote(int Data) {
 
 	WS = GetWeaponSettings();
 	IGPlus_bPRTInterp = false;
+	IGPlus_bPRTNewerMove = false;
 	if (Data < 0 && IGPlus_EnableTickInterp && zzUTPure != None) {
 		IGPlus_PRTNoteInterp(Data, WS);
 		return;
@@ -4401,9 +4403,19 @@ function IGPlus_PRTNoteInterp(int Data, WeaponSettingsRepl WS) {
 
 // A report from a move this tick. Shots traced later in the tick than the
 // moves arrive (minigun, pulse beam, enforcer refire) use it too.
+// Tick Interpolation: the report is a tick position, and it also stays in
+// use until our next move. A shot traced in a tick with no new move is aimed
+// by the view of our last move, and the report is what the screen showed
+// with that view. A client at 60 frames a second sends a move every 17 ms and
+// a server at 128 ticks has two ticks in that time, so about half the bullets
+// of a minigun were traced in a tick without a report. They fell back to our
+// ping, and the players stood 13 ms of movement beside the aim (rig).
 function bool IGPlus_PRTFresh() {
-	return IGPlus_PRTNoteTS > 0 && IGPlus_PRTServerTick - IGPlus_PRTNoteTick <= 1
-		&& Level.TimeSeconds - IGPlus_PRTNoteTS < 0.1;
+	if (IGPlus_PRTNoteTS <= 0 || Level.TimeSeconds - IGPlus_PRTNoteTS >= 0.1)
+		return false;
+	if (IGPlus_PRTServerTick - IGPlus_PRTNoteTick <= 1)
+		return true;
+	return IGPlus_bPRTInterp && IGPlus_bPRTNewerMove == false;
 }
 
 // Does a hitscan shot now use Precise Rewind Time? Only with a fresh,
@@ -6415,6 +6427,10 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if ((SM.PRTData & 0x8000) != 0) {
 		IGPlus_PRTNote(SM.PRTData);
 		IGPlus_DetReportSweep(SM.TimeStamp);
+	} else {
+		// A newer view with no report: the last report went with the view
+		// before it, and is used for this tick and the next only (IGPlus_PRTFresh).
+		IGPlus_bPRTNewerMove = true;
 	}
 	IGPlus_DetPrevClientVel = IGPlus_DetClientVel;
 	IGPlus_DetPrevClientPhys = IGPlus_DetClientPhys;
