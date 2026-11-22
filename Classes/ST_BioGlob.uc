@@ -5,8 +5,11 @@ var vector SpawnPoint;
 
 function PostBeginPlay() {
 	super.PostBeginPlay();
-	Damage = WImp.WeaponSettings.BioAltDamage;
-	MomentumTransfer = default.MomentumTransfer * WImp.WeaponSettings.BioAltMomentum;
+	// The shooter's own local copy has no weapon implementation (clients have none).
+	if (WImp != None && WImp.WeaponSettings != None) {
+		Damage = WImp.WeaponSettings.BioAltDamage;
+		MomentumTransfer = default.MomentumTransfer * WImp.WeaponSettings.BioAltMomentum;
+	}
 }
 
 simulated function PostNetBeginPlay()
