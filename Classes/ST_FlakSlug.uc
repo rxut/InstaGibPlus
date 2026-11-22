@@ -71,7 +71,7 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
 	local ST_UT_FlakCannon FC;
-	local vector FakeLocation;
+	local vector FakeLocation, FakeVelocity;
 
 	super.PostNetBeginPlay();
 
@@ -90,6 +90,7 @@ simulated function PostNetBeginPlay()
 			{
 				// Store fake's current position for smooth hand-off
 				FakeLocation = FC.LocalSlugDummy.Location;
+				FakeVelocity = FC.LocalSlugDummy.Velocity;
 
 				// Destroy the fake projectile
 				FC.LocalSlugDummy.Destroy();
@@ -102,6 +103,14 @@ simulated function PostNetBeginPlay()
 				// explosion follows.
 				if (FC.IGPlus_bLocalSlugGone)
 					IGPlus_ClientGone();
+				else if (IGPlus_HeldVelocity == vect(0,0,0)) {
+					// It flies on as our copy did: the speed it came with is
+					// from another point of the arc, and our copy's spot is
+					// already ahead by the ping, so no lead on top (on a
+					// falling slug the lead move sinks it by gravity x lead).
+					Velocity = FakeVelocity;
+					Disable('Tick');
+				}
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
