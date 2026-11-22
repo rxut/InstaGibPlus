@@ -15,7 +15,10 @@ struct ProjectileData {
     var bool bSnapProjTarget;
 };
 
-var ProjectileData Data[32];
+// One snapshot a tick, as far back as UTPlusDummy keeps the players: one
+// second at 128 ticks. (32 reached back 250 ms there. A longer rewind took
+// the oldest spot.)
+var ProjectileData Data[128];
 var int DataIndex;
 
 var bool bCompActive;

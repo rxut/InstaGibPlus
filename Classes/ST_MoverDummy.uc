@@ -3,7 +3,9 @@ class ST_MoverDummy extends Actor;
 var Mover Actual;
 var ST_MoverDummy Next;
 
-var ST_MoverSnapshot Data[48];
+// One snapshot a tick, as far back as UTPlusDummy keeps the players: one
+// second at 128 ticks. (48 reached back 375 ms there.)
+var ST_MoverSnapshot Data[128];
 var int DataIndex;
 
 var bool bCompActive;
