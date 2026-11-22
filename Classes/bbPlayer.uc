@@ -8453,7 +8453,7 @@ function bbPlayer IGPlus_TI_AimTarget() {
 	local PlayerReplicationInfo PRI;
 	local bbPlayer P, Best;
 	local vector Start, Dir;
-	local float Gap, BestGap;
+	local float Gap, BestGap, Dist, BestDist;
 
 	if (GameReplicationInfo == None)
 		return None;
@@ -8468,9 +8468,14 @@ function bbPlayer IGPlus_TI_AimTarget() {
 		// Drawn in the last frame, and in front of us.
 		if (P.IGPlus_ShownFrame < IGPlus_FrameCount - 1 || ((P.IGPlus_ShownLoc - Start) dot Dir) <= 0.0) continue;
 		Gap = IGPlus_LineCylinderGap(Start, Dir, P.IGPlus_ShownLoc, P.CollisionRadius, P.CollisionHeight);
-		if (Best == None || Gap < BestGap) {
+		// Two players behind each other on our line of sight: the line passes
+		// through both, so both are as near to it. The one in front is the one
+		// we aim at. (The first one in the player list was taken.)
+		Dist = (P.IGPlus_ShownLoc - Start) dot Dir;
+		if (Best == None || Gap < BestGap || (Gap == BestGap && Dist < BestDist)) {
 			Best = P;
 			BestGap = Gap;
+			BestDist = Dist;
 		}
 	}
 	return Best;
