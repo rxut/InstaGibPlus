@@ -15428,6 +15428,40 @@ function ApplyForcedSkins(PlayerReplicationInfo PRI) {
 	}
 }
 
+// A shield belt glows in the color its wearer's forced skin shows (Team Color
+// and Enemy Color). The server picks the glow from the wearer's team and only
+// sends it when it changes, so every frame sets it, back to the team's too.
+function ApplyBeltColors() {
+	local UT_ShieldBeltEffect E;
+	local PlayerReplicationInfo PRI;
+	local Texture T;
+	local int C, i;
+
+	foreach AllActors(class'UT_ShieldBeltEffect', E) {
+		if (Pawn(E.Owner) == none) continue;
+		PRI = Pawn(E.Owner).PlayerReplicationInfo;
+		if (PRI == none) continue;
+
+		C = 3;
+		if (GameReplicationInfo.bTeamGame) {
+			C = PRI.Team;
+			if (PRI.Owner != none && zzbForceModels && IGPlus_ShowRealModelsInDemo() == false)
+				C = GetForcedSkinColor(PRI, GetForcedSkinForPlayer(PRI));
+			if (C < 0 || C > 3)
+				C = 3;
+		}
+
+		T = class'UT_ShieldBelt'.default.TeamFireTextures[C];
+		if (T == none || E.Texture == T) continue;
+		// Only a stock glow is swapped, another mod's belt keeps its own.
+		for (i = 0; i < 4; ++i)
+			if (E.Texture == class'UT_ShieldBelt'.default.TeamFireTextures[i])
+				break;
+		if (i < 4)
+			E.Texture = T;
+	}
+}
+
 function ApplyBrightskins(PlayerReplicationInfo PRI) {
 	local string Anim;
 	local Pawn P;
@@ -15549,6 +15583,7 @@ event PreRender( canvas zzCanvas )
 					bbPlayer(zzPRI.Owner).IGPlus_TweenPlaceholder();
 			}
 		}
+		ApplyBeltColors();
 	}
 
 	if (IGPlus_TryOpenSettingsMenu) {
