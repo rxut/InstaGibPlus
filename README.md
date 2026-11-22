@@ -571,7 +571,7 @@ What to draw when a player's model would collapse into a small lump. Players cal
 The setting has 2 values:
 
 - `FAF_Off`: models are drawn as the game draws them.
-- `FAF_FinishFlip`: the model plays its flip to the end and then blends on. Every frame drawn is a frame of the stock animations.
+- `FAF_FinishFlip`: the model finishes its flip after the landing. It plays the flip up to 1.5 times as fast. Then it blends on.
 
 Older versions also had `FAF_Instant`. A settings file that still has it gets `FAF_FinishFlip`.
 

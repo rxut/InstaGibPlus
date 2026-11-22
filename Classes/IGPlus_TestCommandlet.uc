@@ -986,27 +986,50 @@ function TestHeadTween() {
 
 // Blends the engine would fold are drawn with transition frames (bbPlayer.IGPlus_TransitionLayout).
 function TestTransitionFrames() {
-	local int Source, Sets, Steps;
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'StrafeL', Source, Sets, Steps) && Source == 0 && Sets == 1 && Steps == 8, "Transition_strafe_flip_has_one_set_of_8");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeL', 'StillFrRp', Source, Sets, Steps) && Source == 1 && Sets == 10 && Steps == 12, "Transition_stopping_a_strafe_has_a_set_per_key_frame");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('DuckWlkL', 'StrafeR', Source, Sets, Steps) && Source == 4 && Sets == 15, "Transition_leaving_a_crouch_walk_has_a_set_per_key_frame");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StillFrRp', 'StrafeL', Source, Sets, Steps) && class'bbPlayer'.static.IGPlus_TransitionLayout('LandLgFr', 'StrafeL', Source, Sets, Steps), "Transition_standing_and_landing_into_StrafeL");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'StillFrRp', Source, Sets, Steps) == false
-		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StillFrRp', 'StrafeR', Source, Sets, Steps) == false
-		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'DuckWlkL', Source, Sets, Steps) == false
-		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeL', 'DodgeR', Source, Sets, Steps) == false, "Transition_other_blends_are_the_engines");
+	local int Pair, Sets, Steps, i;
+	local float F;
+	local bool Ok;
+
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'StrafeL', Pair, Sets, Steps) && Pair == 0 && Sets == 1 && Steps == 8, "Transition_strafe_flip_has_one_set_of_8");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeL', 'StillFrRp', Pair, Sets, Steps) && Pair == 2 && Sets == 10 && Steps == 12, "Transition_stopping_a_strafe_has_a_set_per_key_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('DuckWlkL', 'StrafeR', Pair, Sets, Steps) && Pair == 5 && Sets == 15 && Steps == 10, "Transition_leaving_a_crouch_walk_has_a_set_per_key_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StillFrRp', 'StrafeL', Pair, Sets, Steps) && Pair == 3 && class'bbPlayer'.static.IGPlus_TransitionLayout('LandLgFr', 'StrafeL', Pair, Sets, Steps) && Pair == 4, "Transition_standing_and_landing_into_StrafeL");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'StillFrRp', Pair, Sets, Steps) == false && class'bbPlayer'.static.IGPlus_TransitionLayout('StillFrRp', 'StrafeR', Pair, Sets, Steps) == false
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeR', 'DuckWlkL', Pair, Sets, Steps) == false && class'bbPlayer'.static.IGPlus_TransitionLayout('StrafeL', 'DodgeR', Pair, Sets, Steps) == false, "Transition_other_blends_are_the_engines");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('LandLgFr', 'StillFrRp', Pair, Sets, Steps) && Pair == 6 && class'bbPlayer'.static.IGPlus_TransitionLayout('Flip', 'LandLgFr', Pair, Sets, Steps) && Pair == 7
+		&& class'bbPlayer'.static.IGPlus_TransitionLayout('Flip', 'StillFrRp', Pair, Sets, Steps) && Pair == 8 && Sets == 1, "Transition_flip_end_and_landing_into_standing");
 	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Commando') == 0 && class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Soldier') == 1
 		&& class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.Boss') == 2 && class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.FCommando') == 3
 		&& class'bbPlayer'.static.IGPlus_TransitionModel(LodMesh'Botpack.SGirl') == 5 && class'bbPlayer'.static.IGPlus_TransitionModel(none) == -1, "TransitionModel_every_stock_model");
-	LogTestResult(class'IGPlus_TransitionMesh'.default.Frames[0] != none && class'IGPlus_TransitionMesh'.default.Frames[41] != none, "TransitionMesh_all_meshes_imported");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionLayout('Flip', 'LandLgFr', Source, Sets, Steps) && Source == 5 && Sets == 1
-		&& class'bbPlayer'.static.IGPlus_TransitionLayout('Flip', 'StillFrRp', Source, Sets, Steps) && Source == 5
-		&& class'bbPlayer'.static.IGPlus_TransitionLayout('LandLgFr', 'StillFrRp', Source, Sets, Steps) && Source == 3, "Transition_flip_end_and_landing_into_standing");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionModel(class'IGPlus_TransitionMesh'.default.Frames[6]) == -1, "TransitionModel_none_for_a_transition_mesh");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFrame(0.0, 1, 8, 0.0) == 0.0 && Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(1.0, 1, 8, 0.0) - 0.875) < 0.0001, "TransitionFrame_one_set_runs_to_the_last_frame");
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(0.0, 10, 12, 3.4) - 3.4 / 132.0) < 0.0001, "TransitionFrame_first_step_between_two_start_sets");
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionFrame(1.0, 10, 12, 3.4) - (11 * 11 + 3.4) / 132.0) < 0.0001, "TransitionFrame_last_step_of_the_same_sets");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFrame(0.5, 10, 12, 9.99) < (6 * 11 + 10) / 132.0, "TransitionFrame_stays_inside_its_step");
+	Ok = true;
+	for (i = 0; i < 7; i++)
+		Ok = Ok && class'IGPlus_TransitionMesh'.default.Frames[i] != none && class'bbPlayer'.static.IGPlus_TransitionModel(class'IGPlus_TransitionMesh'.default.Frames[i]) == -1;
+	LogTestResult(Ok, "TransitionMesh_one_for_each_model_and_none_for_itself");
+	Ok = true;
+	for (i = 0; i < 9; i++) {
+		if (i == 2 || i == 5)
+			Ok = Ok && class'IGPlus_TransitionMesh'.default.Kn[i] != '' && class'IGPlus_TransitionMesh'.default.Pn[i] != '';
+		else
+			Ok = Ok && class'IGPlus_TransitionMesh'.default.Tn[i] != '';
+	}
+	for (i = 0; i < 25; i++)
+		Ok = Ok && class'IGPlus_TransitionMesh'.default.Into[i] != '';
+	LogTestResult(Ok, "TransitionMesh_every_blend_has_its_sequences");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionPose(0, 1, 8, 0.0, 0.0, 0, true, 0.0, F) == 'T0' && F == 0.0 && class'bbPlayer'.static.IGPlus_TransitionPose(0, 1, 8, 1.0, 0.0, 0, true, 0.0, F) == 'T0' && Abs(F - 0.875) < 0.0001, "TransitionPose_one_start_runs_to_the_last_frame");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionPose(2, 10, 12, 0.0, 3.4, 3, false, 0.0, F) == 'K2' && Abs(F - 3.4 / 11.0) < 0.0001, "TransitionPose_first_the_exact_start");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionPose(2, 10, 12, 0.09, 3.4, 3, true, 0.0, F) == 'E2_3' && F < 0.0 && class'bbPlayer'.static.IGPlus_TransitionPose(5, 15, 10, 0.1, 14.2, 14, true, 0.0, F) == 'E5_14', "TransitionPose_then_the_tween_into_the_nearest_start");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionPose(2, 10, 12, 0.178, 3.4, 3, true, 0.0, F) == 'P2' && F >= 0.0, "TransitionPose_the_steps_take_over_late_in_the_blend");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionPose(2, 10, 12, 1.0, 3.4, 3, true, 0.0, F) == 'P2' && Abs(F - 47.0 / 120.0) < 0.0001 && class'bbPlayer'.static.IGPlus_TransitionPose(5, 15, 10, 1.0, 14.2, 14, true, 0.0, F) == 'P5' && F < 1.0, "TransitionPose_the_last_step_of_the_same_start");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFits(0, 1, 0.9, 0.0, 0.0, 0.95) && class'bbPlayer'.static.IGPlus_TransitionFits(0, 1, 0.865, 0.0, 0.011, 0.95) && class'bbPlayer'.static.IGPlus_TransitionFits(0, 1, 0.5, 0.0, 0.011, 0.95) == false, "TransitionFits_a_strafe_flip_at_its_last_key");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFits(6, 1, -0.002, -0.1, 0.0, 0.95) && class'bbPlayer'.static.IGPlus_TransitionFits(6, 1, -0.03, -0.1, 0.0, 0.95) == false, "TransitionFits_only_a_finished_blend");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TransitionFits(7, 1, 0.95, 0.0, 0.0, 0.95) && class'bbPlayer'.static.IGPlus_TransitionFits(7, 1, 0.9, 0.0, 0.0, 0.95) == false && class'bbPlayer'.static.IGPlus_TransitionFits(2, 10, 0.47, 0.0, 0.0, 0.95), "TransitionFits_the_flip_at_its_end_and_a_stop_anywhere");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FlipFix_PlayOnSpeed(2.0, 0.8, 0.95, 0.1) - 2.0) < 0.0001, "FlipFix_a_late_landing_keeps_the_flips_speed");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FlipFix_PlayOnSpeed(2.0, 0.7, 0.95, 0.1) - 2.5) < 0.0001, "FlipFix_the_flip_ends_with_the_landing_blend");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FlipFix_PlayOnSpeed(1.3, 0.5, 0.935484, 0.112) - 1.95) < 0.0001 && Abs(class'bbPlayer'.static.IGPlus_FlipFix_PlayOnSpeed(2.0, 0.2, 0.95, 0.0) - 3.0) < 0.0001, "FlipFix_never_more_than_one_and_a_half_times_as_fast");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FlipFix_FlipEnd(0) - 0.95) < 0.0001 && Abs(class'bbPlayer'.static.IGPlus_FlipFix_FlipEnd(2) - 0.95) < 0.0001 && Abs(class'bbPlayer'.static.IGPlus_FlipFix_FlipEnd(3) - 29.0 / 31.0) < 0.0001 && Abs(class'bbPlayer'.static.IGPlus_FlipFix_FlipEnd(6) - 29.0 / 31.0) < 0.0001, "FlipFix_each_model_ends_where_its_frames_start");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FlipFix_Dying('Dead9B') && class'bbPlayer'.static.IGPlus_FlipFix_Dying('DeathEnd2') && class'bbPlayer'.static.IGPlus_FlipFix_Dying('DuckWlkL') == false && class'bbPlayer'.static.IGPlus_FlipFix_Dying('LandLgFr') == false, "FlipFix_the_dead_dont_finish_a_flip");
+	LogTestResult(class'bbPlayer'.static.IGPlus_FlipFix_Looped('RunLgFr') && class'bbPlayer'.static.IGPlus_FlipFix_Looped('StrafeL') && class'bbPlayer'.static.IGPlus_FlipFix_Looped('Breath2') && class'bbPlayer'.static.IGPlus_FlipFix_Looped('LandLgFr') == false && class'bbPlayer'.static.IGPlus_FlipFix_Looped('StillFrRp') == false && class'bbPlayer'.static.IGPlus_FlipFix_Looped('Flip') == false, "FlipFix_looped_animations");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_FlipFix_Wrap(1.25) - 0.25) < 0.0001 && Abs(class'bbPlayer'.static.IGPlus_FlipFix_Wrap(-0.25) - 0.75) < 0.0001 && Abs(class'bbPlayer'.static.IGPlus_FlipFix_Wrap(0.5) - 0.5) < 0.0001, "FlipFix_phase_wraps");
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.05, -0.1, 0.0) - 0.5) < 0.0001, "TransitionAlpha_halfway_through_the_blend");
 	// A stop played twice: the blend restarts at -0.097 when it was 93% done. It goes on from 93%, never back.
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TransitionAlpha(-0.097, -0.097, 0.93) - 0.93) < 0.0001
