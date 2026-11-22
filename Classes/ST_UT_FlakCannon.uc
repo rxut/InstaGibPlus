@@ -801,7 +801,12 @@ simulated function PlaySelect() {
 	bForceAltFire = false;
 	bCanClientFire = false;
 	if ( !IsAnimating() || (AnimSequence != 'Select') )
-		PlayAnim('Select',GetWeaponSettings().FlakSelectAnimSpeed(),0.0);
+		// Just joined: the weapon settings may not be here yet. A speed read
+		// from none is 0, the animation never ends and the weapon never fires.
+		if (GetWeaponSettings() != None)
+			PlayAnim('Select', GetWeaponSettings().FlakSelectAnimSpeed(), 0.0);
+		else
+			PlayAnim('Select', 1.0, 0.0);
 	Owner.PlaySound(SelectSound, SLOT_Misc, Pawn(Owner).SoundDampening);	
 }
 
