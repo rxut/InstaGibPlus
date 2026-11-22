@@ -1156,6 +1156,7 @@ function float SimulateProjectile(Projectile P, int Ping, optional float CatchUp
   local UTPure PureRef;
   local IGPlus_LiftShot LS;
   local float TotalMs;
+  local int Steps, Step;
   local vector PathStart, PathEnd, PrevLoc;
   local bool bPathEnded, bWasHidden;
   local class<Projectile> PathClass;
@@ -1193,20 +1194,27 @@ function float SimulateProjectile(Projectile P, int Ping, optional float CatchUp
 
   DeltaTime = 0.001*SimPing*Level.TimeDilation;
 
-  DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
+  // The steps are counted. DeltaTime is game time and SimPing is real time:
+  // taking the one off the other ended the loop a step or two early at a
+  // game speed of 1.1 (from 143 ping on), and what a float leaves over added
+  // a step at some pings at a game speed of 1.
+  Steps = int(DeltaTime * GetAverageTickRate()) + 1;
+  DeltaTime = DeltaTime / Steps;
 
   if (DeltaTime <= 0.0)
     return 0;
 
   TotalMs = SimPing;
-  while (SimPing > 0.0) {
+  for (Step = 0; Step < Steps; Step++) {
     if (P == None || P.bDeleteMe) {
         break;
       }
 
+    // What is left to fly, in real time: the players stand where they were then.
+    SimPing = TotalMs * float(Steps - Step) / float(Steps);
     PureRef.CompensateFor(int(SimPing), P.Instigator);
     IGPlus_CatchUpProjectile = P;
-    IGPlus_CatchUpLeftMs = SimPing - DeltaTime * 1000.0;
+    IGPlus_CatchUpLeftMs = TotalMs * float(Steps - Step - 1) / float(Steps);
     PrevLoc = P.Location;
     // From a moving lift (Push-Safe Aim): against the shooter's lift where
     // the shooter's screen has it.
@@ -1224,7 +1232,6 @@ function float SimulateProjectile(Projectile P, int Ping, optional float CatchUp
         bPathEnded = true;
       }
     }
-    SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
   IGPlus_CatchUpProjectile = None;
@@ -1298,7 +1305,7 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
   local float SimPing;
   local float InterpMs;
   local UTPure PureRef;
-  local int i;
+  local int i, Steps, Step;
   local bool bAnyAlive;
   local float TotalMs;
   local vector PathStart[6], PathEnd[6], PrevLoc;
@@ -1334,13 +1341,16 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
 
   DeltaTime = 0.001*SimPing*Level.TimeDilation;
 
-  DeltaTime = DeltaTime / (int(DeltaTime * GetAverageTickRate()) + 1);
+  // (The steps are counted: see SimulateProjectile.)
+  Steps = int(DeltaTime * GetAverageTickRate()) + 1;
+  DeltaTime = DeltaTime / Steps;
 
   if (DeltaTime <= 0.0)
     return;
 
   TotalMs = SimPing;
-  while (SimPing > 0.0) {
+  for (Step = 0; Step < Steps; Step++) {
+    SimPing = TotalMs * float(Steps - Step) / float(Steps);
     bAnyAlive = false;
     
     for (i = 0; i < NumProjectiles; i++) {
@@ -1375,7 +1385,6 @@ function BatchSimulateProjectiles(Projectile Projectiles[6], int NumProjectiles,
       }
     }
 
-    SimPing -= DeltaTime * 1000.0;
     PureRef.EndCompensation();
   }
 
