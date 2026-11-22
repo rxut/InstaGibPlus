@@ -705,12 +705,21 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local int OldPing, OwnPing;
 	local vector OldLoc;
 	local float Moved, MostMoved, BotSeen;
-	local int ExtraMs;
+	local int ExtraMs, ProjPing;
 	local string MostMovedName;
 
 	bCompensationIsActive = true;
 	if (bbPlayer(Instigator) != none)
 		ExtraMs = int(bbPlayer(Instigator).IGPlus_RewindExtraMs(1.0));
+	// Tick Interpolation draws the other players a few ticks in the past, and
+	// a shot's rewind holds that delay. Shock balls and discs are not drawn
+	// that way: the shooter's game flies them on from the moment they arrived.
+	// So for a shot they go back by the rewind without that delay. With it, a
+	// ball flying across stood 25 to 35 units behind the one on the shooter's
+	// screen, and a beam aimed at its middle missed (rig: 0 of 112).
+	ProjPing = Ping;
+	if (bHitscan && bbPlayer(Instigator) != none)
+		ProjPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_RewindExtraMs(0.0) + 0.5));
 
 	// Where everyone stands, before any lift is moved back: moving a lift
 	// (SetLocation) takes everyone standing on it off it. Riders line up with
@@ -823,7 +832,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 				continue;
 			if (IGPlus_CompOwnBall(PD, Instigator))
 				continue;
-			PD.CompStart(Ping);
+			PD.CompStart(ProjPing);
 		}
 	}
 }
