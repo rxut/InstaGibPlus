@@ -120,7 +120,8 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
     local ST_ut_biorifle br;
-	local vector FakeLocation;
+	local vector FakeLocation, FakeVelocity;
+	local bool bFakeFlying;
 
 	super.PostNetBeginPlay();
 
@@ -146,6 +147,8 @@ simulated function PostNetBeginPlay()
 			{
 				// Store fake's current position for smooth hand-off
 				FakeLocation = br.LocalBioGelDummy.Location;
+				FakeVelocity = br.LocalBioGelDummy.Velocity;
+				bFakeFlying = br.LocalBioGelDummy.Physics == PHYS_Falling;
 
 				// Destroy the fake projectile
 				br.LocalBioGelDummy.Destroy();
@@ -157,6 +160,16 @@ simulated function PostNetBeginPlay()
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
+
+				// It flies on as our copy did: the speed it came with is from
+				// another point of the arc, and our copy's spot is already
+				// ahead by the ping, so no lead on top (on a falling gel the
+				// lead move sinks it by gravity x lead). Tick goes on for the
+				// lift sweep.
+				if (bFakeFlying && IGPlus_HeldVelocity == vect(0,0,0)) {
+					Velocity = FakeVelocity;
+					InstigatingPlayer = None;
+				}
 			}
 		}
 	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {

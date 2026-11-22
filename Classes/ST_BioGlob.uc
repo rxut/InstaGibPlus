@@ -13,7 +13,8 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
 	local ST_ut_biorifle br;
-	local vector FakeLocation;
+	local vector FakeLocation, FakeVelocity;
+	local bool bFakeFlying;
 
 	super(Projectile).PostNetBeginPlay();
 
@@ -31,9 +32,17 @@ simulated function PostNetBeginPlay()
 			if (br != none && br.LocalBioGlobDummy != none && br.LocalBioGlobDummy.bDeleteMe == false)
 			{
 				FakeLocation = br.LocalBioGlobDummy.Location;
+				FakeVelocity = br.LocalBioGlobDummy.Velocity;
+				bFakeFlying = br.LocalBioGlobDummy.Physics == PHYS_Falling;
 				br.LocalBioGlobDummy.Destroy();
 				SetLocation(FakeLocation);
 				ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
+				// As ST_UT_BioGel: on from our copy's spot with our copy's
+				// speed, no lead on top.
+				if (bFakeFlying && IGPlus_HeldVelocity == vect(0,0,0)) {
+					Velocity = FakeVelocity;
+					InstigatingPlayer = None;
+				}
 			}
 		}
 	} else {
