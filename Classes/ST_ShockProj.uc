@@ -36,6 +36,17 @@ var float IGPlus_FireTime;    // server: Level.TimeSeconds at the shot
 var vector IGPlus_FireLoc;    // server: where the shot left from
 var vector IGPlus_FireLiftLead; // server: the owner's lift lead at the shot (bbPlayer.IGPlus_OwnLiftLead)
 var float IGPlus_FireDelta;   // server: the length of the owner's frame the shot was made in (bbPlayer.IGPlus_MoveFrameDelta)
+// Fired around a moving lift from where its owner's screen has the owner
+// (ST_ShockRifle.IGPlus_DetFireBall): server, the flight near the lift
+// (IGPlus_LiftShot); clients, its speed, as it was sent held still.
+var IGPlus_LiftShot IGPlus_Lift;
+var vector IGPlus_HeldVelocity;
+var bool IGPlus_bLiftShot;    // server: such a ball never waits for its owner's moves (IGPlus_StartHold), as before
+
+replication {
+	reliable if (Role == ROLE_Authority && bNetInitial)
+		IGPlus_HeldVelocity;
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -100,6 +111,13 @@ simulated function PostNetBeginPlay() {
 	local ST_ShockRifle SR;
 
 	bbP = bbPlayer(Instigator);
+
+	// Sent held still from a moving lift (IGPlus_LiftShot): its speed came with it.
+	if (IGPlus_HeldVelocity != vect(0,0,0)) {
+		Velocity = IGPlus_HeldVelocity;
+		if (bCollideActors == false)
+			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+	}
 
 	super.PostNetBeginPlay();
 
@@ -220,6 +238,8 @@ simulated event Tick(float Delta) {
 // The owner's own ball stops at a wall like the server's does, which is
 // exploding there; its explosion reaches the owner a round trip later.
 simulated function HitWall(vector HitNormal, actor Wall) {
+	if (IGPlus_Lift != None && IGPlus_Lift.PassHitWall(Wall))
+		return;
 	if (IGPlus_bOwnTimeline == false) {
 		if (IGPlus_WallWait(HitNormal, Wall) == false) {
 			IGPlus_NoteEnd("it hit a wall", None);
@@ -327,7 +347,7 @@ function bool IGPlus_StartHold(float Flight) {
 		|| P.zzUTPure == None || P.IGPlus_EnableInputReplication
 		|| GetWeaponSettings() == None || GetWeaponSettings().bEnablePingCompensation == false
 		|| P.IGPlus_PredictiveShockCombos() == false
-		|| IGPlus_FireTS <= 0.0 || Speed <= 0.0 || IGPlus_FireLiftLead != vect(0,0,0))
+		|| IGPlus_FireTS <= 0.0 || Speed <= 0.0 || IGPlus_FireLiftLead != vect(0,0,0) || IGPlus_bLiftShot)
 		return false;
 
 	IGPlus_WallAge = Flight / Speed;
@@ -626,7 +646,7 @@ function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 				Loc = IGPlus_FireLoc + (Location - IGPlus_FireLoc) * (Age / IGPlus_WallAge);
 			return true;
 		}
-		Loc = IGPlus_FireLoc + Velocity * Age;
+		Loc = IGPlus_FireLoc + IGPlus_FlightVel() * Age;
 		bSeen = Age <= Live || FastTrace(Loc, Location);
 	}
 	// The owner fired it from a round trip of lift travel behind the server's
@@ -635,6 +655,14 @@ function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	// screen has it too.
 	Loc -= IGPlus_FireLiftLead;
 	return bSeen;
+}
+
+// Server: its speed. Near a lift it stands still between its moves
+// (IGPlus_LiftShot), and its speed is kept there.
+function vector IGPlus_FlightVel() {
+	if (IGPlus_Lift != None && IGPlus_Lift.bHeld)
+		return IGPlus_Lift.HeldVelocity;
+	return Velocity;
 }
 
 // Server: the conditions under which the owner's client draws its own combos
@@ -816,7 +844,7 @@ function Explode(vector HitLocation,vector HitNormal) {
 	if (WImp.WeaponSettings.ShockProjectileDamage > 60)
 		Spawn(class'ut_RingExplosion3',,, HitLocation+HitNormal*8,rotator(HitNormal));
 	else
-		Spawn(class'ut_RingExplosion',,, HitLocation+HitNormal*8,rotator(Velocity));		
+		Spawn(class'ut_RingExplosion',,, HitLocation+HitNormal*8,rotator(IGPlus_FlightVel()));		
 
 	Destroy();
 }

@@ -60,6 +60,8 @@ static function IGPlus_LiftShot Of(Projectile Proj) {
 		return ST_UTChunk(Proj).IGPlus_Lift;
 	if (ST_UT_BioGel(Proj) != None)
 		return ST_UT_BioGel(Proj).IGPlus_Lift;
+	if (ST_ShockProj(Proj) != None)
+		return ST_ShockProj(Proj).IGPlus_Lift;
 	return None;
 }
 
@@ -76,6 +78,8 @@ static function SetFor(Projectile Proj, IGPlus_LiftShot LS) {
 		ST_UTChunk(Proj).IGPlus_Lift = LS;
 	else if (ST_UT_BioGel(Proj) != None)
 		ST_UT_BioGel(Proj).IGPlus_Lift = LS;
+	else if (ST_ShockProj(Proj) != None)
+		ST_ShockProj(Proj).IGPlus_Lift = LS;
 }
 
 function SetHeldVelocity(vector V) {
@@ -91,6 +95,8 @@ function SetHeldVelocity(vector V) {
 		ST_UTChunk(P).IGPlus_HeldVelocity = V;
 	else if (ST_UT_BioGel(P) != None)
 		ST_UT_BioGel(P).IGPlus_HeldVelocity = V;
+	else if (ST_ShockProj(P) != None)
+		ST_ShockProj(P).IGPlus_HeldVelocity = V;
 }
 
 function FastForwarded(float Ms) {
