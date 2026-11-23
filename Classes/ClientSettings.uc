@@ -574,7 +574,7 @@ static function EHeadshotSource IntToHeadshotSource(int A) {
 		case 0: return HDSRC_Server;
 		case 1: return HDSRC_Client;
 	}
-	return HDSRC_Client;
+	return HDSRC_Server;
 }
 
 static function EHitMarkerSource IntToHitMarkerSource(int A) {
@@ -739,7 +739,7 @@ defaultproperties
 	bHitSoundPitchShift=True
 	bHitSoundTeamPitchShift=False
 	HitSoundSource=HSSRC_Server
-	HeadshotSource=HDSRC_Client
+	HeadshotSource=HDSRC_Server
 	SelectedHitSound=0
 	SelectedTeamHitSound=2
 	HitSoundVolume=4

@@ -656,8 +656,9 @@ function TestTickInterp() {
 		"HitEffectSource_starts_on_client_and_the_two_effect_halves_are_split");
 	LogTestResult(class'ClientSettings'.static.IntToHeadshotSource(0) == HDSRC_Server
 		&& class'ClientSettings'.static.IntToHeadshotSource(1) == HDSRC_Client
-		&& class'ClientSettings'.default.HeadshotSource == HDSRC_Client,
-		"HeadshotSource_starts_on_client");
+		&& class'ClientSettings'.static.IntToHeadshotSource(7) == HDSRC_Server
+		&& class'ClientSettings'.default.HeadshotSource == HDSRC_Server,
+		"HeadshotSource_starts_on_server");
 	// A 39 high body with radius 17. Half the radius along the shot is 8.5.
 	// The top of a full crouch is 11.7 above the middle, of half a crouch 25.35.
 	LogTestResult(CrouchTopCase(25.0, 0.0, 0.0, false, 25.0)

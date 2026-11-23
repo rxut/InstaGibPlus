@@ -273,7 +273,7 @@ Selects where hit sound events come from.
 
 ## HeadshotSource
 **Type: EHeadshotSource**  
-**Default: HDSRC_Client**  
+**Default: HDSRC_Server**  
 
 When the "Head Shot" message and its sound play for a headshot kill with your sniper rifle. It applies to the rifle of NextSA. With every other sniper rifle the message is the server's.
 
