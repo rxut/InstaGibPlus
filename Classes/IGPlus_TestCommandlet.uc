@@ -526,6 +526,28 @@ function TestTickInterp() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_ShotOriginIsNear(0.0) && class'bbPlayer'.static.IGPlus_ShotOriginIsNear(1.7)
 		&& class'bbPlayer'.static.IGPlus_ShotOriginIsNear(1.8) == false && class'bbPlayer'.static.IGPlus_ShotOriginIsNear(-1.0) == false,
 		"ShotOrigin_the_client_spot_counts_only_inside_the_movement_tolerance");
+	// A lift carried us up before the client's own lift did: the client's
+	// spot counts while it is behind ours on the lift's path, no further than
+	// the lift went.
+	LogTestResult(class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(0,0,30), vect(0,0,45))
+		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(2,1,45), vect(0,0,45))
+		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(0,0,-20), vect(0,0,-30)),
+		"ShotOrigin_a_client_spot_behind_ours_on_the_lift_path_counts");
+	LogTestResult(class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(0,0,46), vect(0,0,45)) == false
+		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(0,0,-5), vect(0,0,45)) == false
+		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(5,0,30), vect(0,0,45)) == false
+		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(0,0,1), vect(0,0,1.5)) == false,
+		"ShotOrigin_a_client_spot_past_the_lift_travel_ahead_of_us_or_beside_the_path_does_not_count");
+	// We stepped off a lift the client still rides: only right after we stood
+	// on it, with the client at the height we stood at and no further from
+	// us sideways than we went since.
+	LogTestResult(class'bbPlayer'.static.IGPlus_StillRidesTakes(0.1, 0.23, vect(20,0,28), vect(20,0,26))
+		&& class'bbPlayer'.static.IGPlus_StillRidesTakes(0.1, 0.23, vect(3,0,0), vect(0,0,0))
+		&& class'bbPlayer'.static.IGPlus_StillRidesTakes(0.3, 0.23, vect(0,0,0), vect(0,0,0)) == false
+		&& class'bbPlayer'.static.IGPlus_StillRidesTakes(-1.0, 0.23, vect(0,0,0), vect(0,0,0)) == false
+		&& class'bbPlayer'.static.IGPlus_StillRidesTakes(0.1, 0.23, vect(0,0,28), vect(0,0,20)) == false
+		&& class'bbPlayer'.static.IGPlus_StillRidesTakes(0.1, 0.23, vect(30,0,28), vect(20,0,28)) == false,
+		"ShotOrigin_a_lift_we_stepped_off_counts_only_at_once_and_with_the_client_where_it_can_be_on_it");
 	// Push ease: the jump a push's correction makes goes on the camera when it
 	// is an ordinary move. A teleport, a jump over 150 units or one through a wall snaps.
 	LogTestResult(class'bbPlayer'.static.IGPlus_PushEaseTakes(vect(90,0,30), false, true)

@@ -473,12 +473,22 @@ var vector IGPlus_PSAPushDV[8];
 var int IGPlus_PSAPushNext;
 var vector IGPlus_PSALastClientLoc;
 var float IGPlus_PSALastClientTS;
+var Actor IGPlus_PSALastClientBase;     // what it stood on then, and where on it
+var vector IGPlus_PSALastClientSpot;
 // Server: for the shot being run, how far the client's own spot was from ours
 // when it fired (-1: not known), and which of the two the shot left from
 // (IGPlus_PSAShotOrigin). 0 ours, 1 the client's because the two were close,
-// 2 the client's after a push it had not seen.
+// 2 the client's after a push it had not seen, 3 the client's while a lift
+// carried us along before the one on its screen did.
 var float IGPlus_ShotOriginGap;
 var int IGPlus_ShotOriginFrom;
+// Server: the lift we stood on last, when and where on it, and for the shot
+// being run the lift its client still stands on (IGPlus_ClientStillRides).
+var Mover IGPlus_LastLift;
+var float IGPlus_LastLiftTime;
+var vector IGPlus_LastLiftSpot;
+var Mover IGPlus_ShotLift;
+var vector IGPlus_ShotLiftStep;
 var int IGPlus_HitStatOriginFar;     // rifle and sniper shots fired while the two were further apart than close
 var float IGPlus_HitStatOriginGapMax;
 
@@ -3809,15 +3819,34 @@ function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int Mer
 	local float ShotTS, Age, MaxAge, Drift, Window, Slack;
 	local int i;
 	local bool bExact;
+	local Mover StartLift;
+	local vector StartSpot;
 
 	IGPlus_ShotOriginGap = -1.0;
 	IGPlus_ShotOriginFrom = 0;
-	if (MergeCount != 0 || Mover(SM.ClientBase) != none)
+	IGPlus_ShotLift = None;
+	if (MergeCount != 0)
 		return Location;
-
-	ClientStart = SM.ClientLocation - SM.ClientVelocity * SM.MoveDeltaTime;
+	// The lift the client fired from: where the move before this one ended,
+	// unless this move began somewhere else (our correction came between).
+	StartLift = Mover(SM.ClientBase);
+	StartSpot = SM.ClientLocation - SM.ClientVelocity * SM.MoveDeltaTime;
+	ClientStart = StartSpot;
 	if (SM.ClientBase != none)
 		ClientStart += SM.ClientBase.Location;
+	if (IGPlus_PSALastClientTS == PrevTS && Mover(IGPlus_PSALastClientBase) != none
+		&& Abs(SM.TimeStamp - PrevTS - SM.MoveDeltaTime) < 0.5 * SM.MoveDeltaTime
+		&& VSize((IGPlus_PSALastClientLoc - ClientStart) * vect(1,1,0)) < 4.0) {
+		StartLift = Mover(IGPlus_PSALastClientBase);
+		StartSpot = IGPlus_PSALastClientSpot;
+	}
+	if (IGPlus_ClientStillRides(StartLift, StartSpot, IGPlus_ShotLiftStep)) {
+		IGPlus_ShotLift = StartLift;
+		return Location;
+	}
+	if (Mover(SM.ClientBase) != none)
+		return Location;
+
 	// Exact when the previous move (and nothing between) reported it.
 	if (IGPlus_PSALastClientTS == PrevTS
 		&& Abs(SM.TimeStamp - PrevTS - SM.MoveDeltaTime) < 0.5 * SM.MoveDeltaTime
@@ -3840,6 +3869,10 @@ function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int Mer
 	// frame rate.
 	if (bExact && IGPlus_ShotOriginIsNear(IGPlus_ShotOriginGap)) {
 		IGPlus_ShotOriginFrom = 1;
+		return ClientStart;
+	}
+	if (IGPlus_LiftCarriedAhead(Gap, ClientStart)) {
+		IGPlus_ShotOriginFrom = 3;
 		return ClientStart;
 	}
 	if (IGPlus_PushSafeAim == false || IGPlus_ShotOriginGap < 0.5)
@@ -3879,6 +3912,80 @@ function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int Mer
 // MaxLocError is 3.0 for the square of the distance.
 static function bool IGPlus_ShotOriginIsNear(float Gap) {
 	return Gap >= 0.0 && Gap * Gap <= 3.0;
+}
+
+// Server: in the air, and a moving lift under us carried us along before the
+// lift on our client's screen (a round trip behind ours, IGPlus_OwnLiftLead)
+// did the same there. The shot leaves from the client's spot when that is
+// behind ours on the lift's path by no more than the lift went in our ping
+// and 20 ms, with a clear line between the two eyes (the client's middle can
+// be under the top of our lift).
+function bool IGPlus_LiftCarriedAhead(vector Gap, vector ClientStart) {
+	local Mover M;
+	local ST_MoverDummy MD;
+	local vector HL, HN, Ext, Eye;
+	local float Ago;
+	local bool bTakes;
+
+	if (Physics != PHYS_Falling || zzUTPure == None
+		|| GetWeaponSettings() == None || GetWeaponSettings().bEnablePingCompensation == false)
+		return false;
+	Ago = (float(IGPlus_OwnLiftLagMs()) * 0.001 + 0.02) * Level.TimeDilation;
+	Ext.X = CollisionRadius;
+	Ext.Y = CollisionRadius;
+	Ext.Z = CollisionHeight;
+	// ponytail: lifts within 128uu under us, one further down keeps the old origin
+	foreach TraceActors(class'Mover', M, HL, HN, Location - 128.0 * vect(0,0,1), Location, Ext) {
+		MD = zzUTPure.FindMoverDummy(M);
+		if (MD != None && IGPlus_LiftGapTakes(Gap, M.Location - MD.GetHistoricalLocation(Level.TimeSeconds - Ago))) {
+			bTakes = true;
+			break;
+		}
+	}
+	if (bTakes == false)
+		return false;
+	Eye = BaseEyeHeight * vect(0,0,1);
+	return IGPlus_PSAClear(ClientStart + Eye, Location + Eye);
+}
+
+// Gap (ours less the client's) lies along Travel, no longer than it, and no
+// more than 4uu beside it.
+static function bool IGPlus_LiftGapTakes(vector Gap, vector Travel) {
+	local float Dist, Along;
+
+	Dist = VSize(Travel);
+	if (Dist < 2.0)
+		return false;
+	Along = (Gap dot Travel) / Dist;
+	return Along > 0.0 && Along <= Dist && VSize(Gap - Travel * (Along / Dist)) <= 4.0;
+}
+
+// Server: the client fired standing on Lift (at ClientSpot from the lift's
+// own place), and we stepped off that lift a moment ago: ours arrives first.
+// The shot counts as fired from that lift, as while we both ride
+// (IGPlus_OwnLiftLead). Step: how far we are from the client's place on it.
+function bool IGPlus_ClientStillRides(Mover Lift, vector ClientSpot, out vector Step) {
+	local vector Spot;
+
+	Step = vect(0,0,0);
+	if (Lift == None || Lift == Base || Lift != IGPlus_LastLift)
+		return false;
+	Spot = Location - Lift.Location;
+	Step = Spot - ClientSpot;
+	return IGPlus_StillRidesTakes(
+		Level.TimeSeconds - IGPlus_LastLiftTime,
+		(float(IGPlus_OwnLiftLagMs()) * 0.001 + 0.1) * Level.TimeDilation,
+		Step, Spot - IGPlus_LastLiftSpot);
+}
+
+// Only right after we stood on the lift (Since), with the client at the
+// height we stood at and no further from us sideways than we went since
+// (Apart: our place less the client's, Moved: less our own then).
+// ponytail: 4uu around both, as a thrown disc's start is compared (IGPlus_DetAfterThrow)
+static function bool IGPlus_StillRidesTakes(float Since, float MaxSince, vector Apart, vector Moved) {
+	return Since >= 0.0 && Since <= MaxSince
+		&& Abs(Apart.Z - Moved.Z) <= 4.0
+		&& VSize(Apart * vect(1,1,0)) <= VSize(Moved * vect(1,1,0)) + 4.0;
 }
 
 // A trade (bEnableAllWeaponTrades), server: the dead client fired from where
@@ -4695,22 +4802,36 @@ simulated function float IGPlus_ClientLiftLeadZ() {
 // screen has it for the move being processed. The client sees the lift a
 // one-way late and its moves arrive a one-way late: a round trip of travel
 // (measured 40-90uu on a fast lift). Zero off a lift or on a resting one.
+// Also for a lift we stepped off while the shot's client still stands on it
+// (IGPlus_ClientStillRides), plus how far we are from its place on that lift.
+// ponytail: a beam there still meets the real lift, not the screen's; pass
+// IGPlus_ShotLift to IGPlus_TraceMover and both TraceShot skips if that matters.
 function vector IGPlus_OwnLiftLead() {
 	local ST_MoverDummy MD;
+	local Mover Lift;
+	local vector Step;
 
-	if (Mover(Base) == None || zzUTPure == None || IGPlus_OwnLiftLagMs() <= 0)
+	Lift = Mover(Base);
+	if (Lift == None) {
+		Lift = IGPlus_ShotLift;
+		Step = IGPlus_ShotLiftStep;
+	}
+	if (Lift == None || zzUTPure == None || IGPlus_OwnLiftLagMs() <= 0)
 		return vect(0,0,0);
-	MD = zzUTPure.FindMoverDummy(Mover(Base));
+	MD = zzUTPure.FindMoverDummy(Lift);
 	if (MD == None)
 		return vect(0,0,0);
-	return Base.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(IGPlus_OwnLiftLagMs()) * 0.001 * Level.TimeDilation);
+	return Step + Lift.Location - MD.GetHistoricalLocation(Level.TimeSeconds - float(IGPlus_OwnLiftLagMs()) * 0.001 * Level.TimeDilation);
 }
 
 // Server, Push-Safe Aim: on a moving lift our projectile shots leave from
-// where our screen has us, this far behind (IGPlus_LiftShot). Zero otherwise.
+// where our screen has us, this far behind (IGPlus_LiftShot). Zero otherwise,
+// and zero for a lift we stepped off (IGPlus_LiftShot needs us on it).
 function vector IGPlus_LiftAimLead() {
 	local vector Lead;
 
+	if (Mover(Base) == None)
+		return vect(0,0,0);
 	if (IGPlus_PushSafeAim == false || GetWeaponSettings() == None || GetWeaponSettings().bEnablePingCompensation == false)
 		return vect(0,0,0);
 	Lead = IGPlus_OwnLiftLead();
@@ -6427,6 +6548,11 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	IGPlus_MoveFrameDelta = SM.MoveDeltaTime / float(MergeCount + 1);
 
 	bHaveReceivedServerMove = true;
+	if (Mover(Base) != None) {
+		IGPlus_LastLift = Mover(Base);
+		IGPlus_LastLiftTime = Level.TimeSeconds;
+		IGPlus_LastLiftSpot = Location - Base.Location;
+	}
 	LastServerMoveParams.Location = SM.ClientLocation;
 	LastServerMoveParams.Base = SM.ClientBase;
 	LastServerMoveParams.Physics = ClientPhysics;
@@ -6556,6 +6682,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		);
 		IGPlus_DetOwnBeamMode = 0;
 		IGPlus_OwnBallVerdict = 0;
+		IGPlus_ShotLift = None;
 		IGPlus_ClientHitVerdict = 0;
 		IGPlus_bShotDrawnDiffers = false;
 		IGPlus_ShotEyeByte = 0;
@@ -6742,6 +6869,8 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	if (SM.ClientBase != none)
 		IGPlus_PSALastClientLoc += SM.ClientBase.Location;
 	IGPlus_PSALastClientTS = SM.TimeStamp;
+	IGPlus_PSALastClientBase = SM.ClientBase;
+	IGPlus_PSALastClientSpot = SM.ClientLocation;
 
 	// Our client picked its disc up on this move (or one before it).
 	if (IGPlus_DetPickupTS > 0.0 && SM.TimeStamp >= IGPlus_DetPickupTS)
@@ -8817,6 +8946,8 @@ function IGPlus_HitCompare(Actor Other, bool bHead, vector Start, vector Dir, ve
 			S = S@"origin=client";
 		else if (IGPlus_ShotOriginFrom == 2)
 			S = S@"origin=push";
+		else if (IGPlus_ShotOriginFrom == 3)
+			S = S@"origin=lift";
 		else
 			S = S@"origin=server";
 	}
