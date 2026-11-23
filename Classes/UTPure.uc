@@ -695,7 +695,9 @@ function IGPlus_UnlinkProjDummy(ST_ProjectileDummy PD) {
 // bHitscan: the deterministic translocator's own disc is tested where its
 // thrower saw it (ST_Translocator.IGPlus_DetOwnShotLocation), not ping-rewound.
 // bQuiet: no debug line (the deterministic disc's sweep, every tick or move).
-function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan, optional bool bQuiet) {
+// bShot: a weapon's own shot trace, with nothing but the trace before
+// EndCompensation. Every lift and door that moves goes back for it.
+function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan, optional bool bQuiet, optional bool bShot) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
@@ -705,21 +707,30 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local int OldPing, OwnPing;
 	local vector OldLoc;
 	local float Moved, MostMoved, BotSeen;
-	local int ExtraMs, ProjPing;
+	local int ExtraMs, ProjPing, LiftPing;
 	local string MostMovedName;
+	local Actor KeptBase;
+	local Mover ShooterLift;
+	local vector LiftHitLoc, LiftHitNormal;
 
 	bCompensationIsActive = true;
 	if (bbPlayer(Instigator) != none)
 		ExtraMs = int(bbPlayer(Instigator).IGPlus_RewindExtraMs(1.0));
 	// Tick Interpolation draws the other players a few ticks in the past, and
-	// a shot's rewind holds that delay. Shock balls and discs are not drawn
-	// that way: the shooter's game flies them on from the moment they arrived.
-	// So for a shot they go back by the rewind without that delay. With it, a
-	// ball flying across stood 25 to 35 units behind the one on the shooter's
-	// screen, and a beam aimed at its middle missed (rig: 0 of 112).
+	// a shot's rewind holds that delay. Shock balls, discs and lifts are not
+	// drawn that way: the shooter's game flies and moves them on from the
+	// moment they arrived. So for a shot they go back by the rewind without
+	// the part of that delay they run ahead by on the shooter's screen, which
+	// is not all of it with jitter (bbPlayer.IGPlus_TI_Lead). With the whole
+	// rewind, a ball flying across stood 25 to 35 units behind the one on the
+	// shooter's screen, and a beam aimed at its middle missed (rig: 0 of 112).
+	// A lift at 360 units a second stood 6 units from the drawn one (rig).
 	ProjPing = Ping;
-	if (bHitscan && bbPlayer(Instigator) != none)
-		ProjPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_RewindExtraMs(0.0) + 0.5));
+	LiftPing = Ping;
+	if (bHitscan && bbPlayer(Instigator) != none) {
+		ProjPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_ProjLeadMs() + 0.5));
+		LiftPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_LiftLeadMs() + 0.5));
+	}
 
 	// Where everyone stands, before any lift is moved back: moving a lift
 	// (SetLocation) takes everyone standing on it off it. Riders line up with
@@ -729,6 +740,29 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	for (D = CompDummies; D != none; D = D.Next)
 		if (D.Actual != none)
 			D.IGPlus_CompBase = D.Actual.Base;
+
+	// A shot: every lift and door that moves goes back, not only one a target
+	// stands on. The shooter's screen had them all where they were then, and
+	// the one in the way of the shot blocks it. Before, a player who had just
+	// jumped off a lift was tested against the live lift, 30 to 40 units from
+	// the one on the shooter's screen. Rig, shots in the first 0.2 s after the
+	// jump that the screen and the server disagreed on: from below 6 of 12
+	// before and 0 of 18 now, at foot height 12 of 21 and 0 of 19.
+	// Only while it moves and never the shooter's own, as below. The
+	// shooter's own is also the one right under them when they stand on
+	// nothing: just jumped off it, about to land on it, or pushed up by it.
+	// Moved back, a lift going down would come up into them.
+	if (bShot) {
+		if (Instigator != none) {
+			ShooterLift = Mover(ShooterBase);
+			if (ShooterLift == none)
+				ShooterLift = Mover(Instigator.Trace(LiftHitLoc, LiftHitNormal,
+					Instigator.Location - vect(0,0,1) * (Instigator.CollisionHeight + 100.0), Instigator.Location, true));
+		}
+		for (MD = MoverDummies; MD != none; MD = MD.Next)
+			if (MD.Actual != none && MD.Actual.bInterpolating && MD.Actual != ShooterLift)
+				MD.CompStart(LiftPing);
+	}
 
 	// Precise Rewind Time: a hitscan shot's players where the shooter's
 	// screen drew them. Only on its own rewind (a capped combo rewind isn't).
@@ -776,7 +810,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 			&& (Instigator == none || D.IGPlus_CompBase != ShooterBase)) {
 			MD = FindMoverDummy(Mover(D.IGPlus_CompBase));
 			if (MD != none)
-				MD.CompStart(Ping);
+				MD.CompStart(LiftPing);
 		}
 
 		if (PRT == none) {
@@ -790,12 +824,18 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 			Moved = -1;
 			if (D.bCompActive)
 				Moved = 0;
+			// CompEnd forgets what they stood on, and the rewind below needs
+			// it to stand a rider on their lift (UTPlusDummy.CompSwap).
+			KeptBase = D.IGPlus_CompBase;
 			D.CompEnd();
+			D.IGPlus_CompBase = KeptBase;
 		}
 		// Tick Interpolation: between the two snapshots the shooter's screen
 		// drew the shot's target between.
 		if (PRT.IGPlus_bPRTInterp && bbPlayer(DActual) != none)
-			D.CompStartTick(PRT.IGPlus_PRTInterpR, FMax(PRT.AverageServerDeltaTime, 0.001), PRT.IGPlus_bPRTInterpPast, PRT.IGPlus_bPRTInterpHeld, PRT.IGPlus_PRTInterpSpan);
+			D.CompStartTick(PRT.IGPlus_PRTInterpR, FMax(PRT.AverageServerDeltaTime, 0.001), PRT.IGPlus_bPRTInterpPast, PRT.IGPlus_bPRTInterpHeld, PRT.IGPlus_PRTInterpSpan,
+				0.001 * PRT.IGPlus_RewindExtraMs(0.0) * Level.TimeDilation / FMax(PRT.AverageServerDeltaTime, 0.001),
+				0.001 * PRT.IGPlus_LiftLeadMs() * Level.TimeDilation / FMax(PRT.AverageServerDeltaTime, 0.001));
 		// A bot: its snapshots have no tick numbers (UTPlusDummy takes them from
 		// bbPlayers only), and the shooter's game draws it the stock way, at its
 		// newest update moved on to the moment of the shot. That moment is the
