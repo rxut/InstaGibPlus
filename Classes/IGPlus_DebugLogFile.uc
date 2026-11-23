@@ -42,7 +42,7 @@ function WriteLine(string S) {
 	if (bStarted == false)
 		StartLog();
 	FileLog(S);
-	// ponytail: flush every 20 lines, a crash loses at most those
+	// Flush every 20 lines, a crash loses at most those
 	if (++Lines % 20 == 0)
 		FlushLog();
 }

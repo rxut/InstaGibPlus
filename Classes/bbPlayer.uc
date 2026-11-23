@@ -2525,7 +2525,7 @@ function IGPlus_UseNextTrans() {
 // while the head is that new goes to the end instead, where the link was none
 // anyway. Everything else keeps stock order: weapons, and armor, whose ties
 // (body armor and thigh pads) absorb in chain order.
-// ponytail: 0.5s is a guess at "not on the client yet", and an item picked up
+// 0.5s is a guess at "not on the client yet", and an item picked up
 // within 0.5s of another still links to it. Move it behind the new items if
 // that shows up in logs.
 function bool AddInventory(Inventory NewItem) {
@@ -3860,7 +3860,7 @@ function vector IGPlus_PSAShotOrigin(IGPlus_ServerMove SM, float PrevTS, int Mer
 	if (Drift <= 0.0)
 		return Location;
 
-	// ponytail: 25% of the drift, plus what ground vs air acceleration and
+	// 25% of the drift, plus what ground vs air acceleration and
 	// gravity can add since the push, plus 8uu
 	Slack = 0.25 * Drift + 0.5 * (AccelRate + VSize(Region.Zone.ZoneGravity)) * MaxAge * MaxAge + 8.0;
 	if (VSize(Gap - Expected) > Slack)
@@ -3912,7 +3912,7 @@ function vector IGPlus_TradeShotOrigin(IGPlus_ServerMove SM, vector ClientStart)
 
 // How far a player can get in DT: his speed plus a full dodge and jump,
 // with acceleration and gravity on top, plus 16uu.
-// ponytail: adds the speeds up, a cheat gets that much room for after-death shots
+// Adds the speeds up, a cheat gets that much room for after-death shots
 static function float IGPlus_TradeReach(float Speed, float DodgeXY, float JumpUp, float Accel, float Gravity, float DT) {
 	return (Speed + DodgeXY + JumpUp) * DT + 0.5 * (Accel + Gravity) * DT * DT + 16.0;
 }
@@ -4931,7 +4931,7 @@ simulated function bool IGPlus_SKApplyDue(float TS, IGPlus_SavedMove Move) {
 	local byte DiscKind;
 
 	while (IGPlus_SKQueueCount > 0 && IGPlus_SKQueue[0].TargetTS <= TS) {
-		// ponytail: 0.25s staleness drop covers death/respawn; a move gap that
+		// 0.25s staleness drop covers death/respawn; a move gap that
 		// long just costs a correction
 		if (IGPlus_SKQueue[0].TargetTS >= TS - 0.25 && IGPlus_SKQueue[0].bDiscOnly == false) {
 			if (IGPlus_SKCompute(IGPlus_SKQueue[0], Push) == false) {
@@ -5198,7 +5198,7 @@ simulated function IGPlus_SKPredictArc(byte Kind, int Index, vector Start, vecto
 	Dt = 0.025;
 	P0 = Start;
 	V = V0;
-	// ponytail: 2s of flight within reach covers jumps and most discs
+	// 2s of flight within reach covers jumps and most discs
 	for (i = 0; i < 80; i++) {
 		P1 = P0 + V * Dt + 0.5 * G * Dt * Dt;
 		HitActor = IGPlus_SKTrace(Kind, P0, P1, K.SourceRadius, HitLocation, HitNormal);
@@ -5706,7 +5706,7 @@ function IGPlus_DetPickupDue() {
 		return; // picked up here as well, or a newer disc by now
 
 	D = T.Location - IGPlus_DetPickupLoc;
-	// ponytail: 8uu past touching, and the client within 200uu of us; a
+	// 8uu past touching, and the client within 200uu of us; a
 	// recall does the same from anywhere 0.8s after the throw
 	if (T.Physics != PHYS_None)
 		Why = "flying";
@@ -5890,7 +5890,7 @@ function vector IGPlus_DetThrowOrigin(IGPlus_ServerMove SM, float PrevTS, int Me
 	}
 	ClientStart = IGPlus_ClientMoveStart(SM, PrevTS);
 	Dist = VSize(ClientStart - Location);
-	// ponytail: a fixed 32uu, twice the landing bubble; under fire Push-Safe
+	// A fixed 32uu, twice the landing bubble; under fire Push-Safe
 	// Aim leaves gaps of 17 to 43uu it has no push for
 	if (Dist < 0.5 || Dist > 32.0)
 		return Location;
@@ -6004,7 +6004,7 @@ function IGPlus_DetRunAction(int Action, float TS, int View, float MoveTS, optio
 // Server: do we take the spot a late throw's thrower stood at? Within 32uu of
 // ours with a clear line for body and eyes, as for a throw on time. Not on a
 // lift, where that spot is inside our lift.
-// ponytail: the fixed 32uu of IGPlus_DetThrowOrigin. A throw late in a long
+// The fixed 32uu of IGPlus_DetThrowOrigin. A throw late in a long
 // burst is further off (the thrower ran on) and leaves from our own spot.
 function bool IGPlus_DetLateSpotTaken(vector Spot) {
 	local vector Eye;
@@ -6028,7 +6028,7 @@ function IGPlus_DetNotHeld(int Action, float TS, int View) {
 		IGPlus_DetSwitchHeldAction = Action;
 		IGPlus_DetSwitchHeldTS = TS;
 		IGPlus_DetSwitchHeldView = View;
-		// ponytail: one held action, a second during the same switch is refused
+		// One held action, a second during the same switch is refused
 		IGPlus_DetTlocLog("held-for-switch", class'ST_Translocator'.static.IGPlus_DetActionName(Action)@"weapon="$string(Weapon));
 		return;
 	}
@@ -6058,7 +6058,7 @@ function IGPlus_DetRunSwitchHeld(float MoveTS) {
 		IGPlus_DetRunAction(Action, IGPlus_DetSwitchHeldTS, IGPlus_DetSwitchHeldView, MoveTS, true);
 		return;
 	}
-	// ponytail: half a second for our switch, a longer one refuses
+	// Half a second for our switch, a longer one refuses
 	if (ST_Translocator(PendingWeapon) != None && MoveTS - IGPlus_DetSwitchHeldTS < 0.5 && IsInState('Dying') == false)
 		return;
 	IGPlus_DetSwitchHeldAction = 0;
@@ -6096,7 +6096,7 @@ function IGPlus_DetHoldAction(int Action, float TS, int View, bool bWarp) {
 			ST_Translocator(Weapon).IGPlus_ClientDetSync(false, TS, TS);
 		return;
 	}
-	// ponytail: 4 held actions (0.4s of them); a longer stall loses the newest
+	// 4 held actions (0.4s of them); a longer stall loses the newest
 	if (IGPlus_DetHeldCount >= ArrayCount(IGPlus_DetHeldAction))
 		return;
 	i = IGPlus_DetHeldCount++;
@@ -7242,7 +7242,7 @@ function IGPlus_ABIntercept(
 		SM.Next = IGPlus_ABHead;
 		IGPlus_ABHead = SM;
 	} else {
-		// ponytail: walks the queue (a few dozen moves at most). A tail
+		// Walks the queue (a few dozen moves at most). A tail
 		// pointer if queues ever get long.
 		Prev = IGPlus_ABHead;
 		while (Prev.Next != none && Prev.Next.TimeStamp <= TimeStamp)
@@ -7782,7 +7782,7 @@ function IGPlus_DetTakeRedoMore(IGPlus_ServerMove SM) {
 // respawn, as master's does: its throw timer (ServerTimeSinceLastFire > 0.5)
 // starts when the weapon is made. Ours ran from the last throw, and a new
 // translocator has none, so a respawn click still down threw at once.
-// ponytail: the stamp comes from ServerReStartPlayer only. A match start
+// The stamp comes from ServerReStartPlayer only. A match start
 // (no stamp sent) has no wait.
 // Server: is a translocate held for a switch (3: translocate) and the client
 // one translocate ahead of us?
@@ -8644,7 +8644,7 @@ simulated function IGPlus_RingHold(Pawn Victim, vector SourceLocation, vector So
 // Client: the server's hit message for a hit of ours on this player
 // (IGPlus_HitFeedbackMessage). The ring that waited for it shows now, at the
 // end of the beam. No message, no ring: the server did not count the hit.
-// ponytail: one ring waits at a time. The rifle fires slower than a ping.
+// One ring waits at a time. The rifle fires slower than a ping.
 simulated function IGPlus_RingConfirm(PlayerReplicationInfo VictimPRI) {
 	if (IGPlus_RingVictimPRI == None || VictimPRI != IGPlus_RingVictimPRI)
 		return;
@@ -8665,7 +8665,7 @@ simulated function IGPlus_RingConfirm(PlayerReplicationInfo VictimPRI) {
 // Client: the server's hit message is here (IGPlus_HitFeedbackMessage). Did
 // our own trace already play this hit? One shot, one message: these weapons
 // fire slower than a ping.
-// ponytail: one time stamp. A weapon that fires faster than the ping, or one
+// One time stamp. A weapon that fires faster than the ping, or one
 // carried next to other weapons, needs a shot id in the message.
 simulated function bool IGPlus_TakeClientHit() {
 	if (IGPlus_ClientHitPlayedTS <= 0.0 || Level.TimeSeconds - IGPlus_ClientHitPlayedTS > 0.6)
@@ -20219,7 +20219,7 @@ function bool IGPlus_SDOnBody(vector Off, Actor A) {
 //            bits 2-9   that body's crouch, 0 to 255 (255 fully crouched)
 //            bits 16-31 that body's yaw
 // Playback and the server keep the newest one and count them.
-// ponytail: one record held, not a list. These weapons fire slower than a
+// One record held, not a list. These weapons fire slower than a
 // tick, so a tool that looks every frame sees each one.
 simulated function IGPlus_DemoShot(
 	float TS,
@@ -21286,7 +21286,7 @@ simulated function IGPlus_DemoTrack(Actor A) {
 		IGPlus_DemoCopyBegin(i, A.Class, A.Location, A.Rotation, A.Velocity, A.DrawScale);
 		return;
 	}
-	// ponytail: 32 in flight at once, more than any weapon fires in a round trip
+	// 32 in flight at once, more than any weapon fires in a round trip
 }
 
 // Recording: a sound our tracked copy A played. The demo has no channel for

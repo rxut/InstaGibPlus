@@ -410,7 +410,7 @@ function IGPlus_WallWaitCheck() {
 // the player's own screen has the ball flying on meanwhile. The owner's moves
 // are a server frame or two behind at most (the wall waits in players' logs
 // never passed 7 ms).
-// ponytail: fixed 30 ms cap, tie it to the tick length if a slow-ticking server needs more
+// Fixed 30 ms cap, tie it to the tick length if a slow-ticking server needs more
 const IGPLUS_TOUCH_WAIT_MAX = 0.03;
 
 // Server: done waiting on what it touched (IGPlus_TouchWait), no beam of its
@@ -602,7 +602,7 @@ function bool IGPlus_OwnerSeesBall(bbPlayer P, out vector Loc) {
 	// Input replication stamps a packet's inputs with its newest time: test live.
 	if (P.IGPlus_EnableInputReplication == false) {
 		Live = Level.TimeSeconds - IGPlus_FireTime;
-		// ponytail: +-0.2s bounds how far a client clock can move the ball
+		// +-0.2s bounds how far a client clock can move the ball
 		Age = FClamp(P.CurrentTimeStamp - IGPlus_FireTS + IGPlus_FireDelta - P.IGPlus_MoveFrameDelta,
 			FMax(0.0, Live - 0.2), Live + 0.2);
 		// Waiting at a wall for its owner (IGPlus_WallWait): the owner's

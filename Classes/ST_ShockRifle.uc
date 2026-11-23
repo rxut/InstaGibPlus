@@ -919,7 +919,7 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 
 // The two machines have our ball and beam a unit or two apart (measured), so
 // a hit on our client is a hit here within this much.
-// ponytail: 4uu of slack around the ball, so a cheat gains 4uu on its own ball only
+// 4uu of slack around the ball, so a cheat gains 4uu on its own ball only
 const IGPLUS_VERDICT_SLACK = 4.0;
 
 // Server: the ball our client says this beam set off (bbPlayer.IGPlus_OwnBallVerdict:

@@ -41,7 +41,7 @@ static function IGPlus_LiftShot Begin(Projectile Proj, bbPlayer Shooter) {
 	LS.MD = Shooter.zzUTPure.FindMoverDummy(LS.Lift);
 	LS.LagMs = Shooter.IGPlus_OwnLiftLagMs();
 	// Until the screen's lift and the real one are in the same place again
-	// (Tick); ponytail: 2s caps a lift that never stops.
+	// (Tick). 2s caps a lift that never stops.
 	LS.Until = Shooter.Level.TimeSeconds + 2.0;
 	SetFor(Proj, LS);
 	return LS;
