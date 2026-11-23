@@ -1015,6 +1015,7 @@ var float IGPlus_TI_Clock;           // the server tick position now, smoothed
 // late update finds the other players still short of their newest spot.
 var bool IGPlus_TI_bRecv;            // it is held
 var float IGPlus_TI_Recv;            // how many ticks behind the newest tick number, this frame. 0 while it is not held
+var byte IGPlus_TI_HeldRepl;         // IGPlus_TI_RecvAnim in quarter ticks, sent to the server (IGPlus_TI_Lead)
 var float IGPlus_TI_RecvMin;         // the least it was behind in this stretch of IGPLUS_TI_RECV_TIME
 var float IGPlus_TI_RecvMinPrev;     // and in the stretch before
 var float IGPlus_TI_RecvTop;         // the most in this stretch
@@ -1174,6 +1175,8 @@ var int IGPlus_PRTInterpSpan;        // and the two updates the target was drawn
 var float IGPlus_PRTInterpDelayMs;
 const IGPLUS_TI_EXTRA = 1.0;         // ticks of delay on top of the gap between a player's updates
 const IGPLUS_TI_MIN_DELAY = 2.0;
+const IGPLUS_TI_LIFT_LEAD = 2.0;     // ticks of the drawing delay a lift runs ahead of the drawn players by, at most (IGPlus_TI_Lead)
+const IGPLUS_TI_PROJ_LEAD = 3.0;     // and a shock ball or a disc
 const IGPLUS_TI_MAX_DELAY = 10.0;
 const IGPLUS_TI_MAX_CARRY = 2.0;     // ticks a player is carried on past their newest update
 const IGPLUS_TI_MT_UNIT = 0.0005;    // seconds in one step of IGPlus_NetMoveT
@@ -1317,6 +1320,7 @@ replication
 // Variables Client -> Server
 	unreliable if ( Role == ROLE_AutonomousProxy )
 		bDrawDebugData,
+		IGPlus_TI_HeldRepl,
 		bIsFinishedLoading,
 		IGPlus_DamageEvent_ShowOnDeath,
 		IGPlus_EnableDualButtonSwitch,
@@ -4290,18 +4294,31 @@ static function float IGPlus_TI_LiftTravel(float Alpha, float Rate, bool bGlide,
 	}
 	return Span * (A1 - A0);
 }
-// How far ahead of the drawn players a screen with Tick Interpolation has the
-// lifts, in ticks. A lift is not drawn late, but it does not run ahead by the
-// whole drawing delay either: the delay grows with jitter and a lift does not
-// run further ahead for it. A client starts a lift when its start arrives,
-// as late as any other packet. Rig, 100 ticks a second: 22 ms ahead at a
-// delay of 25 ms, 13 ms ahead at a delay of 45 ms (40 ms of jitter). So the
-// smallest delay there is, and no more. Not covered: while this screen's own
-// clock is held back (IGPlus_TI_Recv) the lift does run ahead by that too, and
-// a rider is then drawn into the lift as without this (rig, 87 ms of delay:
-// 21 units). 548 half minutes of a real match had no such hold.
-static function float IGPlus_TI_LiftLead(float DelayTicks) {
-	return FMin(DelayTicks, IGPLUS_TI_MIN_DELAY);
+// How far ahead of the drawn players a screen with Tick Interpolation has a
+// lift, a shock ball or a disc, in ticks. They are not drawn late, but they
+// do not run ahead by the whole drawing delay either. The delay has two
+// parts. One grows with the gaps between a player's updates, and so with
+// jitter. A lift or a ball does not run further ahead for that: a client
+// starts it when its packet arrives, as late as any other packet. So of that
+// part Most ticks count and no more, and the smallest delay there is at
+// least. The other part is the time this screen holds its own clock back
+// (HeldTicks). No packet is late for that, so they run ahead by all of it.
+// The hold is the one the line needs at its best (IGPlus_TI_RecvAnim), not
+// the one of this frame, which drops and comes back with every late packet:
+// with that one a rider's drawn height stepped by over 3 units in 797 of
+// 11024 frames (rig). So a delay that dropped for a frame does not count
+// against the hold either.
+// Rig, 100 ticks a second. A lift: 22 ms ahead at a delay of 25 ms, 13 ms at
+// 45 ms (40 ms of jitter), the whole delay at 87 ms with the clock held. A
+// shock ball: 33 ms, 25 ms, the whole delay. So 2 ticks for a lift and 3 for
+// a ball or a disc. With the whole delay a ball stood 20 units from the one
+// on the shooter's screen with jitter, with ticks alone 65 units with the
+// clock held.
+static function float IGPlus_TI_Lead(float DelayTicks, float HeldTicks, float Most) {
+	if (DelayTicks <= 0.0)
+		return 0.0;
+	HeldTicks = FClamp(HeldTicks, 0.0, IGPLUS_TI_RECV_FREEZE);
+	return FClamp(DelayTicks - HeldTicks, IGPLUS_TI_MIN_DELAY, Most) + HeldTicks;
 }
 // Over how many ticks a lift's travel comes into a player's drawn height
 // after they get on it and goes out after they leave: 3 times the drawing
@@ -4433,13 +4450,22 @@ function IGPlus_PRTNote(int Data) {
 // server with slow ticks stays bounded. Counted against the cap, a player
 // under it was refused with these features on: at 155 ping and a cap of 200,
 // every report on a CTF test server.
-// Server: IGPlus_TI_LiftLead for this shooter's last report, in ms. A shot
-// puts lifts back by its rewind without this much (UTPure.CompensateFor).
-function float IGPlus_LiftLeadMs() {
+// Server: IGPlus_TI_Lead for this shooter's last report, in ms. A shot puts
+// lifts, shock balls and discs back by its rewind without this much
+// (UTPure.CompensateFor). The report holds the whole delay, and the part the
+// shooter's clock was held back comes beside it (IGPlus_TI_HeldRepl).
+function float IGPlus_LeadMs(float Most) {
 	local float TickLen;
 
 	TickLen = FMax(AverageServerDeltaTime, 0.001);
-	return 1000.0 * IGPlus_TI_LiftLead(0.001 * IGPlus_RewindExtraMs(0.0) * Level.TimeDilation / TickLen) * TickLen / Level.TimeDilation;
+	return 1000.0 * IGPlus_TI_Lead(0.001 * IGPlus_RewindExtraMs(0.0) * Level.TimeDilation / TickLen,
+		0.25 * float(IGPlus_TI_HeldRepl), Most) * TickLen / Level.TimeDilation;
+}
+function float IGPlus_LiftLeadMs() {
+	return IGPlus_LeadMs(IGPLUS_TI_LIFT_LEAD);
+}
+function float IGPlus_ProjLeadMs() {
+	return IGPlus_LeadMs(IGPLUS_TI_PROJ_LEAD);
 }
 
 function float IGPlus_RewindExtraMs(float ABShare) {
@@ -15144,6 +15170,7 @@ function xxPlayerTickEvents(float DeltaTime)
 				TIMove = FMax(0.0, FMax(IGPlus_TI_RecvTop, IGPlus_TI_RecvTopPrev));
 			IGPlus_TI_RecvAnim += FClamp(TIMove - IGPlus_TI_RecvAnim,
 				-IGPLUS_TI_MU_SLEW_FAR * DeltaTime / IGPlus_TI_TickLen, IGPLUS_TI_MU_SLEW_FAR * DeltaTime / IGPlus_TI_TickLen);
+			IGPlus_TI_HeldRepl = Clamp(int(IGPlus_TI_RecvAnim * 4.0 + 0.5), 0, 255);
 			IGPlus_TI_StRecvFrames++;
 			IGPlus_TI_StRecvSum += IGPlus_TI_Recv;
 			IGPlus_TI_StRecvMax = FMax(IGPlus_TI_StRecvMax, IGPlus_TI_Recv);
@@ -16258,7 +16285,7 @@ simulated function float IGPlus_TI_LiftShare(float C, float Fade, float TickLen,
 // and lifts where they are now, so a rider was drawn that much of the lift's
 // travel behind it: 7 units inside a lift rising at 360 units a second, 7
 // above it going down (rig). The lift's travel over the time it runs ahead
-// of them (IGPlus_TI_LiftLead) goes on top, and the rider stands on the lift. It comes in over a few ticks after they
+// of them (IGPlus_TI_Lead) goes on top, and the rider stands on the lift. It comes in over a few ticks after they
 // get on and goes out over a few after they leave (IGPlus_TI_LiftFade), counted
 // up to the newest moment this screen has of them: the drawn one plus the delay.
 // The server stands them the same way for a shot: the lift goes back without
@@ -16272,7 +16299,7 @@ simulated function float IGPlus_TI_LiftShift(bbPlayer LP, float TickLen) {
 
 	D = FMin(IGPlus_TI_Delay + LP.IGPlus_TI_Recv, IGPLUS_TI_MAX_DELAY) * TickLen;
 	D = FMin(D, 0.001 * IGPLUS_REWIND_TI_EXTRA_MS * Level.TimeDilation);
-	Lead = IGPlus_TI_LiftLead(D / TickLen) * TickLen;
+	Lead = IGPlus_TI_Lead(D / TickLen, 0.25 * float(LP.IGPlus_TI_HeldRepl), IGPLUS_TI_LIFT_LEAD) * TickLen;
 	Share = IGPlus_TI_LiftShare(IGPlus_TI_DrawnR + D / TickLen, IGPlus_TI_LiftFade(D / TickLen), TickLen, M);
 	if (M == None) {
 		IGPlus_TI_Lift = None;

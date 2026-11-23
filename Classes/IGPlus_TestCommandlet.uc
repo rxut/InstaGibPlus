@@ -521,10 +521,22 @@ function TestTickInterp() {
 		&& class'bbPlayer'.static.IGPlus_TI_LiftFade(3.5) == 10.5
 		&& class'bbPlayer'.static.IGPlus_TI_LiftFade(10.0) == 12.0,
 		"TickInterp_lift_fade_grows_with_the_drawing_delay_up_to_12_ticks");
-	LogTestResult(class'bbPlayer'.static.IGPlus_TI_LiftLead(2.5) == 2.0
-		&& class'bbPlayer'.static.IGPlus_TI_LiftLead(4.5) == 2.0
-		&& class'bbPlayer'.static.IGPlus_TI_LiftLead(1.0) == 1.0,
-		"TickInterp_a_lift_runs_ahead_by_2_ticks_at_most");
+	// IGPlus_TI_Lead: delay, the part of it the clock was held, the most that
+	// counts of the rest.
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_Lead(2.5, 0.0, 2.0) == 2.0
+		&& class'bbPlayer'.static.IGPlus_TI_Lead(4.5, 0.0, 2.0) == 2.0
+		&& class'bbPlayer'.static.IGPlus_TI_Lead(0.0, 0.0, 2.0) == 0.0,
+		"TickInterp_a_lift_runs_ahead_by_2_ticks_and_by_none_with_no_delay");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_Lead(2.5, 0.0, 3.0) == 2.5
+		&& class'bbPlayer'.static.IGPlus_TI_Lead(4.5, 0.0, 3.0) == 3.0,
+		"TickInterp_a_ball_runs_ahead_by_3_ticks_at_most");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_Lead(9.0, 7.0, 2.0) == 9.0
+		&& class'bbPlayer'.static.IGPlus_TI_Lead(10.0, 6.0, 2.0) == 8.0
+		&& class'bbPlayer'.static.IGPlus_TI_Lead(10.0, 6.0, 3.0) == 9.0,
+		"TickInterp_and_by_all_of_the_time_the_clock_was_held");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_Lead(4.0, 7.0, 2.0) == 9.0
+		&& class'bbPlayer'.static.IGPlus_TI_Lead(4.0, 7.0, 3.0) == 9.0,
+		"TickInterp_a_delay_that_dropped_for_a_frame_does_not_count_against_the_hold");
 	// The delay rides in the same report and leaves the tick position alone.
 	P = class'bbPlayer'.static.IGPlus_TI_Pack(500.75, true, true, 2.7);
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_UnpackDelay(P) - 2.5) < 0.01

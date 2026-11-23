@@ -317,8 +317,9 @@ function CompStartSeen(float SeenTime, float ViewTime) {
 // between those two never reached that client (two updates in one of its
 // frames, or a lost packet), so it is left out here too. 0: the snapshot of
 // R's tick and the next one.
-// DelayTicks: the delay that screen drew players with, in ticks.
-function CompStartTick(float R, float TickLen, optional bool bPast, optional bool bHeld, optional int Span, optional float DelayTicks) {
+// DelayTicks: the delay that screen drew players with, in ticks. LeadTicks:
+// how far ahead of them it had the lifts (bbPlayer.IGPlus_TI_Lead).
+function CompStartTick(float R, float TickLen, optional bool bPast, optional bool bHeld, optional int Span, optional float DelayTicks, optional float LeadTicks) {
 	local int Idx, Scans, TickA, TickB;
 	local UTPlusSnapshot Snap, A, B;
 	local bool bHoldAfter;
@@ -327,7 +328,7 @@ function CompStartTick(float R, float TickLen, optional bool bPast, optional boo
 	if (Actual == none || Actual.bDeleteMe || Actual.Health <= 0)
 		return;
 
-	NoteLift(R + DelayTicks, TickLen, DelayTicks);
+	NoteLift(R + DelayTicks, TickLen, DelayTicks, LeadTicks);
 
 	TickA = int(R) - (Span & 3);
 	TickB = int(R) + 1 + ((Span >> 2) & 3);
@@ -387,10 +388,10 @@ function CompStartTick(float R, float TickLen, optional bool bPast, optional boo
 // after they get on and goes out over a few after they leave. The same here,
 // by the same rule (bbPlayer.IGPlus_TI_LiftWalk) over our snapshots, up to
 // tick position C: the newest moment that screen had of them.
-function NoteLift(float C, float TickLen, float DelayTicks) {
+function NoteLift(float C, float TickLen, float DelayTicks, float Lead) {
 	local int Idx, Scans;
 	local UTPlusSnapshot Snap, Newer;
-	local float Hi, Now, Fade, Lead;
+	local float Hi, Now, Fade;
 	local bbPlayer BP;
 	local ST_MoverDummy MD;
 	local bool bDone;
@@ -433,13 +434,12 @@ function NoteLift(float C, float TickLen, float DelayTicks) {
 		return;
 
 	// The lift's travel over the time that screen had it ahead of the players
-	// (bbPlayer.IGPlus_TI_LiftLead), from its own history. For a player who
+	// (Lead ticks, bbPlayer.IGPlus_TI_Lead), from its own history. For a player who
 	// stands on it at both ends CompSwap takes the lift as the trace sees it.
 	MD = BP.zzUTPure.FindMoverDummy(CompLift);
 	if (MD == None)
 		return;
 	Now = Level.TimeSeconds - (float(BP.zzUTPure.IGPlus_GlobalTick) - C) * TickLen;
-	Lead = class'bbPlayer'.static.IGPlus_TI_LiftLead(DelayTicks);
 	CompLiftRise = MD.GetHistoricalLocation(Now - (DelayTicks - Lead) * TickLen).Z - MD.GetHistoricalLocation(Now - DelayTicks * TickLen).Z;
 }
 

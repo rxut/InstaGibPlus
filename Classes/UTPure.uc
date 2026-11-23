@@ -719,16 +719,16 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	// Tick Interpolation draws the other players a few ticks in the past, and
 	// a shot's rewind holds that delay. Shock balls, discs and lifts are not
 	// drawn that way: the shooter's game flies and moves them on from the
-	// moment they arrived. So for a shot balls and discs go back by the rewind
-	// without that delay. With it, a ball flying across stood 25 to 35 units
-	// behind the one on the shooter's screen, and a beam aimed at its middle
-	// missed (rig: 0 of 112). A lift at 360 units a second stood 6 units from
-	// the drawn one (rig). It goes back without the part of the delay it runs
-	// ahead by on that screen, which is not all of it (bbPlayer.IGPlus_TI_LiftLead).
+	// moment they arrived. So for a shot they go back by the rewind without
+	// the part of that delay they run ahead by on the shooter's screen, which
+	// is not all of it with jitter (bbPlayer.IGPlus_TI_Lead). With the whole
+	// rewind, a ball flying across stood 25 to 35 units behind the one on the
+	// shooter's screen, and a beam aimed at its middle missed (rig: 0 of 112).
+	// A lift at 360 units a second stood 6 units from the drawn one (rig).
 	ProjPing = Ping;
 	LiftPing = Ping;
 	if (bHitscan && bbPlayer(Instigator) != none) {
-		ProjPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_RewindExtraMs(0.0) + 0.5));
+		ProjPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_ProjLeadMs() + 0.5));
 		LiftPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_LiftLeadMs() + 0.5));
 	}
 
@@ -834,7 +834,8 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 		// drew the shot's target between.
 		if (PRT.IGPlus_bPRTInterp && bbPlayer(DActual) != none)
 			D.CompStartTick(PRT.IGPlus_PRTInterpR, FMax(PRT.AverageServerDeltaTime, 0.001), PRT.IGPlus_bPRTInterpPast, PRT.IGPlus_bPRTInterpHeld, PRT.IGPlus_PRTInterpSpan,
-				0.001 * PRT.IGPlus_RewindExtraMs(0.0) * Level.TimeDilation / FMax(PRT.AverageServerDeltaTime, 0.001));
+				0.001 * PRT.IGPlus_RewindExtraMs(0.0) * Level.TimeDilation / FMax(PRT.AverageServerDeltaTime, 0.001),
+				0.001 * PRT.IGPlus_LiftLeadMs() * Level.TimeDilation / FMax(PRT.AverageServerDeltaTime, 0.001));
 		// A bot: its snapshots have no tick numbers (UTPlusDummy takes them from
 		// bbPlayers only), and the shooter's game draws it the stock way, at its
 		// newest update moved on to the moment of the shot. That moment is the
