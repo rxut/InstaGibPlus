@@ -190,7 +190,7 @@ Any value below zero disables forcing models. For example, if you set [DesiredSk
 **Type: int**  
 **Default: -1**  
 
-Color of team-mates' forced skins. Only works with [bForceModels](#bforcemodels) on.
+Color of team-mates' skins. Only works with [bForceModels](#bforcemodels) on.
 
 * `-1` ➜ Keep their team's color
 * `0` ➜ Red
@@ -198,13 +198,13 @@ Color of team-mates' forced skins. Only works with [bForceModels](#bforcemodels)
 * `2` ➜ Green
 * `3` ➜ Gold
 
-A player whose skin is not forced keeps their team's color.
+A player on Do Not Force wears their own skin in that color. A skin that does not come in that color keeps their team's color.
 
 ## EnemyColor
 **Type: int**  
 **Default: -1**  
 
-Color of enemies' forced skins. Same values as [TeamColor](#teamcolor).
+Color of enemies' skins. Same values as [TeamColor](#teamcolor).
 
 ## SkinEnemyIndexMap
 **Type: int\[16\]**  
