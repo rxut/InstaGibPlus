@@ -359,12 +359,14 @@ function DeterministicTraceFire(rotator ShotRot, vector ShotLoc) {
 
 function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 	local vector HitLocation, HitNormal, StartTrace, EndTrace, X,Y,Z;
+	local vector LiftLead, LiftHitLoc, LiftHitNormal;
 	local actor Other;
 	local Pawn PawnOwner;
-	local float RewindMs;
-	local bool bHead;
+	local bbPlayer bbP;
+	local bool bHead, bLiftHit;
 
 	PawnOwner = Pawn(Owner);
+	bbP = bbPlayer(PawnOwner);
 
 	Owner.MakeNoise(PawnOwner.SoundDampening);
 	GetAxes(AimRot,X,Y,Z);
@@ -373,21 +375,42 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 		StartTrace = BaseLoc + bbPlayer(PawnOwner).IGPlus_ServerShotEye() * vect(0,0,1);
 	else
 		StartTrace = BaseLoc + PawnOwner.Eyeheight * vect(0,0,1);
-	if (WImp != None && WImp.WSettingsRepl.bEnablePingCompensation)
-	{
-		RewindMs = WImp.IGPlus_GetHitscanRewindMs(PawnOwner);
-		StartTrace = WImp.IGPlus_AdjustLocationToHistoricalMoverFrame(PawnOwner, StartTrace, RewindMs);
-	}
+	// On a moving lift the shot leaves from where the shooter's screen had the
+	// shooter, and the shooter's own lift counts where that screen had it
+	// (see ST_ShockRifle.TraceFireAt). That screen has its own lift a round
+	// trip behind ours and no further: Tick Interpolation's drawing delay is
+	// for the other players, not for lifts. With the whole rewind here, a shot
+	// from a lift rising at 360 units a second left 11 units too low (rig).
+	if (bbP != None && WImp != None && WImp.WSettingsRepl.bEnablePingCompensation)
+		LiftLead = bbP.IGPlus_OwnLiftLead();
+	if (LiftLead != vect(0,0,0))
+		StartTrace -= LiftLead;
 	if (bUseAdjustAim)
 		AdjustedAim = PawnOwner.AdjustAim(1000000, StartTrace, 2*AimError, False, False);
 	else
 		AdjustedAim = AimRot;
 	X = vector(AdjustedAim);
 	EndTrace = StartTrace + 100000 * X;
+	if (LiftLead != vect(0,0,0)) {
+		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		if (bLiftHit) {
+			LiftHitLoc -= LiftLead;
+			EndTrace = LiftHitLoc;
+		}
+		bbP.IGPlus_OwnLiftShotShift = LiftLead;
+	}
 	if (WImp.WeaponSettings.SniperUseReducedHitbox)
 		Other = WImp.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, PawnOwner);
 	else
 		Other = PawnOwner.TraceShot(HitLocation, HitNormal, EndTrace, StartTrace);
+	if (LiftLead != vect(0,0,0)) {
+		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
+		if (bLiftHit && Other == None) {
+			Other = PawnOwner.Base;
+			HitLocation = LiftHitLoc;
+			HitNormal = LiftHitNormal;
+		}
+	}
 	// A deterministic shot against the shooter's own trace, before the damage.
 	if (bUseAdjustAim == false && bbPlayer(PawnOwner) != None) {
 		if (Other == None)
