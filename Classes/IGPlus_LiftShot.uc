@@ -152,6 +152,10 @@ function Finish() {
 	if (P != None && P.bDeleteMe == false) {
 		Unhold();
 		SetFor(P, None);
+		// Not held any more. Clients still take the speed sent with it from
+		// this variable, so it is the speed it has now (after a bounce off
+		// the lift it was left at the one from before the bounce).
+		SetHeldVelocity(P.Velocity);
 		if (Shooter != None && Shooter.bDrawDebugData)
 			Shooter.ClientDebugMessage(P.Class.Name$" (server) flies on its own at "$class'ST_ShockProj'.static.IGPlus_Vec(P.Location));
 	}
