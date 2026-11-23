@@ -375,6 +375,32 @@ function TestGlideGap() {
 		"GlideGap_never_draws_it_over_two_and_a_half_times_its_speed");
 }
 
+// The shooter's own copy and the server's projectile leave the gun at the
+// same speed from spots Gap apart: the step from the copy to the server's
+// path is Gap, less the part along the copy's flight.
+function bool OwnCopyStepIs(vector Gap, vector Launch, vector Gravity, float CopyT, float ServerT) {
+	local vector C, V, S, SV, Dir, Want;
+
+	C = Launch * CopyT + 0.5 * Gravity * CopyT * CopyT;
+	V = Launch + Gravity * CopyT;
+	S = Gap + Launch * ServerT + 0.5 * Gravity * ServerT * ServerT;
+	SV = Launch + Gravity * ServerT;
+	Dir = Normal(V);
+	Want = Gap - Dir * (Gap dot Dir);
+	return VSize(class'IGPlus_OwnCopy'.static.PathStep(C, V, S, SV, Gravity) - Want) < 0.01;
+}
+
+function TestOwnCopyPathStep() {
+	LogTestResult(OwnCopyStepIs(vect(0,0,5), vect(1100,-440,200), vect(0,0,-950), 0.3, 0.2)
+		&& OwnCopyStepIs(vect(0,0,-9), vect(300,0,700), vect(0,0,-950), 0.05, 0.02),
+		"OwnCopy_falling_copy_steps_onto_the_servers_path");
+	LogTestResult(OwnCopyStepIs(vect(0,3,-7), vect(2000,500,-300), vect(0,0,0), 0.2, 0.1),
+		"OwnCopy_straight_copy_steps_onto_the_servers_path");
+	LogTestResult(OwnCopyStepIs(vect(0,0,0), vect(1100,-440,200), vect(0,0,-950), 0.3, 0.2)
+		&& class'IGPlus_OwnCopy'.static.PathStep(vect(0,0,0), vect(0,0,0), vect(5,5,5), vect(0,0,0), vect(0,0,0)) == vect(0,0,0),
+		"OwnCopy_no_step_on_the_same_path_or_at_rest");
+}
+
 function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.0, 10.0) < 0.02, "FireClockLead_synced_clock_stays_near_zero");
 	LogTestResult(SimFireClockLead(1.005, 60.0) < 0.05, "FireClockLead_small_drift_is_absorbed");
@@ -1050,6 +1076,7 @@ event int main(string Params) {
 	TestShockBallTouchFraction();
 	TestDetNextShot();
 	TestGlideGap();
+	TestOwnCopyPathStep();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
 	TestTradeReach();

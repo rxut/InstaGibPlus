@@ -120,8 +120,6 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
     local ST_ut_biorifle br;
-	local vector FakeLocation, FakeVelocity;
-	local bool bFakeFlying;
 
 	super.PostNetBeginPlay();
 
@@ -145,38 +143,17 @@ simulated function PostNetBeginPlay()
 			br = ST_ut_biorifle(InstigatingPlayer.Weapon);
 			if (br != none && br.LocalBioGelDummy != none && br.LocalBioGelDummy.bDeleteMe == false)
 			{
-				// Store fake's current position for smooth hand-off
-				FakeLocation = br.LocalBioGelDummy.Location;
-				FakeVelocity = br.LocalBioGelDummy.Velocity;
-				bFakeFlying = br.LocalBioGelDummy.Physics == PHYS_Falling;
-
-				// Destroy the fake projectile
-				br.LocalBioGelDummy.Destroy();
-
-				// Teleport real projectile to where the fake was
-				// This prevents the visual "jump" on high ping
-				SetLocation(FakeLocation);
-				IGPlus_Debug("took over from our own copy");
-
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
 
-				// It flies on as our copy did: the speed it came with is from
-				// another point of the arc, and our copy's spot is already
-				// ahead by the ping, so no lead on top (on a falling gel the
-				// lead move sinks it by gravity x lead). Tick goes on for the
-				// lift sweep.
-				if (bFakeFlying) {
-					Velocity = FakeVelocity;
-					// From a moving lift it came held still, with its launch
-					// speed and no collision (IGPlus_LiftShot): ours, as above.
-					if (IGPlus_HeldVelocity != vect(0,0,0)) {
-						IGPlus_HeldVelocity = vect(0,0,0);
-						if (bCollideActors == false)
-							SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
-					}
+				// On from our copy's spot, as our copy flew, with no lead on
+				// top (IGPlus_OwnCopy). Tick goes on for the lift sweep. A
+				// copy that already stuck to a wall gives its spot only.
+				if (class'IGPlus_OwnCopy'.static.TakeOver(self, br.LocalBioGelDummy, IGPlus_HeldVelocity)) {
+					IGPlus_HeldVelocity = vect(0,0,0);
 					InstigatingPlayer = None;
 				}
+				IGPlus_Debug("took over from our own copy");
 			}
 		}
 	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {

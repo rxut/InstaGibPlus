@@ -71,7 +71,6 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
 	local ST_UT_FlakCannon FC;
-	local vector FakeLocation, FakeVelocity;
 
 	super.PostNetBeginPlay();
 
@@ -88,36 +87,17 @@ simulated function PostNetBeginPlay()
 			FC = ST_UT_FlakCannon(InstigatingPlayer.Weapon);
 			if (FC != none && FC.LocalSlugDummy != none && FC.LocalSlugDummy.bDeleteMe == false)
 			{
-				// Store fake's current position for smooth hand-off
-				FakeLocation = FC.LocalSlugDummy.Location;
-				FakeVelocity = FC.LocalSlugDummy.Velocity;
-
-				// Destroy the fake projectile
-				FC.LocalSlugDummy.Destroy();
-
-				// Teleport real projectile to where the fake was
-				// This prevents the visual "jump" on high ping
-				SetLocation(FakeLocation);
-				IGPlus_Debug("took over from our own copy");
-				// Our copy already hit something: so did the server's. Its
-				// explosion follows.
-				if (FC.IGPlus_bLocalSlugGone)
-					IGPlus_ClientGone();
-				else {
-					// It flies on as our copy did: the speed it came with is
-					// from another point of the arc, and our copy's spot is
-					// already ahead by the ping, so no lead on top (on a
-					// falling slug the lead move sinks it by gravity x lead).
-					Velocity = FakeVelocity;
-					// From a moving lift it came held still, with its launch
-					// speed and no collision (IGPlus_LiftShot): ours, as above.
-					if (IGPlus_HeldVelocity != vect(0,0,0)) {
-						IGPlus_HeldVelocity = vect(0,0,0);
-						if (bCollideActors == false)
-							SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
-					}
+				// On from our copy's spot, as our copy flew, with no lead on
+				// top (IGPlus_OwnCopy).
+				if (class'IGPlus_OwnCopy'.static.TakeOver(self, FC.LocalSlugDummy, IGPlus_HeldVelocity)) {
+					IGPlus_HeldVelocity = vect(0,0,0);
 					Disable('Tick');
+				} else {
+					// Our copy already hit something: so did the server's.
+					// Its explosion follows.
+					IGPlus_ClientGone();
 				}
+				IGPlus_Debug("took over from our own copy");
 
 				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
 				ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
