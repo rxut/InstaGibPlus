@@ -197,12 +197,10 @@ var Weapon IGPlus_FeignWeapon;
 // Server: last thrown weapon and when (IGPlus_MayPickUp).
 var Weapon IGPlus_TossedWeapon;
 var float IGPlus_TossedTS;
+var bool IGPlus_bTossing;
 // Client: the corpse list (ApplyForcedSkinsToCorpses).
 var IGPlus_CarcassSpawnNotify IGPlus_CorpseNotify;
 var float IGPlus_CorpseNotifySearchTS;
-// Client: IGPlus_ThrownWeaponLook.
-var Weapon IGPlus_LastHeldWeapon;
-var Weapon IGPlus_ThrownLook[3];
 // ServerMove v4 deterministic fire-window state (move-timestamp domain).
 var float IGPlus_DetWeaponGateTS;
 var Weapon IGPlus_DetPendingSeen;
@@ -11719,8 +11717,56 @@ function TossWeapon()
 	W.DropFrom(Dest);
 	if (W.Owner != none)
 		return;
-	IGPlus_TossedWeapon = W;
+	IGPlus_TossedWeapon = IGPlus_FreshThrownCopy(W);
 	IGPlus_TossedTS = Level.TimeSeconds;
+}
+
+// A new actor for the throw: clients fly it themselves, no corrections.
+function Weapon IGPlus_FreshThrownCopy(Weapon W) {
+	local Weapon N;
+	local int i;
+
+	// Other mods' weapons can hold state a copy would lose.
+	if (W.Class.Outer != class'bbPlayer'.Outer && W.Class.Outer.Name != 'Botpack')
+		return W;
+	// Two thrown weapons of a class that touch remove one (stock), so the old
+	// one leaves the world first.
+	W.SetCollision(false, false, false);
+	// It can touch us as it spawns: not ours to take yet.
+	IGPlus_bTossing = true;
+	N = Spawn(W.Class, , , W.Location, W.Rotation);
+	IGPlus_bTossing = false;
+	if (N == none || N.bDeleteMe) {
+		W.SetCollision(true, false, false);
+		return W;
+	}
+	N.SetCollisionSize(W.CollisionRadius, W.CollisionHeight);
+	N.Tag = W.Tag;
+	N.Event = W.Event;
+	N.RespawnTime = 0.0;
+	N.bTossedOut = W.bTossedOut;
+	N.bHeldItem = W.bHeldItem;
+	N.PickupAmmoCount = W.PickupAmmoCount;
+	// Stock gives a dead player's dropped weapon at least 1 ammo after this.
+	if (Health <= 0 && N.PickupAmmoCount == 0)
+		N.PickupAmmoCount = 1;
+	N.PickupViewMesh = W.PickupViewMesh;
+	N.PickupViewScale = W.PickupViewScale;
+	N.BecomePickup();
+	N.Skin = W.Skin;
+	for (i = 0; i < ArrayCount(N.MultiSkins); i++)
+		N.MultiSkins[i] = W.MultiSkins[i];
+	N.bCollideWorld = true;
+	N.SetPhysics(PHYS_Falling);
+	N.Velocity = W.Velocity;
+	N.RemoteRole = ROLE_SimulatedProxy;
+	N.GotoState('Pickup', 'Dropped');
+	// The stock timer of a dropped weapon (Inventory.Pickup.BeginState).
+	if (N.bHeldItem)
+		N.SetTimer(30, false);
+	Spawn(class'IGPlus_TossWatch').W = N;
+	W.Destroy();
+	return N;
 }
 
 // Our corpse is ours (bbPlayer.ApplyForcedSkinsToCorpses).
@@ -11735,6 +11781,8 @@ function Carcass SpawnCarcass() {
 
 // Server: our own thrown weapon only once it has landed and 1 s has passed.
 function bool IGPlus_MayPickUp(Inventory Item) {
+	if (IGPlus_bTossing)
+		return false;
 	if (Item == none || Item != IGPlus_TossedWeapon)
 		return true;
 	return Item.Physics != PHYS_Falling && Level.TimeSeconds - IGPlus_TossedTS >= 1.0 * Level.TimeDilation;
@@ -15518,36 +15566,6 @@ simulated function IGPlus_DemoRealCorpse(Carcass C) {
 		C.AnimSequence = 'DeathEnd';
 }
 
-// Client: our thrown weapon has its first person model until the server's
-// update comes. Give it the pickup model at once.
-simulated function IGPlus_ThrownWeaponLook() {
-	local Weapon W;
-	local int i;
-
-	// The last 3 weapons we held: a quick switch after a throw keeps it.
-	if (IGPlus_LastHeldWeapon != Weapon) {
-		if (IGPlus_LastHeldWeapon != none) {
-			IGPlus_ThrownLook[2] = IGPlus_ThrownLook[1];
-			IGPlus_ThrownLook[1] = IGPlus_ThrownLook[0];
-			IGPlus_ThrownLook[0] = IGPlus_LastHeldWeapon;
-		}
-		IGPlus_LastHeldWeapon = Weapon;
-	}
-	for (i = 0; i < ArrayCount(IGPlus_ThrownLook); i++) {
-		W = IGPlus_ThrownLook[i];
-		if (W == none)
-			continue;
-		if (W.bDeleteMe || W == Weapon || W.Owner != self) {
-			IGPlus_ThrownLook[i] = none;
-			continue;
-		}
-		if (W.bHidden == false && W.Mesh == W.PlayerViewMesh && W.PickupViewMesh != none) {
-			W.Mesh = W.PickupViewMesh;
-			W.DrawScale = W.PickupViewScale;
-		}
-	}
-}
-
 function ApplyForcedSkins(PlayerReplicationInfo PRI) {
 	local int Skin;
 
@@ -15658,7 +15676,6 @@ event PreRender( canvas zzCanvas )
 	// Our own model, drawn in behind view (FlipAnimationFix). PostRender puts the
 	// engine's animation back.
 	if (Level.NetMode == NM_Client && Role == ROLE_AutonomousProxy) {
-		IGPlus_ThrownWeaponLook();
 		IGPlus_FlipFix_Plain();
 		if (IGPlus_NF_bMesh)
 			IGPlus_TransitionShareMesh();
