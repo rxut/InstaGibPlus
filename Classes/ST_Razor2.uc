@@ -16,6 +16,9 @@ var vector IGPlus_HeldVelocity;
 // Where the server spawned it before the ping catch-up: other players draw it
 // from there (IGPlus_Glide).
 var vector IGPlus_SkipStart;
+// The shooter's client: our own blade against our own lift (IGPlus_SweepLift).
+var Mover IGPlus_SweepMover;
+var vector IGPlus_SweepMoverLoc, IGPlus_SweepLoc;
 
 replication
 {
@@ -55,7 +58,7 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
 	local ST_Razor2 Raz;
-	local vector FakeLocation;
+	local vector Held;
 
 	super.PostNetBeginPlay();
 
@@ -73,10 +76,31 @@ simulated function PostNetBeginPlay()
 			{
 				if (Raz.bClientVisualOnly && Raz.Owner == InstigatingPlayer && !Raz.bDeleteMe)
 				{
-					FakeLocation = Raz.Location;
-					Raz.Destroy();
-					SetLocation(FakeLocation);
+					// On from our copy's spot, as our copy flew (IGPlus_OwnCopy):
+					// with its bounces too. Fired from a lift, and the server's
+					// blade flies the same way as our copy (both before a
+					// bounce or both after it): moved onto the server's path.
+					// After a bounce off the lift that path lies as far above
+					// or below ours as the real lift is from our screen's.
+					NumWallHits = Raz.NumWallHits;
+					bCanHitInstigator = Raz.bCanHitInstigator;
+					Held = IGPlus_HeldVelocity;
+					if (Held == vect(0,0,0))
+						Held = Velocity;
+					if (Raz.IGPlus_SweepMover == None || (Normal(Raz.Velocity) dot Normal(Held)) < 0.999)
+						Held = vect(0,0,0);
+					class'IGPlus_OwnCopy'.static.TakeOver(self, Raz, Held);
+					// Sent held still from a moving lift (IGPlus_LiftShot):
+					// the speed is our copy's now.
+					if (IGPlus_HeldVelocity != vect(0,0,0)) {
+						IGPlus_HeldVelocity = vect(0,0,0);
+						if (bCollideActors == false)
+							SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+					}
 					ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
+					// As after a bounce of its own (HitWall): no lead.
+					if (NumWallHits > 0)
+						Disable('Tick');
 					break;
 				}
 			}
@@ -104,6 +128,13 @@ simulated event Tick(float Delta) {
 			SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
 	}
 
+	// Our own blade, the local copy and the server's: against our own lift.
+	if (Level.NetMode == NM_Client && (bClientVisualOnly || InstigatingPlayer != none)) {
+		IGPlus_SweepLift();
+		if (NumWallHits > 0)
+			return;
+	}
+
 	if (InstigatingPlayer == none)
 		return;
 
@@ -116,6 +147,39 @@ simulated event Tick(float Delta) {
 		Move(NewXPolDelta - ExtrapolationDelta);
 		ExtrapolationDelta = NewXPolDelta;
 	}
+}
+
+// The shooter's client: a lift that rises into our blade does not turn it
+// here, the blade just ends up inside the lift and flies on. The server
+// bounces it off the lift where our screen has it (IGPlus_LiftShot). Swept
+// against our lift in the lift's own frame, as ST_UT_BioGel does, it bounces
+// here at the same spot.
+simulated function IGPlus_SweepLift() {
+	local vector D, HL, HN;
+	local bbPlayer BP;
+
+	// Our local copy has no Instigator, its owner is us.
+	BP = bbPlayer(Instigator);
+	if (BP == None)
+		BP = bbPlayer(Owner);
+	if (BP == None || BP.IGPlus_InDemoPlayback())
+		return;
+	if (IGPlus_SweepMover == None) {
+		IGPlus_SweepMover = Mover(BP.Base);
+		if (IGPlus_SweepMover == None)
+			return;
+	} else {
+		D = IGPlus_SweepMover.Location - IGPlus_SweepMoverLoc;
+		if (D != vect(0,0,0) && BP.IGPlus_TraceMover(IGPlus_SweepMover, IGPlus_SweepLoc + D, Location, HL, HN,
+			vect(1,1,0) * CollisionRadius + vect(0,0,1) * CollisionHeight)) {
+			// Off the surface, as the server puts it: left on it, it
+			// would meet the lift again in every move.
+			SetLocation(HL + 2.0 * HN);
+			HitWall(HN, IGPlus_SweepMover);
+		}
+	}
+	IGPlus_SweepMoverLoc = IGPlus_SweepMover.Location;
+	IGPlus_SweepLoc = Location;
 }
 
 auto state Flying
