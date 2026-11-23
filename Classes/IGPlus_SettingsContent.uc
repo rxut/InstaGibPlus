@@ -329,6 +329,10 @@ var localized string MoreInformationText;
 	var localized string HitSoundSourceText;
 	var localized string HitSoundSourceHelp;
 
+	var IGPlus_ComboBox Cmb_HeadshotSource;
+	var localized string HeadshotSourceText;
+	var localized string HeadshotSourceHelp;
+
 	var localized string HitSourceServer;
 	var localized string HitSourceClient;
 
@@ -1019,6 +1023,8 @@ function Created() {
 	Lbl_HitSounds = CreateSeparator(HitSoundsLblText);
 	Cmb_HitSoundSource = CreateComboBox(HitSoundSourceText, HitSoundSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HitSoundSource);
+	Cmb_HeadshotSource = CreateComboBox(HeadshotSourceText, HeadshotSourceHelp, false, 150);
+	SetUpHitSourceComboBox(Cmb_HeadshotSource);
 
 	Lbl_EnemyHitSounds = CreateSeparator(EnemyHitSoundsLblText);
 	Chk_EnableHitSounds = CreateCheckbox(EnableHitSoundsText, EnableHitSoundsHelp);
@@ -1191,6 +1197,7 @@ function Load() {
 	SLoc_FPSLocation.SetLocation(Settings.FPSLocationX, Settings.FPSLocationY);
 
 	Cmb_HitSoundSource.SetSelectedIndex(Clamp(Settings.HitSoundSource, 0, 1));
+	Cmb_HeadshotSource.SetSelectedIndex(Clamp(Settings.HeadshotSource, 0, 1));
 
 	Chk_EnableHitSounds.bChecked = Settings.bEnableHitSounds;
 	Chk_HitSoundPitchShift.bChecked = Settings.bHitSoundPitchShift;
@@ -1438,6 +1445,7 @@ function Save() {
 	SLoc_FPSLocation.GetLocation(Settings.FPSLocationX, Settings.FPSLocationY);
 
 	Settings.HitSoundSource = Settings.IntToHitSoundSource(Cmb_HitSoundSource.GetSelectedIndex());
+	Settings.HeadshotSource = Settings.IntToHeadshotSource(Cmb_HeadshotSource.GetSelectedIndex());
 
 	Settings.bEnableHitSounds = Chk_EnableHitSounds.bChecked;
 	Settings.bHitSoundPitchShift = Chk_HitSoundPitchShift.bChecked;
@@ -1775,6 +1783,9 @@ defaultproperties
 
 		HitSoundSourceText="Hit Source"
 		HitSoundSourceHelp="Controls where hit notifications originate from\\nServer --> No notifications for hits that werent, but delayed by ping\\nClient --> Instant notifications, but may not be accurate"
+
+		HeadshotSourceText="Headshot Source"
+		HeadshotSourceHelp="Controls when the Head Shot message of your sniper rifle plays\\nServer --> Only for headshot kills the server counted, but delayed by ping\\nClient --> Instantly, but may not be accurate\\nOnly for the rifle of NextSA"
 
 		HitSourceServer="Server"
 		HitSourceClient="Client"

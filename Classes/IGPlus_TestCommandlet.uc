@@ -541,6 +541,20 @@ function TestTickInterp() {
 		&& class'SuperShockRifleBeamEffect'.default.bPlayBeam && class'SuperShockRifleBeamEffect'.default.bPlayRing == false
 		&& class'SuperShockRifleRingEffect'.default.bPlayRing && class'SuperShockRifleRingEffect'.default.bPlayBeam == false,
 		"HitEffectSource_starts_on_client_and_the_two_effect_halves_are_split");
+	LogTestResult(class'ClientSettings'.static.IntToHeadshotSource(0) == HDSRC_Server
+		&& class'ClientSettings'.static.IntToHeadshotSource(1) == HDSRC_Client
+		&& class'ClientSettings'.default.HeadshotSource == HDSRC_Client,
+		"HeadshotSource_starts_on_client");
+	// The head line of a 39 high body is 24.18 above its middle. Half its
+	// radius of 17 along the shot is 8.5.
+	LogTestResult(class'bbPlayer'.static.IGPlus_ClientHeadRule(25.0, 0.0, 17.0, 39.0, 0.0)
+		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(24.0, 0.0, 17.0, 39.0, 0.0) == false
+		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(25.0, -0.28, 17.0, 39.0, 0.0) == false
+		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(23.0, 0.21, 17.0, 39.0, 0.0)
+		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(38.0, 0.5, 17.0, 39.0, 0.0)
+		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(24.0, 0.21, 17.0, 39.0, 0.5) == false
+		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(11.0, 0.5, 17.0, 39.0, 1.0) == false,
+		"ClientHeadRule_tests_the_head_half_a_radius_along_the_shot_and_not_above_a_crouch");
 	// Debug data shows nowhere but its log file unless the player asks for it.
 	LogTestResult(class'ClientSettings'.default.DebugDataDisplay == 0,
 		"DebugDataDisplay_starts_off");

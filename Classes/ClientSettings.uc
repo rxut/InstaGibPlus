@@ -18,6 +18,12 @@ enum EHitEffectSource {
 	HESRC_Server,
 	HESRC_Client
 };
+// When the "Head Shot" message of NextSA's rifle plays: at the click, from our
+// own trace (Client), or when the server sends it (Server).
+enum EHeadshotSource {
+	HDSRC_Server,
+	HDSRC_Client
+};
 
 // What to draw when a player's model would blend out of the
 // turned-over part of a flip and collapse into a lump (bbPlayer.IGPlus_FlipFix_Apply).
@@ -55,6 +61,7 @@ var config bool   bEnableTeamHitSounds;
 var config bool   bHitSoundPitchShift;
 var config bool   bHitSoundTeamPitchShift;
 var config EHitSoundSource HitSoundSource;
+var config EHeadshotSource HeadshotSource;
 var config int    SelectedHitSound;
 var config int    SelectedTeamHitSound;
 var config float  HitSoundVolume;
@@ -562,6 +569,14 @@ static function EHitEffectSource IntToHitEffectSource(int A) {
 	return HESRC_Client;
 }
 
+static function EHeadshotSource IntToHeadshotSource(int A) {
+	switch(A) {
+		case 0: return HDSRC_Server;
+		case 1: return HDSRC_Client;
+	}
+	return HDSRC_Client;
+}
+
 static function EHitMarkerSource IntToHitMarkerSource(int A) {
 	switch(A) {
 		case 0: return HMSRC_Server;
@@ -613,6 +628,7 @@ simulated function string DumpSettings() {
 		GetSetting("bHitSoundPitchShift")$
 		GetSetting("bHitSoundTeamPitchShift")$
 		GetSetting("HitSoundSource")$
+		GetSetting("HeadshotSource")$
 		GetSetting("SelectedHitSound")$
 		GetSetting("SelectedTeamHitSound")$
 		GetSetting("HitSoundVolume")$
@@ -723,6 +739,7 @@ defaultproperties
 	bHitSoundPitchShift=True
 	bHitSoundTeamPitchShift=False
 	HitSoundSource=HSSRC_Server
+	HeadshotSource=HDSRC_Client
 	SelectedHitSound=0
 	SelectedTeamHitSound=2
 	HitSoundVolume=4

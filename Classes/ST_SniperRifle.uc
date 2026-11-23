@@ -175,7 +175,8 @@ simulated function bool IGPlus_ClientAnims(bbPlayer BP) {
 	return BP != None && BP.ClientWeaponSettingsData.bSniperUseClientSideAnimations;
 }
 
-// Does the shooter's own trace play the hit sound and marker at the click?
+// Does the shooter's own trace play the hit sound and marker at the click,
+// and the headshot message where Headshot Source is Client?
 // Only NextSA's rifle (SA_SniperRifle): the server's hit message is matched
 // to the shot by time, which needs this to be the only weapon carried.
 simulated function bool IGPlus_InstantHitFeedback() {
@@ -210,6 +211,8 @@ simulated function ClientTraceFire(rotator AimRot, vector AimLoc) {
 		bbP.IGPlus_ClientShotVerdict(Other, WS.SniperHeadshotDamage, AltDamageType, true);
 	else
 		bbP.IGPlus_ClientShotVerdict(Other, WS.SniperDamage, MyDamageType, false);
+	// The headshot message at the click, where Headshot Source is Client.
+	bbP.IGPlus_ClientHeadshot(Pawn(Other), bbP.IGPlus_bShotHead, WS.SniperHeadshotDamage);
 }
 
 function HandleDetServerFire(rotator StepView, vector StepLoc) {

@@ -548,6 +548,12 @@ var int IGPlus_HitStatDrawnDiff, IGPlus_HitStatDrawnRight;
 var int IGPlus_HitStatDeadShots, IGPlus_HitStatDeadHits;
 var int IGPlus_ClientHitVerdict;    // client: the last shot's, until its move takes it. Server: the running move's. 0: none
 var float IGPlus_ClientHitPlayedTS; // client: when our own trace last hit a player. 0: none waiting for the server's message
+// Client, Headshot Source on Client (IGPlus_ClientHeadshot): when our own trace
+// last played the headshot message, 0 with none waiting for the server's. And
+// how many it played, how many of those the server sent no message for, and
+// how many of the server's messages played here, a ping late.
+var float IGPlus_ClientHeadPlayedTS;
+var int IGPlus_StatHeadMsgClient, IGPlus_StatHeadMsgUnconfirmed, IGPlus_StatHeadMsgServer;
 var int IGPlus_HitStatShots, IGPlus_HitStatBoth, IGPlus_HitStatClientOnly, IGPlus_HitStatServerOnly, IGPlus_HitStatHeadDiff;
 var int IGPlus_HitStatNoData; // rifle and sniper shots the server ran with no data from the client's shot
 // Fire order inside one tick (UTPure.IGPlus_FlushShots). Server: a rifle or
@@ -681,6 +687,10 @@ var float DuckFraction; // 0 = Not Ducking, 1 = Ducking
 const DuckStartTransitionTime = 0.25;// Time to go from non-ducking to ducking
 const DuckEndTransitionTime = 0.1; // Time to go from ducking to not-ducking
 var byte DuckFractionRepl; // Replicated to all players
+// Replicated to all players: this player carries armor with charge left. The
+// armor count on the PlayerReplicationInfo is up to a second and a half old on
+// a client, which is too old for a shooter's headshot message (IGPlus_ClientHeadshot).
+var bool IGPlus_bArmored;
 
 var float AverageServerDeltaTime;
 var float TimeDead;
@@ -1288,6 +1298,7 @@ replication
 
 	unreliable if ( Role == ROLE_Authority )
 		DuckFractionRepl,
+		IGPlus_bArmored,
 		IGPlus_AdditionalReplicationInfo,
 		IGPlus_WarpFixData,
 		IGPlus_EnableTickInterp,
@@ -2699,6 +2710,10 @@ event ReceiveLocalizedMessage( class<LocalMessage> Message, optional int Sw, opt
 	if (Message == class'DecapitationMessage')
 	{
 		xxSendHeadshotToSpecs(Sw, RelatedPRI_1, RelatedPRI_2, OptionalObject);
+		// Our own trace played it at the click (IGPlus_ClientHeadshot).
+		if (IGPlus_TakeClientHeadshot())
+			return;
+		IGPlus_StatHeadMsgServer++;
 	}
 
 	// We know exactly what Botpack.DeathMessagePlus does, so replace it with our own
@@ -8489,6 +8504,16 @@ function bbPlayer IGPlus_TI_AimTarget() {
 	return Best;
 }
 
+// Client: is a hit on the surface of a body's cylinder, HitZ above its middle,
+// a headshot by the server's rule? The server tests the head half a collision
+// radius further along the shot (UTPlusDummy.AdjustHitLocation), so on a shot
+// from above its point is lower than the one on the surface, and from below
+// it is higher. Above the top of a crouching body it counts no hit at all.
+static function bool IGPlus_ClientHeadRule(float HitZ, float DirZ, float Radius, float Height, float Duck) {
+	HitZ += 0.5 * Radius * DirZ;
+	return HitZ > 0.62 * Height && (Duck <= 0.0 || HitZ <= (1.0 - 0.7 * Duck) * Height);
+}
+
 function Actor IGPlus_ClientShotTrace(
 	out vector HitLocation, out vector HitNormal, out vector HitOffset,
 	vector EndTrace, vector StartTrace, IGPlus_WeaponImplementationBase WB
@@ -8500,6 +8525,7 @@ function Actor IGPlus_ClientShotTrace(
 	local int i, NumSwitched, SwitchedFlags[32];
 	local PlayerReplicationInfo PRI;
 	local Pawn P, Switched[32];
+	local float Duck;
 
 	IGPlus_bShotDrawnDiffers = false;
 	IGPlus_PRTShotR = 0.0;
@@ -8564,8 +8590,12 @@ function Actor IGPlus_ClientShotTrace(
 	if (Pawn(Other) != None) {
 		if (WB != None)
 			IGPlus_bShotHead = WB.CheckHeadShot(Pawn(Other), HitLocation, Normal(EndTrace - StartTrace));
-		else
-			IGPlus_bShotHead = HitOffset.Z > 0.62 * Other.CollisionHeight;
+		else {
+			if (bbPlayer(Other) != None)
+				Duck = bbPlayer(Other).IGPlus_HitDuckFraction();
+			IGPlus_bShotHead = IGPlus_ClientHeadRule(HitOffset.Z, Normal(EndTrace - StartTrace).Z,
+				Other.CollisionRadius, Other.CollisionHeight, Duck);
+		}
 	}
 	IGPlus_PRTShotLead = 0.0;
 	if (bRule) {
@@ -8671,6 +8701,49 @@ simulated function bool IGPlus_TakeClientHit() {
 	if (IGPlus_ClientHitPlayedTS <= 0.0 || Level.TimeSeconds - IGPlus_ClientHitPlayedTS > 0.6)
 		return false;
 	IGPlus_ClientHitPlayedTS = 0.0;
+	return true;
+}
+
+// Client, NextSA's rifle, once for every shot of ours: with Headshot Source on
+// Client the "Head Shot" message and its sound play now, from our own trace,
+// and the server's message for this shot is then not played again
+// (IGPlus_TakeClientHeadshot). The server sends its message for a kill by a
+// headshot only, so ours plays only where the shot will kill by what this
+// client knows: an enemy with no armor and no more health than the headshot
+// takes. Where that says no, the server's message plays a ping later as with
+// Server. Health and armor of the others are a ping old here, so a pickup the
+// target took in that time is not seen. Nothing is decided here: the server's
+// trace and damage stand. A message of ours the server sends none for can not
+// be taken back. It is counted.
+simulated function IGPlus_ClientHeadshot(Pawn Victim, bool bHead, float Damage) {
+	local PlayerReplicationInfo VPRI;
+
+	if (IGPlus_ClientHeadPlayedTS > 0.0) {
+		IGPlus_StatHeadMsgUnconfirmed++;
+		ClientDebugMessage("Headshot message: the server sent none for the one our trace played ("
+			$IGPlus_StatHeadMsgUnconfirmed@"of"@IGPlus_StatHeadMsgClient$")");
+	}
+	IGPlus_ClientHeadPlayedTS = 0.0;
+	if (bHead == false || Victim == None || Settings == None || Settings.HeadshotSource != HDSRC_Client)
+		return;
+	VPRI = Victim.PlayerReplicationInfo;
+	if (bbPlayer(Victim) == None || VPRI == None || PlayerReplicationInfo == None)
+		return;
+	if (GameReplicationInfo != None && GameReplicationInfo.bTeamGame && VPRI.Team == PlayerReplicationInfo.Team)
+		return;
+	if (Victim.Health > Damage || bbPlayer(Victim).IGPlus_bArmored)
+		return;
+	IGPlus_ClientHeadPlayedTS = Level.TimeSeconds;
+	IGPlus_StatHeadMsgClient++;
+	class'DecapitationMessage'.static.ClientReceive(self);
+}
+
+// Client: the server's headshot message is here. Did our own trace already
+// play it? One shot, one message: the rifle fires slower than a ping.
+simulated function bool IGPlus_TakeClientHeadshot() {
+	if (IGPlus_ClientHeadPlayedTS <= 0.0 || Level.TimeSeconds - IGPlus_ClientHeadPlayedTS > 0.6)
+		return false;
+	IGPlus_ClientHeadPlayedTS = 0.0;
 	return true;
 }
 
@@ -13300,6 +13373,16 @@ function Died(pawn Killer, name damageType, vector HitLocation)
 		IGPlus_DamageEvent_SendReport();
 }
 
+// Server: for IGPlus_bArmored.
+function bool IGPlus_HasArmor() {
+	local Inventory Inv;
+
+	for (Inv = Inventory; Inv != None; Inv = Inv.Inventory)
+		if (Inv.bIsAnArmor && Inv.Charge > 0)
+			return true;
+	return false;
+}
+
 event ServerTick(float DeltaTime) {
 	AverageServerDeltaTime = (AverageServerDeltaTime*99 + DeltaTime) * 0.01;
 	IGPlus_ABTick(DeltaTime);
@@ -13373,6 +13456,7 @@ event ServerTick(float DeltaTime) {
 		DuckFraction = FClamp(DuckFraction - DeltaTime/DuckEndTransitionTime, 0.0, 1.0);
 	}
 	DuckFractionRepl = byte(DuckFraction * 255.0);
+	IGPlus_bArmored = IGPlus_HasArmor();
 
 	bAlwaysRelevant = zzUTPure.Settings.bPlayersAlwaysRelevant || (PlayerReplicationInfo.HasFlag != none);
 }

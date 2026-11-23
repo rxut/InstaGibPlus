@@ -9,6 +9,8 @@ class SA_SniperRifle extends ST_SniperRifle;
 // - Instant hit feedback: the shooter's own trace plays the hit sound and
 //   marker at the click (ST_SniperRifle.ClientTraceFire). The sniper is the
 //   only weapon here, which the matching of the server's hit message needs.
+//   With Headshot Source on Client it plays the "Head Shot" message too
+//   (bbPlayer.IGPlus_ClientHeadshot).
 // - It comes up after a spawn as the NewNet sniper arena rifle does, with no
 //   setting: the Select animation at 1.35, and the Down animation at 1.35
 //   with a 0.05 tween (bbPlayer.IGPlus_DetNewNetAnimTime has the entry gate).
