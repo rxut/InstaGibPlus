@@ -55,6 +55,13 @@ var IGPlus_HeadTween HeadTween;
 // was moved back. Moving a lift takes everyone standing on it off it.
 var Actor IGPlus_CompBase;
 
+// Tick Interpolation, a shot: the lift whose travel the shooter's screen drew
+// our player with, how much of it (0 to 1), and that lift's travel over the
+// time that screen had it ahead of the players (NoteLift).
+var Mover CompLift;
+var float CompLiftShare;
+var float CompLiftRise;
+
 simulated function PostBeginPlay()
 {
 
@@ -310,7 +317,8 @@ function CompStartSeen(float SeenTime, float ViewTime) {
 // between those two never reached that client (two updates in one of its
 // frames, or a lost packet), so it is left out here too. 0: the snapshot of
 // R's tick and the next one.
-function CompStartTick(float R, float TickLen, optional bool bPast, optional bool bHeld, optional int Span) {
+// DelayTicks: the delay that screen drew players with, in ticks.
+function CompStartTick(float R, float TickLen, optional bool bPast, optional bool bHeld, optional int Span, optional float DelayTicks) {
 	local int Idx, Scans, TickA, TickB;
 	local UTPlusSnapshot Snap, A, B;
 	local bool bHoldAfter;
@@ -318,6 +326,8 @@ function CompStartTick(float R, float TickLen, optional bool bPast, optional boo
 	bCompFirstHittable = false;
 	if (Actual == none || Actual.bDeleteMe || Actual.Health <= 0)
 		return;
+
+	NoteLift(R + DelayTicks, TickLen, DelayTicks);
 
 	TickA = int(R) - (Span & 3);
 	TickB = int(R) + 1 + ((Span >> 2) & 3);
@@ -371,6 +381,68 @@ function CompStartTick(float R, float TickLen, optional bool bPast, optional boo
 	bCompTick = false;
 }
 
+// Tick Interpolation: a client draws a player on a moving lift with the
+// lift's travel over the time it runs ahead of them on top, so they stand on
+// the lift it draws (bbPlayer.IGPlus_TI_LiftShift). That travel comes in over a few ticks
+// after they get on and goes out over a few after they leave. The same here,
+// by the same rule (bbPlayer.IGPlus_TI_LiftWalk) over our snapshots, up to
+// tick position C: the newest moment that screen had of them.
+function NoteLift(float C, float TickLen, float DelayTicks) {
+	local int Idx, Scans;
+	local UTPlusSnapshot Snap, Newer;
+	local float Hi, Now, Fade, Lead;
+	local bbPlayer BP;
+	local ST_MoverDummy MD;
+	local bool bDone;
+
+	CompLift = None;
+	CompLiftShare = 0.0;
+	CompLiftRise = 0.0;
+	BP = bbPlayer(Actual);
+	if (DelayTicks <= 0.0 || BP == None || BP.zzUTPure == None)
+		return;
+
+	Hi = C;
+	Fade = class'bbPlayer'.static.IGPlus_TI_LiftFade(DelayTicks);
+	Idx = DataIndex;
+	for (Scans = 0; Scans < arraycount(Data); Scans++) {
+		Idx = (Idx - 1 + arraycount(Data)) % arraycount(Data);
+		Snap = Data[Idx];
+		if (Snap == None || Snap.ServerTimeStamp <= 0 || Snap.bNoMove || float(Snap.Tick) > C)
+			continue;
+		// A teleport after this snapshot: it was somewhere else.
+		if (Newer != None && class'bbPlayer'.static.IGPlus_TI_IsJump(class'bbPlayer'.static.IGPlus_TI_WireLoc(Snap.Loc),
+				class'bbPlayer'.static.IGPlus_TI_WireLoc(Newer.Loc), Newer.Tick - Snap.Tick, TickLen)) {
+			bDone = true;
+			break;
+		}
+		if (CompLift == None && Snap.bBasedOnMover)
+			CompLift = Mover(Snap.BaseMover);
+		Newer = Snap;
+		if (class'bbPlayer'.static.IGPlus_TI_LiftWalk(float(Snap.Tick), Hi, C, Fade,
+				CompLift != None && Snap.bBasedOnMover && Snap.BaseMover == CompLift, CompLiftShare) == false) {
+			bDone = true;
+			break;
+		}
+	}
+	// Before the oldest snapshot they count as in it.
+	if (bDone == false && Newer != None)
+		class'bbPlayer'.static.IGPlus_TI_LiftWalk(Hi - 1000.0, Hi, C, Fade,
+			CompLift != None && Newer.bBasedOnMover && Newer.BaseMover == CompLift, CompLiftShare);
+	if (CompLift == None || CompLiftShare <= 0.0)
+		return;
+
+	// The lift's travel over the time that screen had it ahead of the players
+	// (bbPlayer.IGPlus_TI_LiftLead), from its own history. For a player who
+	// stands on it at both ends CompSwap takes the lift as the trace sees it.
+	MD = BP.zzUTPure.FindMoverDummy(CompLift);
+	if (MD == None)
+		return;
+	Now = Level.TimeSeconds - (float(BP.zzUTPure.IGPlus_GlobalTick) - C) * TickLen;
+	Lead = class'bbPlayer'.static.IGPlus_TI_LiftLead(DelayTicks);
+	CompLiftRise = MD.GetHistoricalLocation(Now - (DelayTicks - Lead) * TickLen).Z - MD.GetHistoricalLocation(Now - DelayTicks * TickLen).Z;
+}
+
 function TakeDamage(
     int Damage,
     Pawn InstigatedBy,
@@ -405,8 +477,9 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	local vector TargetVel;
 	local bbPlayer BP;
 	local Mover BaseMover;
-	local float SnapshotMoverZ;
+	local float SnapshotMoverZ, Rise;
 	local float XpolTime;
+	local bool bOnLift;
 
 	if (Actual == None || Actual.bDeleteMe || SnapA == None || bCompActive)
 		return;
@@ -482,8 +555,20 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 
 			// Stand on the lift where the trace sees it: rewound while it moves,
 			// live once it has stopped (UTPure.CompensateFor).
-			TargetLoc.Z += BaseMover.Location.Z - SnapshotMoverZ;
+			Rise = BaseMover.Location.Z - SnapshotMoverZ;
+			bOnLift = true;
 		}
+	}
+	if (bCompTick == false) {
+		if (bOnLift)
+			TargetLoc.Z += Rise;
+	} else if (CompLift != None) {
+		// Tick Interpolation: the share of the lift's travel the shooter's
+		// screen drew them with (NoteLift). Off the lift at either end, the
+		// travel is the one NoteLift took from the lift's own history.
+		if (bOnLift == false || BaseMover != CompLift)
+			Rise = CompLiftRise;
+		TargetLoc.Z += CompLiftShare * Rise;
 	}
 
 	ActualWasColliding = Actual.bCollideActors;

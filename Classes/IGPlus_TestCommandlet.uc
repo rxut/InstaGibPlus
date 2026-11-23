@@ -486,6 +486,45 @@ function TestTickInterp() {
 		"TickInterp_carry_stops_after_two_ticks");
 	LogTestResult(class'bbPlayer'.static.IGPlus_TI_CarryTicks(1.25, true) == 0.0,
 		"TickInterp_a_held_player_is_not_carried_on");
+	// A lift's travel over the drawing delay (IGPlus_TI_LiftTravel). An even
+	// move of 600 units in 1 s, 25 ms back from its middle: 15 units.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.5, 1.0, false, -1.0, 0.025, 600.0) - 15.0) < 0.01,
+		"TickInterp_lift_travel_in_the_middle_of_a_move");
+	// It started 10 ms ago: only those 10 ms count, it stood still before.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.01, 1.0, false, -1.0, 0.025, 600.0) - 6.0) < 0.01,
+		"TickInterp_lift_travel_just_after_the_start");
+	// It stopped 10 ms ago: the 15 ms before the stop count.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.0, 1.0, false, 0.01, 0.025, 600.0) - 9.0) < 0.01,
+		"TickInterp_lift_travel_just_after_the_stop");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.0, 1.0, false, 0.03, 0.025, 600.0) == 0.0,
+		"TickInterp_no_lift_travel_once_it_has_stood_for_the_delay");
+	// A soft start and stop: fastest in the middle (1.5 times the even pace), slow at the ends.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.5125, 1.0, true, -1.0, 0.025, 600.0) - 22.5) < 0.05
+		&& class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.025, 1.0, true, -1.0, 0.025, 600.0) < 2.0,
+		"TickInterp_lift_travel_with_a_soft_start_and_stop");
+	// A lift going down has a travel below 0.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_LiftTravel(0.5, 1.0, false, -1.0, 0.025, -600.0) + 15.0) < 0.01,
+		"TickInterp_lift_travel_going_down");
+
+	// How much of that travel a player is drawn with (IGPlus_TI_LiftWalk): the
+	// part of the last 8 ticks they stood on the lift. An update every tick,
+	// walked back from tick position 100.5.
+	LogTestResult(Abs(TestLiftShare(100.5, 8.0, 101, 90) - 1.0) < 0.001,
+		"TickInterp_lift_share_is_whole_for_a_player_who_stays_on");
+	LogTestResult(Abs(TestLiftShare(100.5, 8.0, 101, 98) - 0.3125) < 0.001,
+		"TickInterp_lift_share_comes_in_after_getting_on");
+	LogTestResult(Abs(TestLiftShare(100.5, 8.0, 97, 90) - 0.5625) < 0.001,
+		"TickInterp_lift_share_goes_out_after_leaving");
+	LogTestResult(TestLiftShare(100.5, 8.0, 92, 90) == 0.0,
+		"TickInterp_no_lift_share_once_off_it_for_the_whole_fade");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_LiftFade(2.5) == 8.0
+		&& class'bbPlayer'.static.IGPlus_TI_LiftFade(3.5) == 10.5
+		&& class'bbPlayer'.static.IGPlus_TI_LiftFade(10.0) == 12.0,
+		"TickInterp_lift_fade_grows_with_the_drawing_delay_up_to_12_ticks");
+	LogTestResult(class'bbPlayer'.static.IGPlus_TI_LiftLead(2.5) == 2.0
+		&& class'bbPlayer'.static.IGPlus_TI_LiftLead(4.5) == 2.0
+		&& class'bbPlayer'.static.IGPlus_TI_LiftLead(1.0) == 1.0,
+		"TickInterp_a_lift_runs_ahead_by_2_ticks_at_most");
 	// The delay rides in the same report and leaves the tick position alone.
 	P = class'bbPlayer'.static.IGPlus_TI_Pack(500.75, true, true, 2.7);
 	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_TI_UnpackDelay(P) - 2.5) < 0.01
@@ -1040,6 +1079,19 @@ function TestTransitionFrames() {
 		&& class'bbPlayer'.static.IGPlus_FlipFix_InAir('Flip') && class'bbPlayer'.static.IGPlus_FlipFix_InAir('DuckWlkL'), "FlipFix_in_air_animations_end_a_late_landing");
 	LogTestResult(class'bbPlayer'.static.IGPlus_FlipFix_InAir('LandLgFr') == false && class'bbPlayer'.static.IGPlus_FlipFix_InAir('StillFrRp') == false
 		&& class'bbPlayer'.static.IGPlus_FlipFix_InAir('StrafeL') == false && class'bbPlayer'.static.IGPlus_FlipFix_InAir('RunLgFr') == false, "FlipFix_ground_animations_keep_the_landing");
+}
+
+// The lift share at tick position C for a player with an update in every tick
+// who stood on the lift from tick From on, and off it from tick Last on.
+function float TestLiftShare(float C, float Fade, int Last, int From) {
+	local int T;
+	local float Hi, Share;
+
+	Hi = C;
+	for (T = int(C); T > int(C) - 40; T--)
+		if (class'bbPlayer'.static.IGPlus_TI_LiftWalk(float(T), Hi, C, Fade, T >= From && T < Last, Share) == false)
+			break;
+	return Share;
 }
 
 event int main(string Params) {

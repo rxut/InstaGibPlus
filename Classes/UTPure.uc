@@ -705,21 +705,28 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local int OldPing, OwnPing;
 	local vector OldLoc;
 	local float Moved, MostMoved, BotSeen;
-	local int ExtraMs, ProjPing;
+	local int ExtraMs, ProjPing, LiftPing;
 	local string MostMovedName;
+	local Actor KeptBase;
 
 	bCompensationIsActive = true;
 	if (bbPlayer(Instigator) != none)
 		ExtraMs = int(bbPlayer(Instigator).IGPlus_RewindExtraMs(1.0));
 	// Tick Interpolation draws the other players a few ticks in the past, and
-	// a shot's rewind holds that delay. Shock balls and discs are not drawn
-	// that way: the shooter's game flies them on from the moment they arrived.
-	// So for a shot they go back by the rewind without that delay. With it, a
-	// ball flying across stood 25 to 35 units behind the one on the shooter's
-	// screen, and a beam aimed at its middle missed (rig: 0 of 112).
+	// a shot's rewind holds that delay. Shock balls, discs and lifts are not
+	// drawn that way: the shooter's game flies and moves them on from the
+	// moment they arrived. So for a shot balls and discs go back by the rewind
+	// without that delay. With it, a ball flying across stood 25 to 35 units
+	// behind the one on the shooter's screen, and a beam aimed at its middle
+	// missed (rig: 0 of 112). A lift at 360 units a second stood 6 units from
+	// the drawn one (rig). It goes back without the part of the delay it runs
+	// ahead by on that screen, which is not all of it (bbPlayer.IGPlus_TI_LiftLead).
 	ProjPing = Ping;
-	if (bHitscan && bbPlayer(Instigator) != none)
+	LiftPing = Ping;
+	if (bHitscan && bbPlayer(Instigator) != none) {
 		ProjPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_RewindExtraMs(0.0) + 0.5));
+		LiftPing = Max(0, Ping - int(bbPlayer(Instigator).IGPlus_LiftLeadMs() + 0.5));
+	}
 
 	// Where everyone stands, before any lift is moved back: moving a lift
 	// (SetLocation) takes everyone standing on it off it. Riders line up with
@@ -776,7 +783,7 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 			&& (Instigator == none || D.IGPlus_CompBase != ShooterBase)) {
 			MD = FindMoverDummy(Mover(D.IGPlus_CompBase));
 			if (MD != none)
-				MD.CompStart(Ping);
+				MD.CompStart(LiftPing);
 		}
 
 		if (PRT == none) {
@@ -790,12 +797,17 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 			Moved = -1;
 			if (D.bCompActive)
 				Moved = 0;
+			// CompEnd forgets what they stood on, and the rewind below needs
+			// it to stand a rider on their lift (UTPlusDummy.CompSwap).
+			KeptBase = D.IGPlus_CompBase;
 			D.CompEnd();
+			D.IGPlus_CompBase = KeptBase;
 		}
 		// Tick Interpolation: between the two snapshots the shooter's screen
 		// drew the shot's target between.
 		if (PRT.IGPlus_bPRTInterp && bbPlayer(DActual) != none)
-			D.CompStartTick(PRT.IGPlus_PRTInterpR, FMax(PRT.AverageServerDeltaTime, 0.001), PRT.IGPlus_bPRTInterpPast, PRT.IGPlus_bPRTInterpHeld, PRT.IGPlus_PRTInterpSpan);
+			D.CompStartTick(PRT.IGPlus_PRTInterpR, FMax(PRT.AverageServerDeltaTime, 0.001), PRT.IGPlus_bPRTInterpPast, PRT.IGPlus_bPRTInterpHeld, PRT.IGPlus_PRTInterpSpan,
+				0.001 * PRT.IGPlus_RewindExtraMs(0.0) * Level.TimeDilation / FMax(PRT.AverageServerDeltaTime, 0.001));
 		// A bot: its snapshots have no tick numbers (UTPlusDummy takes them from
 		// bbPlayers only), and the shooter's game draws it the stock way, at its
 		// newest update moved on to the moment of the shot. That moment is the
