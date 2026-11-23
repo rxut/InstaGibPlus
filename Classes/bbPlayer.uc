@@ -711,6 +711,7 @@ var bool bDodgePreserveZMomentum;
 var int MultiDodgesRemaining;
 
 var bool bAppearanceChanged;
+var bool IGPlus_bSkinColorSet; // Team Color or Enemy Color was set to a color since we joined
 var bool bClientDead;
 
 var Object ClientSettingsHelper;
@@ -15306,7 +15307,9 @@ static function SetForcedSkin(Actor SkinActor, int selectedSkin, bool bTeamGame,
 		default:
 			if (P != none && P.bAppearanceChanged) {
 				PRI = bbPlayerReplicationInfo(P.PlayerReplicationInfo);
-				P.static.SetMultiSkin(SkinActor, PRI.SkinName, PRI.FaceName, TeamNum);
+				// Their team's color: a skin that lacks a color falls back to
+				// its uncolored one here. IGPlus_RecolorOwnSkin colors it after.
+				P.static.SetMultiSkin(SkinActor, PRI.SkinName, PRI.FaceName, PRI.Team);
 				P.bAppearanceChanged = false;
 			}
 			return;
@@ -15322,7 +15325,8 @@ function int GetForcedSkinForPlayer(PlayerReplicationInfo PRI) {
 	Anim = string(PRI.Owner.AnimSequence);
 	if (Left(Anim, 8) ~= "DeathEnd") {
 		// Dont force skin when feigning death to match actual death animations
-		return -1;
+		// (-2: no Team Color or Enemy Color either, see GetForcedSkinColor)
+		return -2;
 	}
 
 	if (GameReplicationInfo.bTeamGame && PRI.Team == PlayerReplicationInfo.Team) {
@@ -15355,12 +15359,13 @@ function int GetForcedSkinForPlayer(PlayerReplicationInfo PRI) {
 }
 
 // Team Color and Enemy Color. Every stock forced skin comes in red, blue,
-// green and gold (t_0 to t_3). A player's own skin keeps their team's color,
-// it may not have the other two.
+// green and gold (t_0 to t_3). A player on Do Not Force (-1) gets their own
+// skin in that color where it has one (IGPlus_RecolorOwnSkin). A player
+// feigning death (-2) keeps their team's color, as a corpse does.
 function int GetForcedSkinColor(PlayerReplicationInfo PRI, int Skin) {
 	local int C;
 
-	if (Skin < 0 || Skin > 17)
+	if (Skin == -2 || Skin > 17)
 		return PRI.Team;
 	if (PRI.Team == PlayerReplicationInfo.Team)
 		C = Settings.TeamColor;
@@ -15369,6 +15374,34 @@ function int GetForcedSkinColor(PlayerReplicationInfo PRI, int Skin) {
 	if (C < 0 || C > 3)
 		return PRI.Team;
 	return C;
+}
+
+// The player's own skin in color C. Team textures end in T_0 to T_3, so the
+// same name with another digit is the same skin in another color. A skin
+// without that color keeps the one it has. Runs every frame once a color was
+// set: the server sends the skin again whenever it likes, and C is the team's
+// own color again when the setting is back on Team Color. Never runs for a
+// player who leaves both settings on Team Color.
+// A skin without color C fails one texture lookup per slot per frame.
+// Remember the miss per player if a server full of such skins costs frames.
+static function IGPlus_RecolorOwnSkin(Actor A, int C) {
+	local int i, n;
+	local string S;
+	local Texture T;
+
+	if (C < 0 || C > 3)
+		return;
+	for (i = 0; i < 8; ++i) {
+		if (A.MultiSkins[i] == none)
+			continue;
+		S = string(A.MultiSkins[i]);
+		n = Len(S);
+		if (Mid(S, n - 3, 2) ~= "T_" && Right(S, 1) != string(C)) {
+			T = Texture(DynamicLoadObject(Left(S, n - 1)$C, class'Texture', true));
+			if (T != none)
+				A.MultiSkins[i] = T;
+		}
+	}
 }
 
 function bool IsForcedSkinFemale(int Skin) {
@@ -15423,6 +15456,10 @@ function ApplyForcedSkins(PlayerReplicationInfo PRI) {
 		Skin = GetForcedSkinForPlayer(PRI);
 		SetForcedMesh(PRI, Skin);
 		SetForcedSkin(PRI.Owner, Skin, GameReplicationInfo.bTeamGame, GetForcedSkinColor(PRI, Skin));
+		if (Settings.TeamColor >= 0 || Settings.EnemyColor >= 0)
+			IGPlus_bSkinColorSet = true;
+		if (IGPlus_bSkinColorSet && GameReplicationInfo.bTeamGame && (Skin < 0 || Skin > 17))
+			IGPlus_RecolorOwnSkin(PRI.Owner, GetForcedSkinColor(PRI, Skin));
 	} else if (bbPlayer(PRI.Owner) != none && IGPlus_ShowRealModelsInDemo()) {
 		bbPlayer(PRI.Owner).IGPlus_DemoRestoreRealModel();
 	}

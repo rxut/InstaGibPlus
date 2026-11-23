@@ -1679,10 +1679,10 @@ defaultproperties
 		DesiredTeamSkinFemaleHelp="Which skin to use for team-mates that use a female skin"
 
 		TeamColorText="Color - Friendlies"
-		TeamColorHelp="Color of team-mates' forced skins. Team Color keeps their team's color."
+		TeamColorHelp="Color of team-mates' skins. Team Color keeps their team's color."
 
 		EnemyColorText="Color - Enemies"
-		EnemyColorHelp="Color of enemies' forced skins. Team Color keeps their team's color."
+		EnemyColorHelp="Color of enemies' skins. Team Color keeps their team's color."
 
 		SkinColorDefault="Team Color"
 		SkinColorRed="Red"
