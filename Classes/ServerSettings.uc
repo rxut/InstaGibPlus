@@ -35,6 +35,7 @@ var config bool bUseFastWeaponSwitch;
 var config bool bTellSpectators;	// Enable or disable telling spectators of reason for kicks.
 var config string PlayerPacks[8];	// Config list of supported player packs
 var config int ThrowVelocity;	// How far a player can throw weapons
+var config float ThrowPickupDelay;	// Seconds before a thrower can take their weapon back
 var config bool  bForceDemo;		// Forces clients to do demos.
 var config bool  bAutoDebugData;	// Players run enableDebugData 1 for every match, like bForceDemo for demos.
 var config bool  bRestrictTrading;
@@ -234,6 +235,7 @@ defaultproperties
 	bDelayedPickupSpawn=False
 	bUseFastWeaponSwitch=False
 	ThrowVelocity=750
+	ThrowPickupDelay=1.5
 	NNAnnouncer=True
 	MaxHitError=10000
 	MaxJitterTime=0.1

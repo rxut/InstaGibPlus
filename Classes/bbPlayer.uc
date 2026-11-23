@@ -194,6 +194,13 @@ var bool IGPlus_LastAltEndHeld;
 var bool IGPlus_FeignFireHeld;
 var bool IGPlus_FeignAltFireHeld;
 var Weapon IGPlus_FeignWeapon;
+// Server: last thrown weapon and when (IGPlus_MayPickUp).
+var Weapon IGPlus_TossedWeapon;
+var float IGPlus_TossedTS;
+var bool IGPlus_bTossing;
+// Client: the corpse list (ApplyForcedSkinsToCorpses).
+var IGPlus_CarcassSpawnNotify IGPlus_CorpseNotify;
+var float IGPlus_CorpseNotifySearchTS;
 // ServerMove v4 deterministic fire-window state (move-timestamp domain).
 var float IGPlus_DetWeaponGateTS;
 var Weapon IGPlus_DetPendingSeen;
@@ -12089,10 +12096,89 @@ exec function ThrowWeapon()
 function TossWeapon()
 {
 	local vector X,Y,Z;
+	local vector Dest, HitLocation, HitNormal;
+	local Weapon W;
+
 	if ( Weapon == None )
 		return;
+	W = Weapon;
 	GetAxes(Rotation.Yaw*rot(0,1,0),X,Y,Z);
-	Weapon.DropFrom(Location + (CollisionRadius+Weapon.CollisionRadius) * X - 0.5 * CollisionRadius * Y);
+	Dest = Location + (CollisionRadius+W.CollisionRadius) * X - 0.5 * CollisionRadius * Y;
+	// Facing a wall the spot can be in or behind it. Pull it back from the wall.
+	if (Trace(HitLocation, HitNormal, Dest, Location, false) != none)
+		Dest = HitLocation - Normal(Dest - Location) * W.CollisionRadius;
+	W.DropFrom(Dest);
+	if (W.Owner != none)
+		return;
+	IGPlus_TossedWeapon = IGPlus_FreshThrownCopy(W);
+	IGPlus_TossedTS = Level.TimeSeconds;
+}
+
+// A new actor for the throw: clients fly it themselves, no corrections.
+function Weapon IGPlus_FreshThrownCopy(Weapon W) {
+	local Weapon N;
+	local int i;
+
+	// Other mods' weapons can hold state a copy would lose.
+	if (W.Class.Outer != class'bbPlayer'.Outer && W.Class.Outer.Name != 'Botpack')
+		return W;
+	// Two thrown weapons of a class that touch remove one (stock), so the old
+	// one leaves the world first.
+	W.SetCollision(false, false, false);
+	// It can touch us as it spawns: not ours to take yet.
+	IGPlus_bTossing = true;
+	N = Spawn(W.Class, , , W.Location, W.Rotation);
+	IGPlus_bTossing = false;
+	if (N == none || N.bDeleteMe) {
+		W.SetCollision(true, false, false);
+		return W;
+	}
+	N.SetCollisionSize(W.CollisionRadius, W.CollisionHeight);
+	N.Tag = W.Tag;
+	N.Event = W.Event;
+	N.RespawnTime = 0.0;
+	N.bTossedOut = W.bTossedOut;
+	N.bHeldItem = W.bHeldItem;
+	N.PickupAmmoCount = W.PickupAmmoCount;
+	// Stock gives a dead player's dropped weapon at least 1 ammo after this.
+	if (Health <= 0 && N.PickupAmmoCount == 0)
+		N.PickupAmmoCount = 1;
+	N.PickupViewMesh = W.PickupViewMesh;
+	N.PickupViewScale = W.PickupViewScale;
+	N.BecomePickup();
+	N.Skin = W.Skin;
+	for (i = 0; i < ArrayCount(N.MultiSkins); i++)
+		N.MultiSkins[i] = W.MultiSkins[i];
+	N.bCollideWorld = true;
+	N.SetPhysics(PHYS_Falling);
+	N.Velocity = W.Velocity;
+	N.RemoteRole = ROLE_SimulatedProxy;
+	N.GotoState('Pickup', 'Dropped');
+	// The stock timer of a dropped weapon (Inventory.Pickup.BeginState).
+	if (N.bHeldItem)
+		N.SetTimer(30, false);
+	Spawn(class'IGPlus_TossWatch').W = N;
+	W.Destroy();
+	return N;
+}
+
+// Our corpse is ours (bbPlayer.ApplyForcedSkinsToCorpses).
+function Carcass SpawnCarcass() {
+	local Carcass C;
+
+	C = Super.SpawnCarcass();
+	if (C != none)
+		C.SetOwner(self);
+	return C;
+}
+
+// Server: our own thrown weapon only once it has landed and ThrowPickupDelay has passed.
+function bool IGPlus_MayPickUp(Inventory Item) {
+	if (IGPlus_bTossing)
+		return false;
+	if (Item == none || Item != IGPlus_TossedWeapon)
+		return true;
+	return Item.Physics != PHYS_Falling && Level.TimeSeconds - IGPlus_TossedTS >= zzUTPure.Settings.ThrowPickupDelay * Level.TimeDilation;
 }
 
 
@@ -15731,15 +15817,7 @@ static function SetForcedSkin(Actor SkinActor, int selectedSkin, bool bTeamGame,
 }
 
 function int GetForcedSkinForPlayer(PlayerReplicationInfo PRI) {
-	local string Anim;
 	local bbPlayerReplicationInfo bbPRI;
-
-	Anim = string(PRI.Owner.AnimSequence);
-	if (Left(Anim, 8) ~= "DeathEnd") {
-		// Dont force skin when feigning death to match actual death animations
-		// (-2: no Team Color or Enemy Color either, see GetForcedSkinColor)
-		return -2;
-	}
 
 	if (GameReplicationInfo.bTeamGame && PRI.Team == PlayerReplicationInfo.Team) {
 		if (Settings.bSkinTeamUseIndexMap) {
@@ -15824,10 +15902,13 @@ function bool IsForcedSkinMale(int Skin) {
 	return Skin > 8 && Skin <= 17;
 }
 
-function SetForcedMesh(PlayerReplicationInfo PRI, int Skin) {
+// Target: who gets the model, PRI.Owner if none.
+function SetForcedMesh(PlayerReplicationInfo PRI, int Skin, optional Actor Target) {
 	local Mesh NewMesh;
 
-	if (PRI.Owner == none) return;
+	if (Target == none)
+		Target = PRI.Owner;
+	if (Target == none) return;
 
 	if (Skin >= 0 && Skin <= 17) {
 		if (PRI.bIsFemale == IsForcedSkinFemale(Skin)) {
@@ -15836,7 +15917,7 @@ function SetForcedMesh(PlayerReplicationInfo PRI, int Skin) {
 			NewMesh = class'IGPlus_Assets'.static.Msh(class'IGPlus_ModelImport'.default.RateCorrectedMesh[Skin], class'IGPlus_Assets'.static.ForcedMeshName(Skin, true));
 		}
 	} else {
-		NewMesh = PRI.Owner.default.Mesh;
+		NewMesh = Target.default.Mesh;
 	}
 
 	// Never no model (a broken default): keep what the player has.
@@ -15845,13 +15926,88 @@ function SetForcedMesh(PlayerReplicationInfo PRI, int Skin) {
 
 	// Drawn with transition frames this frame (IGPlus_TransitionDraw):
 	// the forced model is the one put back after the frame.
-	if (bbPlayer(PRI.Owner) != none && bbPlayer(PRI.Owner).IGPlus_NF_bMesh) {
-		bbPlayer(PRI.Owner).IGPlus_NF_RawMesh = NewMesh;
+	if (bbPlayer(Target) != none && bbPlayer(Target).IGPlus_NF_bMesh) {
+		bbPlayer(Target).IGPlus_NF_RawMesh = NewMesh;
 		return;
 	}
 
-	if (PRI.Owner.Mesh != NewMesh)
-		PRI.Owner.Mesh = NewMesh;
+	if (Target.Mesh != NewMesh)
+		Target.Mesh = NewMesh;
+}
+
+// Corpses wear their player's forced skin. Do Not Force corpses stay as they came.
+function ApplyForcedSkinsToCorpses() {
+	local IGPlus_CarcassSpawnNotify N;
+	local Carcass C;
+	local PlayerReplicationInfo PRI;
+	local int i, Skin;
+
+	if (zzbForceModels == false)
+		return;
+	if (IGPlus_CorpseNotify == none) {
+		if (Level.TimeSeconds < IGPlus_CorpseNotifySearchTS)
+			return;
+		IGPlus_CorpseNotifySearchTS = Level.TimeSeconds + 1.0;
+		foreach AllActors(class'IGPlus_CarcassSpawnNotify', N)
+			break;
+		if (N == none)
+			return;
+		IGPlus_CorpseNotify = N;
+	}
+	for (i = 0; i < ArrayCount(IGPlus_CorpseNotify.Corpse); i++) {
+		C = IGPlus_CorpseNotify.Corpse[i];
+		if (C == none || C.bDeleteMe || Pawn(C.Owner) == none || C.Mesh == none)
+			continue;
+		PRI = Pawn(C.Owner).PlayerReplicationInfo;
+		if (PRI == none)
+			continue;
+		// A client demo holds the forced skin it was recorded with.
+		if (IGPlus_ShowRealModelsInDemo()) {
+			IGPlus_DemoRealCorpse(C);
+			continue;
+		}
+		Skin = GetForcedSkinForPlayer(PRI);
+		if (Skin < 0 || Skin > 17)
+			continue;
+		SetForcedMesh(PRI, Skin, C);
+		// Male and female models lack some of each other's death poses.
+		if (C.HasAnim(C.AnimSequence) == false)
+			C.AnimSequence = IGPlus_OtherDeathPose(C.AnimSequence);
+		if (C.HasAnim(C.AnimSequence) == false) {
+			C.AnimSequence = 'DeathEnd';
+			C.AnimFrame = 0;
+			C.AnimRate = 0;
+		}
+		SetForcedSkin(C, Skin, GameReplicationInfo.bTeamGame, GetForcedSkinColor(PRI, Skin));
+	}
+}
+
+// The pose the other gender plays in the same death.
+static function name IGPlus_OtherDeathPose(name Seq) {
+	switch (Seq) {
+		case 'Dead8': return 'Dead3';
+		case 'Dead11': return 'Dead2';
+		case 'Dead5': return 'Dead11';
+		case 'Dead6': return 'Dead4';
+	}
+	return Seq;
+}
+
+// Client demo playback: a player's corpse gets their real model and skin.
+simulated function IGPlus_DemoRealCorpse(Carcass C) {
+	local bbPlayer P;
+	local int i;
+
+	P = bbPlayer(C.Owner);
+	if (P == none || P.IGPlus_DemoRealSkinKey == "" || P.default.Mesh == none)
+		return;
+	if (C.Mesh != P.default.Mesh)
+		C.Mesh = P.default.Mesh;
+	for (i = 0; i < ArrayCount(C.MultiSkins); i++)
+		if (C.MultiSkins[i] != P.IGPlus_DemoRealMultiSkins[i])
+			C.MultiSkins[i] = P.IGPlus_DemoRealMultiSkins[i];
+	if (C.HasAnim(C.AnimSequence) == false)
+		C.AnimSequence = 'DeathEnd';
 }
 
 function ApplyForcedSkins(PlayerReplicationInfo PRI) {
@@ -16033,6 +16189,7 @@ event PreRender( canvas zzCanvas )
 			}
 		}
 		ApplyBeltColors();
+		ApplyForcedSkinsToCorpses();
 	}
 
 	if (IGPlus_TryOpenSettingsMenu) {
