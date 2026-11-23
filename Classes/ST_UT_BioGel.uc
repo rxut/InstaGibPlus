@@ -166,8 +166,15 @@ simulated function PostNetBeginPlay()
 				// ahead by the ping, so no lead on top (on a falling gel the
 				// lead move sinks it by gravity x lead). Tick goes on for the
 				// lift sweep.
-				if (bFakeFlying && IGPlus_HeldVelocity == vect(0,0,0)) {
+				if (bFakeFlying) {
 					Velocity = FakeVelocity;
+					// From a moving lift it came held still, with its launch
+					// speed and no collision (IGPlus_LiftShot): ours, as above.
+					if (IGPlus_HeldVelocity != vect(0,0,0)) {
+						IGPlus_HeldVelocity = vect(0,0,0);
+						if (bCollideActors == false)
+							SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+					}
 					InstigatingPlayer = None;
 				}
 			}

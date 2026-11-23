@@ -103,12 +103,19 @@ simulated function PostNetBeginPlay()
 				// explosion follows.
 				if (FC.IGPlus_bLocalSlugGone)
 					IGPlus_ClientGone();
-				else if (IGPlus_HeldVelocity == vect(0,0,0)) {
+				else {
 					// It flies on as our copy did: the speed it came with is
 					// from another point of the arc, and our copy's spot is
 					// already ahead by the ping, so no lead on top (on a
 					// falling slug the lead move sinks it by gravity x lead).
 					Velocity = FakeVelocity;
+					// From a moving lift it came held still, with its launch
+					// speed and no collision (IGPlus_LiftShot): ours, as above.
+					if (IGPlus_HeldVelocity != vect(0,0,0)) {
+						IGPlus_HeldVelocity = vect(0,0,0);
+						if (bCollideActors == false)
+							SetCollision(default.bCollideActors, default.bBlockActors, default.bBlockPlayers);
+					}
 					Disable('Tick');
 				}
 
