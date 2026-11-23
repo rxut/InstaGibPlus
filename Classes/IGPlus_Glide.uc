@@ -95,6 +95,22 @@ static function IGPlus_Glide Begin(Projectile Proj, vector SkipStart, bool bShoo
 	return G;
 }
 
+// Proj was just moved a small step (the shooter's own copy, onto the
+// server's path, IGPlus_OwnCopy): drawn from where it was, over to there.
+static function IGPlus_Glide BeginFrom(Projectile Proj, vector From) {
+	local IGPlus_Glide G;
+
+	G = Proj.Spawn(class'IGPlus_Glide', Proj,, Proj.Location);
+	if (G == None)
+		return None;
+	G.P = Proj;
+	G.Off = From - Proj.Location;
+	G.T0 = Proj.Level.TimeSeconds;
+	G.Dur = GlideTime();
+	G.Apply(G.Off);
+	return G;
+}
+
 // A client-only replay chunk Proj (at the gun, held still): drawn as if it
 // had been sent at Sent with velocity Vel, back at Start and on from there.
 static function IGPlus_Glide BeginReplay(Projectile Proj, vector Start, vector Sent, vector Vel, float CatchUp) {

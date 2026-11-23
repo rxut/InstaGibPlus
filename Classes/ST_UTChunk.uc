@@ -179,7 +179,7 @@ simulated function PostNetBeginPlay()
 					// On from our copy's spot, as our copy flew (IGPlus_OwnCopy):
 					// after a bounce that is falling, which also ends the
 					// lead move. A copy that came to rest: it rests there.
-					if (class'IGPlus_OwnCopy'.static.TakeOver(self, FakeChunk, vect(0,0,0)) == false)
+					if (class'IGPlus_OwnCopy'.static.TakeOver(self, FakeChunk, IGPlus_HeldVelocity) == false)
 						SetPhysics(PHYS_None);
 					IGPlus_HeldVelocity = vect(0,0,0); // ours, not the server's start
 					// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
