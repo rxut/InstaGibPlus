@@ -395,7 +395,7 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 	X = vector(AdjustedAim);
 	EndTrace = StartTrace + 100000 * X;
 	if (LiftLead != vect(0,0,0)) {
-		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		bLiftHit = bbP.IGPlus_TraceMover(bbP.IGPlus_OwnLift(), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
 		if (bLiftHit) {
 			LiftHitLoc -= LiftLead;
 			EndTrace = LiftHitLoc;
@@ -409,7 +409,7 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 	if (LiftLead != vect(0,0,0)) {
 		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
 		if (bLiftHit && Other == None) {
-			Other = PawnOwner.Base;
+			Other = bbP.IGPlus_OwnLift();
 			HitLocation = LiftHitLoc;
 			HitNormal = LiftHitNormal;
 		}

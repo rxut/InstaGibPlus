@@ -755,6 +755,8 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	if (bShot) {
 		if (Instigator != none) {
 			ShooterLift = Mover(ShooterBase);
+			if (ShooterLift == none && bbPlayer(Instigator) != none)
+				ShooterLift = bbPlayer(Instigator).IGPlus_OwnLift();
 			if (ShooterLift == none)
 				ShooterLift = Mover(Instigator.Trace(LiftHitLoc, LiftHitNormal,
 					Instigator.Location - vect(0,0,1) * (Instigator.CollisionHeight + 100.0), Instigator.Location, true));
