@@ -4840,10 +4840,29 @@ function vector IGPlus_LiftAimLead() {
 	return Lead;
 }
 
-// Server: how long ago our screen's lift was where it is now, capped like the
-// rest of ping compensation.
-function int IGPlus_OwnLiftLagMs() {
-	return Min(PingAverage, GetWeaponSettings().PingCompensationMax);
+// Server: how long ago our screen's lift was where it is now, for the move
+// being run, in real ms, capped like the rest of ping compensation.
+// PingAverage is measured by our client, as an average, and holds about 4/3 of
+// one of its frames that the lift on its screen does not have (measured at 57
+// to 120 fps against 64 and 128 server ticks). So that goes off, and this
+// move's own lateness comes on (IGPlus_ABBase, the arrival measure).
+function float IGPlus_OwnLiftLagMs() {
+	local float Late;
+
+	if (PingAverage <= 0)
+		return 0.0;
+	// ponytail: no measure yet (the first seconds): the usual lateness, 0.6 of a tick
+	Late = 0.6 * IGPlus_ABTickLen;
+	if (IGPlus_ABHaveMin && Level.TimeSeconds - IGPlus_ABMeasureStart >= IGPLUS_AB_WARMUP)
+		Late = FClamp(IGPlus_ABBase() - CurrentTimeStamp, 0.0, 0.25 * Level.TimeDilation);
+	return IGPlus_LiftLagMs(float(PingAverage), 1000.0 * Late / Level.TimeDilation,
+		1000.0 * IGPlus_ABMoveLen / Level.TimeDilation, float(GetWeaponSettings().PingCompensationMax));
+}
+
+const IGPLUS_LIFT_LAG_FRAMES = 1.33;
+
+static function float IGPlus_LiftLagMs(float PingMs, float LateMs, float FrameMs, float MaxMs) {
+	return FClamp(PingMs + LateMs - IGPLUS_LIFT_LAG_FRAMES * FrameMs, 0.0, MaxMs);
 }
 
 // Where Start->End first meets Lift, nothing else counted. Our lift where our
