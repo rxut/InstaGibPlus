@@ -1795,7 +1795,7 @@ defaultproperties
 		HeadshotSourceHelp="Controls when the Head Shot message of your sniper rifle plays\\nServer --> Only for headshot kills the server counted, but delayed by ping\\nClient --> Instantly, but may not be accurate\\nOnly for the rifle of NextSA"
 
 		LostTradeNotificationText="Lost Trade Notification"
-		LostTradeNotificationHelp="Shows Lost Trade when you die before the server counts a hit of yours\\nThe opponent's shot reached the server first\\nOnly for the rifles of NextIG and NextSA on servers without trades"
+		LostTradeNotificationHelp="Shows Lost Trade when you die before the server counts a killing hit of yours\\nThe opponent's shot reached the server first\\nOnly for the rifles of NextIG and NextSA on servers without trades"
 
 		HitSourceServer="Server"
 		HitSourceClient="Client"

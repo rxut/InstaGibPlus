@@ -287,7 +287,7 @@ The server still decides every hit and every kill.
 **Type: bool**  
 **Default: True**  
 
-Shows "Lost Trade" where "Head Shot" appears when you die before the server has counted a hit of yours. Your screen showed the hit, but your opponent's shot reached the server first, so yours does not count. It applies to the rifles of NextIG and NextSA on servers without trades, whatever your Hit Source. A "Head Shot" message of yours on screen is replaced.
+Shows "Lost Trade" where "Head Shot" appears when you die before the server has counted a hit of yours that would have killed. Your screen showed the hit, but your opponent's shot reached the server first, so yours does not count. It applies to the rifles of NextIG and NextSA on servers without trades, whatever your Hit Source. A "Head Shot" message of yours on screen is replaced.
 
 ## SelectedHitSound
 **Type: int**  

@@ -569,6 +569,7 @@ var int IGPlus_HitStatDrawnDiff, IGPlus_HitStatDrawnRight;
 var int IGPlus_HitStatDeadShots, IGPlus_HitStatDeadHits;
 var int IGPlus_ClientHitVerdict;    // client: the last shot's, until its move takes it. Server: the running move's. 0: none
 var float IGPlus_ClientHitPlayedTS; // client: when our own trace last hit a player. 0: none waiting for the server's message
+var bool IGPlus_bClientHitKills;    // client: that hit kills by what we know (IGPlus_LostTradeCheck)
 // Client, Headshot Source on Client (IGPlus_ClientHeadshot): when our own trace
 // last played the headshot message, 0 with none waiting for the server's. And
 // how many it played, how many of those the server sent no message for, and
@@ -8977,6 +8978,10 @@ simulated function IGPlus_ClientShotVerdict(Actor Other, float Damage, name Dama
 	if (IGPlus_bShotDrawnDiffers)
 		IGPlus_ClientHitVerdict += IGPLUS_HIT_DRAWNDIFF;
 	IGPlus_ClientHitPlayedTS = Level.TimeSeconds;
+	// Health and armor of the others are a ping old here. Armor could save
+	// them from anything short of an instagib beam.
+	IGPlus_bClientHitKills = Victim.Health <= Damage
+		&& (bbPlayer(Victim) == None || bbPlayer(Victim).IGPlus_bArmored == false || Damage >= 1000);
 	class'bbPlayerStatics'.static.PlayClientHitResponse(self, Victim, Damage, DamageType);
 }
 
@@ -9073,15 +9078,15 @@ simulated function bool IGPlus_TakeClientHeadshot() {
 }
 
 // Client, NextIG and NextSA without trades: we died while our own trace's
-// hit still waited for the server (IGPlus_TakeClientHit). The server had us
-// dead before that shot came, so it never counts. "Lost Trade" shows, in the
+// killing hit still waited for the server (IGPlus_TakeClientHit). The server
+// had us dead before that shot came, so it never counts. "Lost Trade" shows, in the
 // place of a "Head Shot" of ours.
 simulated function IGPlus_LostTradeCheck() {
 	local WeaponSettingsRepl WS;
 
 	if (Level.NetMode != NM_Client || Settings == None || Settings.bLostTradeNotification == false || myHUD == None)
 		return;
-	if (IGPlus_ClientHitPlayedTS <= 0.0 || Level.TimeSeconds - IGPlus_ClientHitPlayedTS > 0.6)
+	if (IGPlus_ClientHitPlayedTS <= 0.0 || Level.TimeSeconds - IGPlus_ClientHitPlayedTS > 0.6 || IGPlus_bClientHitKills == false)
 		return;
 	if (IGPlus_WeaponSettingsMode == 0)
 		return;
