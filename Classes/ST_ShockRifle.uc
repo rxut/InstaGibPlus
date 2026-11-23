@@ -263,7 +263,6 @@ function Projectile IGPlus_DetFireBall(vector StepLoc, rotator StepView) {
 		return DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
 	Ball.IGPlus_FireLiftLead = vect(0,0,0);
 	Ball.IGPlus_bLiftShot = true;
-	// ponytail: no lift shot for a lift we stepped off (IGPlus_LiftShot needs us on it): the ball meets the real lift there
 	LS = class'IGPlus_LiftShot'.static.Begin(Ball, P);
 	if (LS != None)
 		LS.Hold();
@@ -879,7 +878,7 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	bBotSpecialMove = false;
 
 	if (LiftLead != vect(0,0,0)) {
-		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		bLiftHit = bbP.IGPlus_TraceMover(bbP.IGPlus_OwnLift(), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
 		if (bLiftHit) {
 			LiftHitLoc -= LiftLead;
 			EndTrace = LiftHitLoc;
@@ -904,7 +903,7 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	if (LiftLead != vect(0,0,0)) {
 		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
 		if (bLiftHit && Other == None) {
-			Other = PawnOwner.Base;
+			Other = bbP.IGPlus_OwnLift();
 			HitLocation = LiftHitLoc;
 			HitNormal = LiftHitNormal;
 		}

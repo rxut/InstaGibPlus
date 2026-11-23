@@ -30,14 +30,14 @@ var vector PassVelocity;
 static function IGPlus_LiftShot Begin(Projectile Proj, bbPlayer Shooter) {
 	local IGPlus_LiftShot LS;
 
-	if (Proj == None || Mover(Shooter.Base) == None || Shooter.zzUTPure == None)
+	if (Proj == None || Shooter.IGPlus_OwnLift() == None || Shooter.zzUTPure == None)
 		return None;
 	LS = Shooter.Spawn(class'IGPlus_LiftShot', Shooter);
 	if (LS == None)
 		return None;
 	LS.P = Proj;
 	LS.Shooter = Shooter;
-	LS.Lift = Mover(Shooter.Base);
+	LS.Lift = Shooter.IGPlus_OwnLift();
 	LS.MD = Shooter.zzUTPure.FindMoverDummy(LS.Lift);
 	LS.LagMs = Shooter.IGPlus_OwnLiftLagMs();
 	// Until the screen's lift and the real one are in the same place again

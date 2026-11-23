@@ -398,7 +398,7 @@ function DeterministicTraceFire(rotator ShotRot, vector ShotLoc) {
 	EndTrace = StartTrace + IGPLUS_BEAM_RANGE * X;
 
 	if (LiftLead != vect(0,0,0)) {
-		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		bLiftHit = bbP.IGPlus_TraceMover(bbP.IGPlus_OwnLift(), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
 		if (bLiftHit) {
 			LiftHitLoc -= LiftLead;
 			EndTrace = LiftHitLoc;
@@ -414,7 +414,7 @@ function DeterministicTraceFire(rotator ShotRot, vector ShotLoc) {
 	if (LiftLead != vect(0,0,0)) {
 		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
 		if (bLiftHit && Other == None) {
-			Other = PawnOwner.Base;
+			Other = bbP.IGPlus_OwnLift();
 			HitLocation = LiftHitLoc;
 			HitNormal = LiftHitNormal;
 		}
