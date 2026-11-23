@@ -553,6 +553,10 @@ var float IGPlus_ClientHitPlayedTS; // client: when our own trace last hit a pla
 // how many it played, how many of those the server sent no message for, and
 // how many of the server's messages played here, a ping late.
 var float IGPlus_ClientHeadPlayedTS;
+// Client, on another player's pawn: the height above their middle that the
+// server tests for the head, left by the last hit of our own trace on them
+// (ClientAdjustHitLocation with the server's order).
+var float IGPlus_ClientHitTestZ;
 var int IGPlus_StatHeadMsgClient, IGPlus_StatHeadMsgUnconfirmed, IGPlus_StatHeadMsgServer;
 var int IGPlus_HitStatShots, IGPlus_HitStatBoth, IGPlus_HitStatClientOnly, IGPlus_HitStatServerOnly, IGPlus_HitStatHeadDiff;
 var int IGPlus_HitStatNoData; // rifle and sniper shots the server ran with no data from the client's shot
@@ -8410,7 +8414,8 @@ function Actor IGPlus_ClientShotTraceOnce(
 ) {
 	if (WB != None)
 		return WB.TraceShotClient(HitLocation, HitNormal, EndTrace, StartTrace, self);
-	return NN_TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, self);
+	// With the server's order of the crouch test (ClientAdjustHitLocation).
+	return NN_TraceShot(HitLocation, HitNormal, EndTrace, StartTrace, self, true);
 }
 
 // Client: our own trace of a deterministic hitscan shot. WB is set where the
@@ -8504,14 +8509,18 @@ function bbPlayer IGPlus_TI_AimTarget() {
 	return Best;
 }
 
-// Client: is a hit on the surface of a body's cylinder, HitZ above its middle,
-// a headshot by the server's rule? The server tests the head half a collision
-// radius further along the shot (UTPlusDummy.AdjustHitLocation), so on a shot
-// from above its point is lower than the one on the surface, and from below
-// it is higher. Above the top of a crouching body it counts no hit at all.
-static function bool IGPlus_ClientHeadRule(float HitZ, float DirZ, float Radius, float Height, float Duck) {
-	HitZ += 0.5 * Radius * DirZ;
-	return HitZ > 0.62 * Height && (Duck <= 0.0 || HitZ <= (1.0 - 0.7 * Duck) * Height);
+// Client: the server's crouch test (UTPlusDummy.AdjustHitLocation) for a shot
+// that meets a body's cylinder EntryZ above its middle. The server moves the
+// hit half a collision radius along the shot first and only then tests the top
+// of a crouch. TestZ is the height it tests for the head. True: that point is
+// above a crouching body. A climbing shot is then a miss. A falling one hits
+// where it crosses the top, which is TestZ, if that is inside the cylinder.
+static function bool IGPlus_OverCrouchTop(float EntryZ, float DirZ, float Radius, float Height, float Duck, out float TestZ) {
+	TestZ = EntryZ + 0.5 * Radius * DirZ;
+	if (Duck <= 0.0 || TestZ <= (1.0 - 0.7 * Duck) * Height)
+		return false;
+	TestZ = (1.0 - 0.7 * Duck) * Height;
+	return true;
 }
 
 function Actor IGPlus_ClientShotTrace(
@@ -8525,7 +8534,7 @@ function Actor IGPlus_ClientShotTrace(
 	local int i, NumSwitched, SwitchedFlags[32];
 	local PlayerReplicationInfo PRI;
 	local Pawn P, Switched[32];
-	local float Duck;
+	local float TestZ;
 
 	IGPlus_bShotDrawnDiffers = false;
 	IGPlus_PRTShotR = 0.0;
@@ -8591,10 +8600,13 @@ function Actor IGPlus_ClientShotTrace(
 		if (WB != None)
 			IGPlus_bShotHead = WB.CheckHeadShot(Pawn(Other), HitLocation, Normal(EndTrace - StartTrace));
 		else {
+			// A player's own hit test has left the height the server tests.
 			if (bbPlayer(Other) != None)
-				Duck = bbPlayer(Other).IGPlus_HitDuckFraction();
-			IGPlus_bShotHead = IGPlus_ClientHeadRule(HitOffset.Z, Normal(EndTrace - StartTrace).Z,
-				Other.CollisionRadius, Other.CollisionHeight, Duck);
+				TestZ = bbPlayer(Other).IGPlus_ClientHitTestZ;
+			else
+				IGPlus_OverCrouchTop(HitOffset.Z, Normal(EndTrace - StartTrace).Z,
+					Other.CollisionRadius, Other.CollisionHeight, 0.0, TestZ);
+			IGPlus_bShotHead = TestZ > 0.62 * Other.CollisionHeight;
 		}
 	}
 	IGPlus_PRTShotLead = 0.0;
@@ -8973,7 +8985,7 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 	);
 }
 
-simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn TheOwner)
+simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace, Pawn TheOwner, optional bool bServerOrder)
 {
 	local vector realHit;
 	local actor Other;
@@ -8986,8 +8998,8 @@ simulated function actor NN_TraceShot(out vector HitLocation, out vector HitNorm
 	if ( Pawn(Other) != None )
 	{
 		realHit = HitLocation;
-		if ( bbPlayer(Other) != None && !bbPlayer(Other).ClientAdjustHitLocation(HitLocation, EndTrace - StartTrace) )
-			Other = NN_TraceShot(HitLocation,HitNormal,EndTrace,realHit,Pawn(Other));
+		if ( bbPlayer(Other) != None && !bbPlayer(Other).ClientAdjustHitLocation(HitLocation, EndTrace - StartTrace, bServerOrder) )
+			Other = NN_TraceShot(HitLocation,HitNormal,EndTrace,realHit,Pawn(Other),bServerOrder);
 	}
 	if (zzbNN_Tracing)
 	{
@@ -12828,7 +12840,11 @@ simulated function bool AdjustHitLocation(out vector HitLocation, vector TraceDi
 	return true;
 }
 
-simulated function bool ClientAdjustHitLocation(out vector HitLocation, vector TraceDir)
+// bServerOrder: our own trace of a shot the server decides (the Next rifles).
+// The crouch test then runs in the server's order, half a collision radius
+// along the shot first (IGPlus_OverCrouchTop). The NewNet rifles send their
+// hit to the server and keep the order they had.
+simulated function bool ClientAdjustHitLocation(out vector HitLocation, vector TraceDir, optional bool bServerOrder)
 {
 	local float adjZ, maxZ;
 	local vector delta;
@@ -12842,7 +12858,11 @@ simulated function bool ClientAdjustHitLocation(out vector HitLocation, vector T
 
 	maxZ = Location.Z + (1.0 - 0.7 * IGPlus_HitDuckFraction()) * CollisionHeight; // default game is 0.25
 
-	if (HitLocation.Z <= maxZ)
+	if (bServerOrder) {
+		if (IGPlus_OverCrouchTop(HitLocation.Z - Location.Z, Normal(TraceDir).Z, CollisionRadius, CollisionHeight,
+			IGPlus_HitDuckFraction(), IGPlus_ClientHitTestZ) == false)
+			return true;
+	} else if (HitLocation.Z <= maxZ)
 		return true;
 
 	if (TraceDir.Z >= 0)

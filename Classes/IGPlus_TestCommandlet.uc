@@ -1,6 +1,12 @@
 class IGPlus_TestCommandlet extends Commandlet
 	dependson(ClientSettings); // the crosshair layer struct
 
+// bbPlayer.IGPlus_OverCrouchTop for a 39 high body with radius 17.
+function bool CrouchTopCase(float EntryZ, float DirZ, float Duck, bool bOver, float WantZ) {
+	local float Z;
+	return class'bbPlayer'.static.IGPlus_OverCrouchTop(EntryZ, DirZ, 17.0, 39.0, Duck, Z) == bOver && Abs(Z - WantZ) < 0.01;
+}
+
 function LogTestResult(bool Result, string TestName) {
 	if (Result)
 		Log(TestName@"succeeded");
@@ -545,16 +551,16 @@ function TestTickInterp() {
 		&& class'ClientSettings'.static.IntToHeadshotSource(1) == HDSRC_Client
 		&& class'ClientSettings'.default.HeadshotSource == HDSRC_Client,
 		"HeadshotSource_starts_on_client");
-	// The head line of a 39 high body is 24.18 above its middle. Half its
-	// radius of 17 along the shot is 8.5.
-	LogTestResult(class'bbPlayer'.static.IGPlus_ClientHeadRule(25.0, 0.0, 17.0, 39.0, 0.0)
-		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(24.0, 0.0, 17.0, 39.0, 0.0) == false
-		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(25.0, -0.28, 17.0, 39.0, 0.0) == false
-		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(23.0, 0.21, 17.0, 39.0, 0.0)
-		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(38.0, 0.5, 17.0, 39.0, 0.0)
-		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(24.0, 0.21, 17.0, 39.0, 0.5) == false
-		&& class'bbPlayer'.static.IGPlus_ClientHeadRule(11.0, 0.5, 17.0, 39.0, 1.0) == false,
-		"ClientHeadRule_tests_the_head_half_a_radius_along_the_shot_and_not_above_a_crouch");
+	// A 39 high body with radius 17. Half the radius along the shot is 8.5.
+	// The top of a full crouch is 11.7 above the middle, of half a crouch 25.35.
+	LogTestResult(CrouchTopCase(25.0, 0.0, 0.0, false, 25.0)
+		&& CrouchTopCase(25.0, -0.28, 0.0, false, 22.62)
+		&& CrouchTopCase(38.0, 0.5, 0.0, false, 42.25)
+		&& CrouchTopCase(10.8, 0.18, 1.0, true, 11.7)
+		&& CrouchTopCase(10.0, 0.18, 1.0, false, 11.53)
+		&& CrouchTopCase(30.0, -0.28, 0.5, true, 25.35)
+		&& CrouchTopCase(27.0, -0.28, 0.5, false, 24.62),
+		"OverCrouchTop_tests_the_crouch_top_half_a_radius_along_the_shot_as_the_server_does");
 	// Debug data shows nowhere but its log file unless the player asks for it.
 	LogTestResult(class'ClientSettings'.default.DebugDataDisplay == 0,
 		"DebugDataDisplay_starts_off");
