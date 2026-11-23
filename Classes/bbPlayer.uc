@@ -11779,13 +11779,13 @@ function Carcass SpawnCarcass() {
 	return C;
 }
 
-// Server: our own thrown weapon only once it has landed and 1 s has passed.
+// Server: our own thrown weapon only once it has landed and ThrowPickupDelay has passed.
 function bool IGPlus_MayPickUp(Inventory Item) {
 	if (IGPlus_bTossing)
 		return false;
 	if (Item == none || Item != IGPlus_TossedWeapon)
 		return true;
-	return Item.Physics != PHYS_Falling && Level.TimeSeconds - IGPlus_TossedTS >= 1.0 * Level.TimeDilation;
+	return Item.Physics != PHYS_Falling && Level.TimeSeconds - IGPlus_TossedTS >= zzUTPure.Settings.ThrowPickupDelay * Level.TimeDilation;
 }
 
 

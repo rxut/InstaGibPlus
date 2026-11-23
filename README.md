@@ -1428,6 +1428,7 @@ Server settings can be found inside InstaGibPlus.ini.
 1. [bTellSpectators](#btellspectators)
 1. [PlayerPacks](#playerpacks)
 1. [ThrowVelocity](#throwvelocity)
+1. [ThrowPickupDelay](#throwpickupdelay)
 1. [bForceDemo](#bforcedemo)
 1. [bAutoDebugData](#bautodebugdata)
 1. [bRestrictTrading](#brestricttrading)
@@ -1708,6 +1709,14 @@ Determines how server-side hit feedback is handled.
 **Unit: uu/s**  
 
 Horizontal speed with which to throw weapons.
+
+## ThrowPickupDelay
+
+**Type: float**  
+**Default: 1.5**  
+**Unit: s**  
+
+Time after a throw before the thrower can pick the weapon up again. The weapon must also have landed. Other players can pick it up at any time. At the default ThrowVelocity a player running after their throw reaches it after about 1.1 s. A higher ThrowVelocity needs a longer delay.
 
 ## bForceDemo
 
