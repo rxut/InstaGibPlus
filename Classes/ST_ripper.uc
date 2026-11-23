@@ -433,7 +433,10 @@ simulated function SpawnClientSideRazorAt(bool bAlt, rotator ShotView, vector Sh
 	}
 	Razor.RemoteRole = ROLE_None;
 	Razor.SetCollision(false, false, false);
-	Razor.LifeSpan = bbP.PlayerReplicationInfo.Ping * 0.00125 * Level.TimeDilation;
+	// Until the server's blade takes over. Floor as the flak slug's copy: the
+	// ping here reads lower than the trip takes (measured at about 120 ping:
+	// the copy was gone 20 ms before the server's blade came).
+	Razor.LifeSpan = FMax(0.15, bbP.PlayerReplicationInfo.Ping * 0.00125) * Level.TimeDilation;
 	bbP.IGPlus_DemoTrack(Razor);
 }
 
