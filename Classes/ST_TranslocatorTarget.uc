@@ -54,6 +54,25 @@ var bool bUsingHistoricalPosition;
 var EPhysics IGPlus_PreTranslocatePhysics;
 var vector IGPlus_PreTranslocateVelocity;
 var bool IGPlus_PreCollideActors, IGPlus_PreBlockActors, IGPlus_PreBlockPlayers;
+// Server: thrown from a moving lift, the flight near that lift (IGPlus_LiftShot).
+var IGPlus_LiftShot IGPlus_Lift;
+var float IGPlus_ResendUntil;
+
+// Server: that flight is over. Other players flew their copy through their
+// own lift meanwhile: they get our place once more, as for a disc at rest.
+function IGPlus_SetLift(IGPlus_LiftShot LS) {
+	IGPlus_Lift = LS;
+	if (LS == None && Physics != PHYS_None) {
+		RemoteRole = ROLE_DumbProxy;
+		IGPlus_ResendUntil = Level.TimeSeconds + 0.05;
+	}
+}
+
+// Server: something else moves it now, so it flies on its own from here.
+function IGPlus_EndLift() {
+	if (IGPlus_Lift != None)
+		IGPlus_Lift.Finish();
+}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -590,6 +609,7 @@ function IGPlus_DetRewoundStop(vector From, vector To, optional float FromAge, o
 	if (ToAge > 0.0)
 		IGPlus_TruncateHistory(FromAge + HitT * (ToAge - FromAge));
 	IGPlus_DetStoppedBy = Hit;
+	IGPlus_EndLift();
 	SetLocation(NewPos);
 	Velocity = vect(0,0,0);
 	IGPlus_DetNoteTouch("stopped-by-rewound-player", Hit);
@@ -668,6 +688,11 @@ auto state Pickup {
 			// Level.TimeSeconds - DeltaTime.
 			if (IGPlus_HistoryAnchor == 0.0)
 				IGPlus_HistoryAnchor = Level.TimeSeconds - DeltaTime;
+			if (IGPlus_ResendUntil != 0.0 && Level.TimeSeconds >= IGPlus_ResendUntil) {
+				IGPlus_ResendUntil = 0.0;
+				if (Physics != PHYS_None)
+					RemoteRole = ROLE_SimulatedProxy;
+			}
 			Age = TotalSimulationTime + (Level.TimeSeconds - DeltaTime - IGPlus_HistoryAnchor);
 			IGPlus_RecordHistory(Age);
 			// 1ms for float error in the summed frame times
@@ -708,6 +733,13 @@ auto state Pickup {
 	}
 
 	simulated event Landed(vector HitNormal) {
+		// Near a lift: through the real lift, or at rest and on its own.
+		if (IGPlus_Lift != None) {
+			if (IGPlus_Lift.PassLanded(HitNormal))
+				return;
+			IGPlus_EndLift();
+		}
+		IGPlus_ResendUntil = 0.0;
 		super.Landed(HitNormal);
 		IGPlus_bDetPrevLoc = false; // a knock starts a new flight
 		IGPlus_DetStoppedBy = None;
@@ -746,6 +778,9 @@ auto state Pickup {
 	simulated function HitWall(vector HitNormal, actor Wall) {
 		local bool bBounced;
 
+		// Near a lift: nothing between its moves, and through the real lift.
+		if (IGPlus_Lift != None && (IGPlus_Lift.bHeld || IGPlus_Lift.PassHitWall(Wall)))
+			return;
 		// Our own disc, against a door that is out of the way by the time
 		// the server's disc gets there: fly on through our door and let the
 		// server's disc decide, as when a door pushes ours.
@@ -789,6 +824,7 @@ auto state Pickup {
 			return;
 		}
 
+		IGPlus_EndLift();
 		super.TakeDamage(Damage, EventInstigator, HitLocation, Momentum, DamageType);
 
 		// For the [DET-TLOC] lines: who sent our disc flying, and when. A
@@ -900,6 +936,7 @@ auto state Pickup {
 					return;
 					
 				// Stick to the dummy's location
+				IGPlus_EndLift();
 				NewPos = Dummy.Location;
 				NewPos.Z = Location.Z;
 				SetLocation(NewPos);

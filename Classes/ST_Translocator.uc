@@ -493,6 +493,8 @@ function ThrowTarget()
 {
 	local Vector Start, OwnStart, X,Y,Z;
 	local bbPlayer bbP;
+	local IGPlus_LiftShot LS;
+	local bool bLift;
 
 	bbP = bbPlayer(Owner);
 
@@ -511,9 +513,15 @@ function ThrowTarget()
 		Start += bbP.IGPlus_DetThrowSpot - Owner.Location;
 	Pawn(Owner).ViewRotation = Pawn(Owner).AdjustToss(TossForce, Start, 0, true, true);
 	GetAxes(Pawn(owner).ViewRotation,X,Y,Z);
-	TTarget = Spawn(class'ST_TranslocatorTarget',,, Start, IGPlus_DiscRotation());
+	// From a moving lift (3): the thrower's spot can be inside our lift, so
+	// the disc spawns at ours and Throw puts it there, as the thrower's own.
+	bLift = bbP != None && bbP.IGPlus_bDetThrowSpot && bbP.IGPlus_DetThrowRule == 3;
+	if (bLift)
+		TTarget = Spawn(class'ST_TranslocatorTarget',,, OwnStart, IGPlus_DiscRotation());
+	else
+		TTarget = Spawn(class'ST_TranslocatorTarget',,, Start, IGPlus_DiscRotation());
 	// No room for our disc at the thrower's spot: from ours, as before.
-	if (TTarget == None && Start != OwnStart) {
+	if (TTarget == None && Start != OwnStart && bLift == false) {
 		Start = OwnStart;
 		bbP.IGPlus_DetThrowRule = 0;
 		TTarget = Spawn(class'ST_TranslocatorTarget',,, Start, IGPlus_DiscRotation());
@@ -526,7 +534,19 @@ function ThrowTarget()
 		TTarget.DisruptionThreshold = GetWeaponSettings().TranslocatorHealth;
 		if ( Owner.IsA('Bot') )
 			TTarget.SetCollisionSize(0,0);
+		if (bLift) {
+			TTarget.bCollideWorld = false;
+			TTarget.SetCollision(false, false, false);
+		}
 		TTarget.Throw(Pawn(Owner), MaxTossForce, Start);
+		// From a moving lift: against that lift where the thrower's screen has it.
+		if (bLift) {
+			TTarget.bCollideWorld = true;
+			TTarget.SetCollision(TTarget.default.bCollideActors, TTarget.default.bBlockActors, TTarget.default.bBlockPlayers);
+			LS = class'IGPlus_LiftShot'.static.Begin(TTarget, bbP);
+			if (LS != None)
+				LS.Hold();
+		}
 
 		ServerTimeSinceTargetSpawn = 0.0;
 		

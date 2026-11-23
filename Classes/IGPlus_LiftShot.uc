@@ -64,6 +64,8 @@ static function IGPlus_LiftShot Of(Projectile Proj) {
 		return ST_UT_BioGel(Proj).IGPlus_Lift;
 	if (ST_ShockProj(Proj) != None)
 		return ST_ShockProj(Proj).IGPlus_Lift;
+	if (ST_TranslocatorTarget(Proj) != None)
+		return ST_TranslocatorTarget(Proj).IGPlus_Lift;
 	return None;
 }
 
@@ -82,6 +84,8 @@ static function SetFor(Projectile Proj, IGPlus_LiftShot LS) {
 		ST_UT_BioGel(Proj).IGPlus_Lift = LS;
 	else if (ST_ShockProj(Proj) != None)
 		ST_ShockProj(Proj).IGPlus_Lift = LS;
+	else if (ST_TranslocatorTarget(Proj) != None)
+		ST_TranslocatorTarget(Proj).IGPlus_SetLift(LS);
 }
 
 function SetHeldVelocity(vector V) {
@@ -112,9 +116,18 @@ function Hold() {
 	HeldAcceleration = P.Acceleration;
 	HeldLocation = P.Location;
 	SetHeldVelocity(HeldVelocity);
-	P.Velocity = vect(0,0,0);
-	P.Acceleration = vect(0,0,0);
-	P.SetCollision(false, false, false);
+	// A disc can be shot all its life: it keeps its collision and leaves the
+	// world's instead, so no lift meets it, here or in the other players'
+	// games. It keeps its speed too, for those: what that moves it between
+	// our moves, Unhold takes back.
+	if (TranslocatorTarget(P) != None) {
+		P.bCollideWorld = false;
+		P.Disable('ZoneChange');
+	} else {
+		P.Velocity = vect(0,0,0);
+		P.Acceleration = vect(0,0,0);
+		P.SetCollision(false, false, false);
+	}
 	bHeld = true;
 }
 
@@ -132,7 +145,12 @@ function Unhold() {
 	}
 	P.Velocity = HeldVelocity;
 	P.Acceleration = HeldAcceleration;
-	P.SetCollision(P.default.bCollideActors, P.default.bBlockActors, P.default.bBlockPlayers);
+	if (TranslocatorTarget(P) != None) {
+		P.bCollideWorld = true;
+		P.Enable('ZoneChange');
+	} else {
+		P.SetCollision(P.default.bCollideActors, P.default.bBlockActors, P.default.bBlockPlayers);
+	}
 	bHeld = false;
 }
 
@@ -204,7 +222,11 @@ function Fly(float Delta, float AheadMs, optional bool bLive) {
 	// mean of its speed before and after.
 	V0 = P.Velocity;
 	V = V0 + P.Acceleration * Delta;
-	if (P.Physics == PHYS_Falling) {
+	if (P.Physics == PHYS_Falling && P.bBounce && TranslocatorTarget(P) != None) {
+		// A disc that still has its bounce falls at half the gravity (rig).
+		V = V0 + 0.5 * (P.Acceleration + P.Region.Zone.ZoneGravity) * Delta;
+		E = S + V * Delta;
+	} else if (P.Physics == PHYS_Falling) {
 		V += P.Region.Zone.ZoneGravity * Delta;
 		E = S + 0.5 * (V0 + V) * Delta;
 	} else {

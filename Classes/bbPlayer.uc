@@ -528,7 +528,7 @@ var byte IGPlus_DetTlocPrePhys, IGPlus_DetTlocPreClientPhys;
 var string IGPlus_DetTlocInfo;        // the last translocate's disc details
 // Server: during a throw's step, where its disc leaves from
 // (IGPlus_DetThrowOrigin), and which rule took the client's spot
-// (0 none: our own spot, 1 Push-Safe Aim, 2 the 32uu bubble).
+// (0 none: our own spot, 1 Push-Safe Aim, 2 the 32uu bubble, 3 a moving lift).
 var vector IGPlus_DetThrowSpot;
 var bool IGPlus_bDetThrowSpot;
 var int IGPlus_DetThrowRule;
@@ -6177,14 +6177,25 @@ function vector IGPlus_ClientMoveStart(IGPlus_ServerMove SM, float PrevTS) {
 // when Push-Safe Aim takes that spot (a push the client hadn't seen yet), or
 // when it is within 32uu of ours with a clear line (like a landing,
 // IGPlus_DetTakeClientLanding). Else from our own spot, and the thrower gets
-// our disc's path (IGPlus_DetAfterThrow). Not on a lift: there the client's
-// spot is inside our lift.
+// our disc's path (IGPlus_DetAfterThrow). Both on a moving lift: a lift lead
+// back, as the other projectiles. On a lift otherwise: from our own spot.
 function vector IGPlus_DetThrowOrigin(IGPlus_ServerMove SM, float PrevTS, int MergeCount) {
-	local vector Origin, ClientStart, Eye;
+	local vector Origin, ClientStart, Eye, Lead;
 	local float Dist;
 
 	IGPlus_DetThrowRule = 0;
-	if (IsInState('Dying') || MergeCount != 0 || Mover(Base) != none || Mover(SM.ClientBase) != none)
+	if (IsInState('Dying') || MergeCount != 0)
+		return Location;
+	if (Mover(Base) != none && SM.ClientBase == Base) {
+		IGPlus_ShotLift = None;
+		IGPlus_bShotLead = false;
+		Lead = IGPlus_LiftAimLead();
+		if (Lead != vect(0,0,0)) {
+			IGPlus_DetThrowRule = 3;
+			return Location - Lead;
+		}
+	}
+	if (Mover(Base) != none || Mover(SM.ClientBase) != none)
 		return Location;
 	Origin = IGPlus_PSAShotOrigin(SM, PrevTS, MergeCount);
 	if (Origin != Location) {
@@ -6209,7 +6220,8 @@ function vector IGPlus_DetThrowOrigin(IGPlus_ServerMove SM, float PrevTS, int Me
 // 4uu off: the thrower gets our disc's path at once, so its own follows ours
 // from the start instead of landing that far off, and a [DET-TLOC] line says
 // so. Not sent on a lift (left as it was), where the client's spot rides our
-// lift and its screen has the lift, and itself, a round trip back.
+// lift and its screen has the lift, and itself, a round trip back. A throw
+// from a moving lift left from the screen's spot: no gap.
 function IGPlus_DetAfterThrow(IGPlus_ServerMove SM, float PrevTS) {
 	local ST_Translocator TL;
 	local vector Gap;
