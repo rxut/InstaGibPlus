@@ -45,6 +45,21 @@ function FillData(out ProjectileData D) {
     D.bSnapBlockActors = Actual.bBlockActors;
     D.bSnapBlockPlayers = Actual.bBlockPlayers;
     D.bSnapProjTarget = Actual.bProjTarget;
+    if (IGPlus_HeldBall()) {
+        D.Vel = ST_ShockProj(Actual).IGPlus_FlightVel();
+        D.bSnapCollideActors = Actual.default.bCollideActors;
+        D.bSnapBlockActors = Actual.default.bBlockActors;
+        D.bSnapBlockPlayers = Actual.default.bBlockPlayers;
+    }
+}
+
+// A shock ball near a lift stands still with no collision between its moves
+// (IGPlus_LiftShot): for a beam it flies and collides like any other.
+function bool IGPlus_HeldBall() {
+    local ST_ShockProj B;
+
+    B = ST_ShockProj(Actual);
+    return B != none && B.IGPlus_Lift != none && B.IGPlus_Lift.bHeld;
 }
 
 // Leave the list on any destroy. Once enough destroyed actors wait for
@@ -225,7 +240,10 @@ function CompSwapAt(vector Loc) {
     SetLocation(Loc);
     if (CollisionRadius != Actual.CollisionRadius || CollisionHeight != Actual.CollisionHeight)
         SetCollisionSize(Actual.CollisionRadius, Actual.CollisionHeight);
-    SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
+    if (IGPlus_HeldBall())
+        SetCollision(Actual.default.bCollideActors, Actual.default.bBlockActors, Actual.default.bBlockPlayers);
+    else
+        SetCollision(WasColliding, WasBlockingActors, WasBlockingPlayers);
     bProjTarget = WasProjTarget;
 
     bCompActive = true;

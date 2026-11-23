@@ -1469,7 +1469,7 @@ simulated function Actor TraceShotInternal(
 				if ((A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors)) {
 					// If compensated muzzle origin clips into the instigator's own mover, skip
 					// only the immediate self-base hit so the ray can continue normally.
-					if (A == PawnOwner.Base && Mover(A) != None && bbPlayer(PawnOwner) != None
+					if (Mover(A) != None && bbPlayer(PawnOwner) != None && A == bbPlayer(PawnOwner).IGPlus_OwnLift()
 						&& bbPlayer(PawnOwner).IGPlus_OwnLiftShotShift != vect(0,0,0))
 						continue;
 					if (bCompensated && A == PawnOwner.Base && Mover(A) != None) {

@@ -218,7 +218,7 @@ function HandleDetServerFire(bool bAlt, rotator StepView, vector StepLoc) {
 	if (bAlt) {
 		if (!bChangeWeapon && !IsInState('DownWeapon'))
 			DetPlayServerFireAnim(true);
-		Ball = DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
+		Ball = IGPlus_DetFireBall(StepLoc, StepView);
 		if (bbPlayer(Owner) != None)
 			bbPlayer(Owner).IGPlus_NoteOwnBall(ST_ShockProj(Ball), bbPlayer(Owner).CurrentTimeStamp);
 	} else {
@@ -239,6 +239,34 @@ function DetPlayServerFireAnim(bool bAlt) {
 		PlayOwnedSound(FireSound, SLOT_None, Pawn(Owner).SoundDampening*4.0);
 		PlayAnim('Fire1', 0.30 + 0.30 * FireAdjust, 0.05);
 	}
+}
+
+// Around a moving lift our ball leaves from where our client's screen has us
+// (bbPlayer.IGPlus_OwnLiftLead), like the other projectiles, so the ball that
+// hits and blasts is the one on that screen. On the lift it meets that lift
+// where the screen has it (IGPlus_LiftShot). Only for a client that draws its
+// own ball from its own weapon (Predictive Shock Combos). Else, and when there
+// is no room for a ball there, from our own spot as before.
+function Projectile IGPlus_DetFireBall(vector StepLoc, rotator StepView) {
+	local bbPlayer P;
+	local vector Lead;
+	local ST_ShockProj Ball;
+	local IGPlus_LiftShot LS;
+
+	P = bbPlayer(Owner);
+	if (P != None && P.RemoteRole == ROLE_AutonomousProxy && IsPingCompEnabled()
+		&& P.IGPlus_PredictiveShockCombos() && P.IGPlus_EnableInputReplication == false)
+		Lead = P.IGPlus_OwnLiftLead();
+	if (VSize(Lead) > 2.0)
+		Ball = ST_ShockProj(DeterministicProjectileFire(AltProjectileClass, StepLoc - Lead, StepView));
+	if (Ball == None)
+		return DeterministicProjectileFire(AltProjectileClass, StepLoc, StepView);
+	Ball.IGPlus_FireLiftLead = vect(0,0,0);
+	Ball.IGPlus_bLiftShot = true;
+	LS = class'IGPlus_LiftShot'.static.Begin(Ball, P);
+	if (LS != None)
+		LS.Hold();
+	return Ball;
 }
 
 function Projectile DeterministicProjectileFire(class<projectile> ProjClass, vector ShotLoc, rotator ShotRot) {
@@ -850,7 +878,7 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	bBotSpecialMove = false;
 
 	if (LiftLead != vect(0,0,0)) {
-		bLiftHit = bbP.IGPlus_TraceMover(Mover(PawnOwner.Base), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
+		bLiftHit = bbP.IGPlus_TraceMover(bbP.IGPlus_OwnLift(), StartTrace + LiftLead, EndTrace + LiftLead, LiftHitLoc, LiftHitNormal);
 		if (bLiftHit) {
 			LiftHitLoc -= LiftLead;
 			EndTrace = LiftHitLoc;
@@ -875,7 +903,7 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 	if (LiftLead != vect(0,0,0)) {
 		bbP.IGPlus_OwnLiftShotShift = vect(0,0,0);
 		if (bLiftHit && Other == None) {
-			Other = PawnOwner.Base;
+			Other = bbP.IGPlus_OwnLift();
 			HitLocation = LiftHitLoc;
 			HitNormal = LiftHitNormal;
 		}
