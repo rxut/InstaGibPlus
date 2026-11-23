@@ -81,7 +81,7 @@ simulated event Actor SpawnNotification(Actor A) {
 			HoldState[i] = 1;
 			break;
 		}
-	// ponytail: 32 arrivals in one frame (a flak volley is 8), more fly as before
+	// 32 arrivals in one frame (a flak volley is 8), more fly as before
 	return A;
 }
 

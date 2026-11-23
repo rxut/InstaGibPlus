@@ -352,7 +352,7 @@ simulated function IGPlus_PathEvent(bool bLanded) {
 			ST_Translocator(Master).IGPlus_DetServerDiscChanged(self, 0.0, true);
 		}
 		else { // where it ends this frame, from the next Tick
-			// ponytail: 50ms apart, a disc rattling in a corner bounces every frame
+			// 50ms apart, a disc rattling in a corner bounces every frame
 			IGPlus_SyncAge = FMax(IGPlus_SyncAge, FMax(IGPlus_CurrentAge(), IGPlus_LastSyncAge + 0.05));
 			Enable('Tick'); // a resting disc pushed by a door: Landed switched it off
 		}
@@ -399,7 +399,7 @@ simulated function IGPlus_EaseFromSpot(vector Drawn, optional bool bShot) {
 
 	MaxGlide = 64.0;
 	if (bShot)
-		MaxGlide = 320.0; // ponytail: direct hits at ~150 ping correct 170-300uu
+		MaxGlide = 320.0; // Direct hits at ~150 ping correct 170-300uu
 	IGPlus_EaseFrom = Drawn - Location;
 	if (VSize(IGPlus_EaseFrom) > MaxGlide || Trace(HitLocation, HitNormal, Drawn, Location, false) != None)
 		IGPlus_EaseFrom = vect(0,0,0);
@@ -670,7 +670,7 @@ auto state Pickup {
 				IGPlus_HistoryAnchor = Level.TimeSeconds - DeltaTime;
 			Age = TotalSimulationTime + (Level.TimeSeconds - DeltaTime - IGPlus_HistoryAnchor);
 			IGPlus_RecordHistory(Age);
-			// ponytail: 1ms for float error in the summed frame times
+			// 1ms for float error in the summed frame times
 			if (IGPlus_SyncAge > 0.0 && Age >= IGPlus_SyncAge - 0.001) {
 				IGPlus_SyncAge = 0.0;
 				IGPlus_LastSyncAge = Age;

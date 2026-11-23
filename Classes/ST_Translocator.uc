@@ -779,7 +779,7 @@ function IGPlus_MoveDiscToSeenAge(ST_TranslocatorTarget STTarget, bbPlayer bbP, 
 	local vector HistoricalLocation;
 	local byte HistoricalLanded;
 
-	// ponytail: +-0.2s bounds how far a client clock can move the lookup
+	// +-0.2s bounds how far a client clock can move the lookup
 	TimeSinceThrow = FClamp(
 		bbP.CurrentTimeStamp - IGPlus_ThrowTS,
 		ServerTimeSinceTargetSpawn - Late - 0.2,
@@ -1379,7 +1379,7 @@ function IGPlus_DetFlyAhead(ST_TranslocatorTarget T, float Late) {
 	local float Done, Step;
 	local bool bColActors, bBlkActors, bBlkPlayers;
 
-	// ponytail: 0.5s at most, the resend's own limit is 1s
+	// 0.5s at most, the resend's own limit is 1s
 	Late = FMin(Late, 0.5);
 	bColActors = T.bCollideActors;
 	bBlkActors = T.bBlockActors;
@@ -1513,7 +1513,7 @@ function IGPlus_DetSyncAfter(float DiscTS, float Age, optional bool bConfirm) {
 		IGPlus_DetLog("client-only-bounce", "clientBounceAge="$Age);
 	if (T.Physics == PHYS_None || T.IGPlus_CurrentAge() >= Age)
 		IGPlus_DetServerDiscChanged(T);
-	else // ponytail: waits at most 0.2s for a client clock running ahead
+	else // Waits at most 0.2s for a client clock running ahead
 		T.IGPlus_SyncAge = FMax(T.IGPlus_SyncAge, FMin(Age, T.IGPlus_CurrentAge() + 0.2));
 }
 
@@ -1542,7 +1542,7 @@ simulated function IGPlus_DetConfirmAfterPush() {
 // Client: our disc bounced or landed (ST_TranslocatorTarget.IGPlus_PathEvent).
 // Later: ask for the server's disc that much older than ours is now.
 simulated function IGPlus_DetLocalDiscBounced(optional float Later) {
-	// ponytail: one ask per 50ms, a disc grinding along a ledge bounces every frame
+	// One ask per 50ms, a disc grinding along a ledge bounces every frame
 	if (bbPlayer(Owner) == None || Level.TimeSeconds - IGPlus_DetLastSyncAskTS < 0.05)
 		return;
 	IGPlus_DetLastSyncAskTS = Level.TimeSeconds;
@@ -1708,7 +1708,7 @@ function Actor IGPlus_DetOwnBeam(bbPlayer P, Actor Other, vector Start, out vect
 	if (Other != None)
 		MaxDist = VSize(HitLocation - Start);
 	SeenLoc = IGPlus_DetSeenLocation(T, P);
-	// ponytail: 8uu of slack around the disc, so a cheat gains 8uu on its own disc only
+	// 8uu of slack around the disc, so a cheat gains 8uu on its own disc only
 	if (IGPlus_RayHitsCylinder(Start, Dir, MaxDist, SeenLoc, T.CollisionRadius + 8.0, T.CollisionHeight + 8.0)) {
 		T.IGPlus_OwnShotAge = IGPlus_DetSeenAge(P);
 		T.IGPlus_OwnShotFrame = Level.TimeSeconds;
