@@ -144,10 +144,6 @@ simulated function PostNetBeginPlay()
 {
 	local PlayerPawn In;
 	local ST_UTChunk FakeChunk;
-	local vector FakeLocation;
-	local vector FakeVelocity;
-	local EPhysics FakePhysics;
-	local bool bFoundFake;
 
 	super.PostNetBeginPlay();
 
@@ -172,36 +168,24 @@ simulated function PostNetBeginPlay()
 			{
 				if (FakeChunk != self && FakeChunk.bClientVisualOnly && FakeChunk.ChunkIndex == ChunkIndex)
 				{
-					// Store fake's current state for smooth hand-off
-					FakeLocation = FakeChunk.Location;
-					FakeVelocity = FakeChunk.Velocity;
-					FakePhysics = FakeChunk.Physics;
-					bFoundFake = true;
-
 					// Destroy the trail first
 					if (FakeChunk.Trail != None)
 					{
 						FakeChunk.Trail.Destroy();
 						FakeChunk.Trail = None;
 					}
-
 					FakeChunk.bHidden = true;
-					FakeChunk.Destroy();
+
+					// On from our copy's spot, as our copy flew (IGPlus_OwnCopy):
+					// after a bounce that is falling, which also ends the
+					// lead move. A copy that came to rest: it rests there.
+					if (class'IGPlus_OwnCopy'.static.TakeOver(self, FakeChunk, vect(0,0,0)) == false)
+						SetPhysics(PHYS_None);
+					IGPlus_HeldVelocity = vect(0,0,0); // ours, not the server's start
+					// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
+					ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
 					break;
 				}
-			}
-
-			// Teleport real chunk to where the fake was, with fake's state
-			if (bFoundFake)
-			{
-				SetLocation(FakeLocation);
-				// Copy fake's velocity - critical if fake has bounced off a wall
-				Velocity = FakeVelocity;
-				IGPlus_HeldVelocity = vect(0,0,0); // ours, not the server's start
-				// Copy fake's physics mode - stops extrapolation if fake has bounced (PHYS_Falling)
-				SetPhysics(FakePhysics);
-				// Pre-initialize ExtrapolationDelta so the first Tick doesn't cause a jump
-				ExtrapolationDelta = (Velocity * class'bbPlayer'.static.IGPlus_OwnProjLead(InstigatingPlayer));
 			}
 		}
 	} else if (IGPlus_HeldVelocity == vect(0,0,0)) {
