@@ -44,6 +44,7 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bHitSoundPitchShift](#bhitsoundpitchshift)
 1. [bHitSoundTeamPitchShift](#bhitsoundteampitchshift)
 1. [HitSoundSource](#hitsoundsource)
+1. [HeadshotSource](#headshotsource)
 1. [SelectedHitSound](#selectedhitsound)
 1. [SelectedTeamHitSound](#selectedteamhitsound)
 1. [HitSoundVolume](#hitsoundvolume)
@@ -269,6 +270,17 @@ Selects where hit sound events come from.
 * `HSSRC_Client` ➜ Use client-side hit detection (instant but can be inaccurate).
 
 `HSSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG and NextSA. With those two your own trace plays the sound at the click. With [bEnablePingCompensation](#benablepingcompensation) on, that trace tests the other players where the server will place them for your shot, which can be a few units from where your screen draws a player who just changed direction. The server still decides the hit. A sound can play for a shot the server counts as a miss, and a hit only the server saw plays its sound a ping late. With every other weapon the hit sound is the server's.
+
+## HeadshotSource
+**Type: EHeadshotSource**  
+**Default: HDSRC_Client**  
+
+When the "Head Shot" message and its sound play for a headshot kill with your sniper rifle. It applies to the rifle of NextSA. With every other sniper rifle the message is the server's.
+
+* `HDSRC_Client`: the message plays at the click, from your own trace. It plays only where your game expects the shot to kill: an enemy with no armor and no more health than a headshot takes. In every other case the server's message plays a ping later. When the server then counts no headshot kill, the message was played for nothing.
+* `HDSRC_Server`: the message plays once the server has counted the kill, a ping later. It never plays for a kill the server did not count.
+
+The server still decides every hit and every kill.
 
 ## SelectedHitSound
 **Type: int**  
