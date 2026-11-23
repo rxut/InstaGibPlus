@@ -23,6 +23,8 @@ var bool bMoving;           // inside Fly: contacts with the real lift go throug
 var bool bContact;          // delivering the contact with the screen's lift
 var vector MoveEnd;
 var bool bLandingPassed;    // went through the real lift on landing
+var bool bPassed;           // went through the real lift in this move, to its end
+var bool bBlocked;          // met something else in this move
 var vector PassVelocity;
 
 // P (the shooter) fired Proj from a moving lift. The caller holds it after
@@ -170,9 +172,9 @@ function vector LeadOver(float LagAgoMs) {
 // lift was at its start to where it is at its end, else a lift rising past
 // the projectile between two moves never meets it.
 function Fly(float Delta, float AheadMs, optional bool bLive) {
-	local vector D0, D1, D, S, E, V, HL, HN, At;
+	local vector D0, D1, D, S, E, V, V0, HL, HN, At;
 	local float DtMs, Lag0, Frac;
-	local bool bHit;
+	local bool bHit, bOldCollideWorld;
 
 	DtMs = Delta * 1000.0 / Level.TimeDilation;
 	if (bLive)
@@ -188,10 +190,16 @@ function Fly(float Delta, float AheadMs, optional bool bLive) {
 		return;
 	}
 	S = P.Location;
-	V = P.Velocity + P.Acceleration * Delta;
-	if (P.Physics == PHYS_Falling)
+	// Its speed at the end of the move. A falling one covers the move at the
+	// mean of its speed before and after.
+	V0 = P.Velocity;
+	V = V0 + P.Acceleration * Delta;
+	if (P.Physics == PHYS_Falling) {
 		V += P.Region.Zone.ZoneGravity * Delta;
-	E = S + V * Delta;
+		E = S + 0.5 * (V0 + V) * Delta;
+	} else {
+		E = S + V * Delta;
+	}
 	if (D0 != vect(0,0,0) || D1 != vect(0,0,0))
 		bHit = Shooter.IGPlus_TraceMover(Lift, S + D0, E + D1, HL, HN, Extent());
 	Frac = 1.0;
@@ -202,6 +210,8 @@ function Fly(float Delta, float AheadMs, optional bool bLive) {
 
 	bMoving = true;
 	bLandingPassed = false;
+	bPassed = false;
+	bBlocked = false;
 	MoveEnd = At;
 	if (Frac > 0.0)
 		P.AutonomousPhysics(Delta * Frac);
@@ -211,6 +221,20 @@ function Fly(float Delta, float AheadMs, optional bool bLive) {
 	if (bLandingPassed) {
 		P.SetPhysics(PHYS_Falling);
 		P.Velocity = PassVelocity;
+	}
+	// It went through the real lift and met nothing else: this move ends
+	// where and as fast as it would have with no lift in the way. Left as the
+	// meeting leaves it, a falling one has only half of the move's gravity
+	// (measured), and a shot that starts inside the real lift meets it for
+	// several moves in a row: it flew a flatter arc than the shooter saw.
+	if (bPassed && bBlocked == false && P.Physics != PHYS_None) {
+		if (P.Location != MoveEnd) {
+			bOldCollideWorld = P.bCollideWorld;
+			P.bCollideWorld = false;
+			P.SetLocation(MoveEnd);
+			P.bCollideWorld = bOldCollideWorld;
+		}
+		P.Velocity = V0 + (V - V0) * Frac;
 	}
 	// Reached it, unless something else turned it first.
 	if (bHit && VSize(P.Location - At) < 8.0)
@@ -262,8 +286,12 @@ function Contact(vector HL, vector HN, vector D) {
 // Projectile hooks: the real lift is ahead of the one the shooter's screen
 // has. True: handled, the projectile carries on.
 function bool PassHitWall(Actor Wall) {
-	if (Wall == None || Wall != Lift || bMoving == false || bContact)
+	if (Wall == None || Wall != Lift || bMoving == false || bContact) {
+		// Something else in this move: it is not put back after it.
+		if (bMoving && bContact == false)
+			bBlocked = true;
 		return false;
+	}
 	GoThrough();
 	return true;
 }
@@ -273,8 +301,10 @@ function bool PassLanded(vector HitNormal) {
 
 	if (bMoving == false || bContact)
 		return false;
-	if (P.Trace(HL, HN, P.Location - 16.0 * HitNormal, P.Location, false) != Lift)
+	if (P.Trace(HL, HN, P.Location - 16.0 * HitNormal, P.Location, false) != Lift) {
+		bBlocked = true;
 		return false;
+	}
 	// Not falling any more, so the engine does not stop it (Fly puts it back).
 	PassVelocity = P.Velocity;
 	bLandingPassed = true;
@@ -301,6 +331,7 @@ function GoThrough() {
 			P.SetLocation(HL + 2.0 * HN);
 			P.bCollideWorld = bOldCollideWorld;
 			bMoving = false;
+			bBlocked = true;
 			if (bLandingPassed) {
 				bLandingPassed = false;
 				P.SetPhysics(PHYS_Falling);
@@ -313,6 +344,7 @@ function GoThrough() {
 	P.bCollideWorld = false;
 	P.SetLocation(MoveEnd);
 	P.bCollideWorld = bOldCollideWorld;
+	bPassed = true;
 }
 
 defaultproperties {
