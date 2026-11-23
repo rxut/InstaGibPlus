@@ -492,6 +492,7 @@ var vector IGPlus_LastLiftSpot;
 var Mover IGPlus_ShotLift;
 var vector IGPlus_ShotLead;
 var bool IGPlus_bShotLead;
+var float IGPlus_LiftLateAvg;          // server: how late our moves usually run (IGPlus_MoveLate), about the last half second
 var int IGPlus_HitStatOriginFar;     // rifle and sniper shots fired while the two were further apart than close
 var float IGPlus_HitStatOriginGapMax;
 
@@ -4870,27 +4871,35 @@ function vector IGPlus_LiftAimLead() {
 
 // Server: how long ago our screen's lift was where it is now, for the move
 // being run, in real ms, capped like the rest of ping compensation.
-// PingAverage is measured by our client, as an average, and holds about 4/3 of
-// one of its frames that the lift on its screen does not have (measured at 57
-// to 120 fps against 64 and 128 server ticks). So that goes off, and this
-// move's own lateness comes on (IGPlus_ABBase, the arrival measure).
+// PingAverage is measured by our client, as an average. Against the lift on
+// its screen it is long by about 4/3 of one of its frames and short by about
+// 0.6 of a server tick (measured at 57 to 120 fps against 64 and 128 ticks).
+// And this move came earlier or later than this client's moves usually do
+// (IGPlus_MoveLate against IGPlus_LiftLateAvg, the arrival measure).
 function float IGPlus_OwnLiftLagMs() {
-	local float Late;
-
 	if (PingAverage <= 0)
 		return 0.0;
-	// ponytail: no measure yet (the first seconds): the usual lateness, 0.6 of a tick
-	Late = 0.6 * IGPlus_ABTickLen;
-	if (IGPlus_ABHaveMin && Level.TimeSeconds - IGPlus_ABMeasureStart >= IGPLUS_AB_WARMUP)
-		Late = FClamp(IGPlus_ABBase() - CurrentTimeStamp, 0.0, 0.25 * Level.TimeDilation);
-	return IGPlus_LiftLagMs(float(PingAverage), 1000.0 * Late / Level.TimeDilation,
+	return IGPlus_LiftLagMs(float(PingAverage),
+		1000.0 * (IGPlus_MoveLate(CurrentTimeStamp) - IGPlus_LiftLateAvg) / Level.TimeDilation,
+		1000.0 * IGPlus_ABTickLen / Level.TimeDilation,
 		1000.0 * IGPlus_ABMoveLen / Level.TimeDilation, float(GetWeaponSettings().PingCompensationMax));
 }
 
 const IGPLUS_LIFT_LAG_FRAMES = 1.33;
+const IGPLUS_LIFT_LAG_TICKS = 0.6;
 
-static function float IGPlus_LiftLagMs(float PingMs, float LateMs, float FrameMs, float MaxMs) {
-	return FClamp(PingMs + LateMs - IGPLUS_LIFT_LAG_FRAMES * FrameMs, 0.0, MaxMs);
+// LateMs: this move's lateness less the usual one.
+static function float IGPlus_LiftLagMs(float PingMs, float LateMs, float TickMs, float FrameMs, float MaxMs) {
+	return FClamp(PingMs + LateMs + IGPLUS_LIFT_LAG_TICKS * TickMs - IGPLUS_LIFT_LAG_FRAMES * FrameMs, 0.0, MaxMs);
+}
+
+// Server: how late the move with this time stamp is, run now, against the
+// earliest this client's moves have come lately (the arrival measure of
+// Adaptive Buffering). Before that measure counts: the usual lateness.
+function float IGPlus_MoveLate(float MoveTS) {
+	if (IGPlus_ABHaveMin && Level.TimeSeconds - IGPlus_ABMeasureStart >= IGPLUS_AB_WARMUP)
+		return FClamp(IGPlus_ABBase() - MoveTS, 0.0, 0.25 * Level.TimeDilation);
+	return IGPlus_LiftLateAvg;
 }
 
 // Where Start->End first meets Lift, nothing else counted. Our lift where our
@@ -6600,6 +6609,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		IGPlus_LastLiftTime = Level.TimeSeconds;
 		IGPlus_LastLiftSpot = Location - Base.Location;
 	}
+	IGPlus_LiftLateAvg += (IGPlus_MoveLate(SM.TimeStamp) - IGPlus_LiftLateAvg) * 0.02;
 	LastServerMoveParams.Location = SM.ClientLocation;
 	LastServerMoveParams.Base = SM.ClientBase;
 	LastServerMoveParams.Physics = ClientPhysics;

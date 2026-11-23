@@ -538,13 +538,14 @@ function TestTickInterp() {
 		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(5,0,30), vect(0,0,45)) == false
 		&& class'bbPlayer'.static.IGPlus_LiftGapTakes(vect(0,0,1), vect(0,0,1.5)) == false,
 		"ShotOrigin_a_client_spot_past_the_lift_travel_ahead_of_us_or_beside_the_path_does_not_count");
-	// The lift lag: the client's ping less 4/3 of its frame, plus this move's
-	// lateness, never under 0 and never over the ping compensation cap.
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_LiftLagMs(113.0, 9.0, 9.0, 200.0) - 110.03) < 0.01
-		&& Abs(class'bbPlayer'.static.IGPlus_LiftLagMs(113.0, 8.0, 17.6, 200.0) - 97.592) < 0.01
-		&& class'bbPlayer'.static.IGPlus_LiftLagMs(10.0, 0.0, 17.6, 200.0) == 0.0
-		&& class'bbPlayer'.static.IGPlus_LiftLagMs(250.0, 9.0, 9.0, 200.0) == 200.0,
-		"LiftLag_ping_less_the_client_frame_plus_the_move_lateness_inside_the_cap");
+	// The lift lag: the client's ping less 4/3 of its frame, plus 0.6 of a
+	// server tick, plus how much later than usual this move came, never
+	// under 0 and never over the ping compensation cap.
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_LiftLagMs(113.0, 0.0, 16.6, 9.0, 200.0) - 110.99) < 0.01
+		&& Abs(class'bbPlayer'.static.IGPlus_LiftLagMs(113.0, -4.0, 8.3, 17.6, 200.0) - 90.572) < 0.01
+		&& class'bbPlayer'.static.IGPlus_LiftLagMs(10.0, 0.0, 8.3, 17.6, 200.0) == 0.0
+		&& class'bbPlayer'.static.IGPlus_LiftLagMs(250.0, 9.0, 16.6, 9.0, 200.0) == 200.0,
+		"LiftLag_ping_less_the_client_frame_plus_the_tick_and_the_move_lateness_inside_the_cap");
 	// We stepped off a lift the client still rides: only right after we stood
 	// on it, with the client at the height we stood at and no further from
 	// us sideways than we went since.
