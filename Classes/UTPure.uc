@@ -695,7 +695,9 @@ function IGPlus_UnlinkProjDummy(ST_ProjectileDummy PD) {
 // bHitscan: the deterministic translocator's own disc is tested where its
 // thrower saw it (ST_Translocator.IGPlus_DetOwnShotLocation), not ping-rewound.
 // bQuiet: no debug line (the deterministic disc's sweep, every tick or move).
-function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan, optional bool bQuiet) {
+// bShot: a weapon's own shot trace, with nothing but the trace before
+// EndCompensation. Every lift and door that moves goes back for it.
+function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitscan, optional bool bQuiet, optional bool bShot) {
     local UTPlusDummy D;
 	local ST_ProjectileDummy PD;
 	local ST_MoverDummy MD;
@@ -708,6 +710,8 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	local int ExtraMs, ProjPing, LiftPing;
 	local string MostMovedName;
 	local Actor KeptBase;
+	local Mover ShooterLift;
+	local vector LiftHitLoc, LiftHitNormal;
 
 	bCompensationIsActive = true;
 	if (bbPlayer(Instigator) != none)
@@ -736,6 +740,29 @@ function CompensateFor(int Ping, optional Pawn Instigator, optional bool bHitsca
 	for (D = CompDummies; D != none; D = D.Next)
 		if (D.Actual != none)
 			D.IGPlus_CompBase = D.Actual.Base;
+
+	// A shot: every lift and door that moves goes back, not only one a target
+	// stands on. The shooter's screen had them all where they were then, and
+	// the one in the way of the shot blocks it. Before, a player who had just
+	// jumped off a lift was tested against the live lift, 30 to 40 units from
+	// the one on the shooter's screen. Rig, shots in the first 0.2 s after the
+	// jump that the screen and the server disagreed on: from below 6 of 12
+	// before and 0 of 18 now, at foot height 12 of 21 and 0 of 19.
+	// Only while it moves and never the shooter's own, as below. The
+	// shooter's own is also the one right under them when they stand on
+	// nothing: just jumped off it, about to land on it, or pushed up by it.
+	// Moved back, a lift going down would come up into them.
+	if (bShot) {
+		if (Instigator != none) {
+			ShooterLift = Mover(ShooterBase);
+			if (ShooterLift == none)
+				ShooterLift = Mover(Instigator.Trace(LiftHitLoc, LiftHitNormal,
+					Instigator.Location - vect(0,0,1) * (Instigator.CollisionHeight + 100.0), Instigator.Location, true));
+		}
+		for (MD = MoverDummies; MD != none; MD = MD.Next)
+			if (MD.Actual != none && MD.Actual.bInterpolating && MD.Actual != ShooterLift)
+				MD.CompStart(LiftPing);
+	}
 
 	// Precise Rewind Time: a hitscan shot's players where the shooter's
 	// screen drew them. Only on its own rewind (a capped combo rewind isn't).

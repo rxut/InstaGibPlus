@@ -9167,7 +9167,7 @@ function Actor TraceShot(out vector HitLocation, out vector HitNormal, vector En
 		WImpBase = IGPlus_GetWeaponImplementationBase();
 		if (WImpBase != None)
 			RewindMs = int(WImpBase.IGPlus_GetHitscanRewindMs(self));
-		zzUTPure.CompensateFor(RewindMs, self, true);
+		zzUTPure.CompensateFor(RewindMs, self, true, , true);
 		
 		foreach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace) {	
 			if (A == self) {
