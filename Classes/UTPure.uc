@@ -1362,6 +1362,10 @@ function bool HandlePickupQuery(Pawn Other, Inventory Item, out byte bAllowPicku
 {
 	local bool bResult;
 
+	if (bbPlayer(Other) != none && bbPlayer(Other).IGPlus_MayPickUp(Item) == false) {
+		bAllowPickup = 0;
+		return true;
+	}
 	bResult = Super.HandlePickupQuery(Other, Item, bAllowPickup);
 	if (bbPlayer(Other) != none)
 		bbPlayer(Other).IGPlus_SDNotePickupQuery(Item);
