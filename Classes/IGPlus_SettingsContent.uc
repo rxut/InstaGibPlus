@@ -333,6 +333,10 @@ var localized string MoreInformationText;
 	var localized string HeadshotSourceText;
 	var localized string HeadshotSourceHelp;
 
+	var UWindowCheckbox Chk_LostTradeNotification;
+	var localized string LostTradeNotificationText;
+	var localized string LostTradeNotificationHelp;
+
 	var localized string HitSourceServer;
 	var localized string HitSourceClient;
 
@@ -1025,6 +1029,7 @@ function Created() {
 	SetUpHitSourceComboBox(Cmb_HitSoundSource);
 	Cmb_HeadshotSource = CreateComboBox(HeadshotSourceText, HeadshotSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HeadshotSource);
+	Chk_LostTradeNotification = CreateCheckbox(LostTradeNotificationText, LostTradeNotificationHelp);
 
 	Lbl_EnemyHitSounds = CreateSeparator(EnemyHitSoundsLblText);
 	Chk_EnableHitSounds = CreateCheckbox(EnableHitSoundsText, EnableHitSoundsHelp);
@@ -1198,6 +1203,7 @@ function Load() {
 
 	Cmb_HitSoundSource.SetSelectedIndex(Clamp(Settings.HitSoundSource, 0, 1));
 	Cmb_HeadshotSource.SetSelectedIndex(Clamp(Settings.HeadshotSource, 0, 1));
+	Chk_LostTradeNotification.bChecked = Settings.bLostTradeNotification;
 
 	Chk_EnableHitSounds.bChecked = Settings.bEnableHitSounds;
 	Chk_HitSoundPitchShift.bChecked = Settings.bHitSoundPitchShift;
@@ -1446,6 +1452,7 @@ function Save() {
 
 	Settings.HitSoundSource = Settings.IntToHitSoundSource(Cmb_HitSoundSource.GetSelectedIndex());
 	Settings.HeadshotSource = Settings.IntToHeadshotSource(Cmb_HeadshotSource.GetSelectedIndex());
+	Settings.bLostTradeNotification = Chk_LostTradeNotification.bChecked;
 
 	Settings.bEnableHitSounds = Chk_EnableHitSounds.bChecked;
 	Settings.bHitSoundPitchShift = Chk_HitSoundPitchShift.bChecked;
@@ -1786,6 +1793,9 @@ defaultproperties
 
 		HeadshotSourceText="Headshot Source"
 		HeadshotSourceHelp="Controls when the Head Shot message of your sniper rifle plays\\nServer --> Only for headshot kills the server counted, but delayed by ping\\nClient --> Instantly, but may not be accurate\\nOnly for the rifle of NextSA"
+
+		LostTradeNotificationText="Lost Trade Notification"
+		LostTradeNotificationHelp="Shows Lost Trade when you die before the server counts a hit of yours\\nThe opponent's shot reached the server first\\nOnly for the rifles of NextIG and NextSA on servers without trades"
 
 		HitSourceServer="Server"
 		HitSourceClient="Client"

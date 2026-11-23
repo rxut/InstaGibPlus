@@ -62,6 +62,7 @@ var config bool   bHitSoundPitchShift;
 var config bool   bHitSoundTeamPitchShift;
 var config EHitSoundSource HitSoundSource;
 var config EHeadshotSource HeadshotSource;
+var config bool   bLostTradeNotification;
 var config int    SelectedHitSound;
 var config int    SelectedTeamHitSound;
 var config float  HitSoundVolume;
@@ -629,6 +630,7 @@ simulated function string DumpSettings() {
 		GetSetting("bHitSoundTeamPitchShift")$
 		GetSetting("HitSoundSource")$
 		GetSetting("HeadshotSource")$
+		GetSetting("bLostTradeNotification")$
 		GetSetting("SelectedHitSound")$
 		GetSetting("SelectedTeamHitSound")$
 		GetSetting("HitSoundVolume")$
@@ -740,6 +742,7 @@ defaultproperties
 	bHitSoundTeamPitchShift=False
 	HitSoundSource=HSSRC_Server
 	HeadshotSource=HDSRC_Server
+	bLostTradeNotification=True
 	SelectedHitSound=0
 	SelectedTeamHitSound=2
 	HitSoundVolume=4

@@ -45,6 +45,7 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [bHitSoundTeamPitchShift](#bhitsoundteampitchshift)
 1. [HitSoundSource](#hitsoundsource)
 1. [HeadshotSource](#headshotsource)
+1. [bLostTradeNotification](#blosttradenotification)
 1. [SelectedHitSound](#selectedhitsound)
 1. [SelectedTeamHitSound](#selectedteamhitsound)
 1. [HitSoundVolume](#hitsoundvolume)
@@ -281,6 +282,12 @@ When the "Head Shot" message and its sound play for a headshot kill with your sn
 * `HDSRC_Server`: the message plays once the server has counted the kill, a ping later. It never plays for a kill the server did not count.
 
 The server still decides every hit and every kill.
+
+## bLostTradeNotification
+**Type: bool**  
+**Default: True**  
+
+Shows "Lost Trade" where "Head Shot" appears when you die before the server has counted a hit of yours. Your screen showed the hit, but your opponent's shot reached the server first, so yours does not count. It applies to the rifles of NextIG and NextSA on servers without trades, whatever your Hit Source. A "Head Shot" message of yours on screen is replaced.
 
 ## SelectedHitSound
 **Type: int**  

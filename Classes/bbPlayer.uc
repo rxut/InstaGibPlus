@@ -9072,6 +9072,25 @@ simulated function bool IGPlus_TakeClientHeadshot() {
 	return true;
 }
 
+// Client, NextIG and NextSA without trades: we died while our own trace's
+// hit still waited for the server (IGPlus_TakeClientHit). The server had us
+// dead before that shot came, so it never counts. "Lost Trade" shows, in the
+// place of a "Head Shot" of ours.
+simulated function IGPlus_LostTradeCheck() {
+	local WeaponSettingsRepl WS;
+
+	if (Level.NetMode != NM_Client || Settings == None || Settings.bLostTradeNotification == false || myHUD == None)
+		return;
+	if (IGPlus_ClientHitPlayedTS <= 0.0 || Level.TimeSeconds - IGPlus_ClientHitPlayedTS > 0.6)
+		return;
+	if (IGPlus_WeaponSettingsMode == 0)
+		return;
+	WS = GetWeaponSettings();
+	if (WS == None || WS.bEnableTrades)
+		return;
+	myHUD.LocalizedMessage(class'IGPlus_LostTradeMessage');
+}
+
 // Server: this deterministic shot's trace against what the shooter's own
 // trace said (IGPlus_ClientHitVerdict, from the shot's move). Called before
 // the damage. Nothing is decided here: the server's trace stands. A
@@ -14987,6 +15006,7 @@ state Dying
 		bJumpStatus = false;
 		if (zzClientTTarget != None)
 			zzClientTTarget.Destroy();
+		IGPlus_LostTradeCheck();
 
 		// BEGIN PlayerPawn.Dying.BeginState
 		BaseEyeheight = Default.BaseEyeHeight;

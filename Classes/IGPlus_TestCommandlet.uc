@@ -659,6 +659,11 @@ function TestTickInterp() {
 		&& class'ClientSettings'.static.IntToHeadshotSource(7) == HDSRC_Server
 		&& class'ClientSettings'.default.HeadshotSource == HDSRC_Server,
 		"HeadshotSource_starts_on_server");
+	LogTestResult(class'IGPlus_LostTradeMessage'.static.GetOffset(0, 24, 768) == class'DecapitationMessage'.static.GetOffset(0, 24, 768)
+		&& class'IGPlus_LostTradeMessage'.default.bIsUnique
+		&& class'IGPlus_LostTradeMessage'.static.GetString(0) == "Lost Trade"
+		&& class'ClientSettings'.default.bLostTradeNotification,
+		"LostTrade_shows_in_the_place_of_Head_Shot_and_starts_on");
 	// A 39 high body with radius 17. Half the radius along the shot is 8.5.
 	// The top of a full crouch is 11.7 above the middle, of half a crouch 25.35.
 	LogTestResult(CrouchTopCase(25.0, 0.0, 0.0, false, 25.0)
