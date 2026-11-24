@@ -59,11 +59,6 @@ final function bool AppendNode(IGPlus_SavedInput Node) {
 	return true;
 }
 
-final function RemoveAllNodes() {
-	while(Oldest != none)
-		FreeNode(Oldest);
-}
-
 final function RemoveOutdatedNodes(float CurrentTimeStamp) {
 	if (Oldest == none)
 		return;
