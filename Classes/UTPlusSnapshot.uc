@@ -2,8 +2,6 @@ class UTPlusSnapshot extends Object;
 
 var vector Loc, Vel;
 var rotator Rot;
-var float BaseEyeHeight;
-var float EyeHeight;
 var float DuckFraction;
 var float CollisionRadius;
 var float CollisionHeight;

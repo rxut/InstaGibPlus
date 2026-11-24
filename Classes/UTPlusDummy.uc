@@ -2,8 +2,6 @@ class UTPlusDummy extends Actor;
 
 var Pawn Actual;
 var float LatestClientTimeStamp;
-var float EyeHeight;
-var float BaseEyeHeight;
 var float DuckFraction;
 var bool bHistoryCleared;
 var bool bLastHeld;
@@ -71,8 +69,6 @@ function FillData(UTPlusSnapshot D) {
 	D.Loc = Actual.Location;
 	D.Vel = Actual.Velocity;
 	D.Rot = Actual.Rotation;
-	D.BaseEyeHeight = Actual.BaseEyeHeight;
-	D.EyeHeight = Actual.EyeHeight;
 	// Same value the unrewound hit check reads (GetPawnDuckFraction)
 	if (bbPlayer(Actual) != None)
 		D.DuckFraction = bbPlayer(Actual).DuckFraction;
@@ -490,8 +486,6 @@ function CompSwap(UTPlusSnapshot SnapA, UTPlusSnapshot SnapB, float Alpha, float
 	SetLocation(TargetLoc);
 	SetRotation(SnapA.Rot);
 	Velocity = TargetVel;
-	EyeHeight = SnapA.EyeHeight;
-	BaseEyeHeight = SnapA.BaseEyeHeight;
 	DuckFraction = SnapA.DuckFraction;
 
 	if (CollisionRadius != SnapA.CollisionRadius || CollisionHeight != SnapA.CollisionHeight)
