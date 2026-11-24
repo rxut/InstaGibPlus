@@ -103,13 +103,6 @@ function float IGPlus_GetOneWayLatencyMs(Pawn Instigator);
 
 function float IGPlus_GetHitscanRewindMs(Pawn Instigator);
 
-function vector IGPlus_AdjustLocationToCurrentMoverFrame(
-	Pawn Instigator,
-	vector FireLoc,
-	float SampleLatencyMs,
-	optional Mover BaseMover
-);
-
 function vector IGPlus_AdjustLocationToHistoricalMoverFrame(
 	Pawn Instigator,
 	vector FireLoc,
