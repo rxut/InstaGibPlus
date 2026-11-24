@@ -342,16 +342,6 @@ LlamaMessages[7]="Anyone else what to telefrag?"
 LlamaMessages[8]="%o Was Very Happy that %k's is a bit stupid."
 LlamaMessages[9]="%k went BOOM!"
 
-[MMultiKillMessage]
-DoubleKillString="Double Kill!"
-TripleKillString="Triple Kill!"
-MultiKillString="Multi Kill!"
-MegaKillString="Mega Kill!"
-UltraKillString="ULTRA KILL!!"
-MonsterKillString="M O N S T E R  K I L L !!!"
-LudicrousKillString="L U D I C R O U S  K I L L !!!"
-HolyShitString="H O L Y  S H I T!!!"
-
 [bbTMale1]
 MenuName="Male Commando"
 

@@ -1,5 +1,7 @@
 class SpecFirstBloodMessage extends FirstBloodMessage;
 
+#exec OBJ LOAD FILE=..\Sounds\Announcer.uax PACKAGE=Announcer
+
 // FirstBloodMessage plays the announcer only for the player who drew first
 // blood. In server demo playback the one watching is the demo spectator, so a
 // viewer following that player gets the voice here, as SpecSpreeMessage does
