@@ -14973,10 +14973,6 @@ function bool IsForcedSkinFemale(int Skin) {
 	return Skin >= 0 && Skin <= 8;
 }
 
-function bool IsForcedSkinMale(int Skin) {
-	return Skin > 8 && Skin <= 17;
-}
-
 function SetForcedMesh(PlayerReplicationInfo PRI, int Skin) {
 	local Mesh NewMesh;
 
