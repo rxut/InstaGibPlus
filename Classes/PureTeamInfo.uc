@@ -90,28 +90,6 @@ function Timer()
 	}
 }
 
-simulated function xxGetData(int Index, PlayerReplicationInfo AskingPRI,
-					out PlayerReplicationInfo PRI, out int Health, out class<Weapon> cWeapon,
-					out int Ammo, out int Armor, out int Pads, out int Shield,
-					out int Other)
-{
-	PRI = zzPlayerData[Index].PRI;
-	if (PRI == None || PRI == AskingPRI || AskingPRI.Team != zzPlayerData[Index].PRI.Team)
-	{	// If not existing, your self, or wrong team ignore.
-		PRI = None;
-		return;
-	}
-	
-	PRI = zzPlayerData[Index].PRI;
-	Health = zzPlayerData[Index].Health;
-	cWeapon = zzPlayerData[Index].cWeapon;
-	Ammo = zzPlayerData[Index].AmmoLeft;
-	Armor = zzPlayerData[Index].Armor;
-	Pads = zzPlayerData[Index].Pads;
-	Shield = zzPlayerData[Index].Shield;
-	Other = zzPlayerData[Index].Other;
-}
-
 defaultproperties
 {
 }
