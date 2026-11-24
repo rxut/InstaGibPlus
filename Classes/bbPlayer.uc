@@ -58,24 +58,18 @@ var bool IGPlus_AutoDebugStarted; // Auto Debug Data ran this map
 var float IGPlus_AutoDebugEndTime;
 
 // Stuff
-var float	zzDesiredFOV;		// Needed ?
 var float	zzOrigFOV;		// Original FOV for TrackFOV = 1
 var string	FakeClass;		// Class that the model replaces
-var string	zzMyPacks;		// Defined only for defaults
 var bool	zzbBadGuy;		// BadGuy! (Avoid kick spamming)
-var int     zzRecentDmgGiven, zzRecentTeamDmgGiven;
 var name    zzDefaultWeapon;
-var float   zzLastHitSound, zzLastTeamHitSound;
 var Projectile zzNN_Projectiles[256];
 var vector zzNN_ProjLocations[256];
-var int     zzFRVI, zzNN_FRVI, FRVI_length, zzVRVI, zzNN_VRVI, VRVI_length, zzNN_ProjIndex, NN_ProjLength, zzEdgeCount, zzCheckedCount;
+var int     zzFRVI, zzNN_FRVI, zzNN_ProjIndex, NN_ProjLength;
 var rotator zzNN_ViewRot;
-var actor   zzNN_HitActor, zzOldBase;
-var Vector  zzNN_HitLoc, zzClientHitNormal, zzClientHitLocation, zzNN_HitDiff, zzNN_HitLocLast, zzNN_HitNormalLast, zzNN_ClientLoc, zzNN_ClientVel;
+var actor   zzNN_HitActor;
+var Vector  zzNN_HitLoc, zzNN_HitDiff, zzNN_ClientLoc, zzNN_ClientVel;
 var bool    zzbIsWarmingUp, zzbFakeUpdate, zzbForceUpdate, zzbNN_Special, zzbNN_ReleasedFire, zzbNN_ReleasedAltFire;
-var float   zzNN_Accuracy, zzLastStuffUpdate, zzNextTimeTime, zzForceUpdateUntil, zzLastLocDiff, zzSpawnedTime;
-var TournamentWeapon zzGrappling;
-var float zzGrappleTime;
+var float   zzNN_Accuracy, zzLastStuffUpdate, zzForceUpdateUntil, zzSpawnedTime;
 var float LastFireTimeStamp;
 var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
@@ -199,16 +193,12 @@ var float IGPlus_DetWeaponGateTS;
 var Weapon IGPlus_DetPendingSeen;
 var float IGPlus_DetPendingSeenTS;
 var float IGPlus_DetPrevWeaponStepTS; // grace weapon: last valid step time
-var Weapon zzKilledWithWeapon;
-var Pawn zzLastKilled;
 var vector zzLast10Positions[10];	// every 50ms for half a second of backtracking
 var bbOldMovementInfo OldestMI, NewestMI;
 var int zzPositionIndex;
 var float zzNextPositionTime;
 var bool zzbNN_Tracing;
-var Weapon zzPendingWeapon;
 var float LastCAPTime; // ServerTime when last CAP was sent
-var decoration carriedFlag;
 var WeaponSettingsRepl WSettings;
 // Where this player's head is drawn through animation tweens (adaptive head
 // hitbox). The server's UTPlusDummy keeps it, on clients
@@ -220,20 +210,11 @@ var IGPlus_HeadTween IGPlus_HeadTween;
 // (IGPlus_LocationOffsetFix_AfterAll), so they sit on the model as drawn.
 var Actor IGPlus_DbgHitbox[64];
 
-// HUD stuff
-var Mutator	zzHudMutes[50];		// Accepted Hud Mutators
-var Mutator	zzWaitMutes[50];	// Hud Mutes waiting to be accepted
-var float	zzWMCheck[50];		// Key value
-var int		zzFailedMutes;		// How many denied Mutes have been tried to add
-var int		zzHMCnt;		// Counts of HudMutes and WaitMutes
-var int		zzHUDWarnings;		// Counts the # of times the HUD has been changed
-
 // Logo Display
 var bool	zzbLogoDone;		// Are we done with the logo ?
 var float	zzLogoStart;		// Start of logo display
 
 var int		zzSMCnt;		// ServerMove Count
-var bool	bMenuFixed;		// Fixed Menu item
 var float	zzCVTO;			// CenterView Time out.
 
 // Avoiding spam:		// How many times has name been changed
@@ -379,11 +360,6 @@ var bool IGPlus_MeshRepairPending;
 var Mesh IGPlus_MeshRepairOld;
 var float IGPlus_SDClockSearchTime;
 
-// ConsoleCommand/INT Reader/Key+Alias Handling
-var string zzRemResult;		// Temporary Variable to store ConsoleCommands
-var string zzRemCmd;		// The command the server sent.
-var bool bRemValid;		// True when valid.
-
 var UTPure zzUTPure;		// The UTPure mutator.
 
 var bool zzbDoScreenshot;	// True when we are about to do screenshot
@@ -396,8 +372,7 @@ var PureLevelBase PureLevel;	// And Level.
 var bool bDeterminedLocalPlayer;
 var PlayerPawn LocalPlayer;
 
-var TranslocatorTarget zzClientTTarget, TTarget;
-var float LastTick, AvgTickDiff;
+var TranslocatorTarget zzClientTTarget;
 
 // Net Updates
 var float TimeBetweenNetUpdates;
