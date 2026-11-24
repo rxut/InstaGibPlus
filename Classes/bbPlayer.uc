@@ -338,7 +338,6 @@ var bool IGPlus_SDSavedBlockActors;
 var bool IGPlus_SDSavedBlockPlayers;
 var bool IGPlus_SDSavedCollideWorld;
 var vector IGPlus_SDTrueLoc;
-var vector IGPlus_SDDisplacedTo;
 var Actor IGPlus_SDAttached[8];
 var vector IGPlus_SDAttachedLoc[8];
 var int IGPlus_SDNumAttached;
@@ -20093,7 +20092,6 @@ simulated function IGPlus_SDDisplace(vector NewLoc, bool bHide) {
 
 	Delta = NewLoc - IGPlus_SDTrueLoc;
 	SetLocation(NewLoc);
-	IGPlus_SDDisplacedTo = Location;
 	for (i = 0; i < IGPlus_SDNumAttached; i++)
 		if (IGPlus_SDAttached[i] != none && IGPlus_SDAttached[i].bDeleteMe == false)
 			IGPlus_SDAttached[i].SetLocation(IGPlus_SDAttachedLoc[i] + Delta);
