@@ -1747,7 +1747,7 @@ defaultproperties
 		SSRRingTypeHelp="Decides what effects to play where SSR shots end"
 
 		HitEffectSourceText="Hit Effect Source"
-		HitEffectSourceHelp="Controls when the impact effect of your InstaGib rifle shows on a player you hit\\nServer --> Only for hits the server counted, but delayed by ping\\nClient --> Instantly, but may not be accurate\\nYour beam always shows at once. Only for the rifle of NextIG"
+		HitEffectSourceHelp="Controls when the impact effect of your rifle shows on a player you hit\\nServer --> Only for hits the server counted, but delayed by ping\\nClient --> Instantly, but may not be accurate\\nYour beam always shows at once. Only for the rifles of NextIG and NextSDOM"
 
 		SSRRingTypeNone="Nothing"
 		SSRRingTypeDefault="Default"

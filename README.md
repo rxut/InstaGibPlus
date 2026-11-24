@@ -17,7 +17,7 @@ An InstaGib focussed fork of TimTim's NewNet mutator for Unreal Tournament.
 * Working client forced models for enemies and teammates
 * Working client-side hitsounds with the option to use custom hitsound packages
 * Different Shock beam types (team-colored, none, instant beam)
-* InstaGib and Sniper Arena with server-side hit detection and ping compensation (NextIG, NextSA)
+* InstaGib, Sniper Arena and sDOM with server-side hit detection and ping compensation (NextIG, NextSA, NextSDOM)
 * Fixed pop-in of enemies around corners
 * Fixed delay of visible flag pick-up
 * Fixed stuttering on respawn with high ping
@@ -269,7 +269,7 @@ Selects where hit sound events come from.
 * `HSSRC_Server` ➜ Use server-side hit confirmations (accurate but delayed by ping).
 * `HSSRC_Client` ➜ Use client-side hit detection (instant but can be inaccurate).
 
-`HSSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG and NextSA. With those two your own trace plays the sound at the click. With [bEnablePingCompensation](#benablepingcompensation) on, that trace tests the other players where the server will place them for your shot, which can be a few units from where your screen draws a player who just changed direction. The server still decides the hit. A sound can play for a shot the server counts as a miss, and a hit only the server saw plays its sound a ping late. With every other weapon the hit sound is the server's.
+`HSSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG, NextSA and NextSDOM. With those three your own trace plays the sound at the click. With [bEnablePingCompensation](#benablepingcompensation) on, that trace tests the other players where the server will place them for your shot, which can be a few units from where your screen draws a player who just changed direction. The server still decides the hit. A sound can play for a shot the server counts as a miss, and a hit only the server saw plays its sound a ping late. With every other weapon the hit sound is the server's.
 
 ## HeadshotSource
 **Type: EHeadshotSource**  
@@ -443,7 +443,7 @@ The time the beam's visuals decay over.
 **Type: EHitEffectSource**  
 **Default: HESRC_Client**  
 
-When the ring of your InstaGib rifle shows on a player you hit. It applies to the rifle of NextIG. Your beam always shows at the click.
+When the ring of your rifle shows on a player you hit. It applies to the rifles of NextIG and NextSDOM. Your beam always shows at the click.
 
 * `HESRC_Client`: the ring shows at the click, where your own trace ended. When the server then counts no hit, the ring was shown for nothing.
 * `HESRC_Server`: the ring shows at the end of your beam once the server has counted the hit, a ping later. It never shows for a hit the server did not count.
@@ -855,7 +855,7 @@ How quickly the HitMarker becomes transparent. Higher values mean sharper drop-o
 * `HMSRC_Server` ➜ HitMarkers are triggered server-side, accurate but delayed by ping
 * `HMSRC_Client` ➜ HitMarkers are triggered client-side, inaccurate but instant
 
-`HMSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG and NextSA, as described under [HitSoundSource](#hitsoundsource). With every other weapon the hit marker is the server's.
+`HMSRC_Client` applies while you carry a NewNet weapon, and to the rifles of NextIG, NextSA and NextSDOM, as described under [HitSoundSource](#hitsoundsource). With every other weapon the hit marker is the server's.
 
 ## bUseCrosshairFactory
 **Type: bool**  
@@ -950,7 +950,7 @@ Enable client-side animation timing for Bio Rifle ping-compensated logic.
 **Type: bool**  
 **Default: True**  
 
-Enable client-side animation timing for Shock Beam ping-compensated logic. The InstaGib rifle of NextIG does not use this setting. It always draws its own beam at once.
+Enable client-side animation timing for Shock Beam ping-compensated logic. The InstaGib rifle of NextIG and the rifle of NextSDOM do not use this setting. They always draw their own beam at once.
 
 ## bShockProjectileUseClientSideAnimations
 **Type: bool**  
@@ -1367,6 +1367,21 @@ SniperArena with the deterministic SniperRifle. The server traces every shot its
 * A shot from a player who just died only counts with [bEnableTrades](#benabletrades) on in its weapon settings. It is off by default.
 * A new server starts with ping compensation and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.
 
+## InstaGibPlus_11.NextSDOM
+
+sDOM with the deterministic shock rifle. The rules are those of NewNetShockDOM. The server traces every shot itself and moves the other players back to what the shooter's screen showed (see [bEnablePingCompensation](#benablepingcompensation)). Everyone gets `SDOM_ShockRifle`. It is the IG+ shock rifle with the rules of the NewNet sDOM rifle, and with the same hit sound and hit marker at the click as NextIG.
+
+* Load it in place of ST_Mutator, not together with it.
+* Its weapon settings are in the section `WeaponSettingsShockDOM`. The shock beam settings apply, such as the damage, the momentum and the reduced hitbox.
+* Alt fire shoots the beam too. There are no shock balls, so there are no combos.
+* The shooter's client always draws its own beam at once, as the NewNet sDOM rifle. [bShockBeamUseClientSideAnimations](#bshockbeamuseclientsideanimations) is not read here. The ring follows [HitEffectSource](#hiteffectsource), as with NextIG: at the click by default, as with NewNetShockDOM.
+* Everyone spawns with the rifle and 50 cores. The rifle has no select animation. It can fire 0.3 seconds after a spawn, as in NewNetShockDOM.
+* Every weapon in the map becomes a rifle pickup, and all ammo becomes a core. Both hold 50.
+* There is no translocator. The game's translocator setting does nothing here.
+* Armor and thigh pads give 150 armor at most. A health vial heals 7, a med box 100 and a health pack 199. The damage amplifier lasts 1500 seconds.
+* Belts, invisibility and the other pickups stay as the map made them.
+* A shot from a player who just died counts by the server setting [bEnableAllWeaponTrades](#benableallweapontrades).
+
 ## InstaGibPlus_11.MutKillFeed
 
 Allows players to replace the messages of players dying in the console with weapon icons in a configurable location on your screen.
@@ -1381,6 +1396,8 @@ Load one weapon mutator for the mode you want, via your map vote configuration o
 | InstaGib | **InstaGibPlus_11.NextIG** | The server, with ping compensation |
 | Sniper Arena | **InstaGibPlus_11.NewNetSA** | The shooter's client |
 | Sniper Arena | **InstaGibPlus_11.NextSA** | The server, with ping compensation |
+| sDOM | **InstaGibPlus_11.NewNetShockDOM** | The shooter's client |
+| sDOM | **InstaGibPlus_11.NextSDOM** | The server, with ping compensation |
 
 Load only one of them. With none of them loaded, players get the default UT weapons with no lag compensation.
 
@@ -2166,9 +2183,10 @@ Each weapon mutator reads its own section of InstaGibPlus.ini, and writes it wit
 | Mutator | Section |
 |---|---|
 | ST_Mutator | `WeaponSettingsOldNet` |
-| NewNetIG, NewNetSA | `WeaponSettingsNewNet` |
+| NewNetIG, NewNetSA, NewNetShockDOM | `WeaponSettingsNewNet` |
 | NextIG | `WeaponSettingsInstaGib` |
 | NextSA | `WeaponSettingsSniperArena` |
+| NextSDOM | `WeaponSettingsShockDOM` |
 
 The URL option `?IGPlusWeaponSettings=<section>` makes the mutator read another section.
 
