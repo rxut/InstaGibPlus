@@ -1428,7 +1428,6 @@ replication
 	// Client->Demo
 	unreliable if ( bClientDemoRecording )
 		ClientDemoMessage,
-		xxClientLogToDemo,
 		xxReplicateVRToDemo;
 
 	reliable if (bClientDemoRecording && !bClientDemoNetFunc)
@@ -17830,11 +17829,6 @@ function xxServerAckScreenshot(string zzResult, string zzMagic)
 			zzPP.ClientMessage(PlayerReplicationInfo.PlayerName@"successfully took screenshot!");
 	}
 	zzUTPure.xxLog("Screenshot from"@zzPP.PlayerReplicationInfo.PlayerName@"->"@zzResult@"Text"@zzMagicCode@"Valid"@(zzMagic == zzMagicCode));
-}
-
-simulated function xxClientLogToDemo(string zzS)
-{
-	Log(zzS, 'DevGarbage');
 }
 
 function xxClientResetPlayer() {
