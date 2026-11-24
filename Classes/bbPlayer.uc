@@ -1323,7 +1323,6 @@ replication
 		Ready,
 		xxClientSwJumpPad,
 		xxSetDefaultWeapon,
-		xxSetPendingWeapon,
 		xxClientDetEntryGate,
 		xxSetTimes,
 		FRandValues,
@@ -1452,11 +1451,6 @@ replication
 
 static final operator(34) int or_eq (out int A, int B) {
 	A = A | B;
-	return A;
-}
-
-static final operator(34) int and_eq (out int A, int B) {
-	A = A & B;
 	return A;
 }
 
@@ -2809,11 +2803,6 @@ function ClientDebugMessage(coerce string S, optional name Type, optional bool b
 		ClientDemoMessage(zzPrevClientMessage, Type, bBeep);
 		zzPrevClientMessage = "";
 	}
-}
-
-function rotator GR()
-{
-	return ViewRotation;
 }
 
 event UpdateEyeHeight(float DeltaTime)
@@ -4465,11 +4454,6 @@ simulated function xxClientSwitchPending(Weapon PendW, float GuardSecs) {
 	else
 		IGPlus_DetClientSwitchPending = PendW;
 	IGPlus_MarkDeterministicSwitchGuard(GuardSecs);
-}
-
-function xxSetPendingWeapon(Weapon W)
-{
-	PendingWeapon = W;
 }
 
 /**
