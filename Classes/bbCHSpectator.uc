@@ -600,8 +600,6 @@ auto state CheatFlying
         local int realbRun, realbDuck;
         local bool bRealJump;
 
-        local float TotalTime;
-
         bUpdatePosition = false;
         realbRun= bRun;
         realbDuck = bDuck;
@@ -620,7 +618,6 @@ auto state CheatFlying
             }
             else
             {
-                TotalTime += CurrentMove.Delta;
                 CurrentMove = CurrentMove.NextMove;
             }
         }
