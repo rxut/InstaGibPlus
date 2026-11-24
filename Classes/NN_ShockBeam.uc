@@ -1,7 +1,5 @@
 class NN_ShockBeam extends ShockBeam;
 
-var vector BaseLocation;
-
 simulated function Timer()
 {
 	local ShockBeam r;
