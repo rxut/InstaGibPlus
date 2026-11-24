@@ -4,7 +4,6 @@ Object=(Name=InstaGibPlus.UTPure,Class=Class,MetaClass=Engine.Mutator,Descriptio
 Object=(Name=InstaGibPlus.MutKillFeed,Class=Class,MetaClass=Engine.Mutator,Description="MutKillFeed,Kill Feed Mutator")
 Object=(Name=InstaGibPlus.PureClickBoard,Class=Class,MetaClass=Engine.Mutator,Description="PureClickBoard,<Internal>")
 Object=(Name=InstaGibPlus.MutFraggerArena,Class=Class,MetaClass=Engine.Mutator,Description="MutFraggerArena,Sniper+Translocator camping combat")
-Object=(Name=InstaGibPlus.NewNetArena,Class=Class,MetaClass=Engine.Mutator,Description="NewNetArena,<Insert description here>")
 Object=(Name=InstaGibPlus.NewNetIG,Class=Class,MetaClass=Engine.Mutator,Description="NewNetIG,InstaGib with lag-compensated SuperShockRifle")
 Object=(Name=InstaGibPlus.NextIG,Class=Class,MetaClass=Engine.Mutator,Description="NextIG,InstaGib with the deterministic SuperShockRifle")
 Object=(Name=InstaGibPlus.NextSA,Class=Class,MetaClass=Engine.Mutator,Description="NextSA,SniperArena with the deterministic SniperRifle")
