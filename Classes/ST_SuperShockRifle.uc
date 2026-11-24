@@ -9,7 +9,6 @@ var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
 var float yMod;
-var vector CDO;
 
 var float NextDetFireTS;
 // The time the last shot was due, for the shot clock the server corrects
@@ -186,33 +185,6 @@ simulated function yModInit() {
 		yMod *= Default.FireOffset.Y;
 	else
 		yMod = 0;
-
-	CDO = CalcDrawOffsetClient();
-}
-
-// Client: where the gun is for the server (ST_ShockRifle.CalcDrawOffsetClient).
-simulated function vector CalcDrawOffsetClient() {
-	local vector DrawOffset;
-	local Pawn PawnOwner;
-	local vector WeaponBob;
-
-	PawnOwner = Pawn(Owner);
-	if (PawnOwner == None)
-		return vect(0,0,0);
-
-	DrawOffset = CalcDrawOffset();
-
-	if (Level.NetMode == NM_Client) {
-		// The server uses BaseEyeHeight and no weapon bob.
-		DrawOffset -= (PawnOwner.EyeHeight * vect(0,0,1));
-		DrawOffset += (PawnOwner.BaseEyeHeight * vect(0,0,1));
-
-		WeaponBob = BobDamping * PawnOwner.WalkBob;
-		WeaponBob.Z = (0.45 + 0.55 * BobDamping) * PawnOwner.WalkBob.Z;
-		DrawOffset -= WeaponBob;
-	}
-
-	return DrawOffset;
 }
 
 // The deterministic step decides the shot. A click only has to be let through
