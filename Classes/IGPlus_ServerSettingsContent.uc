@@ -361,22 +361,6 @@ function float GetNowTimeSeconds() {
 	return L.TimeSeconds;
 }
 
-function bool IsAdmin() {
-	local PlayerPawn P;
-
-	P = ResolveOwnerPawn();
-	if (P == none)
-		return false;
-
-	if (P.bAdmin)
-		return true;
-
-	if (P.PlayerReplicationInfo != none && P.PlayerReplicationInfo.bAdmin)
-		return true;
-
-	return false;
-}
-
 function RequestServerSettings(optional bool bForce) {
 	local bbPlayer P;
 	local bbCHSpectator S;
