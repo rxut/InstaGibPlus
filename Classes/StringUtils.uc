@@ -30,11 +30,6 @@ static final function string RepeatString(int Length, string S) {
 	return result;
 }
 
-static final function string RepeatChar(int Length, int Char) {
-	if (Char == 0) return "";
-	return RepeatString(Length, Chr(Char));
-}
-
 static final function string CenteredString(coerce string Content, int Length, optional string Fill) {
 	local string Dummy;
 
