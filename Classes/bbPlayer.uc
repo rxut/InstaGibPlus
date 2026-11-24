@@ -1636,14 +1636,6 @@ simulated function Touch( actor Other )
 }
 
 
-simulated function bool xxNewSetLocation(vector NewLoc, vector NewVel)
-{
-	if (!SetLocation(NewLoc))
-		return false;
-	Velocity = NewVel;
-	return true;
-}
-
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
 
