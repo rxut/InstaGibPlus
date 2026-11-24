@@ -49,9 +49,6 @@ class ST_minigun2 extends minigun2;
 var IGPlus_WeaponImplementation WImp;
 var float FireInterval, NextFireInterval;
 
-// For Special minigun
-var int HitCounter;
-
 var WeaponSettingsRepl WSettings;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -506,17 +503,6 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 			X *= 2.5;
 		Other.TakeDamage(rndDam, PawnOwner, HitLocation, rndDam*500.0*X, MyDamageType);
 	}
-
-	if (Pawn(Other) != None && Other != Owner && Pawn(Other).Health > 0)
-	{	// We hit a pawn that wasn't the owner or dead.
-		HitCounter++;						// +1 hit
-		if (HitCounter == 8)
-		{	// Wowsers!
-			HitCounter = 0;
-		}
-	}
-	else
-		HitCounter = 0;
 }
 
 function SetSwitchPriority(pawn Other)
