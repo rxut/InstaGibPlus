@@ -7866,6 +7866,12 @@ function IGPlus_RunPendingShot() {
 			IGPlus_HitStatDeadHits++;
 		IGPlus_EventLog("[DET-HIT]"@PlayerReplicationInfo.PlayerName@"deadShot clientHit="$(IGPlus_PendVerdict == IGPLUS_HIT_BODY || IGPlus_PendVerdict == IGPLUS_HIT_HEAD)
 			@"sameTick=True trades=False ping="$PlayerReplicationInfo.Ping);
+		if (ST_SuperShockRifle(W) != None)
+			IGPlus_SDNoteDeadShot(IGPlus_PendVerdict, 0, IGPlus_PendShotTS,
+				((IGPlus_PendShotView.Pitch & 0xFFFF) << 16) | (IGPlus_PendShotView.Yaw & 0xFFFF), IGPlus_PendShotLoc);
+		else if (ST_SniperRifle(W) != None)
+			IGPlus_SDNoteDeadShot(IGPlus_PendVerdict, 1, IGPlus_PendShotTS,
+				((IGPlus_PendShotView.Pitch & 0xFFFF) << 16) | (IGPlus_PendShotView.Yaw & 0xFFFF), IGPlus_PendShotLoc);
 		return;
 	}
 
@@ -9270,7 +9276,7 @@ function IGPlus_HitCompare(Actor Other, bool bHead, vector Start, vector Dir, ve
 // where its own trace hit, its hit sound. No trace is wrong here: the shooter
 // was dead first and the shot does not trade. Counted (deadShots,
 // deadShotHits), with one [DET-HIT] line and a line for the shooter.
-function IGPlus_NoteDeadShot(int MoveDeltaTime) {
+function IGPlus_NoteDeadShot(int MoveDeltaTime, float TimeStamp, int View, vector ClientLoc) {
 	local int Verdict, WeaponIndex;
 	local string S;
 
@@ -9287,6 +9293,10 @@ function IGPlus_NoteDeadShot(int MoveDeltaTime) {
 	IGPlus_EventLog("[DET-HIT]"@PlayerReplicationInfo.PlayerName@S);
 	if (bDrawDebugData)
 		ClientDebugMessage("Hit check (server):"@S);
+	if (WeaponIndex == IGPLUS_DetWEAPON_SuperShockRifle)
+		IGPlus_SDNoteDeadShot(Verdict, 0, TimeStamp, View, ClientLoc);
+	else
+		IGPlus_SDNoteDeadShot(Verdict, 1, TimeStamp, View, ClientLoc);
 }
 
 // Do the deterministic weapons trade here? NextIG and NextSA have their own
@@ -15162,7 +15172,7 @@ state Dying
 			if (bFireInput && IGPlus_bDetTradeClosed == false)
 				IGPlus_DetTradeLog("Rejected Trade!");
 			IGPlus_DetCloseTradeWindow();
-			IGPlus_NoteDeadShot(MoveDeltaTime);
+			IGPlus_NoteDeadShot(MoveDeltaTime, TimeStamp, View, vect(1,0,0) * ClientLocX + vect(0,1,0) * ClientLocY + vect(0,0,1) * ClientLocZ);
 		}
 		// No translocator actions from the dead (their translocator is still
 		// held for a while): not this move's, nor a resent or held one.
@@ -20944,6 +20954,22 @@ function IGPlus_SDNoteShot(Actor Other, bool bHead, vector Start, rotator View, 
 		Body);
 }
 
+// Server: a shot record for a rifle or sniper shot that came from a player the
+// server already had dead, with no trades (bit 25). The server traced nothing:
+// no target, no hit point, no body. The shooter's own trace (Verdict) said
+// where it hit: a hit there is a lost trade. Start is where the shooter stood.
+function IGPlus_SDNoteDeadShot(int Verdict, int WeaponId, float TS, int View, vector Start) {
+	local int Client, PingMs;
+
+	if (Verdict < IGPLUS_HIT_MISS || (Verdict & 3) == 3)
+		return;
+	Client = (Verdict & 3) + 1;
+	if (PlayerReplicationInfo != None)
+		PingMs = Clamp(PlayerReplicationInfo.Ping, 0, 1023);
+	IGPlus_DemoShot(TS, View, Start.X, Start.Y, Start.Z, vect(0,0,0), None,
+		(WeaponId & 1) | (Client << 3) | (PingMs << 15) | (1 << 25), 0.0, 0.0, 0.0, 0);
+}
+
 // Whether a hit point lies on this body. The game pushes a hit point half a
 // radius into the body along the shot (AdjustHitLocation), so it can sit
 // that far outside the cylinder.
@@ -20968,6 +20994,11 @@ function bool IGPlus_SDOnBody(vector Off, Actor A) {
 //                       IGPlus_GetHitscanRewindMs gave, the number [DET-HIT]
 //                       prints. 0 with ping compensation off
 //            bits 15-24 the shooter's ping, ms (0 to 1023)
+//            bit 25     a shot from the dead (IGPlus_SDNoteDeadShot): the
+//                       server had the shooter dead and no trades, so it
+//                       traced nothing. Target None, HitLoc and Body 0,
+//                       Origin where the shooter stood. With bits 3-4 a hit:
+//                       a lost trade
 //   BodyX/Y/Z  a hit on a player: the hit point minus the middle of the
 //            body the server tested, in world axes, exact. The hit point
 //            sits half a radius inside that body along the shot
