@@ -46,7 +46,6 @@ var bool bDetCooldownAltTap;
 // Client ammo consumption reconstruction logic
 var int DetClientConsumedAmmo;
 var int DetClientAmmoSpentSinceDown;
-var float DetClientLastDownTS;
 var int DetInternalBudget;
 var bool bDetSuppressPrimaryFirstBudgetAuto;
 
@@ -64,8 +63,6 @@ var int DetPrimaryLastPredictedRockets;
 var bool bDetPrimaryLastPredictedInstant;
 var bool bDetPrimaryLastPredictedAuto;
 var bool bDetPrimaryTightLatched;
-var int DetServerShotSerial;
-var int DetServerLastShotKind;
 // Step timestamp at which the last volley's fire anim ends, set identically on
 // both sides; predicted switches holster no earlier (stock waits in FireRockets).
 var float DetVolleyHoldUntil;
@@ -73,10 +70,6 @@ var float DetVolleyHoldUntil;
 var Weapon DetHolsterAnnouncedFor;
 var bool bDetSwitchSettlementPending;
 var bool bIGPlusDetLoadedAlt; // HandleDetClientLoadedFire's own alt decision, for FiringRockets
-
-const IGPLUS_EB_SHOT_KIND_ALT = 0;
-const IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED = 1;
-const IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT = 2;
 
 simulated function bool DetOwnerInstantEnabled() {
 	local TournamentPlayer TP;
@@ -1117,11 +1110,6 @@ function HandleDetServerFire(rotator StepView, vector StepLoc, int NumRockets, b
 	if (!DetPrepareServerFireContext(StepView, StepLoc, NumRockets, P))
 		return;
 
-	DetServerShotSerial = (DetServerShotSerial + 1) & 0x7FFFFFFF;
-	if (bDetPrimaryLatchedInstant)
-		DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_INSTANT;
-	else
-		DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_PRIMARY_LOADED;
 	bDetSwitchSettlementPending = false;
 	DetArmServerFireState(NumRockets, true, bTight);
 	if (bbPlayer(Owner) != none)
@@ -1140,8 +1128,6 @@ function HandleDetServerAltFire(rotator StepView, vector StepLoc, int NumRockets
 	if (!DetPrepareServerFireContext(StepView, StepLoc, NumRockets, P))
 		return;
 
-	DetServerShotSerial = (DetServerShotSerial + 1) & 0x7FFFFFFF;
-	DetServerLastShotKind = IGPLUS_EB_SHOT_KIND_ALT;
 	bDetSwitchSettlementPending = false;
 	DetArmServerFireState(NumRockets, false);
 	if (bbPlayer(Owner) != none)
@@ -1181,14 +1167,11 @@ simulated function DetResetDeterministicState() {
 	DetVolleyHoldUntil = 0.0;
 	DetInternalBudget = 0;
 	DetClientAmmoSpentSinceDown = 0;
-	DetClientLastDownTS = 0.0;
 	ClientRocketsLoaded = 0;
 	bClientDone = false;
 	bRotated = false;
 	DetClearPendingAltInput();
 	bDetSwitchSettlementPending = false;
-	DetServerShotSerial = 0;
-	DetServerLastShotKind = -1;
 }
 
 function GiveTo(Pawn Other)
@@ -2240,8 +2223,6 @@ state ClientDown
 {
 	simulated function BeginState()
 	{
-		if (Level != none)
-			DetClientLastDownTS = Level.TimeSeconds;
 		DetResetPrimaryCycle(true);
 		DetResetAltCycle(true);
 		DetClientAmmoSpentSinceDown = 0;
