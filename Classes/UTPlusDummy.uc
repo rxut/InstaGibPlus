@@ -70,9 +70,7 @@ simulated function PostBeginPlay()
 function FillData(UTPlusSnapshot D) {
 	D.Loc = Actual.Location;
 	D.Vel = Actual.Velocity;
-	D.Acc = Actual.Acceleration;
 	D.Rot = Actual.Rotation;
-	D.VR = Actual.ViewRotation;
 	D.BaseEyeHeight = Actual.BaseEyeHeight;
 	D.EyeHeight = Actual.EyeHeight;
 	// Same value the unrewound hit check reads (GetPawnDuckFraction)
@@ -105,11 +103,6 @@ function FillData(UTPlusSnapshot D) {
 	D.bHeadDrawn = HeadTween != None && HeadTween.bCur;
 	if (HeadTween != None)
 		D.HeadDrawn = HeadTween.Cur;
-
-	if (Actual.IsA('PlayerPawn'))
-		D.ClientTimeStamp = PlayerPawn(Actual).CurrentTimeStamp;
-	else
-		D.ClientTimeStamp = 0;
 }
 
 event Tick(float DeltaTime) {
