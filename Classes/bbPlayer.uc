@@ -570,6 +570,7 @@ var int IGPlus_HitStatDeadShots, IGPlus_HitStatDeadHits;
 var int IGPlus_ClientHitVerdict;    // client: the last shot's, until its move takes it. Server: the running move's. 0: none
 var float IGPlus_ClientHitPlayedTS; // client: when our own trace last hit a player. 0: none waiting for the server's message
 var bool IGPlus_bClientHitKills;    // client: that hit kills by what we know (IGPlus_LostTradeCheck)
+var PlayerReplicationInfo IGPlus_ClientHitVictim; // client: who that hit was on
 // Client, Headshot Source on Client (IGPlus_ClientHeadshot): when our own trace
 // last played the headshot message, 0 with none waiting for the server's. And
 // how many it played, how many of those the server sent no message for, and
@@ -2756,8 +2757,15 @@ event ReceiveLocalizedMessage( class<LocalMessage> Message, optional int Sw, opt
 	}
 
 	// We know exactly what Botpack.DeathMessagePlus does, so replace it with our own
-	if (Message == class'Botpack.DeathMessagePlus')
+	if (Message == class'Botpack.DeathMessagePlus') {
 		Message = class'IGPlus_DeathMessagePlus';
+		// The target of our waiting hit died, and not by us (Sw 1: a suicide,
+		// the victim is RelatedPRI_1).
+		if (IGPlus_ClientHitVictim != None
+			&& ((Sw == 0 && RelatedPRI_2 == IGPlus_ClientHitVictim && RelatedPRI_1 != PlayerReplicationInfo)
+				|| (Sw == 1 && RelatedPRI_1 == IGPlus_ClientHitVictim)))
+			IGPlus_LostTradeCheck("target killed by another");
+	}
 
 	// This is here to deal with mods that change the messages we receive, and
 	// gracefully (or not) fall back to something that kind of works for
@@ -8978,6 +8986,7 @@ simulated function IGPlus_ClientShotVerdict(Actor Other, float Damage, name Dama
 	if (IGPlus_bShotDrawnDiffers)
 		IGPlus_ClientHitVerdict += IGPLUS_HIT_DRAWNDIFF;
 	IGPlus_ClientHitPlayedTS = Level.TimeSeconds;
+	IGPlus_ClientHitVictim = Victim.PlayerReplicationInfo;
 	// Health and armor of the others are a ping old here. Armor could save
 	// them from anything short of an instagib beam.
 	IGPlus_bClientHitKills = Victim.Health <= Damage
@@ -9077,11 +9086,12 @@ simulated function bool IGPlus_TakeClientHeadshot() {
 	return true;
 }
 
-// Client, NextIG and NextSA without trades: we died while our own trace's
-// killing hit still waited for the server (IGPlus_TakeClientHit). The server
-// had us dead before that shot came, so it never counts. "Lost Trade" shows, in the
-// place of a "Head Shot" of ours.
-simulated function IGPlus_LostTradeCheck() {
+// Client, NextIG and NextSA without trades: our own trace's killing hit still
+// waited for the server (IGPlus_TakeClientHit) when we died, or when someone
+// else killed its target. The server had us or them dead before that shot
+// came, so it never counts. "Lost Trade" shows, in the place of a "Head Shot"
+// of ours.
+simulated function IGPlus_LostTradeCheck(string Why) {
 	local WeaponSettingsRepl WS;
 
 	if (Level.NetMode != NM_Client || Settings == None || Settings.bLostTradeNotification == false || myHUD == None)
@@ -9093,6 +9103,8 @@ simulated function IGPlus_LostTradeCheck() {
 	WS = GetWeaponSettings();
 	if (WS == None || WS.bEnableTrades)
 		return;
+	IGPlus_bClientHitKills = false;
+	ClientDebugMessage("Lost Trade:"@Why@(Level.TimeSeconds - IGPlus_ClientHitPlayedTS)@"s after our hit");
 	myHUD.LocalizedMessage(class'IGPlus_LostTradeMessage');
 }
 
@@ -15011,7 +15023,7 @@ state Dying
 		bJumpStatus = false;
 		if (zzClientTTarget != None)
 			zzClientTTarget.Destroy();
-		IGPlus_LostTradeCheck();
+		IGPlus_LostTradeCheck("we died");
 
 		// BEGIN PlayerPawn.Dying.BeginState
 		BaseEyeheight = Default.BaseEyeHeight;
