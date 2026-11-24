@@ -8796,7 +8796,7 @@ simulated function bool IGPlus_HasClientHitResponse() {
 		n++;
 		if (NN_SuperShockRifle(I) != none && NN_SuperShockRifle(I).bNewNet)
 			return true;
-		if (NN_ShockRifle(I) != none && NN_ShockRifle(I).bNewNet)
+		if (NN_ShockDOMRifle(I) != none && NN_ShockDOMRifle(I).bNewNet)
 			return true;
 		if (NN_SniperRifle(I) != none && NN_SniperRifle(I).bNewNet)
 			return true;
@@ -8809,7 +8809,7 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 	if (Weapon == None)
 		return false;
 
-	return (Weapon.IsA('NN_ShockRifle')
+	return (Weapon.IsA('NN_ShockDOMRifle')
 		|| Weapon.IsA('NN_SuperShockRifle')
 		|| Weapon.IsA('NN_SniperRifle')
 	);
