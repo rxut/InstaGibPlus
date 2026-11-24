@@ -32,32 +32,6 @@ function SuperExplosion()	// aka, combo.
 	Destroy();
 }
 
-function SuperDuperExplosion()	// aka, combo.
-{
-	local bbPlayer bbP;
-    local UT_SuperComboRing Ring;
-
-	bbP = bbPlayer(Owner);
-
-	// TODO: I think this means combos don't do damage?
-	/* if (bbP != None && bbP.bNewNet)
-	{
-		if (Level.NetMode == NM_Client && !IsA('NN_ShockProjOwnerHidden'))
-		{
-			bbP.NN_HurtRadius(self, class'ShockRifle', 3, 750, MyDamageType, MomentumTransfer*6, Location, zzNN_ProjIndex );
-			bbP.xxNN_RemoveProj(zzNN_ProjIndex, Location, vect(0,0,0), true);
-		}
-	}
-	else
-	{
-		HurtRadius(Damage*9, 750, MyDamageType, MomentumTransfer*6, Location );
-	} */
-	Ring = Spawn(Class'UT_SuperComboRing',,'',Location, Instigator.ViewRotation);
-	PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
-
-	Destroy();
-}
-
 simulated function NN_SuperExplosion(Pawn Pwner)	// aka, combo.
 {
 	local rotator Tater;
@@ -73,35 +47,6 @@ simulated function NN_SuperExplosion(Pawn Pwner)	// aka, combo.
     {
         bbP.xxClientDemoFix(Ring, class'ut_ComboRing', Location, Ring.Velocity, Ring.Acceleration, Tater);
     }
-
-	Destroy();
-}
-
-simulated function NN_SuperDuperExplosion(Pawn Pwner)	// aka, combo.
-{
-	local rotator Tater;
-	local bbPlayer bbP;
-    local UT_SuperComboRing Ring;
-
-	bbP = bbPlayer(Pwner);
-	Tater = Pwner.ViewRotation;
-
-	/* if (bbP != None && bbP.bNewNet)
-	{
-		if (Level.NetMode == NM_Client)
-		{
-			bbP.NN_HurtRadius(self, class'ShockRifle', 3, 750, MyDamageType, MomentumTransfer*6, Location, zzNN_ProjIndex );
-			bbP.xxNN_RemoveProj(zzNN_ProjIndex, Location, vect(0,0,0), true);
-		}
-	}
-	else
-	{
-		HurtRadius(Damage*9, 750, MyDamageType, MomentumTransfer*6, Location );
-	} */
-	Ring = Spawn(Class'UT_SuperComboRing',Pwner,'',Location, Tater);
-	PlaySound(ExploSound,,20.0,,2000,0.6);
-    if(bbP != none)
-        bbP.xxClientDemoFix(Ring, Class'UT_SuperComboRing', Location, Ring.Velocity, Ring.Acceleration, Tater);
 
 	Destroy();
 }

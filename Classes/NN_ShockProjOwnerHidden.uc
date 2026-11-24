@@ -120,35 +120,6 @@ simulated function DoSuperExplosion()
 	}
 }
 
-function SuperDuperExplosion()	// aka, combo.
-{
-	if (!bbPlayer(Owner).bNewNet)
-		HurtRadius(Damage*9, 750, MyDamageType, MomentumTransfer*6, Location );
-	DoSuperDuperExplosion();
-	PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
-	//Spawn(Class'UT_SuperComboRing',,'',Location, Instigator.ViewRotation);
-	//PlaySound(ExploSound,,20.0,,2000,0.6);
-	if (bbPlayer(Instigator) != None)
-		bbPlayer(Instigator).xxNN_ClientProjExplode(-1*(zzNN_ProjIndex + 1));
-
-	Destroy();
-}
-
-simulated function DoSuperDuperExplosion()
-{
-	local PlayerPawn P;
-	local Actor CR;
-
-	if (RemoteRole < ROLE_Authority) {
-		//for (P = Level.PawnList; P != None; P = P.NextPawn)
-		ForEach AllActors(class'PlayerPawn', P)
-			if (P != Owner) {
-				CR = P.Spawn(Class'UT_SuperComboRing',P,'',Location, Pawn(Owner).ViewRotation);
-				CR.bOnlyOwnerSee = True;
-			}
-	}
-}
-
 defaultproperties
 {
      bOwnerNoSee=True
