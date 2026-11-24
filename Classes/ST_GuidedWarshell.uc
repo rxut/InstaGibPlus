@@ -6,18 +6,6 @@
 
 class ST_GuidedWarshell extends GuidedWarshell;
 
-var IGPlus_WeaponImplementation WImp;
-
-simulated function PostBeginPlay()
-{
-	if (ROLE == ROLE_Authority)
-	{
-		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-			break;
-	}
-	Super.PostBeginPlay();
-}
-
 simulated function Destroyed()
 {
 	local WarheadLauncher W;
