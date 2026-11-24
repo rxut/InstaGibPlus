@@ -171,8 +171,6 @@ var config float TranslocatorDownTime;
 var config float TranslocatorHealth;
 var config bool  TranslocatorCompensatePing;
 
-var config string DefaultWeaponClass;
-
 // Also turns on Sub Tick Compensation (UTPlusDummy.CompStart) and Precise
 // Rewind Time (bbPlayer.IGPlus_PRTNote).
 var config bool  bEnablePingCompensation;
@@ -369,7 +367,6 @@ function TrimConfigTo(int Mode) {
 	ClearConfig("TranslocatorDownTime");
 	ClearConfig("TranslocatorHealth");
 	ClearConfig("TranslocatorCompensatePing");
-	ClearConfig("DefaultWeaponClass");
 	ClearConfig("InvisibilityDuration");
 	ClearConfig("ShieldBeltCharge");
 	ClearConfig("ArmorCharge");
@@ -549,7 +546,6 @@ defaultproperties
 	TranslocatorDownTime=0.212121
 	TranslocatorHealth=65.0
 	TranslocatorCompensatePing=False
-	DefaultWeaponClass=""
 
 	InvisibilityDuration=45
 

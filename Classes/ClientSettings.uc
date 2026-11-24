@@ -111,13 +111,6 @@ var config float  KillFeedY;
 var config float  KillFeedSpeed;
 var config float  KillFeedScale;
 
-enum EFraggerScopeChoice {
-	FSC_None,
-	FSC_Moveable,
-	FSC_Static
-};
-var config EFraggerScopeChoice FraggerScopeChoice;
-
 var config bool   bEnableNetStats;
 var config bool   bNetStatsUnconfirmedTime;
 var config bool   bNetStatsLocationError;
@@ -542,15 +535,6 @@ static function EHitMarkerColorMode IntToHitMarkerColorMode(int A) {
 	return HMCM_FriendOrFoe;
 }
 
-simulated function CycleFraggerScope() {
-	switch(FraggerScopeChoice) {
-		case FSC_None:     FraggerScopeChoice = FSC_Moveable; break;
-		case FSC_Moveable: FraggerScopeChoice = FSC_Static; break;
-		case FSC_Static:   FraggerScopeChoice = FSC_None; break;
-	}
-	SaveConfig();
-}
-
 simulated function string DumpSettings() {
 	return "IG+ Client Settings:"$Chr(10)$
 		GetSetting("bForceModels")$
@@ -630,7 +614,6 @@ simulated function string DumpSettings() {
 		GetSetting("KillFeedY")$
 		GetSetting("KillFeedSpeed")$
 		GetSetting("KillFeedScale")$
-		GetSetting("FraggerScopeChoice")$
 		GetSetting("bEnableNetStats")$
 		GetSetting("bNetStatsUnconfirmedTime")$
 		GetSetting("bNetStatsLocationError")$
@@ -744,7 +727,6 @@ defaultproperties
 	KillFeedY=0.5
 	KillFeedSpeed=1.0
 	KillFeedScale=1.0
-	FraggerScopeChoice=FSC_Moveable
 	bEnableNetStats=False
 	bNetStatsUnconfirmedTime=True
 	bNetStatsLocationError=True
