@@ -17780,11 +17780,6 @@ function xxServerSetTeamInfo(bool b)
 		HUDInfo = 0;
 }
 
-function xxServerSetMinDodgeClickTime(float f)
-{
-	Settings.MinDodgeClickTime = f;
-}
-
 exec function SetKillCamEnabled(bool b) {
 	if (IGPlus_RefuseForced("bEnableKillCam", "kill cam"))
 		return;
