@@ -62,15 +62,12 @@ var float	zzOrigFOV;		// Original FOV for TrackFOV = 1
 var string	FakeClass;		// Class that the model replaces
 var bool	zzbBadGuy;		// BadGuy! (Avoid kick spamming)
 var name    zzDefaultWeapon;
-var Projectile zzNN_Projectiles[256];
-var int     zzNN_ProjIndex, NN_ProjLength;
 var rotator zzNN_ViewRot;
 var actor   zzNN_HitActor;
-var Vector  zzNN_HitLoc, zzNN_HitDiff, zzNN_ClientLoc;
+var Vector  zzNN_HitLoc, zzNN_HitDiff;
 var bool    zzbIsWarmingUp, zzbFakeUpdate, zzbForceUpdate, zzbNN_Special;
 var float   zzLastStuffUpdate, zzForceUpdateUntil, zzSpawnedTime;
 var float LastFireTimeStamp;
-var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
 var Weapon IGPlus_DetClientPendingSeen;
 // Switch requested server-side but not yet holstered (deferral window). Kept
@@ -1339,9 +1336,6 @@ replication
 		xxClientPSFilterDone,
 		xxClientPSSpawn;
 
-	reliable if ((Role == ROLE_Authority) && !bDemoRecording)
-		xxNN_ClientProjExplode;
-
 	// Server demos only: one record of a WeaponEffect (rocket scorch marks),
 	// and copies of the messages and chat this player got (stock
 	// ReceiveLocalizedMessage, ClientMessage and TeamMessage are kept out of
@@ -1407,8 +1401,6 @@ replication
 		IGPlus_ServerRequestSettings,
 		IGPlus_WeaponRequestSettings,
 		ServerSetDodgeSettings,
-		xxExplodeOther,
-		xxNN_AltFire,
 		xxNN_Fire,
 		xxSendDeathMessageToSpecs,
 		xxSendHeadshotToSpecs,
@@ -1526,14 +1518,6 @@ function SendWeaponEffect(
 		TargetOffset,
 		HitNormal * 32767
 	);
-}
-
-/* More crash fix bs */
-simulated function bool xxGarbageLocation(actor Other)
-{
-	return (InStr(Caps(string(Other.Location.X)), "N") > -1 ||
-		InStr(Caps(string(Other.Location.Y)), "N") > -1 ||
-		InStr(Caps(string(Other.Location.Z)), "N") > -1);
 }
 
 exec function Fly()
@@ -9176,8 +9160,6 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 	}
 
 	xxEnableCarcasses();
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
 	zzNN_ViewRot = ViewRot;
 	zzNN_HitActor = HitActor;
 	zzNN_HitLoc = HitLoc;
@@ -9225,89 +9207,6 @@ exec function AltFire( optional float F )
 	else
 	{
 		Super.AltFire(F);
-	}
-	xxDisableCarcasses();
-}
-
-function xxNN_AltFire( float TimeStamp, int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional actor HitActor, optional vector HitLoc, optional vector HitDiff, optional bool bSpecial, optional int ClientFRVI, optional float ClientAccuracy )
-{
-	if (!bNewNet || !xxWeaponIsNewNet(true) || Role < ROLE_Authority)
-		return;
-
-	if (TimeStamp <= LastAltFireTimeStamp)
-		return;
-	LastAltFireTimeStamp = TimeStamp;
-
-	if (TimeStamp + zzUTPure.Settings.FireTimeout < CurrentTimeStamp) {
-		IGPlus_EventLog("Rejected Shot"@PlayerReplicationInfo.PlayerName@TimeStamp@CurrentTimeStamp);
-		return;
-	}
-
-	xxEnableCarcasses();
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ViewRot = ViewRot;
-	zzNN_HitActor = HitActor;
-	zzNN_HitLoc = HitLoc;
-	zzNN_HitDiff = HitDiff;
-	zzbNN_Special = bSpecial;
-
-	Super.AltFire(1);
-
-	zzNN_HitActor = None;
-	zzbNN_Special = false;
-	xxDisableCarcasses();
-}
-
-simulated function int xxNN_AddProj(Projectile Proj)
-{
-	local int ProjIndex;
-
-	if (Proj == None || zzNN_ProjIndex < 0)
-		return -1;
-
-	zzNN_Projectiles[zzNN_ProjIndex] = Proj;
-
-	ProjIndex = zzNN_ProjIndex;
-	zzNN_ProjIndex++;
-	if (zzNN_ProjIndex >= NN_ProjLength)
-		zzNN_ProjIndex = 0;
-
-	return ProjIndex;
-}
-
-simulated function xxNN_ClientProjExplode( int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo )
-{
-	local Projectile Proj;
-
-	if (Level.NetMode != NM_Client)
-		return;
-
-	xxEnableCarcasses();
-	if (ProjIndex < 0)
-	{
-		ProjIndex = -1*(ProjIndex + 1);
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			Proj.Destroy();
-		}
-	}
-	else
-	{
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			if (bCombo && Proj.IsA('ShockProj'))
-			{
-				if (IsInState('Dying'))
-					ShockProj(Proj).SuperExplosion();
-			}
-			else
-			{
-				Proj.Explode(HitLocation, HitNormal);
-			}
-		}
 	}
 	xxDisableCarcasses();
 }
@@ -21191,12 +21090,6 @@ function xxServerDemoReply(string zzS)
 	zzUTPure.xxLog("Forced Demo:"@PlayerReplicationInfo.PlayerName@zzS);
 }
 
-function xxExplodeOther(Projectile Other)
-{
-	if (Other != None)
-		Other.Explode(Other.Location, Normal(Location-Other.Location));
-}
-
 exec function DropFlag() {
 	local Decoration Flag;
 	if (PlayerReplicationInfo.HasFlag != none) {
@@ -21994,7 +21887,6 @@ defaultproperties
 {
 	bNewNet=True
 	HUDInfo=1
-	NN_ProjLength=256
 	bIsFinishedLoading=False
 	bDrawDebugData=False
 	TimeBetweenNetUpdates=0.01

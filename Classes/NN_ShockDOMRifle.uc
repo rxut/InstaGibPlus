@@ -15,34 +15,6 @@ simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vect
     return false;
 }
 
-simulated function RenderOverlays(Canvas Canvas)
-{
-    local bbPlayer bbP;
-
-    Super(ShockRifle).RenderOverlays(Canvas);
-
-    yModInit();
-
-    bbP = bbPlayer(Owner);
-    if (bNewNet && Role < ROLE_Authority && bbP != None)
-    {
-        if (bbP.bFire != 0 && !IsInState('ClientFiring'))
-            ClientFire(1);
-        else if (bbP.bAltFire != 0 && !IsInState('ClientFiring'))
-            ClientFire(1);
-    }
-}
-
-function AltFire( float Value )
-{
-    Fire(Value);
-}
-
-simulated function bool ClientAltFire(float Value)
-{
-    return ClientFire(Value);
-}
-
 simulated function PlaySelect ()
 {
     return;

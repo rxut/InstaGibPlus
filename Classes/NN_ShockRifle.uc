@@ -7,13 +7,9 @@
 class NN_ShockRifle extends ShockRifle;
 
 var bool bNewNet;								// Self-explanatory lol
-var Rotator GV;
 var Vector CDO;
 var float yMod;
 var float LastFiredTime;
-
-// For Special Shock Beam
-var int HitCounter;
 
 var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
@@ -54,8 +50,8 @@ simulated function RenderOverlays(Canvas Canvas)
 	{
 		if (bbP.bFire != 0 && !IsInState('ClientFiring'))
 			ClientFire(1);
-		else if (bbP.bAltFire != 0 && !IsInState('ClientAltFiring'))
-			ClientAltFire(1);
+		else if (bbP.bAltFire != 0 && !IsInState('ClientFiring'))
+			ClientFire(1);
 	}
 }
 
@@ -122,7 +118,6 @@ simulated function NN_TraceFire()
 	local vector HitLocation, HitDiff, HitNormal, StartTrace, EndTrace, X,Y,Z;
 	local actor Other;
 	local bbPlayer bbP;
-	local bool zzbNN_Combo;
 
 	if (Owner.IsA('Bot'))
 		return;
@@ -155,16 +150,8 @@ simulated function NN_TraceFire()
 		}
 	}
 
-	zzbNN_Combo = NN_ProcessTraceHit(Other, HitLocation, HitNormal, vector(bbP.ViewRotation),Y,Z);
-
-	if(zzbNN_Combo) 
-	{
-		bbP.xxNN_Fire(Level.TimeSeconds, NN_ShockProj(Other).zzNN_ProjIndex, bbP.Location, bbP.Velocity, bbP.ViewRotation, Other, HitLocation, HitDiff, true);
-	} 
-	else 
-	{
-		bbP.xxNN_Fire(Level.TimeSeconds, -1, bbP.Location, bbP.Velocity, bbP.ViewRotation, Other, HitLocation, HitDiff, false);
-	}
+	NN_ProcessTraceHit(Other, HitLocation, HitNormal, vector(bbP.ViewRotation),Y,Z);
+	bbP.xxNN_Fire(Level.TimeSeconds, -1, bbP.Location, bbP.Velocity, bbP.ViewRotation, Other, HitLocation, HitDiff, false);
 }
 
 simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
@@ -173,9 +160,6 @@ simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vect
 	local bbPlayer bbP;
 	local vector Offset;
 	local vector HitOffset;
-	local bool zzbNN_Combo; 
-
-	zzbNN_Combo = false;
 
 	if (Owner.IsA('Bot'))
 		return false;
@@ -207,12 +191,7 @@ simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vect
 
 	
 	class'bbPlayerStatics'.static.PlayClientHitResponse(Pawn(Owner), Other, HitDamage, MyDamageType);
-	if ( NN_ShockProj(Other)!=None )
-	{
-		NN_ShockProj(Other).NN_SuperExplosion(Pawn(Owner));
-		zzbNN_Combo = true;
-	}
-	return zzbNN_Combo;
+	return false;
 }
 
 function Fire ( float Value )
@@ -233,66 +212,7 @@ function Fire ( float Value )
 
 function AltFire( float Value )
 {
-	local actor HitActor;
-	local vector HitLocation, HitNormal, Start;
-	local bbPlayer bbP;
-	local NN_ShockProjOwnerHidden NNSP;
-
-	if (Owner.IsA('Bot'))
-	{
-		Super.AltFire(Value);
-		return;
-	}
-
-	bbP = bbPlayer(Owner);
-	if (bbP != None && bNewNet && Value < 1)
-		return;
-
-	if ( Owner == None )
-		return;
-
-	if ( Owner.IsA('Bot') ) //make sure won't blow self up
-	{
-		Start = Owner.Location + CalcDrawOffset() + FireOffset.Z * vect(0,0,1);
-		if ( Pawn(Owner).Enemy != None )
-			HitActor = Trace(HitLocation, HitNormal, Start + 250 * Normal(Pawn(Owner).Enemy.Location - Start), Start, false, vect(12,12,12));
-		else
-			HitActor = self;
-		if ( HitActor != None )
-		{
-			Global.Fire(Value);
-			return;
-		}
-	}
-	if ( AmmoType != None && AmmoType.UseAmmo(1) )
-	{
-		GotoState('AltFiring');
-		bCanClientFire = true;
-		if ( Owner.IsA('Bot') )
-		{
-			if ( Owner.IsInState('TacticalMove') && (Owner.Target == Pawn(Owner).Enemy)
-			 && (Owner.Physics == PHYS_Walking) && !Bot(Owner).bNovice
-			 && (FRand() * 6 < Pawn(Owner).Skill) )
-				Pawn(Owner).SpecialFire();
-		}
-		bPointing=True;
-		ClientAltFire(value);
-		if (bNewNet)
-		{
-			NNSP = NN_ShockProjOwnerHidden(ProjectileFire(Class'NN_ShockProjOwnerHidden', AltProjectileSpeed, bAltWarnTarget));
-			if (NNSP != None)
-			{
-				NNSP.NN_OwnerPing = float(Owner.ConsoleCommand("GETPING"));
-				if (bbP != None)
-					NNSP.zzNN_ProjIndex = bbP.xxNN_AddProj(NNSP);
-			}
-		}
-		else
-		{
-			Pawn(Owner).PlayRecoil(FiringSpeed);
-			ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
-		}
-	}
+	Fire(Value);
 }
 
 state ClientFiring
@@ -365,130 +285,14 @@ state ClientFiring
 	}
 }
 
-state ClientAltFiring
-{
-	simulated function AnimEnd()
-	{
-		Super.AnimEnd();
-		if (Owner.IsA('Bot'))
-			return;
-		if (!bNewNet || Level.NetMode != NM_Client)
-			return;
-		if ( bForceFire || (PlayerPawn(Owner).bFire != 0) )
-			Global.ClientFire(1);
-		else if ( bForceAltFire || (PlayerPawn(Owner).bAltFire != 0) )
-			Global.ClientAltFire(1);
-	}
-}
-
-function Projectile ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
-{
-	local Vector Start, X,Y,Z;
-	local PlayerPawn PlayerOwner;
-	local bbPlayer bbP;
-
-	if (Owner.IsA('Bot'))
-		return Super.ProjectileFire(ProjClass, ProjSpeed, bWarn);
-
-	PlayerOwner = PlayerPawn(Owner);
-	bbP = bbPlayer(Owner);
-
-	Owner.MakeNoise(Pawn(Owner).SoundDampening);
-	if (bNewNet && bbP != None)
-	{
-		if (Level.TimeSeconds - LastFiredTime < 0.4)
-			return None;
-		GetAxes(bbP.zzNN_ViewRot,X,Y,Z);
-		if (Mover(bbP.Base) == None)
-			Start = bbP.zzNN_ClientLoc + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
-		else
-			Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
-	}
-	else
-	{
-		GetAxes(Pawn(Owner).ViewRotation,X,Y,Z);
-		Start = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * Y + FireOffset.Z * Z;
-	}
-	AdjustedAim = pawn(owner).AdjustAim(ProjSpeed, Start, AimError, True, bWarn);
-
-	LastFiredTime = Level.TimeSeconds;
-	return Spawn(ProjClass,Owner,, Start,AdjustedAim);
-}
-
-simulated function Projectile NN_ProjectileFire(class<projectile> ProjClass, float ProjSpeed, bool bWarn)
-{
-	local Vector Start, X,Y,Z;
-	local PlayerPawn PlayerOwner;
-	local Projectile Proj;
-	local NN_ShockProj ST_Proj;
-	local int ProjIndex;
-	local bbPlayer bbP;
-
-	if (Owner.IsA('Bot'))
-		return None;
-
-	yModInit();
-
-	bbP = bbPlayer(Owner);
-	if (bbP == None || (Level.TimeSeconds - LastFiredTime) < 0.4)
-		return None;
-
-	GetAxes(GV,X,Y,Z);
-	Start = Owner.Location + CDO + FireOffset.X * X + yMod * Y + FireOffset.Z * Z;
-	if ( PlayerOwner != None )
-		PlayerOwner.ClientInstantFlash( -0.4, vect(450, 190, 650));
-
-	LastFiredTime = Level.TimeSeconds;
-	Proj = Spawn(ProjClass,Owner,, Start,GV);
-	ST_Proj = NN_ShockProj(Proj);
-	ProjIndex = bbP.xxNN_AddProj(Proj);
-	if (ST_Proj != None)
-		ST_Proj.zzNN_ProjIndex = ProjIndex;
-	bbP.xxNN_AltFire(Level.TimeSeconds, ProjIndex, bbP.Location, bbP.Velocity, bbP.ViewRotation);
-	bbP.xxClientDemoFix(ST_Proj, Class'ShockProj', Start, ST_Proj.Velocity, Proj.Acceleration, GV);
-}
-
 simulated function bool ClientAltFire(float Value)
 {
-	local bbPlayer bbP;
-	local bool Result;
-
-	if (Owner.IsA('Bot'))
-		return Super.ClientAltFire(Value);
-
-	class'NN_WeaponFunctions'.static.IGPlus_BeforeClientAltFire(self);
-
-	bbP = bbPlayer(Owner);
-	if (Role < ROLE_Authority && bbP != None && bNewNet)
-	{
-		if (bbP.ClientCannotShoot() || bbP.Weapon != Self || Level.TimeSeconds - LastFiredTime < 0.4) {
-			class'NN_WeaponFunctions'.static.IGPlus_AfterClientAltFire(self);
-			return false;
-		}
-		if ( AmmoType.AmmoAmount > 0 )
-		{
-			Instigator = Pawn(Owner);
-			GotoState('AltFiring');
-			bCanClientFire = true;
-			Pawn(Owner).PlayRecoil(FiringSpeed);
-			bPointing=True;
-			NN_ProjectileFire(AltProjectileClass, AltProjectileSpeed, bAltWarnTarget);
-			LastFiredTime = Level.TimeSeconds;
-		}
-	}
-	Result = Super.ClientAltFire(Value);
-
-	class'NN_WeaponFunctions'.static.IGPlus_AfterClientAltFire(self);
-
-	return Result;
+	return ClientFire(Value);
 }
 
 function TraceFire( float Accuracy )
 {
 	local bbPlayer bbP;
-	local bool bShockCombo;
-	local NN_ShockProjOwnerHidden NNSP;
-	local actor NN_Other;
 	local vector NN_HitLoc, HitNormal, StartTrace, EndTrace, X,Y,Z;
 
 	if (Owner.IsA('Bot'))
@@ -506,8 +310,6 @@ function TraceFire( float Accuracy )
 
 	if (bbP.zzNN_HitActor != None && bbP.zzNN_HitActor.IsA('bbPlayer') && !bbPlayer(bbP.zzNN_HitActor).xxCloseEnough(bbP.zzNN_HitLoc))
 		bbP.zzNN_HitActor = None;
-
-	NN_Other = bbP.zzNN_HitActor;
 
 	Owner.MakeNoise(bbP.SoundDampening);
 	GetAxes(bbP.zzNN_ViewRot,X,Y,Z);
@@ -528,24 +330,6 @@ function TraceFire( float Accuracy )
 
 	if (bbP.zzNN_HitActor != None && VSize(bbP.zzNN_HitDiff) > bbP.zzNN_HitActor.CollisionRadius + bbP.zzNN_HitActor.CollisionHeight)
 		bbP.zzNN_HitDiff = vect(0,0,0);
-
-	NN_Other = bbP.zzNN_HitActor;
-	bShockCombo = bbP.zzbNN_Special && (NN_Other == None || NN_ShockProjOwnerHidden(NN_Other) != None && NN_Other.Owner != Owner);
-
-	if (bShockCombo && NN_Other == None)
-	{
-		ForEach AllActors(class'NN_ShockProjOwnerHidden', NNSP)
-			if (NNSP.zzNN_ProjIndex == bbP.zzNN_ProjIndex)
-				NN_Other = NNSP;
-
-		if (NN_Other == None)
-			NN_Other = Spawn(class'NN_ShockProjOwnerHidden', Owner,, bbP.zzNN_HitLoc);
-		else
-			NN_Other.SetLocation(bbP.zzNN_HitLoc);
-
-		bbP.zzNN_HitActor = NN_Other;
-	}
-
 
 	if (bbP.zzNN_HitActor != None && (bbP.zzNN_HitActor.IsA('Pawn') || bbP.zzNN_HitActor.IsA('Projectile')) && FastTrace(bbP.zzNN_HitActor.Location + bbP.zzNN_HitDiff, StartTrace))
 	{
@@ -595,40 +379,8 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 		HitNormal,
 		Pawn(Owner));
 
-	if ( NN_ShockProjOwnerHidden(Other)!=None )
-	{
-		AmmoType.UseAmmo(1);
-		Other.SetOwner(Owner);
-		NN_ShockProjOwnerHidden(Other).SuperExplosion();
-		return;
-	}
-	else if ( NN_ShockProj(Other)!=None )
-	{
-		AmmoType.UseAmmo(1);
-		NN_ShockProj(Other).SuperExplosion();
-		return;
-	}
-
 	if ( (Other != self) && (Other != Owner) && (Other != None) )
 		Other.TakeDamage(GetWeaponSettings().ShockBeamDamage, PawnOwner, HitLocation, 60000.0*X, MyDamageType);
-}
-
-simulated function DoRingExplosion5(PlayerPawn Pwner, vector HitLocation, vector HitNormal)
-{
-	local PlayerPawn P;
-	local Actor CR;
-
-	if (Owner.IsA('Bot'))
-		return;
-
-	if (RemoteRole < ROLE_Authority) {
-		//for (P = Level.PawnList; P != None; P = P.NextPawn)
-		ForEach AllActors(class'PlayerPawn', P)
-			if (P != Pwner) {
-				CR = P.Spawn(class'ut_RingExplosion5',P,, HitLocation+HitNormal*8,rotator(HitNormal));
-				CR.bOnlyOwnerSee = True;
-			}
-	}
 }
 
 function SpawnEffect(vector HitLocation, vector SmokeLocation)
@@ -795,6 +547,5 @@ auto state Pickup
 
 defaultproperties
 {
-	AltProjectileClass=Class'NN_ShockProj'
 	bNewNet=True
 }
