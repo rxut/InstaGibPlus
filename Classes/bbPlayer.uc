@@ -593,6 +593,7 @@ var int IGPlus_ShotEyeByte;       // client: the last shot's, until its move tak
 var PlayerReplicationInfo IGPlus_RingVictimPRI;
 var vector IGPlus_RingSourceLoc, IGPlus_RingSourceOffset, IGPlus_RingLoc, IGPlus_RingNormal;
 var float IGPlus_RingTS;
+var class<WeaponEffect> IGPlus_RingEffect; // the ring that waits (SuperShockRifleRingEffect if none was given)
 const IGPLUS_RING_WAIT = 2.0;     // seconds a ring waits for the server's word
 var float IGPlus_ShotEyeDiff;     // server: the client's eye minus ours for the shot being run
 var bool IGPlus_bShotEyeRefused;  // server: that shot's eye was too far from ours
@@ -8629,8 +8630,11 @@ simulated function IGPlus_ClientShotVerdict(Actor Other, float Damage, name Dama
 // click and its ring waits for the server's word. The ring goes where the
 // beam ended, so that spot is worked out now: with Beam Destination Mode on
 // Attached the beam's end is the player's drawn spot plus the hit offset.
-simulated function IGPlus_RingHold(Pawn Victim, vector SourceLocation, vector SourceOffset, vector HitLocation, vector HitOffset, vector HitNormal) {
+simulated function IGPlus_RingHold(Pawn Victim, vector SourceLocation, vector SourceOffset, vector HitLocation, vector HitOffset, vector HitNormal, optional class<WeaponEffect> RingEffect) {
 	IGPlus_RingVictimPRI = Victim.PlayerReplicationInfo;
+	IGPlus_RingEffect = RingEffect;
+	if (IGPlus_RingEffect == None)
+		IGPlus_RingEffect = class'SuperShockRifleRingEffect';
 	IGPlus_RingSourceLoc = SourceLocation;
 	IGPlus_RingSourceOffset = SourceOffset;
 	if (Settings != None && Settings.BeamDestinationMode == 1)
@@ -8652,7 +8656,7 @@ simulated function IGPlus_RingConfirm(PlayerReplicationInfo VictimPRI) {
 	if (Level.TimeSeconds - IGPlus_RingTS > IGPLUS_RING_WAIT * Level.TimeDilation)
 		return;
 	SendWeaponEffect(
-		class'SuperShockRifleRingEffect',
+		IGPlus_RingEffect,
 		PlayerReplicationInfo,
 		IGPlus_RingSourceLoc,
 		IGPlus_RingSourceOffset,
@@ -10001,6 +10005,11 @@ simulated function float IGPlus_DetSelectTimeFor(Weapon W) {
 			return IGPlus_DetNewNetAnimTime(17, 28.0, 0.0);
 		return IGPlus_DetNewNetAnimTime(15, 30.0, 0.0);
 	}
+	// NextSDOM's rifle has no select animation, as the NewNet sDOM rifle.
+	// What it waits for is the NewNet rule that no shot leaves in the first
+	// 0.3 seconds of a life (ClientCannotShoot).
+	if (SDOM_ShockRifle(W) != none)
+		return 0.3;
 	WS = GetWeaponSettings();
 	if (WS == none)
 		return IGPlus_DetEntryGateSeconds();

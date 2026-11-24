@@ -156,7 +156,7 @@ simulated function HandleDetClientFire(bool bAlt, rotator StepView, vector StepL
 	} else {
 		PlayFiring();
 		bOwnDisc = IGPlus_OwnDiscOnBeam(BP, StepView, StepLoc);
-		if (BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+		if (IGPlus_ClientBeam(BP))
 			ClientTraceFire(true, StepView, StepLoc, bOwnDisc);
 		else
 			BP.IGPlus_OwnBallVerdict = 0; // nothing drawn here: the server's trace decides
@@ -303,12 +303,19 @@ simulated function bool ClientFire(float Value) {
 		if (!Super.ClientFire(Value))
 			return false;
 
-		if (bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations)
+		if (IGPlus_ClientBeam(bbP))
 			ClientTraceFire();
 		return true;
 	}
 	
 	return Super.ClientFire(Value);
+}
+
+// Does the shooter's client draw its own beam at the click? A client setting
+// here, which the server reads too (SpawnEffect). NextSDOM's rifle always
+// does (SDOM_ShockRifle).
+simulated function bool IGPlus_ClientBeam(bbPlayer BP) {
+	return BP != None && BP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations;
 }
 
 // Client-side shock beam tracing and effect spawning
@@ -335,7 +342,7 @@ simulated function ClientTraceFire(
 
 	bbP = bbPlayer(PawnOwner);
 
-	if (IsPingCompEnabled() == false || bbP == None || bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations == false)
+	if (IsPingCompEnabled() == false || IGPlus_ClientBeam(bbP) == false)
      	return;
 
 	yModInit();
@@ -995,7 +1002,7 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 		return;
 	}
 	else
-		Spawn(class'ut_RingExplosion5',,, HitLocation+HitNormal*8,rotator(HitNormal));
+		IGPlus_ServerRing(HitLocation, HitNormal);
 
 	if ((Other != self) && (Other != Owner) && (Other != None)) 
 	{
@@ -1006,6 +1013,12 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 			WImp.WeaponSettings.ShockBeamMomentum*60000.0*X,
 			MyDamageType);
 	}
+}
+
+// The beam's ring where it ended, for everyone. NextSDOM's rifle draws the
+// shooter's own (SDOM_ShockRifle).
+function IGPlus_ServerRing(vector HitLocation, vector HitNormal) {
+	Spawn(class'ut_RingExplosion5',,, HitLocation+HitNormal*8,rotator(HitNormal));
 }
 
 function SpawnEffect(vector HitLocation, vector SmokeLocation)
@@ -1028,7 +1041,7 @@ function SpawnEffect(vector HitLocation, vector SmokeLocation)
 
 	bbP = bbPlayer(Owner);
 
-	if (IsPingCompEnabled() && bbP != None && bbP.ClientWeaponSettingsData.bShockBeamUseClientSideAnimations) {
+	if (IsPingCompEnabled() && IGPlus_ClientBeam(bbP)) {
 
 		ServerBeamHidden = Spawn(class'ST_ShockBeamOwnerHidden', Owner,, SmokeLocation, SmokeRotation);
 		ServerBeamHidden.bOwnerNoSee = true;
