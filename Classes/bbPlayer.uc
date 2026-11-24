@@ -12644,23 +12644,6 @@ function ServerAddMomentum(vector Momentum) {
 		IGPlus_PushEaseTS = CurrentTimeStamp;
 }
 
-simulated function NN_Momentum( Vector momentum, name DamageType )
-{
-	local bool bPreventLockdown;		// Avoid the lockdown effect.
-
-	if (DamageType == 'shot' || DamageType == 'zapped')
-		bPreventLockdown = true;
-
-	if (Base != None)
-		momentum.Z = FMax(momentum.Z, 0.4 * VSize(momentum));
-
-	if (Mass != 0)
-		momentum = momentum/Mass;
-
-	if (!bPreventLockdown)	// FIX BY LordHypnos, http://forums.prounreal.com/viewtopic.php?t=34676&postdays=0&postorder=asc&start=0
-		AddVelocity( momentum );
-}
-
 final function IGPlus_DamageEvent IGPlus_DamageEvent_Alloc() {
 	local IGPlus_DamageEvent DE;
 
