@@ -311,9 +311,6 @@ WeaponDescription="Classification: Energy Rifle\n\nPrimary Fire: Lightning-Fast 
 PickupMessage="You got the ASMD"
 ItemName="ASMD"
 
-[IGPlus_DeathMessagePlus]
-KilledString="was killed by"
-
 [bbTBoss]
 MenuName="Boss"
 

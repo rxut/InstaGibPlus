@@ -1,7 +1,5 @@
 class IGPlus_DeathMessagePlus extends LocalMessagePlus;
 
-var localized string KilledString;
-
 static function string GetString(
     optional int Switch,
     optional PlayerReplicationInfo RelatedPRI_1,
@@ -145,7 +143,6 @@ static function ClientReceive(
 
 defaultproperties
 {
-     KilledString="was killed by"
      ChildMessage=Class'Botpack.KillerMessagePlus'
      DrawColor=(R=255,G=0,B=0)
 }
