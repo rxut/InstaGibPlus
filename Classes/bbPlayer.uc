@@ -370,7 +370,6 @@ var PureLevelBase PureLevel;	// And Level.
 var bool bDeterminedLocalPlayer;
 var PlayerPawn LocalPlayer;
 
-var TranslocatorTarget zzClientTTarget;
 
 // Net Updates
 var float TimeBetweenNetUpdates;
@@ -8829,7 +8828,6 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 	return (Weapon.IsA('NN_ShockRifle')
 		|| Weapon.IsA('NN_SuperShockRifle')
 		|| Weapon.IsA('NN_SniperRifle')
-		|| Weapon.IsA('NN_ShockDOMRifle')
 	);
 }
 
@@ -9163,7 +9161,6 @@ exec function Fire( optional float F )
 
 function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional actor HitActor, optional vector HitLoc, optional vector HitDiff, optional bool bSpecial, optional int ClientFRVI, optional float ClientAccuracy )
 {
-	local ImpactHammer IH;
 	local float TradeTimeMargin;
 
 	if (!bNewNet || !xxWeaponIsNewNet() || Role < ROLE_Authority)
@@ -9187,33 +9184,19 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 	zzNN_HitDiff = HitDiff;
 	zzbNN_Special = bSpecial;
 
-	IH = ImpactHammer(Weapon);
+	if (zzUTPure.Settings.bRestrictTrading && IsInState('Dying')) {
+		TradeTimeMargin = IGPlus_TradeTimeMargin();
 
-	if (IH != None)
-	{
-		if (bSpecial)
-			IH.TraceFire(1);
-		else
-			IH.TraceFire(2);
-		IH.PlayFiring();
-		IH.GoToState('FireBlast');
-	}
-	else
-	{
-		if (zzUTPure.Settings.bRestrictTrading && IsInState('Dying')) {
-			TradeTimeMargin = IGPlus_TradeTimeMargin();
-
-			if (RealTimeDead < TradeTimeMargin) {
-				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
-				Super.Fire(1);
-			} else {
-				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Rejected Trade! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
-			}
-		} else {
-			if (IsInState('Dying'))
-				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! RealTimeDead="$RealTimeDead);
+		if (RealTimeDead < TradeTimeMargin) {
+			IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
 			Super.Fire(1);
+		} else {
+			IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Rejected Trade! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
 		}
+	} else {
+		if (IsInState('Dying'))
+			IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! RealTimeDead="$RealTimeDead);
+		Super.Fire(1);
 	}
 	zzNN_HitActor = None;
 	zzbNN_Special = false;
@@ -14077,8 +14060,6 @@ state Dying
 		local Carcass C;
 
 		bJumpStatus = false;
-		if (zzClientTTarget != None)
-			zzClientTTarget.Destroy();
 
 		// BEGIN PlayerPawn.Dying.BeginState
 		BaseEyeheight = Default.BaseEyeHeight;

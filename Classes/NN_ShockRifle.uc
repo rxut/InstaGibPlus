@@ -165,9 +165,6 @@ simulated function NN_TraceFire()
 	{
 		bbP.xxNN_Fire(Level.TimeSeconds, -1, bbP.Location, bbP.Velocity, bbP.ViewRotation, Other, HitLocation, HitDiff, false);
 	}
-
-	if (Other == bbP.zzClientTTarget)
-		bbP.zzClientTTarget.TakeDamage(0, Pawn(Owner), HitLocation, 60000.0*vector(bbP.ViewRotation), MyDamageType);
 }
 
 simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
