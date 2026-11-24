@@ -6,20 +6,8 @@
 
 class NN_ShockProj extends ShockProj;
 
-// For Standstill combo Special
-var vector StartLocation;
 var actor NN_HitOther;
 var int zzNN_ProjIndex;
-
-simulated function PostBeginPlay()
-{
-	Super.PostBeginPlay();
-
-	if (Instigator != None)
-		StartLocation = Instigator.Location;
-	else if (Owner != None)
-		StartLocation = Owner.Location;
-}
 
 function SuperExplosion()	// aka, combo.
 {
