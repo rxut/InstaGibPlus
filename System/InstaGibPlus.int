@@ -8,8 +8,6 @@ Object=(Name=InstaGibPlus.NextIG,Class=Class,MetaClass=Engine.Mutator,Descriptio
 Object=(Name=InstaGibPlus.NextSA,Class=Class,MetaClass=Engine.Mutator,Description="NextSA,SniperArena with the deterministic SniperRifle")
 Object=(Name=InstaGibPlus.IGPlus_HitFeedback,Class=Class,MetaClass=Engine.Mutator,Description="IGPlus_HitFeedback,<Internal>")
 Object=(Name=InstaGibPlus.NNAnnouncer,Class=Class,MetaClass=Engine.Mutator,Description="NNAnnouncer,<Insert description here>")
-Object=(Name=InstaGibPlus.DisableWeapons,Class=Class,MetaClass=Engine.Mutator,Description="DisableWeapons,<Insert description here>")
-Object=(Name=InstaGibPlus.DisableNewNet,Class=Class,MetaClass=Engine.Mutator,Description="DisableNewNet,<Insert description here>")
 Object=(Name=InstaGibPlus.NewNetSA,Class=Class,MetaClass=Engine.Mutator,Description="NewNetSA,SniperArena with lag-compensated SniperRifle")
 Object=(Name=InstaGibPlus.NN_SniperRifle,Class=Class,MetaClass=Engine.Weapon)
 Object=(Name=InstaGibPlus.NN_SuperShockRifle,Class=Class,MetaClass=Engine.Weapon)
