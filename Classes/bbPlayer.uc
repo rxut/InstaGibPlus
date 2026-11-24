@@ -10802,7 +10802,6 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 function IGPlus_ReplicateInput(float Delta) {
 	local float RealDelta;
 	local IGPlus_SavedInput ReferenceInput;
-	local IGPlus_SavedInput NewestInput;
 	local IGPlus_SavedInput SerializedInput;
 	local Weapon DetWeapon;
 	local vector NewOffset, TargetLoc;
@@ -10827,7 +10826,6 @@ function IGPlus_ReplicateInput(float Delta) {
 	CorrectTeleporterVelocity();
 
 	IGPlus_SavedInputChain.Add(Delta, self);
-	NewestInput = IGPlus_SavedInputChain.Newest;
 
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogInput(IGPlus_SavedInputChain.Newest);
@@ -10935,7 +10933,6 @@ function xxReplicateMove(
 ) {
 	local int TlocBefore;
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
-	local EPhysics OldPhys;
 	local Mover ExitLift;
 	local Actor DbgOldBase;
 	local float AdjustAlpha;
@@ -11222,7 +11219,6 @@ function xxReplicateMove(
 
 	bJustFired = false;
 	bJustAltFired = false;
-	OldPhys = Physics;
 
 	IGPlus_TPFix_LastTouched = none;
 
