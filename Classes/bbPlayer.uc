@@ -63,13 +63,12 @@ var string	FakeClass;		// Class that the model replaces
 var bool	zzbBadGuy;		// BadGuy! (Avoid kick spamming)
 var name    zzDefaultWeapon;
 var Projectile zzNN_Projectiles[256];
-var vector zzNN_ProjLocations[256];
-var int     zzFRVI, zzNN_FRVI, zzNN_ProjIndex, NN_ProjLength;
+var int     zzNN_ProjIndex, NN_ProjLength;
 var rotator zzNN_ViewRot;
 var actor   zzNN_HitActor;
-var Vector  zzNN_HitLoc, zzNN_HitDiff, zzNN_ClientLoc, zzNN_ClientVel;
-var bool    zzbIsWarmingUp, zzbFakeUpdate, zzbForceUpdate, zzbNN_Special, zzbNN_ReleasedFire, zzbNN_ReleasedAltFire;
-var float   zzNN_Accuracy, zzLastStuffUpdate, zzForceUpdateUntil, zzSpawnedTime;
+var Vector  zzNN_HitLoc, zzNN_HitDiff, zzNN_ClientLoc;
+var bool    zzbIsWarmingUp, zzbFakeUpdate, zzbForceUpdate, zzbNN_Special;
+var float   zzLastStuffUpdate, zzForceUpdateUntil, zzSpawnedTime;
 var float LastFireTimeStamp;
 var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
@@ -1428,11 +1427,6 @@ replication
 		xxServerSetReadyToPlay,
 		xxServerSetTeamInfo,
 		xxSetNetUpdateRate;
-
-	reliable if ((Role < ROLE_Authority) && !bClientDemoRecording)
-		xxNN_ProjExplode,
-		xxNN_ReleaseAltFire,
-		xxNN_ReleaseFire;
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Functions Client -> Demo
@@ -9223,16 +9217,10 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 	xxEnableCarcasses();
 	zzNN_ProjIndex = ProjIndex;
 	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
 	zzNN_ViewRot = ViewRot;
 	zzNN_HitActor = HitActor;
 	zzNN_HitLoc = HitLoc;
 	zzNN_HitDiff = HitDiff;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzNN_Accuracy = ClientAccuracy;
-	zzbNN_ReleasedFire = false;
-	zzbNN_ReleasedAltFire = false;
 	zzbNN_Special = bSpecial;
 
 	IH = ImpactHammer(Weapon);
@@ -9311,16 +9299,10 @@ function xxNN_AltFire( float TimeStamp, int ProjIndex, vector ClientLoc, vector 
 	xxEnableCarcasses();
 	zzNN_ProjIndex = ProjIndex;
 	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
 	zzNN_ViewRot = ViewRot;
 	zzNN_HitActor = HitActor;
 	zzNN_HitLoc = HitLoc;
 	zzNN_HitDiff = HitDiff;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzNN_Accuracy = ClientAccuracy;
-	zzbNN_ReleasedFire = false;
-	zzbNN_ReleasedAltFire = false;
 	zzbNN_Special = bSpecial;
 
 	Super.AltFire(1);
@@ -9328,34 +9310,6 @@ function xxNN_AltFire( float TimeStamp, int ProjIndex, vector ClientLoc, vector 
 	zzNN_HitActor = None;
 	zzbNN_Special = false;
 	xxDisableCarcasses();
-}
-
-function xxNN_ReleaseFire( int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional int ClientFRVI )
-{
-	if (!bNewNet || !xxWeaponIsNewNet() || Role < ROLE_Authority)
-		return;
-
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
-	zzNN_ViewRot = ViewRot;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzbNN_ReleasedFire = true;
-}
-
-function xxNN_ReleaseAltFire( int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional int ClientFRVI )
-{
-	if (!bNewNet || !xxWeaponIsNewNet(true) || Role < ROLE_Authority)
-		return;
-
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
-	zzNN_ViewRot = ViewRot;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzbNN_ReleasedAltFire = true;
 }
 
 simulated function int xxNN_AddProj(Projectile Proj)
@@ -9375,58 +9329,6 @@ simulated function int xxNN_AddProj(Projectile Proj)
 	return ProjIndex;
 }
 
-simulated function xxNN_RemoveProj(int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo)
-{
-	if (zzNN_Projectiles[ProjIndex] == None || xxGarbageLocation(zzNN_Projectiles[ProjIndex]))
-		return;
-
-	zzNN_ProjLocations[ProjIndex] = zzNN_Projectiles[ProjIndex].Location;
-	zzNN_Projectiles[ProjIndex] = None;
-
-	if (Level.NetMode == NM_Client)
-		xxNN_ProjExplode(ProjIndex, HitLocation, HitNormal, bCombo);
-	else
-		xxNN_ClientProjExplode(ProjIndex, HitLocation, HitNormal, bCombo);
-}
-
-simulated function xxNN_ProjExplode( int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo )
-{
-	local Projectile Proj;
-
-	if (Level.NetMode == NM_Client)
-		return;
-
-	xxEnableCarcasses();
-	if (ProjIndex < 0)
-	{
-		ProjIndex = -1*(ProjIndex + 1);
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
-			Proj.Destroy();
-		}
-	}
-	else
-	{
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
-			if (bCombo && Proj.IsA('ShockProj'))
-			{
-				if (IsInState('Dying'))
-					ShockProj(Proj).SuperExplosion();
-			}
-			else
-			{
-				Proj.Explode(HitLocation, HitNormal);
-			}
-		}
-	}
-	xxDisableCarcasses();
-}
-
 simulated function xxNN_ClientProjExplode( int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo )
 {
 	local Projectile Proj;
@@ -9441,7 +9343,6 @@ simulated function xxNN_ClientProjExplode( int ProjIndex, optional vector HitLoc
 		Proj = zzNN_Projectiles[ProjIndex];
 		if (Proj != None && !xxGarbageLocation(Proj))
 		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
 			Proj.Destroy();
 		}
 	}
@@ -9450,7 +9351,6 @@ simulated function xxNN_ClientProjExplode( int ProjIndex, optional vector HitLoc
 		Proj = zzNN_Projectiles[ProjIndex];
 		if (Proj != None && !xxGarbageLocation(Proj))
 		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
 			if (bCombo && Proj.IsA('ShockProj'))
 			{
 				if (IsInState('Dying'))

@@ -26,18 +26,6 @@ function SuperExplosion()	// aka, combo.
 	local bbPlayer bbP;
 
 	bbP = bbPlayer(Owner);
-	/* if (bbP != None && bbP.bNewNet)
-	{
-		if (Level.NetMode == NM_Client && !IsA('NN_ShockProjOwnerHidden'))
-		{
-			bbP.NN_HurtRadius(self, class'ShockRifle', 2, 250, MyDamageType, MomentumTransfer*2, Location, zzNN_ProjIndex );
-			bbP.xxNN_RemoveProj(zzNN_ProjIndex, Location, vect(0,0,0), true);
-		}
-	}
-	else
-	{
-		HurtRadius(Damage*3, 250, MyDamageType, MomentumTransfer*2, Location );
-	} */
 	Spawn(Class'ut_ComboRing',,'',Location, Instigator.ViewRotation);
 	PlayOwnedSound(ExploSound,,20.0,,2000,0.6);
 
@@ -79,19 +67,6 @@ simulated function NN_SuperExplosion(Pawn Pwner)	// aka, combo.
 	bbP = bbPlayer(Pwner);
 	Tater = Pwner.ViewRotation;
 
-	// TODO: I think this means combos don't do damage?
-	/* if (bbP != None && bbP.bNewNet)
-	{
-		if (Level.NetMode == NM_Client)
-		{
-			bbP.NN_HurtRadius(self, class'ShockRifle', 2, 250, MyDamageType, MomentumTransfer*2, Location, zzNN_ProjIndex );
-			bbP.xxNN_RemoveProj(zzNN_ProjIndex, Location, vect(0,0,0), true);
-		}
-	}
-	else
-	{
-		HurtRadius(Damage*3, 250, MyDamageType, MomentumTransfer*2, Location );
-	} */
 	Ring = Spawn(Class'ut_ComboRing',Pwner,'',Location, Tater);
 	PlaySound(ExploSound,,20.0,,2000,0.6);
     if(bbP != none)
@@ -161,18 +136,6 @@ simulated function Explode(vector HitLocation, vector HitNormal)
 	if (bDeleteMe)
 		return;
 
-	/* if (bbP != None && bbP.bNewNet)
-	{
-		if (Level.NetMode == NM_Client && !IsA('NN_ShockProjOwnerHidden'))
-		{
-			bbP.NN_HurtRadius(self, class'ShockRifle', 1, 70, MyDamageType, MomentumTransfer, Location, zzNN_ProjIndex );
-			bbP.xxNN_RemoveProj(zzNN_ProjIndex, HitLocation, HitNormal);
-		}
-	}
-	else
-	{
-		HurtRadius(Damage, 70, MyDamageType, MomentumTransfer, Location );
-	} */
 	NN_Momentum( 70, MomentumTransfer, Location );
 
 	if (Damage > 60)
