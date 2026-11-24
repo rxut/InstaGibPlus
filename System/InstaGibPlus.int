@@ -15,7 +15,6 @@ Object=(Name=InstaGibPlus.NewNetSA,Class=Class,MetaClass=Engine.Mutator,Descript
 Object=(Name=InstaGibPlus.NN_FraggerRifle,Class=Class,MetaClass=Engine.Weapon)
 Object=(Name=InstaGibPlus.NN_SniperRifle,Class=Class,MetaClass=Engine.Weapon)
 Object=(Name=InstaGibPlus.NN_ShockRifle,Class=Class,MetaClass=Engine.Weapon)
-Object=(Name=InstaGibPlus.NN_ASMD,Class=Class,MetaClass=Engine.Weapon)
 Object=(Name=InstaGibPlus.NN_SuperShockRifle,Class=Class,MetaClass=Engine.Weapon)
 Object=(Name=InstaGibPlus.ST_enforcer,Class=Class,MetaClass=Engine.Weapon)
 Object=(Name=InstaGibPlus.ST_ImpactHammer,Class=Class,MetaClass=Engine.Weapon)
@@ -305,11 +304,6 @@ PresetNameHelp="The name of this crosshair."
 ZoomText="Zoom"
 SaveHelp="Saves every crosshair marked with a *."
 CloseHelp="Closes the window. You lose the changes you have not saved."
-
-[NN_ASMD]
-WeaponDescription="Classification: Energy Rifle\n\nPrimary Fire: Lightning-Fast Burst of focused energy.\n\nSecondary Fire: Unstable Energy projectile, expands radially.\n\nTechniques: Hitting the secondary fire energy projectiles with the regular fire's energy will cause an immensely powerful explosion."
-PickupMessage="You got the ASMD"
-ItemName="ASMD"
 
 [bbTBoss]
 MenuName="Boss"
