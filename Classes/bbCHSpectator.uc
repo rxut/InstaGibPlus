@@ -131,11 +131,6 @@ function int NormRot(int a) {
     return a & 0xFFFF;
 }
 
-function InitPID(out PIDController C) {
-    C.Integral = 0;
-    C.PrevErr = 0;
-}
-
 function int TickPID(out PIDController C, float DeltaTime, int Error) {
     local float Derivative;
 
@@ -600,8 +595,6 @@ auto state CheatFlying
         local int realbRun, realbDuck;
         local bool bRealJump;
 
-        local float TotalTime;
-
         bUpdatePosition = false;
         realbRun= bRun;
         realbDuck = bDuck;
@@ -620,7 +613,6 @@ auto state CheatFlying
             }
             else
             {
-                TotalTime += CurrentMove.Delta;
                 CurrentMove = CurrentMove.NextMove;
             }
         }

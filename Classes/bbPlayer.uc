@@ -58,26 +58,16 @@ var bool IGPlus_AutoDebugStarted; // Auto Debug Data ran this map
 var float IGPlus_AutoDebugEndTime;
 
 // Stuff
-var float	zzDesiredFOV;		// Needed ?
 var float	zzOrigFOV;		// Original FOV for TrackFOV = 1
 var string	FakeClass;		// Class that the model replaces
-var string	zzMyPacks;		// Defined only for defaults
 var bool	zzbBadGuy;		// BadGuy! (Avoid kick spamming)
-var int     zzRecentDmgGiven, zzRecentTeamDmgGiven;
 var name    zzDefaultWeapon;
-var float   zzLastHitSound, zzLastTeamHitSound;
-var Projectile zzNN_Projectiles[256];
-var vector zzNN_ProjLocations[256];
-var int     zzFRVI, zzNN_FRVI, FRVI_length, zzVRVI, zzNN_VRVI, VRVI_length, zzNN_ProjIndex, NN_ProjLength, zzEdgeCount, zzCheckedCount;
 var rotator zzNN_ViewRot;
-var actor   zzNN_HitActor, zzOldBase;
-var Vector  zzNN_HitLoc, zzClientHitNormal, zzClientHitLocation, zzNN_HitDiff, zzNN_HitLocLast, zzNN_HitNormalLast, zzNN_ClientLoc, zzNN_ClientVel;
-var bool    zzbIsWarmingUp, zzbFakeUpdate, zzbForceUpdate, zzbNN_Special, zzbNN_ReleasedFire, zzbNN_ReleasedAltFire;
-var float   zzNN_Accuracy, zzLastStuffUpdate, zzNextTimeTime, zzForceUpdateUntil, zzLastLocDiff, zzSpawnedTime;
-var TournamentWeapon zzGrappling;
-var float zzGrappleTime;
+var actor   zzNN_HitActor;
+var Vector  zzNN_HitLoc, zzNN_HitDiff;
+var bool    zzbIsWarmingUp, zzbFakeUpdate, zzbForceUpdate, zzbNN_Special;
+var float   zzLastStuffUpdate, zzForceUpdateUntil, zzSpawnedTime;
 var float LastFireTimeStamp;
-var float LastAltFireTimeStamp;
 var float IGPlus_DeterministicSwitchGuardUntil;
 var Weapon IGPlus_DetClientPendingSeen;
 // Switch requested server-side but not yet holstered (deferral window). Kept
@@ -206,16 +196,12 @@ var float IGPlus_DetWeaponGateTS;
 var Weapon IGPlus_DetPendingSeen;
 var float IGPlus_DetPendingSeenTS;
 var float IGPlus_DetPrevWeaponStepTS; // grace weapon: last valid step time
-var Weapon zzKilledWithWeapon;
-var Pawn zzLastKilled;
 var vector zzLast10Positions[10];	// every 50ms for half a second of backtracking
 var bbOldMovementInfo OldestMI, NewestMI;
 var int zzPositionIndex;
 var float zzNextPositionTime;
 var bool zzbNN_Tracing;
-var Weapon zzPendingWeapon;
 var float LastCAPTime; // ServerTime when last CAP was sent
-var decoration carriedFlag;
 var WeaponSettingsRepl WSettings;
 // Where this player's head is drawn through animation tweens (adaptive head
 // hitbox). The server's UTPlusDummy keeps it, on clients
@@ -227,20 +213,11 @@ var IGPlus_HeadTween IGPlus_HeadTween;
 // (IGPlus_LocationOffsetFix_AfterAll), so they sit on the model as drawn.
 var Actor IGPlus_DbgHitbox[64];
 
-// HUD stuff
-var Mutator	zzHudMutes[50];		// Accepted Hud Mutators
-var Mutator	zzWaitMutes[50];	// Hud Mutes waiting to be accepted
-var float	zzWMCheck[50];		// Key value
-var int		zzFailedMutes;		// How many denied Mutes have been tried to add
-var int		zzHMCnt;		// Counts of HudMutes and WaitMutes
-var int		zzHUDWarnings;		// Counts the # of times the HUD has been changed
-
 // Logo Display
 var bool	zzbLogoDone;		// Are we done with the logo ?
 var float	zzLogoStart;		// Start of logo display
 
 var int		zzSMCnt;		// ServerMove Count
-var bool	bMenuFixed;		// Fixed Menu item
 var float	zzCVTO;			// CenterView Time out.
 
 // Avoiding spam:		// How many times has name been changed
@@ -365,7 +342,6 @@ var bool IGPlus_SDSavedBlockActors;
 var bool IGPlus_SDSavedBlockPlayers;
 var bool IGPlus_SDSavedCollideWorld;
 var vector IGPlus_SDTrueLoc;
-var vector IGPlus_SDDisplacedTo;
 var Actor IGPlus_SDAttached[8];
 var vector IGPlus_SDAttachedLoc[8];
 var int IGPlus_SDNumAttached;
@@ -386,11 +362,6 @@ var bool IGPlus_MeshRepairPending;
 var Mesh IGPlus_MeshRepairOld;
 var float IGPlus_SDClockSearchTime;
 
-// ConsoleCommand/INT Reader/Key+Alias Handling
-var string zzRemResult;		// Temporary Variable to store ConsoleCommands
-var string zzRemCmd;		// The command the server sent.
-var bool bRemValid;		// True when valid.
-
 var UTPure zzUTPure;		// The UTPure mutator.
 
 var bool zzbDoScreenshot;	// True when we are about to do screenshot
@@ -403,8 +374,6 @@ var PureLevelBase PureLevel;	// And Level.
 var bool bDeterminedLocalPlayer;
 var PlayerPawn LocalPlayer;
 
-var TranslocatorTarget zzClientTTarget, TTarget;
-var float LastTick, AvgTickDiff;
 
 // Net Updates
 var float TimeBetweenNetUpdates;
@@ -437,7 +406,6 @@ var float IGPlus_PRTServerPing;      // server: our own ping measurement (GETPIN
 var float IGPlus_PRTPingReadTS;
 var float ExtrapolationDelta;
 var bool bIs469Server;
-var bool bIs469Client;
 
 // Clientside smoothing of position adjustment.
 var vector IGPlus_PreAdjustLocation;
@@ -1370,9 +1338,6 @@ replication
 		zzNetspeed,
 		ClientWeaponSettingsData;
 
-	unreliable if (Role == ROLE_AutonomousProxy || RemoteRole <= ROLE_SimulatedProxy)
-		bIs469Client;
-
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Variables Client -> Demo
 	unreliable if (bClientDemoRecording)
@@ -1400,7 +1365,6 @@ replication
 		Ready,
 		xxClientSwJumpPad,
 		xxSetDefaultWeapon,
-		xxSetPendingWeapon,
 		xxClientDetEntryGate,
 		xxSetTimes,
 		FRandValues,
@@ -1422,9 +1386,6 @@ replication
 		xxClientPSTimes,
 		xxClientPSFilterDone,
 		xxClientPSSpawn;
-
-	reliable if ((Role == ROLE_Authority) && !bDemoRecording)
-		xxNN_ClientProjExplode;
 
 	// Server demos only: one record of a WeaponEffect (rocket scorch marks),
 	// and copies of the messages and chat this player got (stock
@@ -1491,8 +1452,6 @@ replication
 		IGPlus_ServerRequestSettings,
 		IGPlus_WeaponRequestSettings,
 		ServerSetDodgeSettings,
-		xxExplodeOther,
-		xxNN_AltFire,
 		xxNN_Fire,
 		xxSendDeathMessageToSpecs,
 		xxSendHeadshotToSpecs,
@@ -1505,17 +1464,11 @@ replication
 		xxServerSetTeamInfo,
 		xxSetNetUpdateRate;
 
-	reliable if ((Role < ROLE_Authority) && !bClientDemoRecording)
-		xxNN_ProjExplode,
-		xxNN_ReleaseAltFire,
-		xxNN_ReleaseFire;
-
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Functions Client -> Demo
 	// Client->Demo
 	unreliable if ( bClientDemoRecording )
 		ClientDemoMessage,
-		xxClientLogToDemo,
 		xxReplicateVRToDemo;
 
 	reliable if (bClientDemoRecording && !bClientDemoNetFunc)
@@ -1534,11 +1487,6 @@ replication
 
 static final operator(34) int or_eq (out int A, int B) {
 	A = A | B;
-	return A;
-}
-
-static final operator(34) int and_eq (out int A, int B) {
-	A = A & B;
 	return A;
 }
 
@@ -1621,14 +1569,6 @@ function SendWeaponEffect(
 		TargetOffset,
 		HitNormal * 32767
 	);
-}
-
-/* More crash fix bs */
-simulated function bool xxGarbageLocation(actor Other)
-{
-	return (InStr(Caps(string(Other.Location.X)), "N") > -1 ||
-		InStr(Caps(string(Other.Location.Y)), "N") > -1 ||
-		InStr(Caps(string(Other.Location.Z)), "N") > -1);
 }
 
 exec function Fly()
@@ -1723,14 +1663,6 @@ simulated function Touch( actor Other )
 	Super.Touch(Other);
 }
 
-
-simulated function bool xxNewSetLocation(vector NewLoc, vector NewVel)
-{
-	if (!SetLocation(NewLoc))
-		return false;
-	Velocity = NewVel;
-	return true;
-}
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -2177,8 +2109,6 @@ event Possess()
 		SetPropertyText("PureLevel", GetPropertyText("xLevel"));
 		IGPlus_DamageEvent_ShowOnDeath = Settings.bShowDeathReport;
 		ClientSetMusic( Level.Song, Level.SongSection, Level.CdTrack, MTRAN_Fade );
-
-		bIs469Client = int(Level.EngineVersion) >= 469;
 	}
 	else
 	{
@@ -2242,7 +2172,6 @@ event Possess()
 
 		bIs469Server = int(Level.EngineVersion) >= 469;
 		if (RemoteRole != ROLE_AutonomousProxy) {
-			bIs469Client = bIs469Server;
 			IGPlus_DamageEvent_ShowOnDeath = Settings.bShowDeathReport;
 		}
 
@@ -2902,11 +2831,6 @@ function ClientDebugMessage(coerce string S, optional name Type, optional bool b
 		ClientDemoMessage(zzPrevClientMessage, Type, bBeep);
 		zzPrevClientMessage = "";
 	}
-}
-
-function rotator GR()
-{
-	return ViewRotation;
 }
 
 event UpdateEyeHeight(float DeltaTime)
@@ -4770,11 +4694,6 @@ simulated function xxClientSwitchPending(Weapon PendW, float GuardSecs) {
 	IGPlus_MarkDeterministicSwitchGuard(GuardSecs);
 }
 
-function xxSetPendingWeapon(Weapon W)
-{
-	PendingWeapon = W;
-}
-
 /**
  * Corrects velocity after going through Teleporters
  */
@@ -6595,7 +6514,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bForceAltFire;
 
 	local bool bDetWholeMove;
-	local IGPlus_WeaponImplementationBase WImpBase;
 	local bool bDetBlockLegacyFire;
 	local bool bDetCarryFire;
 	local Weapon DetWeapon;
@@ -6829,7 +6747,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// Predicted switch: holster/equip on this move's timestamp, before binding.
 	IGPlus_PSServerAdvance(SM.TimeStamp);
 
-	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// bDetReady marks client-predicted steps; trust is the binding/window gates.
 	DetWeapon = IGPlus_DetResolveBoundWeapon(SM.DetWeaponIndex, true);
 	// Hard-block legacy fire fallback for deterministic weapons.
@@ -9325,7 +9242,7 @@ simulated function bool IGPlus_HasClientHitResponse() {
 		n++;
 		if (NN_SuperShockRifle(I) != none && NN_SuperShockRifle(I).bNewNet)
 			return true;
-		if (NN_ShockRifle(I) != none && NN_ShockRifle(I).bNewNet)
+		if (NN_ShockDOMRifle(I) != none && NN_ShockDOMRifle(I).bNewNet)
 			return true;
 		if (NN_SniperRifle(I) != none && NN_SniperRifle(I).bNewNet)
 			return true;
@@ -9338,11 +9255,9 @@ function bool xxWeaponIsNewNet( optional bool bAlt )
 	if (Weapon == None)
 		return false;
 
-	return (Weapon.IsA('NN_ShockRifle')
+	return (Weapon.IsA('NN_ShockDOMRifle')
 		|| Weapon.IsA('NN_SuperShockRifle')
 		|| Weapon.IsA('NN_SniperRifle')
-		|| Weapon.IsA('NN_ASMD')
-		|| Weapon.IsA('NN_ShockDOMRifle')
 	);
 }
 
@@ -9676,7 +9591,6 @@ exec function Fire( optional float F )
 
 function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional actor HitActor, optional vector HitLoc, optional vector HitDiff, optional bool bSpecial, optional int ClientFRVI, optional float ClientAccuracy )
 {
-	local ImpactHammer IH;
 	local float TradeTimeMargin;
 
 	if (!bNewNet || !xxWeaponIsNewNet() || Role < ROLE_Authority)
@@ -9692,47 +9606,25 @@ function xxNN_Fire( float TimeStamp, int ProjIndex, vector ClientLoc, vector Cli
 	}
 
 	xxEnableCarcasses();
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
 	zzNN_ViewRot = ViewRot;
 	zzNN_HitActor = HitActor;
 	zzNN_HitLoc = HitLoc;
 	zzNN_HitDiff = HitDiff;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzNN_Accuracy = ClientAccuracy;
-	zzbNN_ReleasedFire = false;
-	zzbNN_ReleasedAltFire = false;
 	zzbNN_Special = bSpecial;
 
-	IH = ImpactHammer(Weapon);
+	if (zzUTPure.Settings.bRestrictTrading && IsInState('Dying')) {
+		TradeTimeMargin = IGPlus_TradeTimeMargin();
 
-	if (IH != None)
-	{
-		if (bSpecial)
-			IH.TraceFire(1);
-		else
-			IH.TraceFire(2);
-		IH.PlayFiring();
-		IH.GoToState('FireBlast');
-	}
-	else
-	{
-		if (zzUTPure.Settings.bRestrictTrading && IsInState('Dying')) {
-			TradeTimeMargin = IGPlus_TradeTimeMargin();
-
-			if (RealTimeDead < TradeTimeMargin) {
-				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
-				Super.Fire(1);
-			} else {
-				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Rejected Trade! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
-			}
-		} else {
-			if (IsInState('Dying'))
-				IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! RealTimeDead="$RealTimeDead);
+		if (RealTimeDead < TradeTimeMargin) {
+			IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
 			Super.Fire(1);
+		} else {
+			IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Rejected Trade! TradeTimeMargin="$TradeTimeMargin@"RealTimeDead="$RealTimeDead);
 		}
+	} else {
+		if (IsInState('Dying'))
+			IGPlus_EventLog("["$Level.TimeSeconds$"]"@PlayerReplicationInfo.PlayerName@"Traded! RealTimeDead="$RealTimeDead);
+		Super.Fire(1);
 	}
 	zzNN_HitActor = None;
 	zzbNN_Special = false;
@@ -9761,177 +9653,6 @@ exec function AltFire( optional float F )
 	else
 	{
 		Super.AltFire(F);
-	}
-	xxDisableCarcasses();
-}
-
-function xxNN_AltFire( float TimeStamp, int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional actor HitActor, optional vector HitLoc, optional vector HitDiff, optional bool bSpecial, optional int ClientFRVI, optional float ClientAccuracy )
-{
-	if (!bNewNet || !xxWeaponIsNewNet(true) || Role < ROLE_Authority)
-		return;
-
-	if (TimeStamp <= LastAltFireTimeStamp)
-		return;
-	LastAltFireTimeStamp = TimeStamp;
-
-	if (TimeStamp + zzUTPure.Settings.FireTimeout < CurrentTimeStamp) {
-		IGPlus_EventLog("Rejected Shot"@PlayerReplicationInfo.PlayerName@TimeStamp@CurrentTimeStamp);
-		return;
-	}
-
-	xxEnableCarcasses();
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
-	zzNN_ViewRot = ViewRot;
-	zzNN_HitActor = HitActor;
-	zzNN_HitLoc = HitLoc;
-	zzNN_HitDiff = HitDiff;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzNN_Accuracy = ClientAccuracy;
-	zzbNN_ReleasedFire = false;
-	zzbNN_ReleasedAltFire = false;
-	zzbNN_Special = bSpecial;
-
-	Super.AltFire(1);
-
-	zzNN_HitActor = None;
-	zzbNN_Special = false;
-	xxDisableCarcasses();
-}
-
-function xxNN_ReleaseFire( int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional int ClientFRVI )
-{
-	if (!bNewNet || !xxWeaponIsNewNet() || Role < ROLE_Authority)
-		return;
-
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
-	zzNN_ViewRot = ViewRot;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzbNN_ReleasedFire = true;
-}
-
-function xxNN_ReleaseAltFire( int ProjIndex, vector ClientLoc, vector ClientVel, rotator ViewRot, optional int ClientFRVI )
-{
-	if (!bNewNet || !xxWeaponIsNewNet(true) || Role < ROLE_Authority)
-		return;
-
-	zzNN_ProjIndex = ProjIndex;
-	zzNN_ClientLoc = ClientLoc;
-	zzNN_ClientVel = ClientVel;
-	zzNN_ViewRot = ViewRot;
-	zzNN_FRVI = ClientFRVI;
-	zzFRVI = ClientFRVI;
-	zzbNN_ReleasedAltFire = true;
-}
-
-simulated function int xxNN_AddProj(Projectile Proj)
-{
-	local int ProjIndex;
-
-	if (Proj == None || zzNN_ProjIndex < 0)
-		return -1;
-
-	zzNN_Projectiles[zzNN_ProjIndex] = Proj;
-
-	ProjIndex = zzNN_ProjIndex;
-	zzNN_ProjIndex++;
-	if (zzNN_ProjIndex >= NN_ProjLength)
-		zzNN_ProjIndex = 0;
-
-	return ProjIndex;
-}
-
-simulated function xxNN_RemoveProj(int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo)
-{
-	if (zzNN_Projectiles[ProjIndex] == None || xxGarbageLocation(zzNN_Projectiles[ProjIndex]))
-		return;
-
-	zzNN_ProjLocations[ProjIndex] = zzNN_Projectiles[ProjIndex].Location;
-	zzNN_Projectiles[ProjIndex] = None;
-
-	if (Level.NetMode == NM_Client)
-		xxNN_ProjExplode(ProjIndex, HitLocation, HitNormal, bCombo);
-	else
-		xxNN_ClientProjExplode(ProjIndex, HitLocation, HitNormal, bCombo);
-}
-
-simulated function xxNN_ProjExplode( int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo )
-{
-	local Projectile Proj;
-
-	if (Level.NetMode == NM_Client)
-		return;
-
-	xxEnableCarcasses();
-	if (ProjIndex < 0)
-	{
-		ProjIndex = -1*(ProjIndex + 1);
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
-			Proj.Destroy();
-		}
-	}
-	else
-	{
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
-			if (bCombo && Proj.IsA('ShockProj'))
-			{
-				if (IsInState('Dying'))
-					ShockProj(Proj).SuperExplosion();
-			}
-			else
-			{
-				Proj.Explode(HitLocation, HitNormal);
-			}
-		}
-	}
-	xxDisableCarcasses();
-}
-
-simulated function xxNN_ClientProjExplode( int ProjIndex, optional vector HitLocation, optional vector HitNormal, optional bool bCombo )
-{
-	local Projectile Proj;
-
-	if (Level.NetMode != NM_Client)
-		return;
-
-	xxEnableCarcasses();
-	if (ProjIndex < 0)
-	{
-		ProjIndex = -1*(ProjIndex + 1);
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
-			Proj.Destroy();
-		}
-	}
-	else
-	{
-		Proj = zzNN_Projectiles[ProjIndex];
-		if (Proj != None && !xxGarbageLocation(Proj))
-		{
-			zzNN_ProjLocations[ProjIndex] = Proj.Location;
-			if (bCombo && Proj.IsA('ShockProj'))
-			{
-				if (IsInState('Dying'))
-					ShockProj(Proj).SuperExplosion();
-			}
-			else
-			{
-				Proj.Explode(HitLocation, HitNormal);
-			}
-		}
 	}
 	xxDisableCarcasses();
 }
@@ -11405,7 +11126,6 @@ function IGPlus_MergeMove(IGPlus_SavedMove PendMove, float DeltaTime, vector New
 function IGPlus_ReplicateInput(float Delta) {
 	local float RealDelta;
 	local IGPlus_SavedInput ReferenceInput;
-	local IGPlus_SavedInput NewestInput;
 	local IGPlus_SavedInput SerializedInput;
 	local Weapon DetWeapon;
 	local vector NewOffset, TargetLoc;
@@ -11430,7 +11150,6 @@ function IGPlus_ReplicateInput(float Delta) {
 	CorrectTeleporterVelocity();
 
 	IGPlus_SavedInputChain.Add(Delta, self);
-	NewestInput = IGPlus_SavedInputChain.Newest;
 
 	if (bTraceInput && IGPlus_InputLogFile != none)
 		IGPlus_InputLogFile.LogInput(IGPlus_SavedInputChain.Newest);
@@ -11538,7 +11257,6 @@ function xxReplicateMove(
 ) {
 	local int TlocBefore;
 	local IGPlus_SavedMove NewMove, OldMove, LastMove, PendMove;
-	local EPhysics OldPhys;
 	local Mover ExitLift;
 	local Actor DbgOldBase;
 	local float AdjustAlpha;
@@ -11825,7 +11543,6 @@ function xxReplicateMove(
 
 	bJustFired = false;
 	bJustAltFired = false;
-	OldPhys = Physics;
 
 	IGPlus_TPFix_LastTouched = none;
 
@@ -12227,47 +11944,6 @@ function bool IGPlus_MayPickUp(Inventory Item) {
 	return Item.Physics != PHYS_Falling && Level.TimeSeconds - IGPlus_TossedTS >= zzUTPure.Settings.ThrowPickupDelay * Level.TimeDilation;
 }
 
-
-function string forcedModelToString(int fm) {
-	switch(fm) {
-		case 0:
-			return "Class: Female Commando, Skin: Aphex, Face: Idina";
-		case 1:
-			return "Class: Female Commando, Skin: Commando, Face: Anna";
-		case 2:
-			return "Class: Female Commando, Skin: Mercenary, Face: Jayce";
-		case 3:
-			return "Class: Female Commando, Skin: Necris, Face: Cryss";
-		case 4:
-			return "Class: Female Soldier, Skin: Marine, Face: Annaka";
-		case 5:
-			return "Class: Female Soldier, Skin: Metal Guard, Face: Isis";
-		case 6:
-			return "Class: Female Soldier, Skin: Soldier, Face: Lauren";
-		case 7:
-			return "Class: Female Soldier, Skin: Venom, Face: Athena";
-		case 8:
-			return "Class: Female Soldier, Skin: War Machine, Face: Cathode";
-		case 9:
-			return "Class: Male Commando, Skin: Commando, Face: Blake";
-		case 10:
-			return "Class: Male Commando, Skin: Mercenary, Face: Boris";
-		case 11:
-			return "Class: Male Commando, Skin: Necris, Face: Grail";
-		case 12:
-			return "Class: Male Soldier, Skin: Marine, Face: Malcolm";
-		case 13:
-			return "Class: Male Soldier, Skin: Metal Guard, Face: Drake";
-		case 14:
-			return "Class: Male Soldier, Skin: RawSteel, Face: Arkon";
-		case 15:
-			return "Class: Male Soldier, Skin: Soldier, Face: Brock";
-		case 16:
-			return "Class: Male Soldier, Skin: War Machine, Face: Matrix";
-		case 17:
-			return "Class: Boss, Skin: Boss, Face: Xan";
-	}
-}
 
 // Debug data on or off, with one line to confirm it. On collects the debug
 // lines and writes them to a file in Logs. ClientSettings.DebugDataDisplay
@@ -13343,23 +13019,6 @@ function ServerAddMomentum(vector Momentum) {
 		IGPlus_PushEaseTS = CurrentTimeStamp;
 }
 
-simulated function NN_Momentum( Vector momentum, name DamageType )
-{
-	local bool bPreventLockdown;		// Avoid the lockdown effect.
-
-	if (DamageType == 'shot' || DamageType == 'zapped')
-		bPreventLockdown = true;
-
-	if (Base != None)
-		momentum.Z = FMax(momentum.Z, 0.4 * VSize(momentum));
-
-	if (Mass != 0)
-		momentum = momentum/Mass;
-
-	if (!bPreventLockdown)	// FIX BY LordHypnos, http://forums.prounreal.com/viewtopic.php?t=34676&postdays=0&postorder=asc&start=0
-		AddVelocity( momentum );
-}
-
 final function IGPlus_DamageEvent IGPlus_DamageEvent_Alloc() {
 	local IGPlus_DamageEvent DE;
 
@@ -13546,193 +13205,6 @@ function TakeDamage( int Damage, Pawn InstigatedBy, Vector HitLocation,
 
 	IGPlus_DamageEvent_SaveHealth();
 
-	if (CarriedDecoration != None)
-		DropDecoration();
-	if ( HitLocation == vect(0,0,0) )
-		HitLocation = Location;
-	if (Health > 0)
-	{
-		if ( (InstigatedBy != None) && (InstigatedBy != Self) )
-			damageAttitudeTo(InstigatedBy);
-		PlayHit(actualDamage, HitLocation, damageType, Momentum);
-	}
-	else if ( !bAlreadyDead )
-	{
-		NextState = '';
-		PlayDeathHit(actualDamage, HitLocation, damageType, Momentum);
-		if ( actualDamage > mass )
-			Health = -1 * actualDamage;
-		if ( (InstigatedBy != None) && (InstigatedBy != Self) )
-			damageAttitudeTo(InstigatedBy);
-		Died(InstigatedBy, damageType, HitLocation);
-	}
-	else
-	{
-		if ( bIsPlayer )
-		{
-			HidePlayer();
-			GotoState('Dying');
-		}
-		else
-			Destroy();
-	}
-	MakeNoise(1.0);
-}
-
-function GiveHealth( int Damage, bbPlayer InstigatedBy, Vector HitLocation,
-						Vector momentum, name damageType)
-{
-	local int actualDamage;
-	local bool bAlreadyDead;
-	local int ModifiedDamage1, ModifiedDamage2;
-	local bool bPreventLockdown;		// Avoid the lockdown effect.
-
-	if ( Role < ROLE_Authority )
-	{
-		Log(Self@"client damage type (GiveHealth)"@damageType@"by"@InstigatedBy);
-		return;
-	}
-
-	if (InstigatedBy == Self || InstigatedBy.Health <= 0 || Health >= 199)
-		return;
-
-	if (DamageType == 'shot' || DamageType == 'zapped')
-		bPreventLockdown = true;
-
-	bAlreadyDead = (Health <= 0);
-
-	if (Physics == PHYS_None)
-		SetMovementPhysics();
-	if (Physics == PHYS_Walking)
-		momentum.Z = FMax(momentum.Z, 0.4 * VSize(momentum));
-	if ( InstigatedBy == self )
-		momentum *= 0.6;
-	if (Mass != 0)
-		momentum = momentum/Mass;
-
-	actualDamage = Level.Game.ReduceDamage(Damage, DamageType, self, InstigatedBy);
-						// ReduceDamage handles HardCore mode (*1.5) and Damage Scaling (Amp, etc)
-	ModifiedDamage1 = actualDamage;		// In team games it also handles team scaling.
-
-	if ( bIsPlayer )
-	{
-		if (ReducedDamageType == 'All') //God mode
-			actualDamage = 0;
-		else
-			actualDamage = Damage;
-	}
-
-	ModifiedDamage2 = actualDamage;		// This is post-armor and such.
-
-	if ( Level.Game.DamageMutator != None )
-		Level.Game.DamageMutator.MutatorTakeDamage( ActualDamage, Self, InstigatedBy, HitLocation, Momentum, DamageType );
-
-	if (!bPreventLockdown && InstigatedBy != self && (momentum dot momentum) > 0)	// FIX BY LordHypnos, http://forums.prounreal.com/viewtopic.php?t=34676&postdays=0&postorder=asc&start=0
-	{
-		if (bNewNet)
-			AddVelocity( momentum );
-		else
-			AddVelocity( momentum );
-	}
-	if (actualDamage > InstigatedBy.Health)
-		actualDamage = InstigatedBy.Health;
-	if (Health + actualDamage > 199)
-		actualDamage = 199 - Health;
-	Health += actualDamage;
-	InstigatedBy.Health -= actualDamage;
-	if ( HitLocation == vect(0,0,0) )
-		HitLocation = Location;
-	if (InstigatedBy.Health > 0)
-	{
-	}
-	else if ( !bAlreadyDead )
-	{
-		InstigatedBy.NextState = '';
-		if ( actualDamage > InstigatedBy.mass )
-			InstigatedBy.Health = -1 * actualDamage;
-		InstigatedBy.Died(InstigatedBy, damageType, HitLocation);
-	}
-	else
-	{
-		if ( InstigatedBy.bIsPlayer )
-		{
-			InstigatedBy.HidePlayer();
-			InstigatedBy.GotoState('Dying');
-		}
-		else
-			InstigatedBy.Destroy();
-	}
-	MakeNoise(1.0);
-}
-
-function StealHealth( int Damage, bbPlayer InstigatedBy, Vector HitLocation,
-						Vector momentum, name damageType)
-{
-	local int actualDamage;
-	local bool bAlreadyDead;
-	local int ModifiedDamage1, ModifiedDamage2;
-	local bool bPreventLockdown;		// Avoid the lockdown effect.
-
-	if ( Role < ROLE_Authority )
-	{
-		Log(Self@"client damage type (StealHealth)"@damageType@"by"@InstigatedBy);
-		return;
-	}
-
-	if (InstigatedBy == Self)
-		return;
-
-	if (DamageType == 'shot' || DamageType == 'zapped')
-		bPreventLockdown = true;
-
-	bAlreadyDead = (Health <= 0);
-
-	if (Physics == PHYS_None)
-		SetMovementPhysics();
-	if (Physics == PHYS_Walking)
-		momentum.Z = FMax(momentum.Z, 0.4 * VSize(momentum));
-	if ( InstigatedBy == self )
-		momentum *= 0.6;
-	momentum = momentum/Mass;
-
-	actualDamage = Level.Game.ReduceDamage(Damage, DamageType, self, InstigatedBy);
-						// ReduceDamage handles HardCore mode (*1.5) and Damage Scaling (Amp, etc)
-	ModifiedDamage1 = actualDamage;		// In team games it also handles team scaling.
-
-	if ( bIsPlayer )
-	{
-		if (ReducedDamageType == 'All') //God mode
-			actualDamage = 0;
-		else if (Inventory != None) //then check if carrying armor
-			actualDamage = Inventory.ReduceDamage(actualDamage, DamageType, HitLocation);
-		else
-			actualDamage = Damage;
-	}
-	else if ( (InstigatedBy != None) &&
-				(InstigatedBy.IsA(Class.Name) || self.IsA(InstigatedBy.Class.Name)) )
-		ActualDamage = ActualDamage * FMin(1 - ReducedDamagePct, 0.35);
-	else if ( (ReducedDamageType == 'All') ||
-		((ReducedDamageType != '') && (ReducedDamageType == damageType)) )
-		actualDamage = float(actualDamage) * (1 - ReducedDamagePct);
-
-	ModifiedDamage2 = actualDamage;		// This is post-armor and such.
-
-	if ( Level.Game.DamageMutator != None )
-		Level.Game.DamageMutator.MutatorTakeDamage( ActualDamage, Self, InstigatedBy, HitLocation, Momentum, DamageType );
-
-	if (!bPreventLockdown && InstigatedBy != self && (momentum dot momentum) > 0)	// FIX BY LordHypnos, http://forums.prounreal.com/viewtopic.php?t=34676&postdays=0&postorder=asc&start=0
-	{
-		if (bNewNet)
-			AddVelocity( momentum );
-		else
-			AddVelocity( momentum );
-	}
-	if (actualDamage > Health)
-		actualDamage = Health;
-	Health -= actualDamage;
-	InstigatedBy.Health += actualDamage;
-	if (InstigatedBy.Health > 199)
-		InstigatedBy.Health = 199;
 	if (CarriedDecoration != None)
 		DropDecoration();
 	if ( HitLocation == vect(0,0,0) )
@@ -15031,8 +14503,6 @@ state Dying
 		local Carcass C;
 
 		bJumpStatus = false;
-		if (zzClientTTarget != None)
-			zzClientTTarget.Destroy();
 		IGPlus_LostTradeCheck("we died");
 
 		// BEGIN PlayerPawn.Dying.BeginState
@@ -15943,10 +15413,6 @@ static function IGPlus_RecolorOwnSkin(Actor A, int C) {
 
 function bool IsForcedSkinFemale(int Skin) {
 	return Skin >= 0 && Skin <= 8;
-}
-
-function bool IsForcedSkinMale(int Skin) {
-	return Skin > 8 && Skin <= 17;
 }
 
 // Target: who gets the model, PRI.Owner if none.
@@ -18951,11 +18417,6 @@ function xxServerSetTeamInfo(bool b)
 		HUDInfo = 0;
 }
 
-function xxServerSetMinDodgeClickTime(float f)
-{
-	Settings.MinDodgeClickTime = f;
-}
-
 exec function SetKillCamEnabled(bool b) {
 	if (IGPlus_RefuseForced("bEnableKillCam", "kill cam"))
 		return;
@@ -19000,11 +18461,6 @@ function xxServerAckScreenshot(string zzResult, string zzMagic)
 			zzPP.ClientMessage(PlayerReplicationInfo.PlayerName@"successfully took screenshot!");
 	}
 	zzUTPure.xxLog("Screenshot from"@zzPP.PlayerReplicationInfo.PlayerName@"->"@zzResult@"Text"@zzMagicCode@"Valid"@(zzMagic == zzMagicCode));
-}
-
-simulated function xxClientLogToDemo(string zzS)
-{
-	Log(zzS, 'DevGarbage');
 }
 
 function xxClientResetPlayer() {
@@ -21303,7 +20759,6 @@ simulated function IGPlus_SDDisplace(vector NewLoc, bool bHide) {
 
 	Delta = NewLoc - IGPlus_SDTrueLoc;
 	SetLocation(NewLoc);
-	IGPlus_SDDisplacedTo = Location;
 	for (i = 0; i < IGPlus_SDNumAttached; i++)
 		if (IGPlus_SDAttached[i] != none && IGPlus_SDAttached[i].bDeleteMe == false)
 			IGPlus_SDAttached[i].SetLocation(IGPlus_SDAttachedLoc[i] + Delta);
@@ -22425,12 +21880,6 @@ function xxServerDemoReply(string zzS)
 	zzUTPure.xxLog("Forced Demo:"@PlayerReplicationInfo.PlayerName@zzS);
 }
 
-function xxExplodeOther(Projectile Other)
-{
-	if (Other != None)
-		Other.Explode(Other.Location, Normal(Location-Other.Location));
-}
-
 exec function DropFlag() {
 	local Decoration Flag;
 	if (PlayerReplicationInfo.HasFlag != none) {
@@ -23228,7 +22677,6 @@ defaultproperties
 {
 	bNewNet=True
 	HUDInfo=1
-	NN_ProjLength=256
 	bIsFinishedLoading=False
 	bDrawDebugData=False
 	TimeBetweenNetUpdates=0.01

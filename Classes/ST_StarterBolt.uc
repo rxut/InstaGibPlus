@@ -4,9 +4,6 @@ var float OldError, NewError, StartError, AimError; //used for bot aiming
 var rotator AimRotation;
 var float AnimTime;
 
-// Count "shots" using this.
-var float ShootAccum;
-
 var float DamageCarry;
 var float DecalInterval;
 var float DecalMinInterval;
@@ -101,12 +98,6 @@ simulated function Tick(float DeltaTime)
 
 		if (IGPlus_Fb != None)
 			IGPlus_Fb.IGPlus_BeamFlushHeld(Instigator, IGPLUS_FB_MAXHOLD);
-
-		ShootAccum -= DeltaTime;
-		while (ShootAccum <= 0.0)
-		{	// Handle stats this way.
-			ShootAccum += 0.05;		// TR 20 = 0.05s
-		}
 	}
 
 	AnimTime += DeltaTime;

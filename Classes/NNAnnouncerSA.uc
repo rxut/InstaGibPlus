@@ -64,7 +64,6 @@ function DoKill(PlayerReplicationInfo PRI)
 
 	if (Level.TimeSeconds - Killers[x].LastKillTime < 3.0)
 	{
-		//s = Class'MMultiKillMessage'.Static.GetString(++Killers[x].Level);
 		s = Class'MultiKillMessage'.Static.GetString(++Killers[x].Level);
 		if (s != "" && Killers[x].Level >= AnnounceLevel)
 		{

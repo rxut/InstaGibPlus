@@ -1,9 +1,7 @@
 class UTPlusSnapshot extends Object;
 
-var vector Loc, Vel, Acc;
-var rotator Rot, VR;
-var float BaseEyeHeight;
-var float EyeHeight;
+var vector Loc, Vel;
+var rotator Rot;
 var float DuckFraction;
 var float CollisionRadius;
 var float CollisionHeight;
@@ -24,7 +22,6 @@ var bool bHeld;
 // and whether it was taken with no move having run (the start of a hold).
 var int Tick;
 var bool bNoMove;
-var float ClientTimeStamp;
 
 var name  AnimSequence;
 var float AnimFrame;

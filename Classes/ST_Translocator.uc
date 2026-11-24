@@ -566,7 +566,7 @@ function ThrowTarget()
 			ST_TranslocatorTarget(TTarget).InitSimulationHistory(TTarget.Location, 0.0, 0.0);
 
 		if (bbP != none && (GetWeaponSettings().TranslocatorCompensatePing || IGPlus_IsDetMode())) {
-			// Fragger's Translocate() has no restore path: stock lookup only.
+			// Only the base class: a subclass's Translocate() may have no restore path.
 			if ((bbP.IGPlus_PredictsTranslocation() || IGPlus_IsDetMode())
 				&& TTarget != None && Class == class'ST_Translocator') {
 				IGPlus_ThrowTS = bbP.CurrentTimeStamp;

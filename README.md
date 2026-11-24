@@ -108,7 +108,6 @@ These settings can be found in **InstaGibPlus.ini** under section **\[ClientSett
 1. [KillFeedY](#killfeedy)
 1. [KillFeedSpeed](#killfeedspeed)
 1. [KillFeedScale](#killfeedscale)
-1. [FraggerScopeChoice](#fraggerscopechoice)
 1. [bEnableNetStats](#benablenetstats)
 1. [bNetStatsUnconfirmedTime](#bnetstatsunconfirmedtime)
 1. [bNetStatsLocationError](#bnetstatslocationerror)
@@ -745,16 +744,6 @@ Increase to make lines disappear sooner. Decrease to make lines disappear later.
 
 Scales the size of individual lines of the KillFeed.
 
-## FraggerScopeChoice
-**Type: EFraggerScopeChoice**  
-**Default: `FSC_Moveable`**  
-
-Which scope the FraggerRifle uses when zoming.
-
-* `FSC_None` ➜ Keeps the default crosshair
-* `FSC_Static` ➜ Few moving parts when zooming in
-* `FSC_Moveable` ➜ More moving parts when zooming in
-
 ## bEnableNetStats
 **Type: bool**  
 **Default: False**  
@@ -1377,10 +1366,6 @@ SniperArena with the deterministic SniperRifle. The server traces every shot its
 * The rifle comes up after a spawn as the NewNetSA rifle does. It has no select or down time setting: `SniperSelectTime` and `SniperDownTime` are not read here.
 * A shot from a player who just died only counts with [bEnableTrades](#benabletrades) on in its weapon settings. It is off by default.
 * A new server starts with ping compensation and [bEnableFireTimeOrder](#benablefiretimeorder) on, and with [PingCompensationMax](#pingcompensationmax) at 250.
-
-## InstaGibPlus_11.MutFraggerArena
-
-Similar to SniperArena, but with a Sniper Rifle that has custom zoom and is inaccurate when moving or not zoomed in, plus a translocator.
 
 ## InstaGibPlus_11.MutKillFeed
 
@@ -2184,7 +2169,6 @@ Each weapon mutator reads its own section of InstaGibPlus.ini, and writes it wit
 | NewNetIG, NewNetSA | `WeaponSettingsNewNet` |
 | NextIG | `WeaponSettingsInstaGib` |
 | NextSA | `WeaponSettingsSniperArena` |
-| MutFraggerArena | `WeaponSettingsFraggerArena` |
 
 The URL option `?IGPlusWeaponSettings=<section>` makes the mutator read another section.
 

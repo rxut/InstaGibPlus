@@ -103,13 +103,6 @@ function float IGPlus_GetOneWayLatencyMs(Pawn Instigator);
 
 function float IGPlus_GetHitscanRewindMs(Pawn Instigator);
 
-function vector IGPlus_AdjustLocationToCurrentMoverFrame(
-	Pawn Instigator,
-	vector FireLoc,
-	float SampleLatencyMs,
-	optional Mover BaseMover
-);
-
 function SimulateProjectileWithHistory(ST_TranslocatorTarget TTarget, int Ping);
 
 function float SimulateProjectile(Projectile P, int Ping, optional float CatchUpMs);

@@ -119,49 +119,6 @@ function float IGPlus_GetAveragePingRewindMs(Pawn Instigator) {
 	return EffectivePing;
 }
 
-function vector IGPlus_AdjustLocationToCurrentMoverFrame(
-	Pawn Instigator,
-	vector FireLoc,
-	float SampleLatencyMs,
-	optional Mover BaseMover
-) {
-	local bbPlayer bbP;
-	local UTPure PureRef;
-	local ST_MoverDummy MD;
-	local Mover M;
-	local float SampleSeconds;
-	local float SampleTimeStamp;
-	local vector HistoricalLoc;
-
-	if (Instigator == None || SampleLatencyMs <= 0.0)
-		return FireLoc;
-
-	M = BaseMover;
-	if (M == None)
-		M = Mover(Instigator.Base);
-	if (M == None)
-		return FireLoc;
-
-	bbP = bbPlayer(Instigator);
-	if (bbP == None)
-		return FireLoc;
-
-	PureRef = bbP.zzUTPure;
-	if (PureRef == None)
-		return FireLoc;
-
-	SampleSeconds = 0.001 * SampleLatencyMs * Level.TimeDilation;
-
-	MD = PureRef.FindMoverDummy(M);
-	if (MD == None)
-		return FireLoc + M.Velocity * SampleSeconds;
-
-	SampleTimeStamp = Level.TimeSeconds - SampleSeconds;
-	HistoricalLoc = MD.GetHistoricalLocation(SampleTimeStamp);
-
-	return FireLoc + (M.Location - HistoricalLoc);
-}
-
 function PostBeginPlay() {
 	super.PostBeginPlay();
 

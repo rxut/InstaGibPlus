@@ -66,7 +66,7 @@ function bool CheckReplaceWeapon(Actor A) {
         return false;
     }
 
-    if (W.Class == class'ShockRifle' || W.Class == class'ASMD' || W.Class == class'NN_ShockRifle') {
+    if (W.Class == class'ShockRifle' || W.Class == class'ASMD') {
         return DoReplace(W, class'NN_ShockDOMRifle');
     } else {
         W.destroy();

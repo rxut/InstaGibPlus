@@ -25,14 +25,6 @@ final function int GetSpace() {
 	return arraycount(BitsData) * 32;
 }
 
-final function int GetSpaceRemaining() {
-	return (arraycount(BitsData) * 32) - NumBits;
-}
-
-final function bool IsSpaceSufficient(int ReqBits) {
-	return (NumBits + ReqBits <= arraycount(BitsData) * 32);
-}
-
 final function AddBits(int Num, int Bits) {
 	local int Index;
 	local int Offset;
@@ -59,10 +51,6 @@ final function AddBits(int Num, int Bits) {
 	}
 
 	NumBits += Num;
-}
-
-final function AddFloat(float F) {
-	AddBits(32, class'FloatConverter'.static.ToInt(F));
 }
 
 final function AddBit(bool Bit) {
@@ -106,10 +94,4 @@ final function ConsumeBits(int Num, out int Bits) {
 final function ConsumeBit(out int Bit) {
 	Bit = (BitsData[NumBitsConsumed>>>5] & (1 << (NumBitsConsumed&0x1F)));
 	NumBitsConsumed++;
-}
-
-final function ConsumeFloat(out float F) {
-	local int V;
-	ConsumeBits(32, V);
-	F = class'IntConverter'.static.ToFloat(V);
 }

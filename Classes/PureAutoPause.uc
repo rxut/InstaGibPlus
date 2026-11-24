@@ -4,7 +4,6 @@ class PureAutoPause extends Info;
 var int TeamSize[2];			// How many players should be on a team. if less, we pause (if allowed)
 var int TeamPauseLeft[2];		// Number of seconds a team has left to pause.
 var int TeamCurPauseLeft[2];		// Number of seconds this team has left of current pause.
-var int TeamTimeoutLeft[2];		// Number of timeouts a team has left.
 
 // Autopause important variables. Very important. VERY!
 var TeamGamePlus TGP;
@@ -25,11 +24,9 @@ function PostBeginPlay()
 function Initialize() {
 	TeamPauseLeft[0] = Settings.PauseTotalTime;
 	TeamCurPauseLeft[0] = Settings.PauseTime;
-	TeamTimeoutLeft[0] = Settings.Timeouts;
 
 	TeamPauseLeft[1] = Settings.PauseTotalTime;
 	TeamCurPauseLeft[1] = Settings.PauseTime;
-	TeamTimeoutLeft[1] = Settings.Timeouts;
 }
 
 // Player wants AutoPause to keep on

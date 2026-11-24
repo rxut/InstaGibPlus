@@ -1166,32 +1166,6 @@ function UWindowLabelControl CreateSeparator(string T, optional string HT) {
 	return Lbl;
 }
 
-function IGPlus_ComboBox CreateComboBox(
-	string T,
-	optional string HT,
-	optional bool bCanEdit,
-	optional float EditBoxWidth
-) {
-	local IGPlus_ComboBox Cmb;
-
-	Cmb = IGPlus_ComboBox(CreateControl(class'IGPlus_ComboBox', PaddingX, ControlOffset, 200, 1));
-	Cmb.SetText(T);
-	Cmb.SetHelpText(HT);
-	Cmb.SetFont(F_Normal);
-	Cmb.Align = TA_Left;
-	Cmb.SetEditable(bCanEdit);
-
-	if (EditBoxWidth > 0) {
-		Cmb.EditBoxWidthFraction = 0.5;
-		Cmb.EditBoxMinWidth = EditBoxWidth;
-		Cmb.EditBoxMaxWidth = EditBoxWidth;
-	}
-
-	ControlOffset += LineSpacing;
-
-	return Cmb;
-}
-
 function IGPlus_PasswordComboBox CreatePasswordComboBox(
 	string T,
 	optional string HT,
@@ -1348,19 +1322,6 @@ function ConfigureFixedWidthEdit(IGPlus_EditControl Edit, Canvas C, float Contro
 	Edit.EditBoxMinWidth = PreferredWidth;
 	Edit.EditBoxMaxWidth = PreferredWidth;
 	Edit.EditBoxWidth = PreferredWidth;
-}
-
-function ConfigureFixedWidthCombo(IGPlus_ComboBox Cmb, Canvas C, float ControlWidth, float PreferredWidth) {
-	local float MaxWidth;
-
-	if (Cmb == none)
-		return;
-
-	MaxWidth = GetLabeledInputMaxWidth(Cmb, C, ControlWidth, 40);
-	PreferredWidth = FClamp(PreferredWidth, 40, MaxWidth);
-	Cmb.EditBoxMinWidth = PreferredWidth;
-	Cmb.EditBoxMaxWidth = PreferredWidth;
-	Cmb.EditBoxWidth = PreferredWidth;
 }
 
 

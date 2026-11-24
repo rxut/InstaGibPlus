@@ -6,8 +6,6 @@
 
 class ST_WarheadLauncher extends WarheadLauncher;
 
-var IGPlus_WeaponImplementation WImp;
-
 var WeaponSettingsRepl WSettings;
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
@@ -25,14 +23,6 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 
 	WSettings = FindWeaponSettings();
 	return WSettings;
-}
-
-function PostBeginPlay()
-{
-	Super.PostBeginPlay();
-
-	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-		break;		// Find master :D
 }
 
 function SetSwitchPriority(pawn Other)

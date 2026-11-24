@@ -32,8 +32,8 @@ simulated function PostRender(canvas Canvas)
 simulated function DrawStatus(Canvas Canvas)
 {
 	local float StatScale, ChestAmount, ThighAmount, H1, H2, X, Y, DamageTime;
-	Local int ArmorAmount,CurAbs,i;
-	Local inventory Inv,BestArmor;
+	Local int ArmorAmount,i;
+	Local inventory Inv;
 	local bool bChestArmor, bShieldbelt, bThighArmor, bJumpBoots, bHasDoll;
 	local Bot BotOwner;
 	local TournamentPlayer TPOwner;
@@ -41,9 +41,7 @@ simulated function DrawStatus(Canvas Canvas)
 	local int BootCharges;
 
 	ArmorAmount = 0;
-	CurAbs = 0;
 	i = 0;
-	BestArmor=None;
 	for( Inv=PawnOwner.Inventory; Inv!=None; Inv=Inv.Inventory )
 	{
 		if (Inv.bIsAnArmor)

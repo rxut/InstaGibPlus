@@ -119,13 +119,6 @@ var config float  KillFeedY;
 var config float  KillFeedSpeed;
 var config float  KillFeedScale;
 
-enum EFraggerScopeChoice {
-	FSC_None,
-	FSC_Moveable,
-	FSC_Static
-};
-var config EFraggerScopeChoice FraggerScopeChoice;
-
 var config bool   bEnableNetStats;
 var config bool   bNetStatsUnconfirmedTime;
 var config bool   bNetStatsLocationError;
@@ -501,48 +494,12 @@ simulated function CrosshairLayerDescr GetCrosshairLayer(int i) {
 	return CrosshairLayers[i];
 }
 
-simulated function SetCrosshairLayerTexture(int i, coerce string T) {
-	CrosshairLayers[i].Texture = T;
-}
-
-simulated function SetCrosshairLayerOffsetX(int i, int O) {
-	CrosshairLayers[i].OffsetX = O;
-}
-
-simulated function SetCrosshairLayerOffsetY(int i, int O) {
-	CrosshairLayers[i].OffsetY = O;
-}
-
 simulated function SetCrosshairLayerScaleX(int i, float S) {
 	CrosshairLayers[i].ScaleX = S;
 }
 
-simulated function SetCrosshairLayerScaleY(int i, float S) {
-	CrosshairLayers[i].ScaleY = S;
-}
-
-simulated function SetCrosshairLayerColor(int i, color C) {
-	CrosshairLayers[i].Color = C;
-}
-
-simulated function SetCrosshairLayerStyle(int i, int S) {
-	CrosshairLayers[i].Style = S;
-}
-
-simulated function SetCrosshairLayerSmooth(int i, bool S) {
-	CrosshairLayers[i].bSmooth = S;
-}
-
 simulated function SetCrosshairLayerUse(int i, bool U) {
 	CrosshairLayers[i].bUse = U;
-}
-
-simulated function SetCrosshairLayerShape(int i, int S) {
-	CrosshairLayers[i].Shape = S;
-}
-
-simulated function SetCrosshairLayerThickness(int i, int T) {
-	CrosshairLayers[i].Thickness = T;
 }
 
 static function EHitSoundSource IntToHitSoundSource(int A) {
@@ -592,15 +549,6 @@ static function EHitMarkerColorMode IntToHitMarkerColorMode(int A) {
 		case 1: return HMCM_TeamColor;
 	}
 	return HMCM_FriendOrFoe;
-}
-
-simulated function CycleFraggerScope() {
-	switch(FraggerScopeChoice) {
-		case FSC_None:     FraggerScopeChoice = FSC_Moveable; break;
-		case FSC_Moveable: FraggerScopeChoice = FSC_Static; break;
-		case FSC_Static:   FraggerScopeChoice = FSC_None; break;
-	}
-	SaveConfig();
 }
 
 simulated function string DumpSettings() {
@@ -684,7 +632,6 @@ simulated function string DumpSettings() {
 		GetSetting("KillFeedY")$
 		GetSetting("KillFeedSpeed")$
 		GetSetting("KillFeedScale")$
-		GetSetting("FraggerScopeChoice")$
 		GetSetting("bEnableNetStats")$
 		GetSetting("bNetStatsUnconfirmedTime")$
 		GetSetting("bNetStatsLocationError")$
@@ -800,7 +747,6 @@ defaultproperties
 	KillFeedY=0.5
 	KillFeedSpeed=1.0
 	KillFeedScale=1.0
-	FraggerScopeChoice=FSC_Moveable
 	bEnableNetStats=False
 	bNetStatsUnconfirmedTime=True
 	bNetStatsLocationError=True

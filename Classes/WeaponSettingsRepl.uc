@@ -17,15 +17,10 @@ var bool  SniperUseReducedHitbox;
 
 var float EightballSelectTime;
 var float EightballDownTime;
-var float RocketDamage;
-var float RocketSelfDamage;
 var float RocketHurtRadius;
 var float RocketMomentum;
 var float RocketSpreadSpacingDegrees;
 var float RocketSpeed;
-var float GrenadeDamage;
-var float GrenadeHurtRadius;
-var float GrenadeMomentum;
 var bool  RocketCompensatePing;
 var bool  bEnableEnhancedSplashRockets; // predicted self-knockback mirrors the server's splash
 var bool  bEnableEnhancedSplashFlakSlug;
@@ -36,56 +31,30 @@ var bool  bEnableEnhancedSplashShockCombo; // predicted disc push from our own c
 var float FlakSelectTime;
 var float FlakPostSelectTime;
 var float FlakDownTime;
-var float FlakChunkDamage;
-var float FlakChunkMomentum;
-var float FlakChunkLifespan;
-var float FlakChunkDropOffStart;
-var float FlakChunkDropOffEnd;
-var float FlakChunkDropOffDamageRatio;
 var bool  FlakChunkRandomSpread;
 var float FlakChunkRandomSpreadSize;
-var float FlakSlugDamage;
 var float FlakSlugHurtRadius;
 var float FlakSlugMomentum;
 var bool  FlakCompensatePing;
 
 var float RipperSelectTime;
 var float RipperDownTime;
-var float RipperHeadshotDamage;
-var float RipperHeadShotDamageWallMultiplier;
-var float RipperHeadshotMomentum;
-var float RipperPrimaryDamage;
-var float RipperPrimaryDamageWallMultiplier;
-var float RipperPrimaryMomentum;
 var float RipperSecondaryHurtRadius;
-var float RipperSecondaryDamage;
 var float RipperSecondaryMomentum;
 var bool  RipperCompensatePing;
 
 var float MinigunSelectTime;
 var float MinigunDownTime;
-var float MinigunSpinUpTime;
 var float MinigunUnwindTime;
-var float MinigunBulletInterval;
-var float MinigunAlternateBulletInterval;
-var float MinigunMinDamage;
-var float MinigunMaxDamage;
-var float MinigunAltMinDamage;
-var float MinigunAltMaxDamage;
 
 var float PulseSelectTime;
 var float PulseDownTime;
-var float PulseSphereDamage;
-var float PulseSphereMomentum;
 var float PulseSphereSpeed;
 var float PulseSphereFireRate;
 var float PulseSphereCollisionRadius;
 var float PulseSphereCollisionHeight;
 var float PulseBoltDPS;
 var float PulseBoltMomentum;
-var float PulseBoltMaxAccumulate;
-var float PulseBoltGrowthDelay;
-var int   PulseBoltMaxSegments;
 var bool  PulseCompensatePing;
 
 var float ShockSelectTime;
@@ -94,42 +63,25 @@ var float ShockBeamDamage;
 var float ShockBeamMomentum;
 var bool  ShockBeamUseReducedHitbox;
 
-var float ShockProjectileDamage;
 var float ShockProjectileHurtRadius;
 var float ShockProjectileMomentum;
 var bool  ShockProjectileBlockBullets;
-var bool  ShockProjectileBlockFlakChunk;
 var bool  ShockProjectileBlockFlakSlug;
-var bool  ShockProjectileTakeDamage;
-var float ShockProjectileHealth;
-var float ShockComboDamage;
 var float ShockComboMomentum;
 var float ShockComboHurtRadius;
-var int   ShockComboRewindMax;
 
 var float BioSelectTime;
 var float BioDownTime;
-var float BioDamage;
-var float BioMomentum;
-var bool  BioPrimaryInstantExplosion;
-var float BioAltDamage;
-var float BioAltMomentum;
-var float BioHurtRadiusBase;
-var float BioHurtRadiusMax;
 var bool  BioCompensatePing;
 
 var float EnforcerSelectTime;
 var float EnforcerDownTime;
-var float EnforcerDamage;
-var float EnforcerMomentum;
 var float EnforcerReloadTime;
 var float EnforcerReloadTimeAlt;
 var float EnforcerReloadTimeRepeat;
 var bool  EnforcerUseReducedHitbox;
 
 var bool  EnforcerAllowDouble;
-var float EnforcerDamageDouble;
-var float EnforcerMomentumDouble;
 var float EnforcerShotOffsetDouble;
 var float EnforcerReloadTimeDouble;
 var float EnforcerReloadTimeAltDouble;
@@ -137,14 +89,7 @@ var float EnforcerReloadTimeRepeatDouble;
 
 var float HammerSelectTime;
 var float HammerDownTime;
-var float HammerDamage;
-var float HammerMomentum;
-var float HammerSelfDamage;
 var float HammerSelfMomentum;
-var float HammerAltDamage;
-var float HammerAltMomentum;
-var float HammerAltSelfDamage;
-var float HammerAltSelfMomentum;
 
 var float TranslocatorSelectTime;
 var float TranslocatorOutSelectTime;
@@ -163,15 +108,10 @@ var int   PingCompensationMax;
 
 var bool  bEnableAnimationAdaptiveHeadHitbox;
 
-var int   InvisibilityDuration;
 
-var int   ArmorCharge;
 
-var int   ShieldBeltCharge;
 
-var int   ThighPadsCharge;
 
-var int   HealthPackHealingAmount;
 
 replication {
 	reliable if (Role == ROLE_Authority)
@@ -192,15 +132,10 @@ replication {
 
 		EightballSelectTime,
 		EightballDownTime,
-		RocketDamage,
-		RocketSelfDamage,
 		RocketHurtRadius,
 		RocketMomentum,
 		RocketSpreadSpacingDegrees,
 		RocketSpeed,
-		GrenadeDamage,
-		GrenadeHurtRadius,
-		GrenadeMomentum,
 		RocketCompensatePing,
 		bEnableEnhancedSplashRockets,
 		bEnableEnhancedSplashFlakSlug,
@@ -210,56 +145,30 @@ replication {
 		FlakSelectTime,
 		FlakPostSelectTime,
 		FlakDownTime,
-		FlakChunkDamage,
-		FlakChunkMomentum,
-		FlakChunkLifespan,
-		FlakChunkDropOffStart,
-		FlakChunkDropOffEnd,
-		FlakChunkDropOffDamageRatio,
 		FlakChunkRandomSpread,
 		FlakChunkRandomSpreadSize,
-		FlakSlugDamage,
 		FlakSlugHurtRadius,
 		FlakSlugMomentum,
 		FlakCompensatePing,
 
 		RipperSelectTime,
 		RipperDownTime,
-		RipperHeadshotDamage,
-		RipperHeadShotDamageWallMultiplier,
-		RipperHeadshotMomentum,
-		RipperPrimaryDamage,
-		RipperPrimaryDamageWallMultiplier,
-		RipperPrimaryMomentum,
 		RipperSecondaryHurtRadius,
-		RipperSecondaryDamage,
 		RipperSecondaryMomentum,
 		RipperCompensatePing,
 
 		MinigunSelectTime,
 		MinigunDownTime,
-		MinigunSpinUpTime,
 		MinigunUnwindTime,
-		MinigunBulletInterval,
-		MinigunAlternateBulletInterval,
-		MinigunMinDamage,
-		MinigunMaxDamage,
-		MinigunAltMinDamage,
-		MinigunAltMaxDamage,
 
 		PulseSelectTime,
 		PulseDownTime,
-		PulseSphereDamage,
-		PulseSphereMomentum,
 		PulseSphereSpeed,
 		PulseSphereFireRate,
 		PulseSphereCollisionRadius,
 		PulseSphereCollisionHeight,
 		PulseBoltDPS,
 		PulseBoltMomentum,
-		PulseBoltMaxAccumulate,
-		PulseBoltGrowthDelay,
-		PulseBoltMaxSegments,
 		PulseCompensatePing,
 
 		ShockSelectTime,
@@ -267,42 +176,25 @@ replication {
 		ShockBeamDamage,
 		ShockBeamMomentum,
 		ShockBeamUseReducedHitbox,
-		ShockProjectileDamage,
 		ShockProjectileHurtRadius,
 		ShockProjectileMomentum,
 		ShockProjectileBlockBullets,
-		ShockProjectileBlockFlakChunk,
 		ShockProjectileBlockFlakSlug,
-		ShockProjectileTakeDamage,
-		ShockProjectileHealth,
-		ShockComboDamage,
 		ShockComboMomentum,
 		ShockComboHurtRadius,
-		ShockComboRewindMax,
 
 		BioSelectTime,
 		BioDownTime,
-		BioDamage,
-		BioMomentum,
-		BioPrimaryInstantExplosion,
-		BioAltDamage,
-		BioAltMomentum,
-		BioHurtRadiusBase,
-		BioHurtRadiusMax,
 		BioCompensatePing,
 
 		EnforcerSelectTime,
 		EnforcerDownTime,
-		EnforcerDamage,
-		EnforcerMomentum,
 		EnforcerReloadTime,
 		EnforcerReloadTimeAlt,
 		EnforcerReloadTimeRepeat,
 		EnforcerUseReducedHitbox,
 
 		EnforcerAllowDouble,
-		EnforcerDamageDouble,
-		EnforcerMomentumDouble,
 		EnforcerShotOffsetDouble,
 		EnforcerReloadTimeDouble,
 		EnforcerReloadTimeAltDouble,
@@ -310,14 +202,7 @@ replication {
 
 		HammerSelectTime,
 		HammerDownTime,
-		HammerDamage,
-		HammerMomentum,
-		HammerSelfDamage,
 		HammerSelfMomentum,
-		HammerAltDamage,
-		HammerAltMomentum,
-		HammerAltSelfDamage,
-		HammerAltSelfMomentum,
 
 		TranslocatorSelectTime,
 		TranslocatorOutSelectTime,
@@ -325,15 +210,10 @@ replication {
 		TranslocatorHealth,
 		TranslocatorCompensatePing,
 
-		InvisibilityDuration,
 
-		ShieldBeltCharge,
 
-		ArmorCharge,
 		
-		ThighPadsCharge,
 
-		HealthPackHealingAmount,
 
 		bEnablePingCompensation,
 		bEnableTrades,
@@ -559,15 +439,10 @@ function InitFromWeaponSettings(WeaponSettings S) {
 
 	EightballSelectTime = S.EightballSelectTime;
 	EightballDownTime = S.EightballDownTime;
-	RocketDamage = S.RocketDamage;
-	RocketSelfDamage = S.RocketSelfDamage;
 	RocketHurtRadius = S.RocketHurtRadius;
 	RocketMomentum = S.RocketMomentum;
 	RocketSpreadSpacingDegrees = S.RocketSpreadSpacingDegrees;
 	RocketSpeed = S.RocketSpeed;
-	GrenadeDamage = S.GrenadeDamage;
-	GrenadeHurtRadius = S.GrenadeHurtRadius;
-	GrenadeMomentum = S.GrenadeMomentum;
 	RocketCompensatePing = S.RocketCompensatePing;
 	bEnableEnhancedSplashRockets = S.bEnableEnhancedSplashRockets;
 	bEnableEnhancedSplashFlakSlug = S.bEnableEnhancedSplashFlakSlug;
@@ -578,56 +453,30 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	FlakSelectTime = S.FlakSelectTime;
 	FlakPostSelectTime = S.FlakPostSelectTime;
 	FlakDownTime = S.FlakDownTime;
-	FlakChunkDamage = S.FlakChunkDamage;
-	FlakChunkMomentum = S.FlakChunkMomentum;
-	FlakChunkLifespan = S.FlakChunkLifespan;
-	FlakChunkDropOffStart = S.FlakChunkDropOffStart;
-	FlakChunkDropOffEnd = S.FlakChunkDropOffEnd;
-	FlakChunkDropOffDamageRatio = S.FlakChunkDropOffDamageRatio;
 	FlakChunkRandomSpread = S.FlakChunkRandomSpread;
 	FlakChunkRandomSpreadSize = S.FlakChunkRandomSpreadSize;
-	FlakSlugDamage = S.FlakSlugDamage;
 	FlakSlugHurtRadius = S.FlakSlugHurtRadius;
 	FlakSlugMomentum = S.FlakSlugMomentum;
 	FlakCompensatePing = S.FlakCompensatePing;
 
 	RipperSelectTime = S.RipperSelectTime;
 	RipperDownTime = S.RipperDownTime;
-	RipperHeadshotDamage = S.RipperHeadshotDamage;
-	RipperHeadShotDamageWallMultiplier = S.RipperHeadShotDamageWallMultiplier;
-	RipperHeadshotMomentum = S.RipperHeadshotMomentum;
-	RipperPrimaryDamage = S.RipperPrimaryDamage;
-	RipperPrimaryDamageWallMultiplier = S.RipperPrimaryDamageWallMultiplier;
-	RipperPrimaryMomentum = S.RipperPrimaryMomentum;
 	RipperSecondaryHurtRadius = S.RipperSecondaryHurtRadius;
-	RipperSecondaryDamage = S.RipperSecondaryDamage;
 	RipperSecondaryMomentum = S.RipperSecondaryMomentum;
 	RipperCompensatePing = S.RipperCompensatePing;
 
 	MinigunSelectTime = S.MinigunSelectTime;
 	MinigunDownTime = S.MinigunDownTime;
-	MinigunSpinUpTime = S.MinigunSpinUpTime;
 	MinigunUnwindTime = S.MinigunUnwindTime;
-	MinigunBulletInterval = S.MinigunBulletInterval;
-	MinigunAlternateBulletInterval = S.MinigunAlternateBulletInterval;
-	MinigunMinDamage = S.MinigunMinDamage;
-	MinigunMaxDamage = S.MinigunMaxDamage;
-	MinigunAltMinDamage = S.MinigunAltMinDamage;
-	MinigunAltMaxDamage = S.MinigunAltMaxDamage;
 
 	PulseSelectTime = S.PulseSelectTime;
 	PulseDownTime = S.PulseDownTime;
-	PulseSphereDamage = S.PulseSphereDamage;
-	PulseSphereMomentum = S.PulseSphereMomentum;
 	PulseSphereSpeed = S.PulseSphereSpeed;
 	PulseSphereFireRate = S.PulseSphereFireRate;
 	PulseSphereCollisionRadius = S.PulseSphereCollisionRadius;
 	PulseSphereCollisionHeight = S.PulseSphereCollisionHeight;
 	PulseBoltDPS = S.PulseBoltDPS;
 	PulseBoltMomentum = S.PulseBoltMomentum;
-	PulseBoltMaxAccumulate = S.PulseBoltMaxAccumulate;
-	PulseBoltGrowthDelay = S.PulseBoltGrowthDelay;
-	PulseBoltMaxSegments = S.PulseBoltMaxSegments;
 	PulseCompensatePing = S.PulseCompensatePing;
 
 	ShockSelectTime = S.ShockSelectTime;
@@ -635,42 +484,25 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	ShockBeamDamage = S.ShockBeamDamage;
 	ShockBeamMomentum = S.ShockBeamMomentum;
 	ShockBeamUseReducedHitbox = S.ShockBeamUseReducedHitbox;
-	ShockProjectileDamage = S.ShockProjectileDamage;
 	ShockProjectileHurtRadius = S.ShockProjectileHurtRadius;
 	ShockProjectileMomentum = S.ShockProjectileMomentum;
 	ShockProjectileBlockBullets = S.ShockProjectileBlockBullets;
-	ShockProjectileBlockFlakChunk = S.ShockProjectileBlockFlakChunk;
 	ShockProjectileBlockFlakSlug = S.ShockProjectileBlockFlakSlug;
-	ShockProjectileTakeDamage = S.ShockProjectileTakeDamage;
-	ShockProjectileHealth = S.ShockProjectileHealth;
-	ShockComboDamage = S.ShockComboDamage;
 	ShockComboMomentum = S.ShockComboMomentum;
 	ShockComboHurtRadius = S.ShockComboHurtRadius;
-	ShockComboRewindMax = S.ShockComboRewindMax;
 
 	BioSelectTime = S.BioSelectTime;
 	BioDownTime = S.BioDownTime;
-	BioDamage = S.BioDamage;
-	BioMomentum = S.BioMomentum;
-	BioPrimaryInstantExplosion = S.BioPrimaryInstantExplosion;
-	BioAltDamage = S.BioAltDamage;
-	BioAltMomentum = S.BioAltMomentum;
-	BioHurtRadiusBase = S.BioHurtRadiusBase;
-	BioHurtRadiusMax = S.BioHurtRadiusMax;
 	BioCompensatePing = S.BioCompensatePing;
 
 	EnforcerSelectTime = S.EnforcerSelectTime;
 	EnforcerDownTime = S.EnforcerDownTime;
-	EnforcerDamage = S.EnforcerDamage;
-	EnforcerMomentum = S.EnforcerMomentum;
 	EnforcerReloadTime = S.EnforcerReloadTime;
 	EnforcerReloadTimeAlt = S.EnforcerReloadTimeAlt;
 	EnforcerReloadTimeRepeat = S.EnforcerReloadTimeRepeat;
 	EnforcerUseReducedHitbox = S.EnforcerUseReducedHitbox;
 
 	EnforcerAllowDouble = S.EnforcerAllowDouble;
-	EnforcerDamageDouble = S.EnforcerDamageDouble;
-	EnforcerMomentumDouble = S.EnforcerMomentumDouble;
 	EnforcerShotOffsetDouble = S.EnforcerShotOffsetDouble;
 	EnforcerReloadTimeDouble = S.EnforcerReloadTimeDouble;
 	EnforcerReloadTimeAltDouble = S.EnforcerReloadTimeAltDouble;
@@ -678,14 +510,7 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	
 	HammerSelectTime = S.HammerSelectTime;
 	HammerDownTime = S.HammerDownTime;
-	HammerDamage = S.HammerDamage;
-	HammerMomentum = S.HammerMomentum;
-	HammerSelfDamage = S.HammerSelfDamage;
 	HammerSelfMomentum = S.HammerSelfMomentum;
-	HammerAltDamage = S.HammerAltDamage;
-	HammerAltMomentum = S.HammerAltMomentum;
-	HammerAltSelfDamage = S.HammerAltSelfDamage;
-	HammerAltSelfMomentum = S.HammerAltSelfMomentum;
 
 	TranslocatorSelectTime = S.TranslocatorSelectTime;
 	TranslocatorOutSelectTime = S.TranslocatorOutSelectTime;
@@ -693,15 +518,10 @@ function InitFromWeaponSettings(WeaponSettings S) {
 	TranslocatorHealth = S.TranslocatorHealth;
 	TranslocatorCompensatePing = S.TranslocatorCompensatePing;
 
-	InvisibilityDuration = S.InvisibilityDuration;
 
-	ShieldBeltCharge = S.ShieldBeltCharge;
 
-	ArmorCharge = S.ArmorCharge;
 
-	ThighPadsCharge = S.ThighPadsCharge;
 
-	HealthPackHealingAmount = S.HealthPackHealingAmount;
 
 	bEnablePingCompensation = S.bEnablePingCompensation;
 
@@ -756,70 +576,39 @@ defaultproperties
 
 	EightballSelectTime=0.606061
 	EightballDownTime=0.366667
-	RocketDamage=75
-	RocketSelfDamage=75
 	RocketHurtRadius=220
 	RocketMomentum=1.0
 	RocketSpreadSpacingDegrees=3.6
 	RocketSpeed=900.0
-	GrenadeDamage=80
-	GrenadeHurtRadius=200
-	GrenadeMomentum=1.0
 	RocketCompensatePing=True
 
 	FlakSelectTime=0.625
 	FlakPostSelectTime=0.384615
 	FlakDownTime=0.333333
-	FlakChunkDamage=16
-	FlakChunkMomentum=1.0
-	FlakChunkLifespan=2.9
-	FlakChunkDropOffStart=0.0
-	FlakChunkDropOffEnd=0.0
-	FlakChunkDropOffDamageRatio=1.0
 	FlakChunkRandomSpread=True
 	FlakChunkRandomSpreadSize=2000
-	FlakSlugDamage=70
 	FlakSlugHurtRadius=150
 	FlakSlugMomentum=1.0
 	FlakCompensatePing=True
 
 	RipperSelectTime=0.75
 	RipperDownTime=0.2
-	RipperHeadshotDamage=105
-	RipperHeadShotDamageWallMultiplier=1.0
-	RipperHeadshotMomentum=1.0
-	RipperPrimaryDamage=30
-	RipperPrimaryDamageWallMultiplier=1.0
-	RipperPrimaryMomentum=1.0
 	RipperSecondaryHurtRadius=180
-	RipperSecondaryDamage=34
 	RipperSecondaryMomentum=1.0
 	RipperCompensatePing=True
 
 	MinigunSelectTime=0.555556
 	MinigunDownTime=0.333333
-	MinigunSpinUpTime=0.130
 	MinigunUnwindTime=0.866666
-	MinigunBulletInterval=0.080
-	MinigunAlternateBulletInterval=0.050
-	MinigunMinDamage=5
-	MinigunMaxDamage=7
-	MinigunAltMinDamage=5
-	MinigunAltMaxDamage=7
 
 	PulseSelectTime=0.444444
 	PulseDownTime=0.26
-	PulseSphereDamage=20
-	PulseSphereMomentum=1.0
 	PulseSphereFireRate=0.18
 	PulseSphereSpeed=1450.0
 	PulseSphereCollisionRadius=6.0
 	PulseSphereCollisionHeight=6.0
 	PulseBoltDPS=72
 	PulseBoltMomentum=1.0
-	PulseBoltMaxAccumulate=0.08
-	PulseBoltGrowthDelay=0.05
-	PulseBoltMaxSegments=10
 	PulseCompensatePing=True
 
 	ShockSelectTime=0.5
@@ -827,42 +616,25 @@ defaultproperties
 	ShockBeamDamage=40
 	ShockBeamMomentum=1.0
 	ShockBeamUseReducedHitbox=False
-	ShockProjectileDamage=55
 	ShockProjectileHurtRadius=70
 	ShockProjectileMomentum=1.0
 	ShockProjectileBlockBullets=True
-	ShockProjectileBlockFlakChunk=True
 	ShockProjectileBlockFlakSlug=True
-	ShockProjectileTakeDamage=False
-	ShockProjectileHealth=30
-	ShockComboDamage=165
 	ShockComboHurtRadius=250
-	ShockComboRewindMax=0
 	ShockComboMomentum=1.0
 
 	BioSelectTime=0.488889
 	BioDownTime=0.333333
-	BioDamage=20
-	BioMomentum=1.0
-	BioPrimaryInstantExplosion=False
-	BioAltDamage=75
-	BioAltMomentum=1.0
-	BioHurtRadiusBase=75
-	BioHurtRadiusMax=250
 	BioCompensatePing=True
 
 	EnforcerSelectTime=0.777778
 	EnforcerDownTime=0.266667
-	EnforcerDamage=17
-	EnforcerMomentum=1.0
 	EnforcerReloadTime=0.27
 	EnforcerReloadTimeAlt=0.26
 	EnforcerReloadTimeRepeat=0.266667
 	EnforcerUseReducedHitbox=False
 
 	EnforcerAllowDouble=True
-	EnforcerDamageDouble=17
-	EnforcerMomentumDouble=1.0
 	EnforcerShotOffsetDouble=0.2
 	EnforcerReloadTimeDouble=0.27
 	EnforcerReloadTimeAltDouble=0.26
@@ -870,14 +642,7 @@ defaultproperties
 
 	HammerSelectTime=0.566667
 	HammerDownTime=0.166667
-	HammerDamage=60
-	HammerMomentum=1.0
-	HammerSelfDamage=36
 	HammerSelfMomentum=1.0
-	HammerAltDamage=20
-	HammerAltMomentum=1.0
-	HammerAltSelfDamage=24
-	HammerAltSelfMomentum=1.0
 
 	TranslocatorSelectTime=0.363636
 	TranslocatorOutSelectTime=0.27
@@ -885,15 +650,10 @@ defaultproperties
 	TranslocatorHealth=65.0
 	TranslocatorCompensatePing=False
 
-	InvisibilityDuration=45
 
-	ShieldBeltCharge=150
 
-	ArmorCharge=100
 
-	ThighPadsCharge=50
 
-	HealthPackHealingAmount=20
 
 	bEnablePingCompensation=True
 

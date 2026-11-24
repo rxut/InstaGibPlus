@@ -6,18 +6,6 @@
 
 class ST_WarShell extends WarShell;
 
-var IGPlus_WeaponImplementation WImp;
-
-simulated function PostBeginPlay()
-{
-	if (ROLE == ROLE_Authority)
-	{
-		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-			break;
-	}
-	Super.PostBeginPlay();
-}
-
 singular function TakeDamage( int NDamage, Pawn instigatedBy, Vector hitlocation, 
 						vector momentum, name damageType )
 {

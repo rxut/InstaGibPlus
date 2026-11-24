@@ -18,7 +18,6 @@ var bool bUpdatingControls;
 
 var IGPlus_Button Btn_AddLayer;
 var IGPlus_Button Btn_RemLayer;
-var IGPlus_Label Lbl_Layers;
 var localized string LayersText;
 var localized string LayersHelp;
 var localized string AddLayerHelp;
@@ -34,7 +33,6 @@ var localized string NoLayerText;
 // Presets: the list, + for a new one, - to delete the picked one, and its name.
 var IGPlus_Button Btn_AddPreset;
 var IGPlus_Button Btn_RemPreset;
-var IGPlus_Label Lbl_Presets;
 var localized string PresetsText;
 var localized string PresetsHelp;
 var localized string AddPresetHelp;
@@ -456,7 +454,7 @@ function Created() {
 	// Left: the layers.
 	Btn_AddLayer = NewButton(10, 10, "+", AddLayerHelp);
 	Btn_RemLayer = NewButton(30, 10, "-", RemLayerHelp);
-	Lbl_Layers = NewLabel(54, 10, 212, LayersText, LayersHelp);
+	NewLabel(54, 10, 212, LayersText, LayersHelp);
 	LB_Layers = IGPlus_CrosshairLayersListBox(CreateControl(class'IGPlus_CrosshairLayersListBox', 10, 30, 256, 150));
 	LB_Layers.SetHelpText(LayersHelp);
 
@@ -518,7 +516,7 @@ function Created() {
 	// Right: the presets.
 	Btn_AddPreset = NewButton(436, 10, "+", AddPresetHelp);
 	Btn_RemPreset = NewButton(456, 10, "-", RemPresetHelp);
-	Lbl_Presets = NewLabel(480, 10, 106, PresetsText, PresetsHelp);
+	NewLabel(480, 10, 106, PresetsText, PresetsHelp);
 
 	LB_Presets = IGPlus_CrosshairPresetsListBox(CreateControl(class'IGPlus_CrosshairPresetsListBox', 436, 30, 150, 374));
 	LB_Presets.BackgroundBrightness = ParentDialog.BackgroundBrightness;

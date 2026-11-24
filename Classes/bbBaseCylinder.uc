@@ -5,7 +5,6 @@ var PlayerPawn CachedLocalPlayerPawn;
 var bool bLocalPlayerPawnCached;
 var bool bRegistered;   // with the local player, to be placed after the players are drawn
 
-var IGPlus_WeaponImplementation WImp;
 var WeaponSettingsRepl WSettings;
 
 replication
@@ -29,14 +28,6 @@ simulated final function WeaponSettingsRepl GetWeaponSettings() {
 
 	WSettings = FindWeaponSettings();
 	return WSettings;
-}
-
-function PostBeginPlay()
-{
-	Super.PostBeginPlay();
-
-	ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-		break;		// Find master :D
 }
 
 simulated function PlayerPawn GetLocalPlayerPawn()

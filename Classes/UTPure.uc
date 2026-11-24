@@ -13,15 +13,10 @@ var bool bDidEndWarn;				// True if screenshot warning has been sent to players.
 var bool bDidShot;
 var float EndWarnDelay;
 
-// Pause control (for Event PlayerCalcView)
-var bool	zzbPaused;			// Game has been paused at one time.
-var float	zzPauseCountdown;		// Give 120 seconds of "ignore FT"
 var name zzDefaultWeapons[8];
-var string zzDefaultPackages[8];
 
 // Auto Pause Handler
 var PureAutoPause zzAutoPauser;
-var IGPlus_HitFeedback MutHitFeedback;
 
 //Add the maplist where kickers will work using normal network
 var bool bExludeKickers;
@@ -191,6 +186,7 @@ function PostBeginPlay()
 	local string MapName;
 	local class<Info> VersionInfoClass;
 	local IGPlus_WeaponImplementation WImpEarly;
+	local IGPlus_HitFeedback MutHitFeedback;
 
 	Super.PostBeginPlay();
 
@@ -554,19 +550,12 @@ event Tick(float zzDelta)
 		if (GameEventChain.IsPlaying())
 			GameEventChain.Pause(Level.TimeSeconds);
 
-		zzbPaused = True;
-		zzPauseCountdown = 45.0; // Give it 45 seconds to wear off
 		zzDMP.SentText = Max(zzDMP.SentText - 100, 0);	// Fix to avoid the "Pause text freeze bug"
 	}
 	else
 	{
 		if (GameEventChain.IsPaused())
 			GameEventChain.Play(Level.TimeSeconds);
-
-		if (zzPauseCountdown > 0.0)
-			zzPauseCountdown -= zzDelta;
-		else
-			zzbPaused = False;
 	}
 
 
@@ -1155,16 +1144,6 @@ function ST_MoverDummy FindMoverDummy(Mover M) {
 	for (MD = MoverDummies; MD != none; MD = MD.Next)
 		if (MD.Actual == M)
 			return MD;
-
-	return none;
-}
-
-function ST_ProjectileDummy FindProjectileDummy(Projectile P) {
-	local ST_ProjectileDummy D;
-
-	for (D = ProjDummies; D != none; D = D.Next)
-		if (D.Actual == P)
-			return D;
 
 	return none;
 }
@@ -2413,17 +2392,6 @@ function bool xxGameIsPlaying()
 	if (zzDMP.bGameEnded || (zzDMP.bRequireReady && (zzDMP.CountDown > 0)))
 			return false;
 	return true;
-}
-
-// ==================================================================================
-// WaitingForTournament - Tells when game hasnt started yet
-// ==================================================================================
-function bool xxWaitingForTournament()
-{
-	// Determine if match has started or ended (server side only)
-	if (zzDMP.bRequireReady && (zzDMP.CountDown > 0))
-			return true;
-	return false;
 }
 
 static function xxLogDate(coerce string zzS, LevelInfo zzLevel)

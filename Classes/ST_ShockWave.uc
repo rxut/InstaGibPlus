@@ -8,18 +8,6 @@ class ST_ShockWave extends ShockWave;
 
 // Redeemer BIG BANG thingie.
 
-var IGPlus_WeaponImplementation WImp;
-
-simulated function PostBeginPlay()
-{
-	if (ROLE == ROLE_Authority)
-	{
-		ForEach AllActors(Class'IGPlus_WeaponImplementation', WImp)
-			break;
-	}
-	Super.PostBeginPlay();
-}
-
 simulated function Timer()
 {
 

@@ -9,7 +9,6 @@ var UWindowLabelControl Lbl_MoreInformation;
 var localized string MoreInformationText;
 
 // General
-	var UWindowLabelControl Lbl_General;
 	var localized string GeneralText;
 
 	var UWindowCheckbox Chk_ShootDead;
@@ -98,7 +97,6 @@ var localized string MoreInformationText;
 	var localized string SmoothDiscCorrectionsNoteHelp;
 
 // Advanced
-	var UWindowLabelControl Lbl_Advanced;
 	var localized string AdvancedText;
 
 	var UWindowCheckbox Chk_LogClientMessages;
@@ -134,7 +132,6 @@ var localized string MoreInformationText;
 	var localized string LocationOffsetFixNoteHelp;
 
 // NetStats
-	var UWindowLabelControl Lbl_NetStats;
 	var localized string NetStatsText;
 
 	var UWindowCheckbox Chk_EnableNetStats;
@@ -162,7 +159,6 @@ var localized string MoreInformationText;
 	var localized string NetStatsLocationHelp;
 
 // Auto Demo
-	var UWindowLabelControl Lbl_AutoDemo;
 	var localized string AutoDemoLblText;
 
 	var UWindowCheckbox Chk_AutoDemo;
@@ -182,7 +178,6 @@ var localized string MoreInformationText;
 	var localized string DemoCharHelp;
 
 // Force Models
-	var UWindowLabelControl Lbl_ForceModels;
 	var localized string ForceModelsLblText;
 
 	var UWindowCheckbox Chk_ForceModels;
@@ -244,7 +239,6 @@ var localized string MoreInformationText;
 	var localized string ForcedModelXan;
 
 // SuperShockRifle
-	var UWindowLabelControl Lbl_SuperShockRifle;
 	var localized string SuperShockRifleText;
 
 	var IGPlus_ComboBox Cmb_cShockBeam;
@@ -300,7 +294,6 @@ var localized string MoreInformationText;
 	var localized string HitEffectSourceHelp;
 
 // FPS
-	var UWindowLabelControl Lbl_FPS;
 	var localized string FPSLblText;
 
 	var UWindowHSliderControl HSld_FPSDetail;
@@ -322,7 +315,6 @@ var localized string MoreInformationText;
 	var localized string FPSLocationHelp;
 
 // Hit Sounds
-	var UWindowLabelControl Lbl_HitSounds;
 	var localized string HitSoundsLblText;
 
 	var IGPlus_ComboBox Cmb_HitSoundSource;
@@ -340,7 +332,6 @@ var localized string MoreInformationText;
 	var localized string HitSourceServer;
 	var localized string HitSourceClient;
 
-	var UWindowLabelControl Lbl_EnemyHitSounds;
 	var localized string EnemyHitSoundsLblText;
 
 	var UWindowCheckbox Chk_EnableHitSounds;
@@ -359,7 +350,6 @@ var localized string MoreInformationText;
 	var localized string SelectedHitSoundText;
 	var localized string SelectedHitSoundHelp;
 
-	var UWindowLabelControl Lbl_TeamHitSounds;
 	var localized string TeamHitSoundsLblText;
 
 	var UWindowCheckbox Chk_EnableTeamHitSounds;
@@ -379,7 +369,6 @@ var localized string MoreInformationText;
 	var localized string SelectedTeamHitSoundHelp;
 
 // Kill Cam
-	var UWindowLabelControl Lbl_KillCam;
 	var localized string KillCamLblText;
 
 	var UWindowCheckbox Chk_EnableKillCam;
@@ -391,7 +380,6 @@ var localized string MoreInformationText;
 	var localized string KillCamMinDelayHelp;
 
 // Kill Feed
-	var UWindowLabelControl Lbl_KillFeed;
 	var localized string KillFeedLblText;
 
 	var UWindowCheckbox Chk_EnableKillFeed;
@@ -411,7 +399,6 @@ var localized string MoreInformationText;
 	var localized string KillFeedLocationHelp;
 
 // Hit Marker
-	var UWindowLabelControl Lbl_HitMarker;
 	var localized string HitMarkerLblText;
 
 	var IGPlus_ComboBox Cmb_HitMarkerSource;
@@ -474,7 +461,6 @@ var localized string MoreInformationText;
 	var localized string HitMarkerTeamColorBHelp;
 
 // Damage Numbers
-	var UWindowLabelControl Lbl_DamageNumbers;
 	var localized string DamageNumbersLblText;
 
 	var IGPlus_EditControl Edit_DamageNumberDuration;
@@ -486,7 +472,6 @@ var localized string MoreInformationText;
 	var localized string DamageNumberFadeHelp;
 
 // Crosshair Factory
-	var UWindowLabelControl Lbl_CrosshairFactory;
 	var localized string CrosshairFactoryText;
 
 	var UWindowCheckbox Chk_UseCrosshairFactory;
@@ -499,7 +484,6 @@ var localized string MoreInformationText;
 	var IGPlus_CrosshairSettingsDialog Wnd_CrosshairSettingsDialog;
 
 // Client-Side Animations
-	var UWindowLabelControl Lbl_ClientSideAnimations;
 	var localized string ClientSideAnimationsText;
 
 	var UWindowCheckbox Chk_BioUseClientSideAnimations;
@@ -917,7 +901,7 @@ function Created() {
 	Lbl_MoreInformation.Align = TA_Center;
 	Lbl_MoreInformation.SetFont(F_Bold);
 
-	Lbl_General = CreateSeparator(GeneralText);
+	CreateSeparator(GeneralText);
 	Chk_ShootDead = CreateCheckbox(ShootDeadText, ShootDeadHelp);
 	Chk_DoEndShot = CreateCheckbox(DoEndShotText, DoEndShotHelp);
 	Chk_UnlitSkins = CreateCheckbox(UnlitSkinsText, UnlitSkinsHelp);
@@ -940,7 +924,7 @@ function Created() {
 	Chk_SmoothDiscCorrections = CreateCheckbox(SmoothDiscCorrectionsText, SmoothDiscCorrectionsHelp);
 	Lbl_SmoothDiscCorrectionsNote = CreateLabel("", SmoothDiscCorrectionsNoteHelp);
 
-	Lbl_ClientSideAnimations = CreateSeparator(ClientSideAnimationsText);
+	CreateSeparator(ClientSideAnimationsText);
 	Chk_BioUseClientSideAnimations = CreateCheckbox(BioUseClientSideAnimationsText, BioUseClientSideAnimationsHelp);
 	Chk_ShockBeamUseClientSideAnimations = CreateCheckbox(ShockBeamUseClientSideAnimationsText, ShockBeamUseClientSideAnimationsHelp);
 	Chk_ShockProjectileUseClientSideAnimations = CreateCheckbox(ShockProjectileUseClientSideAnimationsText, ShockProjectileUseClientSideAnimationsHelp);
@@ -953,7 +937,7 @@ function Created() {
 	Chk_TranslocatorUseClientSideAnimations = CreateCheckbox(TranslocatorUseClientSideAnimationsText, TranslocatorUseClientSideAnimationsHelp);
 	Lbl_TranslocatorUseClientSideAnimationsNote = CreateLabel("", TranslocatorUseClientSideAnimationsNoteHelp);
 
-	Lbl_Advanced = CreateSeparator(AdvancedText);
+	CreateSeparator(AdvancedText);
 	Chk_LogClientMessages = CreateCheckbox(LogClientMessagesText, LogClientMessagesHelp);
 	Chk_DemoShowClientMessages = CreateCheckbox(DemoShowClientMessagesText, DemoShowClientMessagesHelp);
 	Chk_DebugMovement = CreateCheckbox(DebugMovementText, DebugMovementHelp);
@@ -967,7 +951,7 @@ function Created() {
 	Chk_LocationOffsetFix = CreateCheckbox(LocationOffsetFixText, LocationOffsetFixHelp);
 	Lbl_LocationOffsetFixNote = CreateLabel("", LocationOffsetFixNoteHelp);
 
-	Lbl_NetStats = CreateSeparator(NetStatsText);
+	CreateSeparator(NetStatsText);
 	Chk_EnableNetStats = CreateCheckbox(EnableNetStatsText, EnableNetStatsHelp);
 	Chk_NetStatUnconfirmedTime = CreateCheckbox(NetStatUnconfirmedTimeText, NetStatUnconfirmedTimeHelp);
 	Chk_NetStatsLocationError = CreateCheckbox(NetStatsLocationErrorText, NetStatsLocationErrorHelp);
@@ -975,13 +959,13 @@ function Created() {
 	Edit_NetStatsWidth = CreateEdit(ECT_Integer, NetStatsWidthText, NetStatsWidthHelp, 4, 32);
 	SLoc_NetStatsLocation = CreateScreenLocation(100, NetStatsLocationText, NetStatsLocationHelp);
 
-	Lbl_AutoDemo = CreateSeparator(AutoDemoLblText);
+	CreateSeparator(AutoDemoLblText);
 	Chk_AutoDemo = CreateCheckbox(AutoDemoText, AutoDemoHelp);
 	Edit_DemoMask = CreateEditResizable(ECT_Text, DemoMaskText, 0.7, 100, MaxInt, DemoMaskHelp);
 	Edit_DemoPath = CreateEditResizable(ECT_Text, DemoPathText, 0.7, 100, MaxInt, DemoPathHelp);
 	Edit_DemoChar = CreateEdit(ECT_Text, DemoCharText, DemoCharHelp, 1, 14);
 
-	Lbl_ForceModels = CreateSeparator(ForceModelsLblText);
+	CreateSeparator(ForceModelsLblText);
 	Chk_ForceModels = CreateCheckbox(ForceModelsText, ForceModelsHelp);
 	Chk_DemoShowRealModels = CreateCheckbox(DemoShowRealModelsText, DemoShowRealModelsHelp);
 	Cmb_DesiredSkin = CreateComboBox(DesiredSkinText, DesiredSkinHelp, false, 150);
@@ -997,7 +981,7 @@ function Created() {
 	SetUpSkinColorComboBox(Cmb_TeamColor);
 	SetUpSkinColorComboBox(Cmb_EnemyColor);
 
-	Lbl_SuperShockRifle = CreateSeparator(SuperShockRifleText);
+	CreateSeparator(SuperShockRifleText);
 	Cmb_cShockBeam = CreateComboBox(cShockBeamText, cShockBeamHelp, false, 150);
 	Cmb_cShockBeam.AddItem(cShockBeamDefault);
 	Cmb_cShockBeam.AddItem(cShockBeamTeamColored);
@@ -1019,41 +1003,41 @@ function Created() {
 	Cmb_HitEffectSource = CreateComboBox(HitEffectSourceText, HitEffectSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HitEffectSource);
 
-	Lbl_FPS = CreateSeparator(FPSLblText);
+	CreateSeparator(FPSLblText);
 	HSld_FPSDetail = CreateSlider(-1, 3, 1, FPSDetailText, FPSDetailHelp, 150);
 	Edit_FPSCounterSmoothingStrength = CreateEdit(ECT_Integer, FPSCounterSmoothingStrengthText, FPSCounterSmoothingStrengthHelp, , 64);
 	SLoc_FPSLocation = CreateScreenLocation(100, FPSLocationText, FPSLocationHelp);
 
-	Lbl_HitSounds = CreateSeparator(HitSoundsLblText);
+	CreateSeparator(HitSoundsLblText);
 	Cmb_HitSoundSource = CreateComboBox(HitSoundSourceText, HitSoundSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HitSoundSource);
 	Cmb_HeadshotSource = CreateComboBox(HeadshotSourceText, HeadshotSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HeadshotSource);
 	Chk_LostTradeNotification = CreateCheckbox(LostTradeNotificationText, LostTradeNotificationHelp);
 
-	Lbl_EnemyHitSounds = CreateSeparator(EnemyHitSoundsLblText);
+	CreateSeparator(EnemyHitSoundsLblText);
 	Chk_EnableHitSounds = CreateCheckbox(EnableHitSoundsText, EnableHitSoundsHelp);
 	Chk_HitSoundPitchShift = CreateCheckbox(HitSoundPitchShiftText, HitSoundPitchShiftHelp);
 	Edit_HitSoundVolume = CreateEdit(ECT_Real, HitSoundVolumeText, HitSoundVolumeHelp, , 64);
 	Cmb_SelectedHitSound = CreateComboBox(SelectedHitSoundText, SelectedHitSoundHelp, true, 150);
 
-	Lbl_TeamHitSounds = CreateSeparator(TeamHitSoundsLblText);
+	CreateSeparator(TeamHitSoundsLblText);
 	Chk_EnableTeamHitSounds = CreateCheckbox(EnableTeamHitSoundsText, EnableTeamHitSoundsHelp);
 	Chk_HitSoundTeamPitchShift = CreateCheckbox(HitSoundTeamPitchShiftText, HitSoundTeamPitchShiftHelp);
 	Edit_HitSoundTeamVolume = CreateEdit(ECT_Real, HitSoundTeamVolumeText, HitSoundTeamVolumeHelp, , 64);
 	Cmb_SelectedTeamHitSound = CreateComboBox(SelectedTeamHitSoundText, SelectedTeamHitSoundHelp, true, 150);
 
-	Lbl_KillCam = CreateSeparator(KillCamLblText);
+	CreateSeparator(KillCamLblText);
 	Chk_EnableKillCam = CreateCheckbox(EnableKillCamText, EnableKillCamHelp);
 	Edit_KillCamMinDelay = CreateEdit(ECT_Real, KillCamMinDelayText, KillCamMinDelayHelp, , 64);
 
-	Lbl_KillFeed = CreateSeparator(KillFeedLblText);
+	CreateSeparator(KillFeedLblText);
 	Chk_EnableKillFeed = CreateCheckbox(EnableKillFeedText, EnableKillFeedHelp);
 	Edit_KillFeedSpeed = CreateEdit(ECT_Real, KillFeedSpeedText, KillFeedSpeedHelp, , 64);
 	Edit_KillFeedScale = CreateEdit(ECT_Real, KillFeedScaleText, KillFeedScaleHelp, , 64);
 	SLoc_KillFeedLocation = CreateScreenLocation(100, KillFeedLocationText, KillFeedLocationHelp);
 
-	Lbl_HitMarker = CreateSeparator(HitMarkerLblText);
+	CreateSeparator(HitMarkerLblText);
 	Cmb_HitMarkerSource = CreateComboBox(HitMarkerSourceText, HitMarkerSourceHelp, false, 150);
 	SetUpHitSourceComboBox(Cmb_HitMarkerSource);
 	Cmb_HitMarkerColorMode = CreateComboBox(HitMarkerColorModeText, HitMarkerColorModeHelp, false, 150);
@@ -1073,11 +1057,11 @@ function Created() {
 	HSld_HitMarkerTeamColorG = CreateSlider(0, 255, 1, HitMarkerTeamColorGText, HitMarkerTeamColorGHelp, 150);
 	HSld_HitMarkerTeamColorB = CreateSlider(0, 255, 1, HitMarkerTeamColorBText, HitMarkerTeamColorBHelp, 150);
 
-	Lbl_DamageNumbers = CreateSeparator(DamageNumbersLblText);
+	CreateSeparator(DamageNumbersLblText);
 	Edit_DamageNumberDuration = CreateEdit(ECT_Real, DamageNumberDurationText, DamageNumberDurationHelp, , 64);
 	Edit_DamageNumberFade = CreateEdit(ECT_Real, DamageNumberFadeText, DamageNumberFadeHelp, , 64);
 
-	Lbl_CrosshairFactory = CreateSeparator(CrosshairFactoryText);
+	CreateSeparator(CrosshairFactoryText);
 	Chk_UseCrosshairFactory = CreateCheckbox(UseCrosshairFactoryText, UseCrosshairFactoryHelp);
 	Btn_CrosshairSettings = CreateButton(CrosshairSettingsText);
 
