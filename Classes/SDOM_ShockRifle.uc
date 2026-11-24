@@ -90,13 +90,15 @@ simulated function bool IGPlus_ClientBeam(bbPlayer BP) {
 	return BP != None;
 }
 
-// Without ping compensation, offline and for bots.
+// Without ping compensation, offline and for bots. Global: a held button
+// refires from inside the firing states, whose own Fire and ClientFire do
+// nothing.
 function AltFire(float Value) {
-	Fire(Value);
+	Global.Fire(Value);
 }
 
 simulated function bool ClientAltFire(float Value) {
-	return ClientFire(Value);
+	return Global.ClientFire(Value);
 }
 
 simulated function PlaySelect() {
