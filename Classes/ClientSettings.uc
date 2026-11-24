@@ -493,48 +493,12 @@ simulated function CrosshairLayerDescr GetCrosshairLayer(int i) {
 	return CrosshairLayers[i];
 }
 
-simulated function SetCrosshairLayerTexture(int i, coerce string T) {
-	CrosshairLayers[i].Texture = T;
-}
-
-simulated function SetCrosshairLayerOffsetX(int i, int O) {
-	CrosshairLayers[i].OffsetX = O;
-}
-
-simulated function SetCrosshairLayerOffsetY(int i, int O) {
-	CrosshairLayers[i].OffsetY = O;
-}
-
 simulated function SetCrosshairLayerScaleX(int i, float S) {
 	CrosshairLayers[i].ScaleX = S;
 }
 
-simulated function SetCrosshairLayerScaleY(int i, float S) {
-	CrosshairLayers[i].ScaleY = S;
-}
-
-simulated function SetCrosshairLayerColor(int i, color C) {
-	CrosshairLayers[i].Color = C;
-}
-
-simulated function SetCrosshairLayerStyle(int i, int S) {
-	CrosshairLayers[i].Style = S;
-}
-
-simulated function SetCrosshairLayerSmooth(int i, bool S) {
-	CrosshairLayers[i].bSmooth = S;
-}
-
 simulated function SetCrosshairLayerUse(int i, bool U) {
 	CrosshairLayers[i].bUse = U;
-}
-
-simulated function SetCrosshairLayerShape(int i, int S) {
-	CrosshairLayers[i].Shape = S;
-}
-
-simulated function SetCrosshairLayerThickness(int i, int T) {
-	CrosshairLayers[i].Thickness = T;
 }
 
 static function EHitSoundSource IntToHitSoundSource(int A) {
