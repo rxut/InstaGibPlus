@@ -287,7 +287,7 @@ state ClientFiring
 
 simulated function bool ClientAltFire(float Value)
 {
-	return ClientFire(Value);
+	return Global.ClientFire(Value);
 }
 
 function TraceFire( float Accuracy )
