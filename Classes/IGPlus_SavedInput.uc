@@ -158,29 +158,6 @@ function DeserializeFrom(IGPlus_DataBuffer B) {
 	SavedViewRotation.Roll = 0;
 }
 
-function bool IsSimilarTo(IGPlus_SavedInput Other) {
-	return
-		bLive == Other.bLive &&
-		bForw == Other.bForw &&
-		bBack == Other.bBack &&
-		bLeft == Other.bLeft &&
-		bRigh == Other.bRigh &&
-		bWalk == Other.bWalk &&
-		bDuck == Other.bDuck &&
-		bJump == Other.bJump &&
-			bDodg == Other.bDodg &&
-			bFire == Other.bFire &&
-			bAFir == Other.bAFir &&
-			bForceFireTap == Other.bForceFireTap &&
-			bForceAltTap == Other.bForceAltTap &&
-			bDetReady == Other.bDetReady &&
-			bDetEightballInstant == Other.bDetEightballInstant &&
-			DetWeaponIndex == Other.DetWeaponIndex &&
-			DetChargeData == Other.DetChargeData &&
-			SavedViewRotation.Pitch == Other.SavedViewRotation.Pitch &&
-			SavedViewRotation.Yaw == Other.SavedViewRotation.Yaw;
-}
-
 defaultproperties {
 	bHidden=True
 	DrawType=DT_None
