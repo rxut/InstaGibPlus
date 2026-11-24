@@ -1,7 +1,5 @@
 class ST_UTChunkInfo extends Info;
 
-var Actor Victim[8];
-var int HitCount;
 var int ChunkCount;
 
 var IGPlus_WeaponImplementation WImp;
