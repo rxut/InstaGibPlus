@@ -11578,47 +11578,6 @@ function TossWeapon()
 }
 
 
-function string forcedModelToString(int fm) {
-	switch(fm) {
-		case 0:
-			return "Class: Female Commando, Skin: Aphex, Face: Idina";
-		case 1:
-			return "Class: Female Commando, Skin: Commando, Face: Anna";
-		case 2:
-			return "Class: Female Commando, Skin: Mercenary, Face: Jayce";
-		case 3:
-			return "Class: Female Commando, Skin: Necris, Face: Cryss";
-		case 4:
-			return "Class: Female Soldier, Skin: Marine, Face: Annaka";
-		case 5:
-			return "Class: Female Soldier, Skin: Metal Guard, Face: Isis";
-		case 6:
-			return "Class: Female Soldier, Skin: Soldier, Face: Lauren";
-		case 7:
-			return "Class: Female Soldier, Skin: Venom, Face: Athena";
-		case 8:
-			return "Class: Female Soldier, Skin: War Machine, Face: Cathode";
-		case 9:
-			return "Class: Male Commando, Skin: Commando, Face: Blake";
-		case 10:
-			return "Class: Male Commando, Skin: Mercenary, Face: Boris";
-		case 11:
-			return "Class: Male Commando, Skin: Necris, Face: Grail";
-		case 12:
-			return "Class: Male Soldier, Skin: Marine, Face: Malcolm";
-		case 13:
-			return "Class: Male Soldier, Skin: Metal Guard, Face: Drake";
-		case 14:
-			return "Class: Male Soldier, Skin: RawSteel, Face: Arkon";
-		case 15:
-			return "Class: Male Soldier, Skin: Soldier, Face: Brock";
-		case 16:
-			return "Class: Male Soldier, Skin: War Machine, Face: Matrix";
-		case 17:
-			return "Class: Boss, Skin: Boss, Face: Xan";
-	}
-}
-
 // Debug data on or off, with one line to confirm it. On collects the debug
 // lines and writes them to a file in Logs. ClientSettings.DebugDataDisplay
 // decides whether the console or the screen shows them too.
