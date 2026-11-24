@@ -19,6 +19,7 @@ var float NextDetFireTS;
 var float DetShotDueTS;
 var float DetShotInterval;
 var vector IGPlus_OwnDiscBeamEnd; // client: our own disc, where this beam met it
+var bool IGPlus_bShotRecord; // server demos get a shot record per beam (NextSDOM)
 
 simulated final function WeaponSettingsRepl FindWeaponSettings() {
 	local WeaponSettingsRepl S;
@@ -945,6 +946,14 @@ function TraceFireAt(float Accuracy, rotator AimRot, vector AimLoc, vector DrawO
 		} else if (bbP.bDrawDebugData) {
 			bbP.ClientDebugMessage("Shock combo (server): our client drew one, not made: the beam is stopped "$int(BeamDist)$"uu out here, before the ball");
 		}
+	}
+
+	// A miss ends where the beam ends.
+	if (IGPlus_bShotRecord && bbP != None && IsDetActive()) {
+		if (Other == None)
+			bbP.IGPlus_SDNoteShot(None, false, StartTrace, AdjustedAim, EndTrace, 0);
+		else
+			bbP.IGPlus_SDNoteShot(Other, false, StartTrace, AdjustedAim, HitLocation, 0);
 	}
 
 	PendingSmokeLocation = SmokeLocation;

@@ -12,6 +12,7 @@ class SDOM_ShockRifle extends ST_ShockRifle;
 //   where the player's Hit Source is Client. The server's trace still decides.
 // - The shooter's client always draws its own beam at the click, with no
 //   client setting: the NewNet sDOM rifle has no such setting.
+// - Each beam writes a shot record to server demos, as the NextIG rifle's.
 // - The ring shows as the NextIG rifle's does: at the click, or on a player
 //   once the server has counted the hit, by the player's Hit Effect Source.
 
@@ -120,4 +121,5 @@ state ClientActive {
 defaultproperties {
 	PickupAmmoCount=50
 	AmmoName=Class'ST_ShockCoreSDOM'
+	IGPlus_bShotRecord=True
 }
