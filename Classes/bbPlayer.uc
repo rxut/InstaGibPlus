@@ -404,7 +404,6 @@ var float IGPlus_PRTServerPing;      // server: our own ping measurement (GETPIN
 var float IGPlus_PRTPingReadTS;
 var float ExtrapolationDelta;
 var bool bIs469Server;
-var bool bIs469Client;
 
 // Clientside smoothing of position adjustment.
 var vector IGPlus_PreAdjustLocation;
@@ -1293,9 +1292,6 @@ replication
 		zzNetspeed,
 		ClientWeaponSettingsData;
 
-	unreliable if (Role == ROLE_AutonomousProxy || RemoteRole <= ROLE_SimulatedProxy)
-		bIs469Client;
-
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Variables Client -> Demo
 	unreliable if (bClientDemoRecording)
@@ -2081,8 +2077,6 @@ event Possess()
 		SetPropertyText("PureLevel", GetPropertyText("xLevel"));
 		IGPlus_DamageEvent_ShowOnDeath = Settings.bShowDeathReport;
 		ClientSetMusic( Level.Song, Level.SongSection, Level.CdTrack, MTRAN_Fade );
-
-		bIs469Client = int(Level.EngineVersion) >= 469;
 	}
 	else
 	{
@@ -2146,7 +2140,6 @@ event Possess()
 
 		bIs469Server = int(Level.EngineVersion) >= 469;
 		if (RemoteRole != ROLE_AutonomousProxy) {
-			bIs469Client = bIs469Server;
 			IGPlus_DamageEvent_ShowOnDeath = Settings.bShowDeathReport;
 		}
 
