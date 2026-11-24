@@ -285,7 +285,7 @@ The server still decides every hit and every kill.
 
 ## bLostTradeNotification
 **Type: bool**  
-**Default: True**  
+**Default: False**  
 
 Shows "Lost Trade" where "Head Shot" appears when a hit of yours that would have killed does not count. Your screen showed the hit, but before your shot reached the server you were killed, or another player killed your target. It applies to the rifles of NextIG and NextSA on servers without trades, whatever your Hit Source. A "Head Shot" message of yours on screen is replaced.
 

@@ -742,7 +742,7 @@ defaultproperties
 	bHitSoundTeamPitchShift=False
 	HitSoundSource=HSSRC_Server
 	HeadshotSource=HDSRC_Server
-	bLostTradeNotification=True
+	bLostTradeNotification=False
 	SelectedHitSound=0
 	SelectedTeamHitSound=2
 	HitSoundVolume=4
