@@ -163,42 +163,6 @@ simulated function NN_TraceFire()
 	//	P.SetCollisionSize(P.Default.CollisionRadius, P.CollisionHeight);
 }
 
-simulated function bool NN_ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vector X, Vector Y, Vector Z)
-{
-	local vector SmokeLocation,DVector;
-	local rotator SmokeRotation;
-	local float NumPoints,Mult;
-
-	if (Owner.IsA('Bot'))
-		return false;
-
-	if (Other==None)
-	{
-		HitNormal = -X;
-		HitLocation = Owner.Location + X*100000.0;
-	}
-
-	if (Amp!=None) Mult = Amp.UseCharge(100);
-	else Mult=1.0;
-	SmokeLocation = Owner.Location + CalcDrawOffset() + FireOffset.X * X + FireOffset.Y * 3.3 * Y + FireOffset.Z * Z * 3.0;
-	DVector = HitLocation - SmokeLocation;
-	NumPoints = VSize(DVector)/70.0;
-	SmokeLocation += DVector/NumPoints;
-	SmokeRotation = rotator(HitLocation-Owner.Location);
-	if (NumPoints>15) NumPoints=15;
-	if ( NumPoints>1.0 ) SpawnEffect2(DVector, NumPoints, SmokeRotation, SmokeLocation);
-}
-
-function SpawnEffect2(Vector DVector, int NumPoints, rotator SmokeRotation, vector SmokeLocation)
-{
-	local RingExplosion4 Smoke;
-
-	if (bNewNet)
-		Smoke = Spawn(class'RingExplosion4',,,SmokeLocation,SmokeRotation);
-	Smoke.MoveAmount = DVector/NumPoints;
-	Smoke.NumPuffs = NumPoints;
-}
-
 function Fire ( float Value )
 {
 	local bbPlayer bbP;
@@ -625,24 +589,6 @@ function ProcessTraceHit(Actor Other, Vector HitLocation, Vector HitNormal, Vect
 	}
 	else
 		HitCounter = 0;
-}
-
-simulated function DoRingExplosion5(PlayerPawn Pwner, vector HitLocation, vector HitNormal)
-{
-	local PlayerPawn P;
-	local Actor CR;
-
-	if (Owner.IsA('Bot'))
-		return;
-
-	if (RemoteRole < ROLE_Authority) {
-		//for (P = Level.PawnList; P != None; P = P.NextPawn)
-		ForEach AllActors(class'PlayerPawn', P)
-			if (P != Pwner) {
-				CR = P.Spawn(class'RingExplosion5',P,, HitLocation+HitNormal*8,rotator(HitNormal));
-				CR.bOnlyOwnerSee = True;
-			}
-	}
 }
 
 function SpawnEffect(vector HitLocation, vector SmokeLocation)
