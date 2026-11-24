@@ -6200,7 +6200,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local bool bForceAltFire;
 
 	local bool bDetWholeMove;
-	local IGPlus_WeaponImplementationBase WImpBase;
 	local bool bDetBlockLegacyFire;
 	local bool bDetCarryFire;
 	local Weapon DetWeapon;
@@ -6428,7 +6427,6 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	// Predicted switch: holster/equip on this move's timestamp, before binding.
 	IGPlus_PSServerAdvance(SM.TimeStamp);
 
-	WImpBase = IGPlus_GetWeaponImplementationBase();
 	// bDetReady marks client-predicted steps; trust is the binding/window gates.
 	DetWeapon = IGPlus_DetResolveBoundWeapon(SM.DetWeaponIndex, true);
 	// Hard-block legacy fire fallback for deterministic weapons.
