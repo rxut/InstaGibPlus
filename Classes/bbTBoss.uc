@@ -6,7 +6,7 @@ class bbTBoss extends bbTournamentMale;
 
 static function SetMultiSkin(Actor SkinActor, string SkinName, string FaceName, byte TeamNum)
 {
-	local string MeshName, SkinItem, SkinPackage;
+	local string SkinItem, SkinPackage;
 
 	local PlayerPawn P;
 	local bbPlayerReplicationInfo bbPRI;
@@ -20,8 +20,6 @@ static function SetMultiSkin(Actor SkinActor, string SkinName, string FaceName, 
 			bbPRI.FaceName = FaceName;
 		}
 	}
-
-	MeshName = SkinActor.GetItemName(string(SkinActor.Mesh));
 
 	SkinItem = SkinActor.GetItemName(SkinName);
 	SkinPackage = Left(SkinName, Len(SkinName) - Len(SkinItem));
