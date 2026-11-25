@@ -281,6 +281,8 @@ function CompStartSeen(float SeenTime, float ViewTime) {
 		Snap = Data[Idx];
 		if (Snap == None || Snap.ServerTimeStamp <= 0)
 			continue;
+		// (A report from before its update, bbPlayer.IGPlus_PRTDrawnLag: this
+		// snapshot carried back, as the shooter's own trace does it.)
 		if (Snap.ServerTimeStamp <= SeenTime) {
 			CompSwap(Snap, None, -1.0, ViewTime);
 			return;

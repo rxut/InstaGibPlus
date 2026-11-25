@@ -1182,6 +1182,9 @@ var int IGPlus_PRTInterpSpan;        // and the two updates the target was drawn
 var float IGPlus_PRTInterpDelayMs;
 const IGPLUS_TI_EXTRA = 1.0;         // ticks of delay on top of the gap between a player's updates
 const IGPLUS_TI_MIN_DELAY = 2.0;
+// Precise Rewind Time: a report's age is sent 0.1 s high, so it can also say
+// "before the update" (IGPlus_PRTDrawnLag).
+const IGPLUS_PRT_AGE_BIAS = 0.1;
 const IGPLUS_TI_LIFT_LEAD = 2.0;     // ticks of the drawing delay a lift runs ahead of the drawn players by, at most (IGPlus_TI_Lead)
 const IGPLUS_TI_PROJ_LEAD = 3.0;     // and a shock ball or a disc
 const IGPLUS_TI_MAX_DELAY = 10.0;
@@ -4259,10 +4262,11 @@ function UpdatePing() {
 }
 
 // Precise Rewind Time report, one int on a move: bits 0-14 the tick of the
-// update our screen showed, bit 15 set, bits 16-31 how far past it, in 0.1 ms.
+// update our screen showed, bit 15 set, bits 16-31 how far past it, in 0.1 ms,
+// plus IGPLUS_PRT_AGE_BIAS (down to 0.1 s before it).
 static function int IGPlus_PRTPack(int Tick, float Age) {
 	// (The top bit stays clear: it marks a tick position, IGPlus_TI_Pack.)
-	return (Tick & 0x7FFF) | 0x8000 | (Clamp(int(Age * 10000.0), 0, 0x7FFF) << 16);
+	return (Tick & 0x7FFF) | 0x8000 | (Clamp(int((Age + IGPLUS_PRT_AGE_BIAS) * 10000.0 + 0.5), 0, 0x7FFF) << 16);
 }
 // Tick Interpolation: the tick position the screen drew at. 11 bits of the
 // tick number, 8 bits of the way to the next tick, and the top bit as mark.
@@ -4486,7 +4490,7 @@ static function int IGPlus_PRTTicksBack(int ServerTick, int Data) {
 }
 
 static function float IGPlus_PRTAge(int Data) {
-	return 0.0001 * (Data >>> 16);
+	return 0.0001 * (Data >>> 16) - IGPLUS_PRT_AGE_BIAS;
 }
 
 // Precise Rewind Time: a move's report of what its shots saw, checked
@@ -8412,19 +8416,33 @@ static function float IGPlus_PRTRuleAge(float ShownTime, float UpdateTime) {
 // with the pawn where the last frame drew it (IGPlus_LocationOffsetFix_RestoreAll).
 // Not on a lift (the server lines riders up with the lift) and not before the
 // first update.
-simulated function IGPlus_PRTRulePlace(float ShownTime, int ShownTick, bool bWarpFix, float WarpFixDelay) {
+simulated function IGPlus_PRTRulePlace(float ShownTime, int ShownTick, bool bWarpFix, float WarpFixDelay, optional float Lag) {
+	IGPlus_bPRTRulePlaced = false;
+	if (IGPlus_PRTRuleSpot(ShownTime, ShownTick, bWarpFix, WarpFixDelay, Lag) == false)
+		return;
+	IGPlus_PRTRuleSavedLoc = Location;
+	bCollideWorld = false;
+	SetLocation(IGPlus_PRTRuleDbgLoc);
+	bCollideWorld = true;
+	IGPlus_bPRTRulePlaced = true;
+}
+
+// Client, on another player's pawn: where the server stands it for a report
+// of ShownTime and ShownTick (IGPlus_PRTRuleDbgLoc, its velocity in
+// IGPlus_PRTRuleDbgVel). Lag: the report says that much earlier
+// (IGPlus_PRTDrawnLag). False before the first update and on a lift.
+simulated function bool IGPlus_PRTRuleSpot(float ShownTime, int ShownTick, bool bWarpFix, float WarpFixDelay, optional float Lag) {
 	local vector Loc, Vel;
 	local float UpdateTime, Age, Lead;
 	local int UpdateTick;
 
-	IGPlus_bPRTRulePlaced = false;
 	IGPlus_bPRTRuleDbgValid = false;
 	IGPlus_bPRTRuleDbgPrev = false;
 	IGPlus_PRTRuleDbgLead = 0.0;
 	// (Not by Health: it arrives up to four updates after a respawn, see IGPlus_ClientShotTrace.)
 	if (IGPlus_LocationOffsetFix_ServerLocationTime <= 0.0 || bHidden || IGPlus_bShownVisible == false
 		|| IGPlus_LocationOffsetFix_WasOnMover || IGPlus_LocationOffsetFix_IsOnMover())
-		return;
+		return false;
 	Loc = IGPlus_LocationOffsetFix_ServerLocation;
 	Vel = IGPlus_LocationOffsetFix_ServerVelocity;
 	UpdateTime = IGPlus_LocationOffsetFix_ServerLocationTime;
@@ -8442,7 +8460,7 @@ simulated function IGPlus_PRTRulePlace(float ShownTime, int ShownTick, bool bWar
 	// This frame's update is in already: the last frame showed the one before.
 	} else if (UpdateTime == Level.TimeSeconds) {
 		if (IGPlus_LocationOffsetFix_PrevServerLocationTime <= 0.0)
-			return;
+			return false;
 		Loc = IGPlus_LocationOffsetFix_PrevServerLocation;
 		Vel = IGPlus_LocationOffsetFix_PrevServerVelocity;
 		UpdateTime = IGPlus_LocationOffsetFix_PrevServerLocationTime;
@@ -8450,18 +8468,14 @@ simulated function IGPlus_PRTRulePlace(float ShownTime, int ShownTick, bool bWar
 		Lead = IGPlus_LocationOffsetFix_PrevServerLocationLead;
 		IGPlus_bPRTRuleDbgPrev = true;
 	}
-	Age = IGPlus_PRTRuleAge(ShownTime, UpdateTime);
-	IGPlus_PRTRuleSavedLoc = Location;
+	Age = IGPlus_PRTRuleAge(ShownTime, UpdateTime) - Lag;
 	IGPlus_PRTRuleDbgLoc = IGPlus_PRTRulePos(Loc, Vel, Age, bWarpFix && Age > WarpFixDelay);
 	IGPlus_PRTRuleDbgVel = Vel;
 	IGPlus_PRTRuleDbgAge = Age;
 	IGPlus_PRTRuleDbgLead = Lead;
 	IGPlus_PRTRuleDbgLag = ShownTick - UpdateTick;
 	IGPlus_bPRTRuleDbgValid = true;
-	bCollideWorld = false;
-	SetLocation(IGPlus_PRTRuleDbgLoc);
-	bCollideWorld = true;
-	IGPlus_bPRTRulePlaced = true;
+	return true;
 }
 
 // Client, on another player's pawn: stand it where our frame number Frame
@@ -8486,6 +8500,42 @@ simulated function IGPlus_PRTPicturePlace(int Frame, float Lead) {
 	SetLocation(IGPlus_ShownLoc);
 	bCollideWorld = true;
 	IGPlus_bPRTRulePlaced = true;
+}
+
+// Client, Location Offset Fix on: how far behind the server's spot for our
+// report (IGPlus_PRTRuleSpot) our last frame drew the player nearest our line
+// of sight, in seconds of their movement. The setting draws a moving player
+// trailing that spot (IGPlus_LocationOffsetFix_After), by about 20 units at
+// 110 frames a second, so a beam or bullets held on the drawn body passed
+// behind the one the server tested: half the beam's ticks missed a strafing
+// player (rig, Nov 25 2026). Every report says that much earlier, and the
+// server carries everyone back along their velocity by it
+// (UTPlusDummy.CompSwap). Our own trace of a shot does the same
+// (IGPlus_PRTRuleAll), so both still test one spot, now the drawn one: before,
+// both stood the player ahead of the drawn body, and a sniper shot at its
+// middle missed a strafing player one time in four (rig).
+function float IGPlus_PRTDrawnLag() {
+	local bbPlayer P;
+	local vector D, V;
+	local float Speed2;
+
+	if (Settings == None || Settings.bEnableLocationOffsetFix == false || IGPlus_EnableTickInterp)
+		return 0.0;
+	P = IGPlus_TI_AimTarget(true);
+	if (P == None || P.IGPlus_ShownFrame != IGPlus_FrameCount - 1)
+		return 0.0;
+	if (P.IGPlus_PRTRuleSpot(IGPlus_PRTShownTime, IGPlus_PRTShownTick, IGPlus_EnableWarpFix, IGPlus_WarpFixDelay) == false)
+		return 0.0;
+	V = P.IGPlus_PRTRuleDbgVel;
+	V.Z = 0;
+	Speed2 = V dot V;
+	if (Speed2 < 10000.0)
+		return 0.0;
+	D = P.IGPlus_PRTRuleDbgLoc - P.IGPlus_ShownLoc;
+	D.Z = 0;
+	// At most 60 ms: the server refuses a report older than its ping by more
+	// than PreciseRewindTimeMaxDeviationMs.
+	return FClamp((D dot V) / Speed2, -0.05, 0.06);
 }
 
 simulated function IGPlus_PRTRuleUndo() {
@@ -8542,9 +8592,13 @@ function IGPlus_PRTRuleAll(bool bPlace, optional bool bPicture) {
 	local int i;
 	local PlayerReplicationInfo PRI;
 	local bbPlayer P;
+	local float Lag;
 
 	if (GameReplicationInfo == None)
 		return;
+	// (Before anyone is moved: it reads where the last frame drew them.)
+	if (bPlace && bPicture == false)
+		Lag = IGPlus_PRTDrawnLag();
 	for (i = 0; i < arraycount(GameReplicationInfo.PRIArray); ++i) {
 		PRI = GameReplicationInfo.PRIArray[i];
 		if (PRI == None) break;
@@ -8556,7 +8610,7 @@ function IGPlus_PRTRuleAll(bool bPlace, optional bool bPicture) {
 			P.IGPlus_PRTPicturePlace(IGPlus_FrameCount - 1, IGPlus_PRTShownLead * float(int(IGPlus_EnableTickInterp == false)));
 		else
 			P.IGPlus_PRTRulePlace(IGPlus_PRTShownTime, IGPlus_PRTShownTick,
-				IGPlus_EnableWarpFix, IGPlus_WarpFixDelay);
+				IGPlus_EnableWarpFix, IGPlus_WarpFixDelay, Lag);
 	}
 }
 
@@ -8730,7 +8784,8 @@ function bbPlayer IGPlus_PRTShotTarget(Actor Other, vector Start, vector Dir) {
 // moment of the one we aim at (rig, Nov 14 2026: with "2 ticks back" for
 // everyone, 31 of 88 shock rifle shots at a target with a bad connection
 // looked different from what the server decided).
-function bbPlayer IGPlus_TI_AimTarget() {
+// bAny: also players not drawn by Tick Interpolation (IGPlus_PRTDrawnLag).
+function bbPlayer IGPlus_TI_AimTarget(optional bool bAny) {
 	local int i;
 	local PlayerReplicationInfo PRI;
 	local bbPlayer P, Best;
@@ -8745,8 +8800,9 @@ function bbPlayer IGPlus_TI_AimTarget() {
 		PRI = GameReplicationInfo.PRIArray[i];
 		if (PRI == None) break;
 		P = bbPlayer(PRI.Owner);
-		if (P == None || P == self || P.Role != ROLE_SimulatedProxy || P.IGPlus_TI_Use() == false) continue;
-		if (P.bHidden || P.Health <= 0 || P.IGPlus_TI_Num == 0) continue;
+		if (P == None || P == self || P.Role != ROLE_SimulatedProxy) continue;
+		if (bAny == false && (P.IGPlus_TI_Use() == false || P.IGPlus_TI_Num == 0)) continue;
+		if (P.bHidden || P.Health <= 0) continue;
 		// Drawn in the last frame, and in front of us.
 		if (P.IGPlus_ShownFrame < IGPlus_FrameCount - 1 || ((P.IGPlus_ShownLoc - Start) dot Dir) <= 0.0) continue;
 		Gap = IGPlus_LineCylinderGap(Start, Dir, P.IGPlus_ShownLoc, P.CollisionRadius, P.CollisionHeight);
@@ -11614,9 +11670,9 @@ function xxReplicateMove(
 			NewMove.IGPlus_PRTData = IGPlus_TI_Pack(IGPlus_TI_Clock - IGPLUS_TI_MIN_DELAY, false, false, IGPLUS_TI_MIN_DELAY + IGPlus_TI_Recv);
 	} else if (IGPlus_PRTSeenAt > 0 && IGPlus_PRTShownTick != 0) {
 		if (bDetLocalShot)
-			NewMove.IGPlus_PRTData = IGPlus_PRTPack(IGPlus_PRTShownTick, IGPlus_PRTShownAge + IGPlus_PRTShotLead);
+			NewMove.IGPlus_PRTData = IGPlus_PRTPack(IGPlus_PRTShownTick, IGPlus_PRTShownAge + IGPlus_PRTShotLead - IGPlus_PRTDrawnLag());
 		else
-			NewMove.IGPlus_PRTData = IGPlus_PRTPack(IGPlus_PRTShownTick, IGPlus_PRTShownAge);
+			NewMove.IGPlus_PRTData = IGPlus_PRTPack(IGPlus_PRTShownTick, IGPlus_PRTShownAge - IGPlus_PRTDrawnLag());
 	}
 	IGPlus_PRTShotLead = 0.0;
 	IGPlus_PRTShotR = 0.0;
