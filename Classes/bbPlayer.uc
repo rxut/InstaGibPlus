@@ -15478,7 +15478,11 @@ function ApplyForcedSkinsToCorpses() {
 	}
 	for (i = 0; i < ArrayCount(IGPlus_CorpseNotify.Corpse); i++) {
 		C = IGPlus_CorpseNotify.Corpse[i];
-		if (C == none || C.bDeleteMe || Pawn(C.Owner) == none || C.Mesh == none)
+		if (C == none || C.bDeleteMe || C.Mesh == none)
+			continue;
+		// Also once the corpse has lost its owner here: it keeps the model it got.
+		IGPlus_CorpseNotify.FitCorpseAnim(C);
+		if (Pawn(C.Owner) == none)
 			continue;
 		PRI = Pawn(C.Owner).PlayerReplicationInfo;
 		if (PRI == none)
@@ -15486,6 +15490,7 @@ function ApplyForcedSkinsToCorpses() {
 		// A client demo holds the forced skin it was recorded with.
 		if (IGPlus_ShowRealModelsInDemo()) {
 			IGPlus_DemoRealCorpse(C);
+			IGPlus_CorpseNotify.FitCorpseAnim(C);
 			continue;
 		}
 		Skin = GetForcedSkinForPlayer(PRI);
@@ -15500,6 +15505,7 @@ function ApplyForcedSkinsToCorpses() {
 			C.AnimFrame = 0;
 			C.AnimRate = 0;
 		}
+		IGPlus_CorpseNotify.FitCorpseAnim(C);
 		SetForcedSkin(C, Skin, GameReplicationInfo.bTeamGame, GetForcedSkinColor(PRI, Skin));
 	}
 }
