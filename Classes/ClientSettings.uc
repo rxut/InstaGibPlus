@@ -182,6 +182,22 @@ var config string ServerAdminPasswords[16];
 var Sound DefaultHitSound[16];
 var Sound LoadedHitSound[16];
 
+// The player whose server forces some of these settings right now
+// (bbPlayer.IGPlus_ForcedSettingsApply), None when nothing is forced.
+var transient bbPlayer IGPlus_ForcedBy;
+
+// Saves the player's own values. While a server forces some, those go back to
+// the player's for the save and on again after it (bbPlayer.IGPlus_SaveSettings).
+// A plain SaveConfig wrote the forced values into the ini, and they stayed
+// after leaving that server: moving the settings window, saving a crosshair
+// or switching crosshair presets on such a server was enough.
+simulated function IGPlus_Save() {
+	if (IGPlus_ForcedBy != none && IGPlus_ForcedBy.bDeleteMe == false)
+		IGPlus_ForcedBy.IGPlus_SaveSettings();
+	else
+		SaveConfig();
+}
+
 simulated function AppendLayer(CrosshairLayer L) {
 	if (BottomLayer == none) {
 		BottomLayer = L;
@@ -296,7 +312,7 @@ simulated function UseCrosshairPreset(int Slot) {
 	for (i = 0; i < arraycount(CrosshairLayers); i++)
 		CrosshairLayers[i] = CrosshairPresets[Slot].GetLayer(i);
 	CreateCrosshairLayers();
-	SaveConfig();
+	IGPlus_Save();
 }
 
 // Draws another preset from now on. What CrosshairLayers held goes back to
@@ -349,7 +365,7 @@ simulated function bool NewCrosshairPreset() {
 			StoreCrosshairPreset();
 			CrosshairPreset = i;
 			StoreCrosshairPreset();
-			SaveConfig();
+			IGPlus_Save();
 			return true;
 		}
 	return false;
@@ -407,7 +423,7 @@ simulated function CheckConfig() {
 		bSmoothDiscCorrectionsDefaulted = true;
 	}
 
-	SaveConfig();
+	IGPlus_Save();
 }
 
 simulated function string GetSetting(string Name) {

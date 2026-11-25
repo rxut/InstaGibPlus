@@ -941,7 +941,7 @@ exec function FindFlag()
 
 exec function ShowFPS() {
 	Settings.bShowFPS = !Settings.bShowFPS;
-	Settings.SaveConfig();
+	Settings.IGPlus_Save();
 	if (Settings.bShowFPS)
 		ClientMessage("FPS shown!", 'IGPlus');
 	else
@@ -955,7 +955,7 @@ exec function CrosshairPreset(optional string Which) {
 
 exec function ShowDamageNumbers() {
 	Settings.bSpectatorShowDamageNumbers = !Settings.bSpectatorShowDamageNumbers;
-	Settings.SaveConfig();
+	Settings.IGPlus_Save();
 	if (Settings.bSpectatorShowDamageNumbers) {
 		if (ShowDamageNumberMode == DMG_Disabled)
 			ClientMessage("Spectator damage numbers: ON (server has damage numbers disabled - no numbers will appear)", 'IGPlus');

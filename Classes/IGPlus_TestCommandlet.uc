@@ -425,8 +425,12 @@ function TestPreciseRewindTimeReport() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_PRTTicksBack(10, class'bbPlayer'.static.IGPlus_PRTPack(12, 0)) >= 64,
 		"PRT_report_from_the_future_is_too_old");
 	// (15 bits of 0.1 ms: the top bit of the report marks a tick position.)
-	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_PRTAge(class'bbPlayer'.static.IGPlus_PRTPack(5, 9.0)) - 3.2767) < 0.0001,
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_PRTAge(class'bbPlayer'.static.IGPlus_PRTPack(5, 9.0)) - 3.1767) < 0.0001,
 		"PRT_report_long_age_clamps_and_stays_positive");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_PRTAge(class'bbPlayer'.static.IGPlus_PRTPack(497, -0.0345)) + 0.0345) < 0.0001,
+		"PRT_report_keeps_an_age_before_the_update");
+	LogTestResult(Abs(class'bbPlayer'.static.IGPlus_PRTAge(class'bbPlayer'.static.IGPlus_PRTPack(497, -0.5)) + 0.1) < 0.0001,
+		"PRT_report_age_before_the_update_clamps");
 	LogTestResult((class'bbPlayer'.static.IGPlus_PRTPack(0, 0) & 0x8000) != 0,
 		"PRT_report_is_always_marked");
 }

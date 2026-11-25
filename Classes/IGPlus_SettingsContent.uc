@@ -1528,7 +1528,7 @@ function SaveConfigs() {
 	Settings.MenuWidth = Dialog.WinWidth;
 	Settings.MenuHeight = Dialog.WinHeight;
 
-	Settings.SaveConfig();
+	Settings.IGPlus_Save();
 }
 
 defaultproperties
