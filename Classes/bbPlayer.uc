@@ -4611,19 +4611,22 @@ function IGPlus_PRTNoteInterp(int Data, WeaponSettingsRepl WS) {
 
 // A report from a move this tick. Shots traced later in the tick than the
 // moves arrive (minigun, pulse beam, enforcer refire) use it too.
-// Tick Interpolation: the report is a tick position, and it also stays in
-// use until our next move. A shot traced in a tick with no new move is aimed
-// by the view of our last move, and the report is what the screen showed
-// with that view. A client at 60 frames a second sends a move every 17 ms and
-// a server at 128 ticks has two ticks in that time, so about half the bullets
-// of a minigun were traced in a tick without a report. They fell back to our
-// ping, and the players stood 13 ms of movement beside the aim (rig).
+// The report also stays in use until our next move. A shot traced in a tick
+// with no new move is aimed by the view of our last move, and the report is
+// what the screen showed with that view. A client at 60 frames a second sends
+// a move every 17 ms and a server at 128 ticks has two ticks in that time, so
+// about half the bullets of a minigun were traced in a tick without a report.
+// They fell back to our ping, and the players stood 13 ms of movement beside
+// the aim (rig, Tick Interpolation). Without Tick Interpolation the same held
+// for a client with Location Offset Fix on: with jitter a tenth of a pulse
+// beam's ticks came with no move, fell back to the ping, and half of those
+// missed a strafing player the beam was held on (rig, Nov 25 2026).
 function bool IGPlus_PRTFresh() {
 	if (IGPlus_PRTNoteTS <= 0 || Level.TimeSeconds - IGPlus_PRTNoteTS >= 0.1)
 		return false;
 	if (IGPlus_PRTServerTick - IGPlus_PRTNoteTick <= 1)
 		return true;
-	return IGPlus_bPRTInterp && IGPlus_bPRTNewerMove == false;
+	return IGPlus_bPRTNewerMove == false;
 }
 
 // Does a hitscan shot now use Precise Rewind Time? Only with a fresh,
@@ -4648,10 +4651,12 @@ function IGPlus_DetReportSweep(float TS) {
 		ST_TranslocatorTarget(TL.TTarget).IGPlus_DetReportSweep(TS - TL.IGPlus_ThrowTS);
 }
 
-// The report's view time for a shot traced now: as far past it as the
-// tick has run since the report arrived (the rewind stays the same).
+// The report's view time for a shot traced now: the moment its move's screen
+// showed, in a later tick too. That tick still aims by that move's view, so
+// the players stay where that screen had them. Moved on with our clock, they
+// ran ahead of a view that stood still.
 function float IGPlus_PRTViewTimeNow() {
-	return IGPlus_PRTViewTime + (Level.TimeSeconds - IGPlus_PRTNoteTS);
+	return IGPlus_PRTViewTime;
 }
 
 function TakeFallingDamage()
