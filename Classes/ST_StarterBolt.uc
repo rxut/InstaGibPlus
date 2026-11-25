@@ -21,7 +21,12 @@ var bool IGPlus_bOnTarget;
 // (IGPlus_BeamDamage, IGPlus_HitFeedback.IGPlus_BeamLead).
 var IGPlus_HitFeedback IGPlus_Fb;
 var float IGPlus_FbTick;   // this tick's length
-const IGPLUS_FB_SLACK = 2.0;    // a steady hit is PulseBoltDPS * 0.22, less up to 2 (CalcDamage pays even numbers)
+// A steady beam pays its damage in pieces of this much time, each with its hit
+// sound. Stock pays every 0.22 s, about 4.5 sounds a second, and a beam held
+// on a moving player sounded far sparser than the minigun's sound per bullet
+// (about 10 a second). Half the piece, same damage a second.
+const IGPLUS_BEAM_PIECE = 0.11;
+const IGPLUS_FB_SLACK = 2.0;    // a steady hit is PulseBoltDPS * IGPLUS_BEAM_PIECE, less up to 2 (CalcDamage pays even numbers)
 const IGPLUS_FB_MAXHOLD = 0.45; // a held piece waits for the beam's next hit on that player, no longer than this
 
 replication
@@ -343,7 +348,7 @@ simulated function TraceBeam(vector Origin, vector X, float DeltaTime)
 			LastHitTime = Level.TimeSeconds;
 			DamagedActor = HitActor;
 			AccumulatedDamage += DeltaTime;
-			if ( AccumulatedDamage > 0.22 )
+			if ( AccumulatedDamage > IGPLUS_BEAM_PIECE )
 			{
 				if ( DamagedActor.IsA('Carcass') && (FRand() < 0.09) )
 					AccumulatedDamage = 35/damage;
@@ -552,14 +557,14 @@ function IGPlus_BeamDamage(Actor Victim, int Dmg, vector HitLoc, vector Mom, boo
 		return;
 	}
 	// DamagedActor is None only for the piece dealt on reaching a target. A
-	// steady beam's time between hits is 0.22 s and up to a tick.
+	// steady beam's time between hits is IGPLUS_BEAM_PIECE and up to a tick.
 	bSend = IGPlus_Fb.IGPlus_BeamLead(
 		Instigator, P,
 		DamagedActor == None,
 		bSteady,
 		Dmg,
-		FMax(2.0, WImp.WeaponSettings.PulseBoltDPS * 0.22 - IGPLUS_FB_SLACK),
-		0.22 + IGPlus_FbTick);
+		FMax(2.0, WImp.WeaponSettings.PulseBoltDPS * IGPLUS_BEAM_PIECE - IGPLUS_FB_SLACK),
+		IGPLUS_BEAM_PIECE + IGPlus_FbTick);
 
 	IGPlus_Fb.IGPlus_BeamMark(Instigator, P, bSend);
 	Victim.TakeDamage(Dmg, Instigator, HitLoc, Mom, MyDamageType);
