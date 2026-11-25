@@ -251,7 +251,7 @@ function Save() {
 		P.PresetName = Settings.GetCrosshairPresetName(P.Slot); // an empty name was not taken
 		P.bDirty = false;
 	}
-	Settings.SaveConfig();
+	Settings.IGPlus_Save();
 
 	if (CurPreset != none && Edit_PresetName.GetValue() != CurPreset.PresetName) {
 		bUpdatingControls = true;

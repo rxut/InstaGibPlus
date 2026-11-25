@@ -1597,6 +1597,8 @@ simulated event Destroyed() {
 		IGPlus_NextTrans.Destroy();
 	if ((Level.NetMode == NM_Client && Role == ROLE_AutonomousProxy) || Role == ROLE_Authority) {
 		IGPlus_ForcedSettingsRestore();
+		if (Settings != none && Settings.IGPlus_ForcedBy == self)
+			Settings.IGPlus_ForcedBy = none;
 	}
 	if (Role == ROLE_SimulatedProxy && IGPlus_LocationOffsetFix_CollisionDummy != none) {
 		IGPlus_LocationOffsetFix_DestroyCollisionDummy();
@@ -2314,6 +2316,7 @@ function IGPlus_ForcedSettingsApply(int Counter) {
 	}
 	Settings.bInitialized = true;
 	IGPlus_ForcedSettings_Applied = true;
+	Settings.IGPlus_ForcedBy = self;
 
 	IGPlus_ForcedSettingsOK();
 }
