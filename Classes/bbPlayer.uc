@@ -3205,6 +3205,13 @@ simulated function xxPureCAP(float TimeStamp, name newState, int MiscData, vecto
 		GotoState(newState);
 	}
 
+	// Dead: we stay where we died. On the server our hidden body flies on
+	// with the killing push, and every move we sent before we knew we were
+	// dead is answered from where it has got to by then. The death camera
+	// sits on our spot, so each answer moved it: 8 to 20 steps in one ping.
+	if (IsInState('Dying'))
+		NewLoc = Location;
+
 	Carried = CarriedDecoration;
 	OldLoc = Location;
 
