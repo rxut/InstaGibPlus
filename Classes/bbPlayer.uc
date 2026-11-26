@@ -436,6 +436,30 @@ var float IGPlus_OBLastBaseTS;
 var float IGPlus_LiftExitTS;                // when we last left a moving lift
 var bool IGPlus_DbgLiftJump;                // debug: watching for the top of a lift jump
 var Actor IGPlus_DbgLastBase;               // debug: base before the last change
+// Debug lines the server sends this player (enableDebugData). They share the
+// player's connection with the game. The engine sends them first, and once the
+// connection's bytes for a tick are used it skips that player's updates of
+// everyone else. A line on every tick did that on a server that allows 25000
+// bytes a second: a held pulse beam's Precise rewind line, 168 characters at
+// 126 ticks a second, left the shooter with no updates for up to a second.
+// So the lines have an allowance of their own: IGPLUS_DEBUG_BYTES a second,
+// with as much saved up at most. A line over it is not sent, and the next
+// line that is sent says how many were cut (ClientDebugMessage).
+const IGPLUS_DEBUG_BYTES = 2000.0;
+const IGPLUS_DEBUG_LINE_BYTES = 20;          // counted for a line on top of its text
+var float IGPlus_DebugRoom, IGPlus_DebugRoomTS;
+var int IGPlus_DebugCut;
+var float IGPlus_DebugCutTS;                 // when the last "not sent" line went out
+// Server: the Precise rewind line's own allowance (IGPlus_PRTDebugDue).
+var float IGPlus_PRTDebugRoom, IGPlus_PRTDebugRoomTS;
+var float IGPlus_PRTDebugTraceTS;            // when the last hitscan trace of ours was
+var int IGPlus_PRTDebugTraces, IGPlus_PRTDebugUsed; // traces since the last line, and those that used the report
+// Server: the Send CAP line's own allowance.
+var float IGPlus_CAPDebugRoom, IGPlus_CAPDebugRoomTS;
+// Server: a "left the lift" line that waits for the rest of its tick (IGPlus_DebugBaseLine).
+var string IGPlus_DbgBaseHeld;
+var Actor IGPlus_DbgBaseHeldFrom;
+var float IGPlus_DbgBaseHeldTS;
 var vector IGPlus_OwnLiftShotShift;         // server: a shot leaves from our screen's spot on a lift (TraceShot skips the real lift)
 var bool IGPlus_DbgLiftRising;
 var float IGPlus_DbgLiftExitZ;
@@ -1426,7 +1450,7 @@ replication
 		xxFakeCAP;
 
 	unreliable if (bDrawDebugData && RemoteRole == ROLE_AutonomousProxy)
-		ClientDebugMessage;
+		IGPlus_ClientDebugLine;
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Functions Client -> Server
@@ -2801,7 +2825,81 @@ simulated function IGPlus_MoveDebug(string What) {
 	}
 }
 
+// What an allowance holds Dt seconds later: Rate more a second, Most at most.
+static function float IGPlus_AllowanceAfter(float Room, float Dt, float Rate, float Most) {
+	return FClamp(Room + Rate * FMax(Dt, 0.0), 0.0, Most);
+}
+
+// Takes Cost out of an allowance if it holds that much. TS is when it was
+// last counted up.
+function bool IGPlus_AllowanceTake(out float Room, out float TS, float Cost, float Rate, float Most) {
+	if (TS <= 0.0 || Level.TimeSeconds < TS)
+		Room = Most;
+	else
+		Room = IGPlus_AllowanceAfter(Room, (Level.TimeSeconds - TS) / Level.TimeDilation, Rate, Most);
+	TS = Level.TimeSeconds;
+	if (Room < Cost)
+		return false;
+	Room -= Cost;
+	return true;
+}
+
+// Server: is a Precise rewind debug line due (UTPure.CompensateFor)? A trace
+// 0.2 s or more after the one before it is a shot of its own: it gets its
+// line, and so do the two traces after it (a combo's rewind comes in the same
+// tick). The enforcer's 0.27 s is the fastest of those. Traces that follow
+// each other faster, a pulse beam's on every tick and a minigun's on every
+// bullet, get one line a second after that, and it says how many traces
+// there were since the last line and how many of them used the report
+// (IGPlus_PRTDebugTail).
+function bool IGPlus_PRTDebugDue() {
+	if (IGPlus_PRTDebugTraceTS <= 0.0 || Abs(Level.TimeSeconds - IGPlus_PRTDebugTraceTS) >= 0.2 * Level.TimeDilation)
+		IGPlus_PRTDebugRoom = 3.0;
+	IGPlus_PRTDebugTraceTS = Level.TimeSeconds;
+	return IGPlus_AllowanceTake(IGPlus_PRTDebugRoom, IGPlus_PRTDebugRoomTS, 1.0, 1.0, 3.0);
+}
+
+function string IGPlus_PRTDebugTail() {
+	local string S;
+
+	if (IGPlus_PRTDebugTraces > 1)
+		S = ","@IGPlus_PRTDebugTraces@"traces since the last line,"@IGPlus_PRTDebugUsed@"with the report";
+	IGPlus_PRTDebugTraces = 0;
+	IGPlus_PRTDebugUsed = 0;
+	return S;
+}
+
+// A debug line. On the server, for a player's own client: sent while the
+// player's allowance holds it (IGPLUS_DEBUG_BYTES). On the client: shown and
+// written as it is.
 function ClientDebugMessage(coerce string S, optional name Type, optional bool bBeep) {
+	local string Cut;
+	local int Cost;
+
+	if (Role == ROLE_Authority && RemoteRole == ROLE_AutonomousProxy) {
+		if (bDrawDebugData == false)
+			return;
+		// The line that says how many were cut: once a second at most, and
+		// counted like any other.
+		Cost = Len(S) + IGPLUS_DEBUG_LINE_BYTES;
+		if (IGPlus_DebugCut > 0 && Abs(Level.TimeSeconds - IGPlus_DebugCutTS) >= Level.TimeDilation) {
+			Cut = IGPlus_DebugCut@"debug lines not sent before the next one: over"@int(IGPLUS_DEBUG_BYTES)@"bytes a second";
+			Cost += Len(Cut) + IGPLUS_DEBUG_LINE_BYTES;
+		}
+		if (IGPlus_AllowanceTake(IGPlus_DebugRoom, IGPlus_DebugRoomTS, Cost, IGPLUS_DEBUG_BYTES, IGPLUS_DEBUG_BYTES) == false) {
+			IGPlus_DebugCut++;
+			return;
+		}
+		if (Cut != "") {
+			IGPlus_ClientDebugLine(Cut);
+			IGPlus_DebugCut = 0;
+			IGPlus_DebugCutTS = Level.TimeSeconds;
+		}
+	}
+	IGPlus_ClientDebugLine(S, Type, bBeep);
+}
+
+function IGPlus_ClientDebugLine(coerce string S, optional name Type, optional bool bBeep) {
 	local HUD H;
 
 	if (Level.NetMode == NM_DedicatedServer || Role < ROLE_AutonomousProxy)
@@ -3671,17 +3769,52 @@ simulated function IGPlus_OBEnd(bool bReplay) {
 // Debug (enableDebugData): stepping on or off a lift, on each side. A lift
 // that waits for riders starts again when one lands on it.
 singular event BaseChange() {
-	local string Side;
+	local string Side, Line;
 
 	if (bDrawDebugData && (Mover(Base) != None || Mover(IGPlus_DbgLastBase) != None)) {
 		Side = "server";
 		if (Level.NetMode == NM_Client)
 			Side = "client";
-		ClientDebugMessage("Base ("$Side$"): "$IGPlus_DbgLastBase$" -> "$Base$" at Z="$int(Location.Z)
-			$" velZ="$int(Velocity.Z)$" "$GetEnum(enum'EPhysics', Physics));
+		Line = "Base ("$Side$"): "$IGPlus_DbgLastBase$" -> "$Base$" at Z="$int(Location.Z)
+			$" velZ="$int(Velocity.Z)$" "$GetEnum(enum'EPhysics', Physics);
+		if (Level.NetMode == NM_Client)
+			ClientDebugMessage(Line);
+		else
+			IGPlus_DebugBaseLine(Line);
 	}
 	IGPlus_DbgLastBase = Base;
 	super.BaseChange();
+}
+
+// Server: another player's shot puts a moving lift back for its trace
+// (UTPure.CompensateFor), which takes us off the lift and puts us back on it.
+// With a pulse beam held somewhere on the map that was two lines a tick for
+// every rider, up to 375 a second, with no correction tied to them. A line
+// for leaving a lift waits for the rest of its tick (ServerTick sends it).
+// Back on that lift within the tick: neither line is sent.
+function IGPlus_DebugBaseLine(string Line) {
+	if (IGPlus_DbgBaseHeld != "" && IGPlus_DbgBaseHeldTS == Level.TimeSeconds
+		&& IGPlus_DbgLastBase == None && Base == IGPlus_DbgBaseHeldFrom) {
+		IGPlus_DbgBaseHeld = "";
+		IGPlus_DbgBaseHeldFrom = None;
+		return;
+	}
+	IGPlus_DebugBaseFlush();
+	if (Base == None && Mover(IGPlus_DbgLastBase) != None) {
+		IGPlus_DbgBaseHeld = Line;
+		IGPlus_DbgBaseHeldFrom = IGPlus_DbgLastBase;
+		IGPlus_DbgBaseHeldTS = Level.TimeSeconds;
+		return;
+	}
+	ClientDebugMessage(Line);
+}
+
+function IGPlus_DebugBaseFlush() {
+	if (IGPlus_DbgBaseHeld == "")
+		return;
+	ClientDebugMessage(IGPlus_DbgBaseHeld);
+	IGPlus_DbgBaseHeld = "";
+	IGPlus_DbgBaseHeldFrom = None;
 }
 
 // Debug (enableDebugData): where we left a moving lift and the top of the
@@ -7072,7 +7205,9 @@ function IGPlus_CheckClientError() {
 
 	if (bForceUpdate && bTlocHeld == false) {
 		// (sv, cv: our speed and the one the client's last move reported.)
-		if (bDrawDebugData)
+		// (10 at once and 10 a second: a correction of one ping is whole, a long
+		// one keeps a line every 0.1 s. One a tick used the whole allowance.)
+		if (bDrawDebugData && IGPlus_AllowanceTake(IGPlus_CAPDebugRoom, IGPlus_CAPDebugRoomTS, 1.0, 10.0, 10.0))
 			ClientDebugMessage("Send CAP:"@CurrentTimeStamp@Physics@ClientPhysics@ClientLocError@MaxLocError
 				@"sv="$int(Velocity.X)$","$int(Velocity.Y)$","$int(Velocity.Z)
 				@"cv="$int(IGPlus_DetClientVel.X)$","$int(IGPlus_DetClientVel.Y)$","$int(IGPlus_DetClientVel.Z));
@@ -13390,6 +13525,8 @@ function bool IGPlus_HasArmor() {
 
 event ServerTick(float DeltaTime) {
 	AverageServerDeltaTime = (AverageServerDeltaTime*99 + DeltaTime) * 0.01;
+	if (IGPlus_DbgBaseHeld != "" && Level.TimeSeconds != IGPlus_DbgBaseHeldTS)
+		IGPlus_DebugBaseFlush();
 	IGPlus_ABTick(DeltaTime);
 	// Precise Rewind Time: stamp what this tick sends our client, and read
 	// our own measure of its ping to check its reports against.

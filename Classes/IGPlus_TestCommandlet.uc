@@ -415,6 +415,35 @@ function TestDetFireClockLead() {
 	LogTestResult(SimFireClockLead(1.5, 5.0, 0, 0, 3.0) > 0.5, "FireClockLead_speedhack_exceeds_default_margin_within_2s");
 }
 
+// Sends lines of Size bytes at PerSec a second for Secs seconds against the
+// debug line allowance. Returns how many fit.
+function int SimDebugLines(int Size, float PerSec, float Secs) {
+	local float Room, T, Step;
+	local int Sent;
+
+	Room = 2000.0; // bbPlayer.IGPLUS_DEBUG_BYTES
+	Step = 1.0 / PerSec;
+	for (T = 0.0; T < Secs; T += Step) {
+		if (Room >= Size) {
+			Room -= Size;
+			Sent++;
+		}
+		Room = class'bbPlayer'.static.IGPlus_AllowanceAfter(Room, Step, 2000.0, 2000.0);
+	}
+	return Sent;
+}
+
+function TestDebugLineAllowance() {
+	LogTestResult(class'bbPlayer'.static.IGPlus_AllowanceAfter(0.0, 0.5, 2000.0, 2000.0) == 1000.0, "DebugAllowance_fills_at_its_rate");
+	LogTestResult(class'bbPlayer'.static.IGPlus_AllowanceAfter(1500.0, 10.0, 2000.0, 2000.0) == 2000.0, "DebugAllowance_stops_at_its_most");
+	LogTestResult(class'bbPlayer'.static.IGPlus_AllowanceAfter(500.0, -1.0, 2000.0, 2000.0) == 500.0, "DebugAllowance_ignores_a_clock_that_went_back");
+	// A dodge, a landing and a shot a second (3 lines of 100 bytes): all sent.
+	LogTestResult(SimDebugLines(100, 3.0, 20.0) == 60, "DebugAllowance_normal_play_is_sent_whole");
+	// A 188 byte line on each of 126 ticks a second for 10 s is 236 kB. At most what was saved up plus 10 s of the allowance goes out.
+	LogTestResult(SimDebugLines(188, 126.0, 10.0) * 188 <= 22000, "DebugAllowance_caps_a_line_every_tick");
+	LogTestResult(SimDebugLines(188, 126.0, 10.0) * 188 >= 19000, "DebugAllowance_still_sends_its_share_of_a_flood");
+}
+
 function TestPreciseRewindTimeReport() {
 	LogTestResult(class'bbPlayer'.static.IGPlus_PRTTicksBack(500, class'bbPlayer'.static.IGPlus_PRTPack(497, 0.0123)) == 3,
 		"PRT_report_finds_its_tick");
@@ -1203,6 +1232,7 @@ event int main(string Params) {
 	TestOwnCopyPathStep();
 	TestDetFireClockLead();
 	TestPreciseRewindTimeReport();
+	TestDebugLineAllowance();
 	TestTradeReach();
 	TestShotEyePacking();
 	TestPRTRulePos();
