@@ -474,6 +474,24 @@ function bool IGPlus_QueueShooter(bbPlayer P) {
 	return true;
 }
 
+// Adaptive Buffering: every player's kept moves that are due run now, before
+// the tick's shots (bbPlayer.CheckClientError). The others are marked, so
+// their own turn does not run them again.
+function IGPlus_ABPlayoutAll(bbPlayer First) {
+	local Pawn P, Next;
+	local bbPlayer BP;
+
+	for (P = Level.PawnList; P != None; P = Next) {
+		Next = P.nextPawn;
+		BP = bbPlayer(P);
+		if (BP == None || BP.bDeleteMe)
+			continue;
+		if (BP != First)
+			BP.IGPlus_bABPlayoutRan = true;
+		BP.IGPlus_ABPlayout();
+	}
+}
+
 // Run the shots that waited, the one fired first first. Two shots that
 // arrive in the same tick used to run in the order their packets were read,
 // so the later click could win. A shooter killed by an earlier shot of the

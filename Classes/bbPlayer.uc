@@ -787,6 +787,7 @@ const IGPLUS_AB_GRACE = 1.5;        // the next move is late after this many mov
 const IGPLUS_AB_MAXQUEUE = 128;     // moves kept for one player
 const IGPLUS_AB_WARMUP = 5.0;        // seconds a new arrival measure runs before it counts
 var bool IGPlus_ABPlaying;          // a queued move is running (IGPlus_ABRunHead)
+var bool IGPlus_bABPlayoutRan;      // our playout ran with the tick's first connection (CheckClientError)
 var bool IGPlus_ABKept;             // IGPlus_ABIntercept kept the move it was just shown
 var bool IGPlus_ABSeen;             // a state's xxServerMove already showed this move to IGPlus_ABIntercept
 var bool IGPlus_ABQueued;           // our moves wait in the queue
@@ -7820,16 +7821,20 @@ function IGPlus_ABPlayout() {
 // The engine (469) calls this for every connection right after it took in
 // this tick's packets. Stock uses it for its own ServerMove, which we replace.
 event CheckClientError() {
-	// The tick's packets are all read: the shots that waited run now, in
-	// the order they were fired. Again after the playout, which can run a
-	// queued player's shot.
-	if (zzUTPure != None) {
-		zzUTPure.IGPlus_bShotOrderReady = true;
-		zzUTPure.IGPlus_FlushShots();
+	if (zzUTPure == None) {
+		IGPlus_ABPlayout();
+		return;
 	}
-	IGPlus_ABPlayout();
-	if (zzUTPure != None)
-		zzUTPure.IGPlus_FlushShots();
+	zzUTPure.IGPlus_bShotOrderReady = true;
+	// The first connection of the tick ran our playout with its own.
+	if (IGPlus_bABPlayoutRan) {
+		IGPlus_bABPlayoutRan = false;
+		return;
+	}
+	// We are the first: every player's kept moves run, then the shots, so a
+	// shot from a kept move is sorted with the others.
+	zzUTPure.IGPlus_ABPlayoutAll(self);
+	zzUTPure.IGPlus_FlushShots();
 }
 
 // Is the shot that arrived later run first? Only when it was fired earlier
