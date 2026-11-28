@@ -420,7 +420,7 @@ function TraceFireAt(rotator AimRot, vector BaseLoc, bool bUseAdjustAim) {
 			HitLocation = EndTrace;
 		bHead = Pawn(Other) != None && CheckHeadShot(Pawn(Other), HitLocation, X);
 		bbPlayer(PawnOwner).IGPlus_SDNoteShot(Other, bHead, StartTrace, AdjustedAim, HitLocation, 1);
-		bbPlayer(PawnOwner).IGPlus_HitCompare(Other, bHead, StartTrace, X, HitLocation);
+		bbPlayer(PawnOwner).IGPlus_HitCompare(Other, bHead, StartTrace, X, HitLocation, self);
 	}
 	ProcessTraceHit(Other, HitLocation, HitNormal, X,Y,Z);
 }

@@ -400,7 +400,7 @@ function DeterministicTraceFire(rotator ShotRot, vector ShotLoc) {
 	// Against the shooter's own trace, before the damage.
 	if (bbP != None) {
 		bbP.IGPlus_SDNoteShot(Other, false, StartTrace, ShotRot, HitLocation, 0);
-		bbP.IGPlus_HitCompare(Other, false, StartTrace, X, HitLocation);
+		bbP.IGPlus_HitCompare(Other, false, StartTrace, X, HitLocation, self);
 	}
 
 	IGPlus_bDetShot = true;

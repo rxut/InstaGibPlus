@@ -575,6 +575,22 @@ var float IGPlus_ClientHitTestZ;
 var int IGPlus_StatHeadMsgClient, IGPlus_StatHeadMsgUnconfirmed, IGPlus_StatHeadMsgServer;
 var int IGPlus_HitStatShots, IGPlus_HitStatBoth, IGPlus_HitStatClientOnly, IGPlus_HitStatServerOnly, IGPlus_HitStatHeadDiff;
 var int IGPlus_HitStatNoData; // rifle and sniper shots the server ran with no data from the client's shot
+// hitNoData by cause: the shot's own move never arrived (Gap), or it arrived
+// with no verdict (NoGap). NoShot: a move brought a verdict and no shot of
+// ours ran on it. One [DET-HIT] line each, limited per map.
+var int IGPlus_HitStatNoDataGap, IGPlus_HitStatNoDataNoGap, IGPlus_HitStatNoShot;
+var int IGPlus_HitStatNoDataLines;
+const IGPLUS_HIT_NODATA_LINES = 200;
+// Server, the running move: the hole before it (0: none), its length, its
+// charge data, a new press of fire.
+var float IGPlus_MoveGap, IGPlus_MoveLen;
+var int IGPlus_MoveCharge;
+var bool IGPlus_bMovePress;
+// Server: the line of a shot without data that waits (IGPlus_QueueShot).
+var string IGPlus_PendNoData, IGPlus_ShotNoData;
+var bool IGPlus_bPendNoData, IGPlus_bShotNoData;
+var bool IGPlus_bPendNoDataGap, IGPlus_bShotNoDataGap;
+var bool IGPlus_bShotFromQueue;
 // Fire order inside one tick (UTPure.IGPlus_FlushShots). Server: a rifle or
 // sniper shot is not traced the moment its move is read. It waits here until
 // the tick's packets are all in, with everything its trace takes from us.
@@ -6218,7 +6234,7 @@ function IGPlus_DetLogSummary() {
 	if (IGPlus_bDetStatLogged || PlayerReplicationInfo == None)
 		return;
 	if (IGPlus_DetStatThrows + IGPlus_DetStatRejects + IGPlus_StatShotRefused + IGPlus_StatShotUnbound
-		+ IGPlus_StatSwitchMismatch + IGPlus_StatClockHolds + IGPlus_HitStatShots + IGPlus_HitStatNoData
+		+ IGPlus_StatSwitchMismatch + IGPlus_StatClockHolds + IGPlus_HitStatShots + IGPlus_HitStatNoData + IGPlus_HitStatNoShot
 		+ IGPlus_HitStatEyeUsed + IGPlus_HitStatEyeRefused + IGPlus_HitStatDeadShots == 0)
 		return;
 	if (IGPlus_HitStatEyeUsed > 0)
@@ -6231,7 +6247,9 @@ function IGPlus_DetLogSummary() {
 		@"jumpDropped="$IGPlus_DetStatJumpDropped@"lateSpot="$IGPlus_DetStatLateSpot
 		@"shotRefused="$IGPlus_StatShotRefused@"shotUnbound="$IGPlus_StatShotUnbound
 		@"switchMismatch="$IGPlus_StatSwitchMismatch@"clockHolds="$IGPlus_StatClockHolds
-		@"hitShots="$IGPlus_HitStatShots@"hitNoData="$IGPlus_HitStatNoData@"hitBoth="$IGPlus_HitStatBoth
+		@"hitShots="$IGPlus_HitStatShots@"hitNoData="$IGPlus_HitStatNoData
+		@"hitNoDataGap="$IGPlus_HitStatNoDataGap@"hitNoDataNoGap="$IGPlus_HitStatNoDataNoGap
+		@"hitNoShot="$IGPlus_HitStatNoShot@"hitBoth="$IGPlus_HitStatBoth
 		@"hitClientOnly="$IGPlus_HitStatClientOnly@"hitServerOnly="$IGPlus_HitStatServerOnly
 		@"hitHeadDiff="$IGPlus_HitStatHeadDiff
 		@"hitDrawnDiff="$IGPlus_HitStatDrawnDiff@"hitDrawnRight="$IGPlus_HitStatDrawnRight
@@ -6673,6 +6691,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	local Weapon DetWeapon;
 	local bool bDetMoveAcceptedForFire;
 	local bool bDetFirePress;
+	local bool bDetStepOK;
 	local float PSAPrevTS;
 	local int RedoAction;
 	local int Redo2Action;
@@ -6700,9 +6719,13 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 	}
 	// A gap before this move: moves that never arrived, with any throw or
 	// translocate in them. Context for the [DET-TLOC] lines.
+	IGPlus_MoveGap = 0.0;
+	IGPlus_MoveLen = SM.MoveDeltaTime;
+	IGPlus_MoveCharge = SM.DetChargeData;
 	if (ServerTimeStamp > 0.0 && SM.TimeStamp - SM.MoveDeltaTime > CurrentTimeStamp + 0.003) {
 		IGPlus_DetLostMoves++;
 		IGPlus_DetLastLossTS = Level.TimeSeconds;
+		IGPlus_MoveGap = SM.TimeStamp - SM.MoveDeltaTime - CurrentTimeStamp;
 	}
 
 	ClientTlocCounter =          (SM.MiscData & 0x0C000000) >> 26;
@@ -6912,6 +6935,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 
 	// A new fire press: for the deterministic translocator's pose below.
 	bDetFirePress = bFired && IGPlus_LastFireEndHeld == false;
+	IGPlus_bMovePress = bDetFirePress || bForceFire;
 	IGPlus_LastFireEndHeld = bFired;
 	IGPlus_LastAltEndHeld = bAltFired;
 
@@ -6947,6 +6971,7 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 		// The eye height the client traced this move's shot from.
 		if (ST_SuperShockRifle(DetWeapon) != none || ST_SniperRifle(DetWeapon) != none)
 			IGPlus_ShotEyeByte = SM.ShotEye;
+		bDetStepOK = SM.bDetReady && IGPlus_DetFireClockOK();
 		IGPlus_DetProcessStep(
 			DetWeapon,
 			SM.TimeStamp,
@@ -6957,11 +6982,16 @@ function IGPlus_ApplyServerMove(IGPlus_ServerMove SM) {
 			bForceFire,
 			bForceAltFire,
 			true,
-			SM.bDetReady && IGPlus_DetFireClockOK(),
+			bDetStepOK,
 			SM.DetChargeData,
 			false,
 			false
 		);
+		// The client fired on this move and no shot of ours ran on it. A dead
+		// player's shot has its own line (IGPlus_NoteDeadShot).
+		if (IGPlus_ClientHitVerdict != 0 && IGPlus_DetLastShotTS != SM.TimeStamp
+			&& Health > 0 && IsInState('Dying') == false)
+			IGPlus_NoteNoShot(DetWeapon, SM.TimeStamp, SM.bDetReady, bDetStepOK);
 		IGPlus_DetOwnBeamMode = 0;
 		IGPlus_OwnBallVerdict = 0;
 		IGPlus_ShotLift = None;
@@ -7915,6 +7945,12 @@ function bool IGPlus_QueueShot(Weapon W, rotator View, vector Loc) {
 	IGPlus_PendEyeByte = IGPlus_ShotEyeByte;
 	IGPlus_PendShotOriginGap = IGPlus_ShotOriginGap;
 	IGPlus_PendShotOriginFrom = IGPlus_ShotOriginFrom;
+	// A shot without data: its line now, while its own move is the running one.
+	IGPlus_bPendNoData = IGPlus_ClientHitVerdict == 0 && IGPlus_ShotCarriesVerdict(W);
+	IGPlus_bPendNoDataGap = IGPlus_MoveGap > 0.0;
+	IGPlus_PendNoData = "";
+	if (IGPlus_bPendNoData && IGPlus_HitStatNoDataLines < IGPLUS_HIT_NODATA_LINES)
+		IGPlus_PendNoData = IGPlus_NoDataInfo(W);
 	return true;
 }
 
@@ -7987,11 +8023,18 @@ function IGPlus_RunPendingShot() {
 	IGPlus_ShotOriginFrom = IGPlus_PendShotOriginFrom;
 
 	IGPlus_SDShotTS = IGPlus_PendShotTS;
+	IGPlus_bShotFromQueue = true;
+	IGPlus_ShotNoData = IGPlus_PendNoData;
+	IGPlus_bShotNoData = IGPlus_bPendNoData;
+	IGPlus_bShotNoDataGap = IGPlus_bPendNoDataGap;
 	if (ST_SuperShockRifle(W) != None)
 		ST_SuperShockRifle(W).DeterministicTraceFire(IGPlus_PendShotView, IGPlus_PendShotLoc);
 	else if (ST_SniperRifle(W) != None)
 		ST_SniperRifle(W).DeterministicTraceFire(IGPlus_PendShotView, IGPlus_PendShotLoc);
 	IGPlus_SDShotTS = 0.0;
+	IGPlus_bShotFromQueue = false;
+	IGPlus_ShotNoData = "";
+	IGPlus_PendNoData = "";
 
 	IGPlus_PRTNoteTS = NoteTS;
 	IGPlus_PRTNoteTick = NoteTick;
@@ -9246,6 +9289,93 @@ simulated function IGPlus_LostTradeCheck(string Why) {
 	myHUD.LocalizedMessage(class'IGPlus_LostTradeMessage');
 }
 
+// Does every shot of this weapon come with its client's verdict? The rifle
+// of NextIG and the sniper of NextSA, and not with input replication.
+function bool IGPlus_ShotCarriesVerdict(Weapon W) {
+	if (IGPlus_EnableInputReplication)
+		return false;
+	if (ST_SuperShockRifle(W) != None)
+		return true;
+	return ST_SniperRifle(W) != None && ST_SniperRifle(W).IGPlus_InstantHitFeedback();
+}
+
+// Server: the [DET-HIT] line of a shot that ran with no data from the
+// client's shot. dueLateMs: how long after the shot was due its step came.
+function string IGPlus_NoDataInfo(Weapon W) {
+	local string S;
+	local float Due;
+
+	if (ST_SuperShockRifle(W) != None)
+		Due = ST_SuperShockRifle(W).NextDetFireTS;
+	else if (ST_SniperRifle(W) != None)
+		Due = ST_SniperRifle(W).NextDetFireTS;
+	S = "noData gap="$(IGPlus_MoveGap > 0.0)
+		@"gapMs="$IGPlus_Fmt1(1000.0 * IGPlus_MoveGap / Level.TimeDilation)
+		@"moveMs="$IGPlus_Fmt1(1000.0 * IGPlus_MoveLen / Level.TimeDilation)
+		@"press="$IGPlus_bMovePress@"charge="$IGPlus_MoveCharge@"eye="$IGPlus_ShotEyeByte
+		@"step="$IGPlus_DetLastShotTS;
+	if (Due > 0.0)
+		S = S@"dueLateMs="$IGPlus_Fmt1(1000.0 * (IGPlus_DetLastShotTS - Due) / Level.TimeDilation);
+	else
+		S = S@"dueLateMs=none";
+	if (W != None)
+		S = S@"weapon="$W.Class.Name;
+	if (PlayerReplicationInfo != None)
+		S = S@"ping="$PlayerReplicationInfo.Ping;
+	return S;
+}
+
+function IGPlus_NoteNoData(string S, bool bGap) {
+	if (bGap)
+		IGPlus_HitStatNoDataGap++;
+	else
+		IGPlus_HitStatNoDataNoGap++;
+	if (S != "")
+		IGPlus_NoDataLine(S);
+}
+
+// Server: a move brought a verdict and no shot of ours ran on it.
+// dueInMs: how long after its step our shot is due.
+function IGPlus_NoteNoShot(Weapon W, float StepTS, bool bReady, bool bStepOK) {
+	local string S;
+	local float Due;
+
+	if (IGPlus_ShotCarriesVerdict(W) == false)
+		return;
+	IGPlus_HitStatNoShot++;
+	if (IGPlus_HitStatNoDataLines >= IGPLUS_HIT_NODATA_LINES)
+		return;
+	if (ST_SuperShockRifle(W) != None)
+		Due = ST_SuperShockRifle(W).NextDetFireTS;
+	else if (ST_SniperRifle(W) != None)
+		Due = ST_SniperRifle(W).NextDetFireTS;
+	S = "noShot clientHit="$((IGPlus_ClientHitVerdict & 3) != 0)
+		@"gapMs="$IGPlus_Fmt1(1000.0 * IGPlus_MoveGap / Level.TimeDilation)
+		@"moveMs="$IGPlus_Fmt1(1000.0 * IGPlus_MoveLen / Level.TimeDilation)
+		@"press="$IGPlus_bMovePress@"ready="$bReady@"stepOK="$bStepOK@"step="$StepTS;
+	if (Due > 0.0)
+		S = S@"dueInMs="$IGPlus_Fmt1(1000.0 * (Due - StepTS) / Level.TimeDilation);
+	else
+		S = S@"dueInMs=none";
+	S = S@"weapon="$W.Class.Name;
+	if (PlayerReplicationInfo != None)
+		S = S@"ping="$PlayerReplicationInfo.Ping;
+	IGPlus_NoDataLine(S);
+}
+
+// Server: the line to the server log and the shooter's own log, limited
+// per map so a client that never sends a verdict can't fill the log.
+function IGPlus_NoDataLine(string S) {
+	if (IGPlus_HitStatNoDataLines >= IGPLUS_HIT_NODATA_LINES || PlayerReplicationInfo == None)
+		return;
+	IGPlus_HitStatNoDataLines++;
+	if (IGPlus_HitStatNoDataLines == IGPLUS_HIT_NODATA_LINES)
+		S = S@"(the last such line this map)";
+	IGPlus_EventLog("[DET-HIT]"@PlayerReplicationInfo.PlayerName@S);
+	if (bDrawDebugData)
+		ClientDebugMessage("Hit check (server):"@S);
+}
+
 // Server: this deterministic shot's trace against what the shooter's own
 // trace said (IGPlus_ClientHitVerdict, from the shot's move). Called before
 // the damage. Nothing is decided here: the server's trace stands. A
@@ -9253,7 +9383,7 @@ simulated function IGPlus_LostTradeCheck(string Why) {
 // client saw, the line names the nearest rewound body and what the server's
 // line was missing to its cylinder (gapXY, gapZ). blocked=True is a body
 // behind something solid.
-function IGPlus_HitCompare(Actor Other, bool bHead, vector Start, vector Dir, vector HitLocation) {
+function IGPlus_HitCompare(Actor Other, bool bHead, vector Start, vector Dir, vector HitLocation, optional Weapon W) {
 	local bool bServerHit, bClientHit, bDrawnHit, bBlocked, bBestBlocked;
 	local Pawn P, Best;
 	local UTPlusDummy D;
@@ -9266,6 +9396,16 @@ function IGPlus_HitCompare(Actor Other, bool bHead, vector Start, vector Dir, ve
 		// The client made no trace for this shot, or the shot ran on another
 		// move than the client's (the shot's own move was lost).
 		IGPlus_HitStatNoData++;
+		// A shot that waited brings its line (IGPlus_QueueShot).
+		if (IGPlus_bShotFromQueue) {
+			if (IGPlus_bShotNoData)
+				IGPlus_NoteNoData(IGPlus_ShotNoData, IGPlus_bShotNoDataGap);
+		} else if (IGPlus_ShotCarriesVerdict(W)) {
+			if (IGPlus_HitStatNoDataLines < IGPLUS_HIT_NODATA_LINES)
+				IGPlus_NoteNoData(IGPlus_NoDataInfo(W), IGPlus_MoveGap > 0.0);
+			else
+				IGPlus_NoteNoData("", IGPlus_MoveGap > 0.0);
+		}
 		return;
 	}
 	bServerHit = Pawn(Other) != None && Pawn(Other).PlayerReplicationInfo != None;
